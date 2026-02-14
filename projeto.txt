@@ -1,0 +1,51 @@
+A maior dor das pessoas hoje em dia no meta ADS é otimização e análise das campanhas do meta ADS. 
+
+Eu queria saber se é possível criar um sistema de análise e otimização onde um agente do chatgpt utilizando a API do gpt vai analisar toda performance do anúncio, vai analisar o comportamento do lead dentro do site, como o tempo que permaneceu, tempo de carregamento da página, cliques e etc... 
+
+E assim conseguir achar o gargalo onde está o erro que o anúncio não vende, ou se é a oferta, página, criativo e etc
+Perfeito, porém eu tenho mais uma coisa que gostaria de acrescentar nesse sistema, um trakeamento avançado, isso também faz a diferença na aprendizagem do meta ads.
+
+Todos os parametros nescessarios para um bom trakeamento tanto via web quanto serve API e um webhook para conectar via plataforma de vendas para receber os dados do comprador e repassar para o meta.
+
+Tais como esse de exemplo.
+client_ip_address
+170.254.202.172
+client_user_agent
+Show
+content_type
+product
+event_day
+Saturday
+event_day_in_month
+14
+event_month
+February
+event_source_url
+Show
+event_time
+1771051562
+event_time_interval
+3-4
+event_url
+Show
+external_id
+Show
+fbc
+Show
+fbp
+Show
+page_title
+Show
+Event info
+Setup method
+Manual
+Pixel location
+Show
+Frame
+Window
+URL called
+Show
+Load time
+2949.30 ms
+Event ID
+Show
