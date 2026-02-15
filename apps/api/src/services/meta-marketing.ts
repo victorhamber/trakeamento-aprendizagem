@@ -110,6 +110,72 @@ export class MetaMarketingService {
     }
   }
 
+  public async fetchCampaignInsights(siteId: number, datePreset: string = 'last_7d') {
+    const cfg = await this.getConfig(siteId);
+    if (!cfg) return [];
+
+    const fields = [
+      'campaign_name',
+      'campaign_id',
+      'spend',
+      'impressions',
+      'clicks',
+      'cpm',
+      'cpc',
+      'ctr',
+      'outbound_clicks',
+      'actions',
+      'cost_per_action_type',
+    ].join(',');
+    const url = `https://graph.facebook.com/v19.0/${cfg.adAccountId}/insights`;
+
+    const response = await axios.get(url, {
+      params: {
+        access_token: cfg.token,
+        level: 'campaign',
+        date_preset: datePreset,
+        fields: fields,
+        limit: 500,
+      },
+    });
+
+    const rows = Array.isArray(response.data?.data) ? response.data.data : [];
+    return rows.map((row: any) => {
+      const actions = row.actions;
+      const costs = row.cost_per_action_type;
+      const spend = this.asNumber(row.spend) || 0;
+      const impressions = this.asInt(row.impressions) || 0;
+      const clicks = this.asInt(row.clicks) || 0;
+      const ctr = this.asNumber(row.ctr) ?? (impressions > 0 ? (clicks / impressions) * 100 : 0);
+      const cpc = this.asNumber(row.cpc) ?? (clicks > 0 ? spend / clicks : 0);
+      const cpm = this.asNumber(row.cpm) ?? (impressions > 0 ? (spend / impressions) * 1000 : 0);
+      const outboundClicks =
+        this.asInt(row.outbound_clicks) ?? this.getActionCount(actions, 'outbound_click') ?? 0;
+      const landingPageViews = this.getActionCount(actions, 'landing_page_view') ?? 0;
+      const leads = this.getActionCount(actions, 'lead') ?? 0;
+      const purchases = this.getActionCount(actions, 'purchase') ?? 0;
+      const costPerLead = this.getCostPerAction(costs, 'lead');
+      const costPerPurchase = this.getCostPerAction(costs, 'purchase');
+
+      return {
+        campaign_id: row.campaign_id,
+        campaign_name: row.campaign_name,
+        spend,
+        impressions,
+        clicks,
+        ctr,
+        cpc,
+        cpm,
+        outbound_clicks: outboundClicks,
+        landing_page_views: landingPageViews,
+        leads,
+        purchases,
+        cost_per_lead: costPerLead,
+        cost_per_purchase: costPerPurchase,
+      };
+    });
+  }
+
   private async persistInsight(siteId: number, row: any) {
     const query = `
       INSERT INTO meta_insights_daily (

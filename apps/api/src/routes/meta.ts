@@ -17,28 +17,42 @@ router.get('/campaigns/metrics', requireAuth, async (req, res) => {
 
     const days = Number.isFinite(daysRaw) ? Math.min(90, Math.max(1, Math.trunc(daysRaw))) : 7;
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const preset = days <= 7 ? 'last_7d' : days <= 30 ? 'last_30d' : days <= 90 ? 'last_90d' : 'last_30d';
 
-    const result = await pool.query(
-      `
-      SELECT
-        campaign_id,
-        MAX(campaign_name) AS campaign_name,
-        COALESCE(SUM(spend), 0)::numeric AS spend,
-        COALESCE(SUM(impressions), 0)::bigint AS impressions,
-        COALESCE(SUM(clicks), 0)::bigint AS clicks,
-        COALESCE(SUM(outbound_clicks), 0)::bigint AS outbound_clicks,
-        COALESCE(SUM(landing_page_views), 0)::bigint AS landing_page_views,
-        COALESCE(SUM(leads), 0)::bigint AS leads,
-        COALESCE(SUM(purchases), 0)::bigint AS purchases
-      FROM meta_insights_daily
-      WHERE site_id = $1
-        AND campaign_id IS NOT NULL
-        AND date_start >= $2
-      GROUP BY campaign_id
-      ORDER BY spend DESC, impressions DESC
-      `,
-      [siteId, since]
-    );
+    const queryMetrics = async () =>
+      pool.query(
+        `
+        SELECT
+          campaign_id,
+          MAX(campaign_name) AS campaign_name,
+          COALESCE(SUM(spend), 0)::numeric AS spend,
+          COALESCE(SUM(impressions), 0)::bigint AS impressions,
+          COALESCE(SUM(clicks), 0)::bigint AS clicks,
+          COALESCE(SUM(outbound_clicks), 0)::bigint AS outbound_clicks,
+          COALESCE(SUM(landing_page_views), 0)::bigint AS landing_page_views,
+          COALESCE(SUM(leads), 0)::bigint AS leads,
+          COALESCE(SUM(purchases), 0)::bigint AS purchases
+        FROM meta_insights_daily
+        WHERE site_id = $1
+          AND campaign_id IS NOT NULL
+          AND date_start >= $2
+        GROUP BY campaign_id
+        ORDER BY spend DESC, impressions DESC
+        `,
+        [siteId, since]
+      );
+
+    let result = await queryMetrics();
+
+    if (!(result.rowCount || 0)) {
+      await metaMarketingService.syncDailyInsights(siteId, preset);
+      result = await queryMetrics();
+    }
+
+    if (!(result.rowCount || 0)) {
+      const liveRows = await metaMarketingService.fetchCampaignInsights(siteId, preset);
+      return res.json({ campaigns: liveRows, days });
+    }
 
     const rows = result.rows.map((row) => {
       const spend = Number(row.spend || 0);

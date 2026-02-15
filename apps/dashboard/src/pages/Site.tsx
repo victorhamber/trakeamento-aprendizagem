@@ -722,7 +722,11 @@ export const SitePage = () => {
                   </div>
                 </div>
                 <button
-                  onClick={() => loadCampaigns().catch(() => {})}
+                  onClick={() =>
+                    Promise.all([loadCampaigns().catch(() => {}), loadCampaignMetrics().catch(() => {})]).catch(
+                      () => {}
+                    )
+                  }
                   className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 px-4 py-2 rounded-lg text-sm"
                 >
                   Atualizar
