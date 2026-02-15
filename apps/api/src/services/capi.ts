@@ -53,10 +53,15 @@ export class CapiService {
           event_id: event.event_id,
           event_source_url: event.event_source_url,
           action_source: 'website',
-          user_data: event.user_data,
+          user_data: {
+             ...event.user_data,
+             fbc: event.user_data.fbc || undefined,
+             fbp: event.user_data.fbp || undefined,
+          },
           custom_data: event.custom_data,
         },
       ],
+      // test_event_code: 'TEST58411', // REMOVER EM PRODUÇÃO - APENAS DEBUG
       access_token: cfg.capiToken,
     };
 

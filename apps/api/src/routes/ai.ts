@@ -13,9 +13,12 @@ router.get('/settings', requireAuth, async (req, res) => {
     [auth.accountId]
   );
   const row = result.rows[0];
+  // Check both DB setting and Env Var
+  const hasEnvKey = !!process.env.OPENAI_API_KEY;
   return res.json({
-    has_openai_key: row?.has_key || false,
+    has_openai_key: (row?.has_key || hasEnvKey),
     openai_model: row?.openai_model || 'gpt-4o',
+    using_env_key: hasEnvKey && !row?.has_key
   });
 });
 
