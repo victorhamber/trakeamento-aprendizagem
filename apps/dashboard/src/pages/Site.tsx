@@ -875,11 +875,18 @@ export const SitePage = () => {
                         className="w-full rounded-lg bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-blue-500/60"
                       >
                         <option value="">Escolha uma campanha</option>
-                        {campaigns.map((c) => (
-                          <option key={c.id} value={c.id}>
-                            {c.name}
-                          </option>
-                        ))}
+                        {[...campaigns]
+                          .sort((a, b) => {
+                            const aActive = a.status === 'ACTIVE' ? 0 : 1;
+                            const bActive = b.status === 'ACTIVE' ? 0 : 1;
+                            if (aActive !== bActive) return aActive - bActive;
+                            return a.name.localeCompare(b.name);
+                          })
+                          .map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.name} {c.status === 'ACTIVE' ? '(Ativa)' : '(Pausada)'}
+                            </option>
+                          ))}
                       </select>
                     </div>
                     <div className="text-xs text-zinc-500">
