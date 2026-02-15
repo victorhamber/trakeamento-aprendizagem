@@ -109,8 +109,10 @@ router.get('/sites/:siteId/meta/pixels', requireAuth, async (req, res) => {
   const tokenEnc = row.rows[0]?.fb_user_token_enc as string | undefined;
   if (!tokenEnc) return res.status(400).json({ error: 'Facebook not connected' });
 
+  const finalAdAccountId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
+
   const token = decryptString(tokenEnc);
-  const response = await axios.get(`https://graph.facebook.com/${fbApiVersion}/${encodeURIComponent(adAccountId)}/adspixels`, {
+  const response = await axios.get(`https://graph.facebook.com/${fbApiVersion}/${encodeURIComponent(finalAdAccountId)}/adspixels`, {
     params: { fields: 'id,name', access_token: token, limit: 200 },
   });
   return res.json({ pixels: response.data.data || [] });
@@ -130,8 +132,10 @@ router.get('/sites/:siteId/meta/campaigns', requireAuth, async (req, res) => {
   if (!tokenEnc) return res.status(400).json({ error: 'Facebook not connected' });
   if (!adAccountId) return res.status(400).json({ error: 'Missing ad_account_id' });
 
+  const finalAdAccountId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
+
   const token = decryptString(tokenEnc);
-  const response = await axios.get(`https://graph.facebook.com/${fbApiVersion}/${encodeURIComponent(adAccountId)}/campaigns`, {
+  const response = await axios.get(`https://graph.facebook.com/${fbApiVersion}/${encodeURIComponent(finalAdAccountId)}/campaigns`, {
     params: { fields: 'id,name,status,effective_status', access_token: token, limit: 200 },
   });
 
