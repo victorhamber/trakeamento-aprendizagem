@@ -68,7 +68,13 @@ router.get('/:siteId/secret', requireAuth, async (req, res) => {
   );
   if (!(result.rowCount || 0)) return res.status(404).json({ error: 'Site not found' });
   
-  const secret = decryptString(result.rows[0].webhook_secret_enc as string);
+  let secret: string;
+  try {
+    secret = decryptString(result.rows[0].webhook_secret_enc as string);
+  } catch (e) {
+    return res.status(500).json({ error: 'Failed to decrypt webhook secret. Key mismatch.' });
+  }
+
   return res.json({ secret });
 });
 

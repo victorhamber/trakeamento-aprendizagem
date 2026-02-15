@@ -5,7 +5,10 @@ let cachedEphemeralKey: Buffer | null = null;
 const getEncryptionKey = (): Buffer => {
   const keyB64 = process.env.APP_ENCRYPTION_KEY;
   if (!keyB64) {
-    if (!cachedEphemeralKey) cachedEphemeralKey = crypto.randomBytes(32);
+    if (!cachedEphemeralKey) {
+      console.warn('WARNING: APP_ENCRYPTION_KEY is not set. Using ephemeral key. Data encrypted now will be unreadable after restart.');
+      cachedEphemeralKey = crypto.randomBytes(32);
+    }
     return cachedEphemeralKey;
   }
   const key = Buffer.from(keyB64, 'base64');

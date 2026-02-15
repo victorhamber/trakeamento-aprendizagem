@@ -90,7 +90,13 @@ router.get('/sites/:siteId/meta/adaccounts', requireAuth, async (req, res) => {
   const tokenEnc = row.rows[0]?.fb_user_token_enc as string | undefined;
   if (!tokenEnc) return res.status(400).json({ error: 'Facebook not connected' });
 
-  const token = decryptString(tokenEnc);
+  let token: string;
+  try {
+    token = decryptString(tokenEnc);
+  } catch (e) {
+    return res.status(500).json({ error: 'Failed to decrypt Facebook token. Please reconnect.' });
+  }
+
   const response = await axios.get(`https://graph.facebook.com/${fbApiVersion}/me/adaccounts`, {
     params: { fields: 'id,name,account_id,disable_reason,currency,timezone_name,business', access_token: token, limit: 200 },
   });
@@ -111,7 +117,13 @@ router.get('/sites/:siteId/meta/pixels', requireAuth, async (req, res) => {
 
   const finalAdAccountId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
 
-  const token = decryptString(tokenEnc);
+  let token: string;
+  try {
+    token = decryptString(tokenEnc);
+  } catch (e) {
+    return res.status(500).json({ error: 'Failed to decrypt Facebook token. Please reconnect.' });
+  }
+
   const response = await axios.get(`https://graph.facebook.com/${fbApiVersion}/${encodeURIComponent(finalAdAccountId)}/adspixels`, {
     params: { fields: 'id,name', access_token: token, limit: 200 },
   });
@@ -134,7 +146,13 @@ router.get('/sites/:siteId/meta/campaigns', requireAuth, async (req, res) => {
 
   const finalAdAccountId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
 
-  const token = decryptString(tokenEnc);
+  let token: string;
+  try {
+    token = decryptString(tokenEnc);
+  } catch (e) {
+    return res.status(500).json({ error: 'Failed to decrypt Facebook token. Please reconnect.' });
+  }
+
   const response = await axios.get(`https://graph.facebook.com/${fbApiVersion}/${encodeURIComponent(finalAdAccountId)}/campaigns`, {
     params: { fields: 'id,name,status,effective_status', access_token: token, limit: 200 },
   });
@@ -156,7 +174,13 @@ router.patch('/sites/:siteId/meta/campaigns/:campaignId', requireAuth, async (re
   const tokenEnc = metaRow.rows[0]?.fb_user_token_enc as string | undefined;
   if (!tokenEnc) return res.status(400).json({ error: 'Facebook not connected' });
 
-  const token = decryptString(tokenEnc);
+  let token: string;
+  try {
+    token = decryptString(tokenEnc);
+  } catch (e) {
+    return res.status(500).json({ error: 'Failed to decrypt Facebook token. Please reconnect.' });
+  }
+
   await axios.post(
     `https://graph.facebook.com/${fbApiVersion}/${encodeURIComponent(campaignId)}`,
     null,

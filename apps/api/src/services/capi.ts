@@ -44,7 +44,12 @@ export class CapiService {
     const row = result.rows[0];
     if (row.enabled === false) return null;
     if (!row.pixel_id || !row.capi_token_enc) return null;
-    return { pixelId: row.pixel_id as string, capiToken: decryptString(row.capi_token_enc as string) };
+    try {
+      return { pixelId: row.pixel_id as string, capiToken: decryptString(row.capi_token_enc as string) };
+    } catch (e: any) {
+      console.error(`Failed to decrypt CAPI token for siteKey=${siteKey}: ${e.message}. Key mismatch or data corruption.`);
+      return null;
+    }
   }
 
   public async sendEvent(siteKey: string, event: CapiEvent) {
