@@ -292,7 +292,7 @@ export const SitePage = () => {
         <button
           onClick={generateReport}
           disabled={loading || !site}
-          className="bg-blue-600 hover:bg-blue-500 text-white text-sm rounded-lg px-4 py-2 disabled:opacity-50"
+          className="bg-blue-600 hover:bg-blue-500 text-white text-sm rounded-xl px-4 py-2 disabled:opacity-50 shadow-[0_0_0_1px_rgba(255,255,255,0.06)] transition-colors"
         >
           {loading ? 'Processando…' : 'Gerar diagnóstico'}
         </button>
@@ -309,13 +309,13 @@ export const SitePage = () => {
       </div>
 
       {flash && (
-        <div className="mt-4 rounded-xl border border-emerald-500/20 bg-emerald-500/10 text-emerald-200 px-4 py-3 text-sm">
+        <div className="mt-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 text-emerald-200 px-4 py-3 text-sm shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
           {flash}
         </div>
       )}
 
-      <div className="mt-5 rounded-2xl border border-zinc-900 bg-zinc-950">
-        <div className="border-b border-zinc-900 flex flex-wrap gap-2 p-2">
+      <div className="mt-5 rounded-3xl border border-zinc-900/70 bg-zinc-950/40 shadow-[0_0_0_1px_rgba(255,255,255,0.03)]">
+        <div className="border-b border-zinc-900/70 flex flex-wrap gap-2 p-3">
           {tabs.map((t) => (
             <button
               key={t.key}
@@ -324,8 +324,10 @@ export const SitePage = () => {
                 searchParams.set('tab', t.key);
                 setSearchParams(searchParams, { replace: true });
               }}
-              className={`px-3 py-2 rounded-lg text-sm ${
-                tab === t.key ? 'bg-zinc-800 text-white' : 'text-zinc-300 hover:bg-zinc-900 hover:text-white'
+              className={`px-3 py-2 rounded-2xl text-sm transition-colors ${
+                tab === t.key
+                  ? 'bg-zinc-900/70 text-white border border-zinc-800/70 shadow-[0_0_0_1px_rgba(255,255,255,0.04)]'
+                  : 'text-zinc-300 hover:bg-zinc-900/50 hover:text-white border border-transparent'
               }`}
             >
               {t.label}
@@ -748,9 +750,40 @@ export const SitePage = () => {
           )}
 
           {tab === 'reports' && (
-            <div className="prose prose-invert max-w-none">
-              {!report && <div className="text-sm text-zinc-400">Gere um diagnóstico para visualizar aqui.</div>}
-              {report?.analysis_text && <ReactMarkdown>{report.analysis_text}</ReactMarkdown>}
+            <div className="max-w-none">
+              {!report && (
+                <div className="rounded-2xl border border-zinc-900/70 bg-zinc-950/40 p-5 text-sm text-zinc-300">
+                  <div className="font-semibold text-white">Diagnóstico</div>
+                  <div className="mt-1 text-sm text-zinc-400">
+                    Clique em <span className="text-zinc-200">Gerar diagnóstico</span> para receber um relatório claro e acionável.
+                  </div>
+                </div>
+              )}
+              {report?.analysis_text && (
+                <div className="prose prose-invert max-w-none prose-headings:tracking-tight prose-h1:text-2xl prose-h2:text-xl prose-h3:text-lg prose-p:text-zinc-300 prose-strong:text-zinc-100 prose-a:text-blue-300 prose-a:no-underline hover:prose-a:text-blue-200">
+                  <ReactMarkdown
+                    components={{
+                      table: ({ children }) => (
+                        <div className="overflow-auto rounded-2xl border border-zinc-800/80 bg-zinc-950/40">
+                          <table className="w-full border-collapse">{children}</table>
+                        </div>
+                      ),
+                      thead: ({ children }) => <thead className="bg-zinc-900/40">{children}</thead>,
+                      th: ({ children }) => (
+                        <th className="text-left text-xs font-semibold text-zinc-200 px-3 py-2 border-b border-zinc-800/80">
+                          {children}
+                        </th>
+                      ),
+                      td: ({ children }) => (
+                        <td className="text-sm text-zinc-300 px-3 py-2 border-b border-zinc-900/70">{children}</td>
+                      ),
+                      hr: () => <div className="my-6 h-px w-full bg-zinc-900/70" />,
+                    }}
+                  >
+                    {report.analysis_text}
+                  </ReactMarkdown>
+                </div>
+              )}
             </div>
           )}
         </div>

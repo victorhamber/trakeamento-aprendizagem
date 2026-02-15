@@ -5,6 +5,9 @@ let cachedEphemeralKey: Buffer | null = null;
 const getEncryptionKey = (): Buffer => {
   const keyB64 = process.env.APP_ENCRYPTION_KEY;
   if (!keyB64) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('APP_ENCRYPTION_KEY is required in production');
+    }
     if (!cachedEphemeralKey) {
       console.warn('WARNING: APP_ENCRYPTION_KEY is not set. Using ephemeral key. Data encrypted now will be unreadable after restart.');
       cachedEphemeralKey = crypto.randomBytes(32);
