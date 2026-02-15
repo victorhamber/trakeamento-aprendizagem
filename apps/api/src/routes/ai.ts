@@ -13,7 +13,6 @@ router.get('/settings', requireAuth, async (req, res) => {
     [auth.accountId]
   );
   const row = result.rows[0];
-  // Check both DB setting and Env Var
   const hasEnvKey = !!process.env.OPENAI_API_KEY;
   return res.json({
     has_openai_key: (row?.has_key || hasEnvKey),
@@ -52,4 +51,3 @@ router.delete('/settings/openai_key', requireAuth, async (req, res) => {
 });
 
 export default router;
-

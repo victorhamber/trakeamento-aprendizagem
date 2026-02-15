@@ -79,12 +79,34 @@ router.get('/:siteId/snippet', requireAuth, async (req, res) => {
   const sdkUrl = process.env.PUBLIC_SDK_URL || `${apiBaseUrl}/sdk/tracker.js`;
   const siteKey = site.rows[0].site_key as string;
 
+  const meta = await pool.query('SELECT enabled, pixel_id FROM integrations_meta WHERE site_id = $1', [siteId]);
+  const ga = await pool.query('SELECT enabled, measurement_id FROM integrations_ga WHERE site_id = $1', [siteId]);
+
+  const metaRow = meta.rows[0] as { enabled?: boolean | null; pixel_id?: string | null } | undefined;
+  const gaRow = ga.rows[0] as { enabled?: boolean | null; measurement_id?: string | null } | undefined;
+
+  const metaPixelId =
+    metaRow && metaRow.enabled === false ? null : typeof metaRow?.pixel_id === 'string' ? metaRow.pixel_id.trim() : null;
+  const gaMeasurementId =
+    gaRow && gaRow.enabled === false
+      ? null
+      : typeof gaRow?.measurement_id === 'string'
+        ? gaRow.measurement_id.trim()
+        : null;
+
   const snippet = [
-    `<script>window.TRACKING_CONFIG={apiUrl:${JSON.stringify(apiBaseUrl)},siteKey:${JSON.stringify(siteKey)}};</script>`,
+    `<script>window.TRACKING_CONFIG={apiUrl:${JSON.stringify(apiBaseUrl)},siteKey:${JSON.stringify(siteKey)},metaPixelId:${JSON.stringify(metaPixelId)},gaMeasurementId:${JSON.stringify(gaMeasurementId)}};</script>`,
     `<script async src=${JSON.stringify(sdkUrl)}></script>`,
   ].join('\n');
 
-  return res.json({ snippet, api_base_url: apiBaseUrl, sdk_url: sdkUrl, site_key: siteKey });
+  return res.json({
+    snippet,
+    api_base_url: apiBaseUrl,
+    sdk_url: sdkUrl,
+    site_key: siteKey,
+    meta_pixel_id: metaPixelId,
+    ga_measurement_id: gaMeasurementId,
+  });
 });
 
 export default router;

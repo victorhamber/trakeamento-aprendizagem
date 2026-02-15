@@ -61,7 +61,6 @@ export class CapiService {
           custom_data: event.custom_data,
         },
       ],
-      // test_event_code: 'TEST58411', // REMOVER EM PRODUÇÃO - APENAS DEBUG
       access_token: cfg.capiToken,
     };
 

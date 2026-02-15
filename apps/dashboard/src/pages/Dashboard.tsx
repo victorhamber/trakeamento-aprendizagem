@@ -13,12 +13,20 @@ type Overview = {
 
 export const DashboardPage = () => {
   const [data, setData] = useState<Overview | null>(null);
+  const [hasOpenAiKey, setHasOpenAiKey] = useState<boolean | null>(null);
 
   useEffect(() => {
     api
       .get('/stats/overview')
       .then((res) => setData(res.data))
       .catch(() => setData(null));
+  }, []);
+
+  useEffect(() => {
+    api
+      .get('/ai/settings')
+      .then((res) => setHasOpenAiKey(!!res.data?.has_openai_key))
+      .catch(() => setHasOpenAiKey(null));
   }, []);
 
   return (
@@ -81,7 +89,13 @@ export const DashboardPage = () => {
             </div>
             <div className="flex items-center justify-between">
               <span className="text-zinc-400">Diagnóstico IA</span>
-              <span className="text-zinc-300">Configurar chave</span>
+              {hasOpenAiKey === true ? (
+                <span className="text-emerald-400">Ativo</span>
+              ) : (
+                <Link to="/ai" className="text-zinc-300 hover:text-zinc-100">
+                  Configurar chave
+                </Link>
+              )}
             </div>
           </div>
         </div>
@@ -89,4 +103,3 @@ export const DashboardPage = () => {
     </Layout>
   );
 };
-

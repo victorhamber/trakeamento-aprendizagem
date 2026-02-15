@@ -1,7 +1,15 @@
 import axios from 'axios';
 
+const sanitizeBaseUrl = (value: unknown) => {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim().replace(/^`|`$/g, '').replace(/^"|"$/g, '').replace(/^'|'$/g, '');
+  return trimmed ? trimmed.replace(/\/+$/, '') : null;
+};
+
+const envBaseUrl = sanitizeBaseUrl(import.meta.env.VITE_API_URL);
+
 export const api = axios.create({
-  baseURL: 'https://meta-ads-tracking-api.u0oe83.easypanel.host',
+  baseURL: envBaseUrl || 'https://meta-ads-tracking-api.u0oe83.easypanel.host',
 });
 
 export const setAuthToken = (token: string | null) => {

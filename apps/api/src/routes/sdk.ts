@@ -27,6 +27,44 @@ router.get('/tracker.js', async (_req, res) => {
       }
     }catch(_e){}
   }
+  var metaLoaded=false;
+  function loadMetaPixel(pixelId){
+    try{
+      if(!pixelId || metaLoaded) return;
+      metaLoaded=true;
+      !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
+      window.fbq('init', pixelId);
+    }catch(_e){}
+  }
+  function trackMeta(eventName, params, eventId, isCustom){
+    try{
+      if(!window.fbq) return;
+      if(isCustom) window.fbq('trackCustom', eventName, params || {}, eventId ? { eventID: eventId } : undefined);
+      else window.fbq('track', eventName, params || {}, eventId ? { eventID: eventId } : undefined);
+    }catch(_e){}
+  }
+  var gaLoaded=false;
+  function loadGa(measurementId){
+    try{
+      if(!measurementId || gaLoaded) return;
+      gaLoaded=true;
+      window.dataLayer = window.dataLayer || [];
+      window.gtag = window.gtag || function(){ window.dataLayer.push(arguments); };
+      var s=document.createElement('script');
+      s.async=true;
+      s.src='https://www.googletagmanager.com/gtag/js?id='+encodeURIComponent(measurementId);
+      var f=document.getElementsByTagName('script')[0];
+      if(f && f.parentNode) f.parentNode.insertBefore(s,f);
+      window.gtag('js', new Date());
+      window.gtag('config', measurementId, { send_page_view: false });
+    }catch(_e){}
+  }
+  function trackGa(eventName, params){
+    try{
+      if(!window.gtag) return;
+      window.gtag('event', eventName, params || {});
+    }catch(_e){}
+  }
   function getScrollPct(){
     try{
       var doc=document.documentElement;
@@ -120,6 +158,14 @@ router.get('/tracker.js', async (_req, res) => {
     };
     if(nav && loadTimeMs) payload.custom_data.load_time_ms = loadTimeMs;
     send(cfg.apiUrl, cfg.siteKey, payload);
+    if(cfg.metaPixelId){
+      loadMetaPixel(cfg.metaPixelId);
+      trackMeta('PageView', { content_type: payload.custom_data.content_type, page_title: payload.custom_data.page_title }, payload.event_id, false);
+    }
+    if(cfg.gaMeasurementId){
+      loadGa(cfg.gaMeasurementId);
+      trackGa('page_view', { page_location: location.href, page_title: document.title, page_path: location.pathname });
+    }
   }
   function pageEngagement(){
     try{
@@ -146,6 +192,14 @@ router.get('/tracker.js', async (_req, res) => {
         }
       };
       send(cfg.apiUrl, cfg.siteKey, payload);
+      if(cfg.metaPixelId){
+        loadMetaPixel(cfg.metaPixelId);
+        trackMeta('PageEngagement', payload.telemetry, payload.event_id, true);
+      }
+      if(cfg.gaMeasurementId){
+        loadGa(cfg.gaMeasurementId);
+        trackGa('page_engagement', payload.telemetry);
+      }
     }catch(_e){}
   }
   window.addEventListener('scroll', trackScroll, { passive:true });

@@ -1,5 +1,4 @@
 import express from 'express';
-import cors from 'cors';
 import bodyParser from 'body-parser';
 import ingestRoutes from './routes/ingest';
 import webhookRoutes from './routes/webhooks';
@@ -18,12 +17,17 @@ import { ensureSchema } from './db/schema';
 const app = express();
 const port = process.env.PORT || 3000;
 
-app.use(cors({
-  origin: true, // Allow all origins temporarily for debugging
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Site-Key', 'x-site-key']
-}));
+app.set('trust proxy', true);
+app.use((req, res, next) => {
+  const origin = req.headers.origin as string | undefined;
+  if (origin) res.setHeader('Access-Control-Allow-Origin', origin);
+  res.setHeader('Vary', 'Origin');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Site-Key,x-site-key');
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  return next();
+});
 app.use('/webhooks', bodyParser.raw({ type: 'application/json' }));
 app.use(bodyParser.json());
 

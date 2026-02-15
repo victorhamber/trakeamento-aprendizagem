@@ -18,6 +18,7 @@ export const SitePage = () => {
   const nav = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const id = Number(siteId);
+  const apiBaseUrl = (api.defaults.baseURL || 'http://localhost:3000').replace(/\/+$/, '');
   const [site, setSite] = useState<Site | null>(null);
   const initialTab = (searchParams.get('tab') as Tab) || 'snippet';
   const [tab, setTab] = useState<Tab>(initialTab);
@@ -488,7 +489,7 @@ export const SitePage = () => {
           {tab === 'ga' && (
             <form onSubmit={saveGa} className="space-y-4">
               <input type="hidden" name="enabled" value="false" />
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 max-w-xl">
                 <div className="md:col-span-2 flex items-center gap-2">
                   <input
                     id="ga-enabled"
@@ -508,14 +509,6 @@ export const SitePage = () => {
                     name="measurement_id"
                     defaultValue={ga?.measurement_id || ''}
                     className="mt-1 w-full rounded-lg bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm outline-none focus:border-blue-500/60"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-zinc-400">API Secret</label>
-                  <input
-                    name="api_secret"
-                    className="mt-1 w-full rounded-lg bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm outline-none focus:border-blue-500/60"
-                    placeholder={ga?.has_api_secret ? 'Já configurado (preencha para substituir)' : ''}
                   />
                 </div>
               </div>
@@ -617,11 +610,11 @@ export const SitePage = () => {
                     <input 
                       readOnly
                       className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-xs font-mono text-zinc-300 outline-none"
-                      value={webhookSecret ? `${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/webhooks/purchase?key=${site?.site_key}&token=${webhookSecret}` : 'Carregando...'}
+                      value={webhookSecret ? `${apiBaseUrl}/webhooks/purchase?key=${site?.site_key}&token=${webhookSecret}` : 'Carregando...'}
                     />
                     <button 
                       onClick={() => {
-                        const url = `${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/webhooks/purchase?key=${site?.site_key}&token=${webhookSecret}`;
+                        const url = `${apiBaseUrl}/webhooks/purchase?key=${site?.site_key}&token=${webhookSecret}`;
                         navigator.clipboard.writeText(url);
                         setFlash('URL copiada para a área de transferência!');
                       }}
