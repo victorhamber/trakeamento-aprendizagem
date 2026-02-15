@@ -59,6 +59,28 @@ export const SitePage = () => {
   );
   const [loading, setLoading] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
+  const reportSections = useMemo(() => {
+    const text = report?.analysis_text?.trim() || '';
+    if (!text) return [];
+    const parts = text.split(/\n##\s+/);
+    const sections: Array<{ title: string; body: string }> = [];
+    const hasLeading = !text.startsWith('## ') && parts[0]?.trim();
+    if (hasLeading) {
+      sections.push({ title: 'Resumo executivo', body: parts[0].trim() });
+    }
+    for (let i = 1; i < parts.length; i += 1) {
+      const part = parts[i]?.trim();
+      if (!part) continue;
+      const lines = part.split('\n');
+      const title = lines[0]?.trim() || 'Seção';
+      const body = lines.slice(1).join('\n').trim();
+      sections.push({ title, body });
+    }
+    if (!sections.length) {
+      sections.push({ title: 'Diagnóstico', body: text });
+    }
+    return sections;
+  }, [report?.analysis_text]);
 
   const loadSite = useCallback(async () => {
     const res = await api.get(`/sites/${id}`);
@@ -760,28 +782,47 @@ export const SitePage = () => {
                 </div>
               )}
               {report?.analysis_text && (
-                <div className="prose prose-invert max-w-none prose-headings:tracking-tight prose-h1:text-2xl prose-h2:text-xl prose-h3:text-lg prose-p:text-zinc-300 prose-strong:text-zinc-100 prose-a:text-blue-300 prose-a:no-underline hover:prose-a:text-blue-200">
-                  <ReactMarkdown
-                    components={{
-                      table: ({ children }) => (
-                        <div className="overflow-auto rounded-2xl border border-zinc-800/80 bg-zinc-950/40">
-                          <table className="w-full border-collapse">{children}</table>
+                <div className="grid gap-4">
+                  {reportSections.map((section, index) => (
+                    <div
+                      key={`${section.title}-${index}`}
+                      className="rounded-2xl border border-zinc-900/70 bg-zinc-950/40 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.03)]"
+                    >
+                      <div className="text-sm font-semibold text-white">{section.title}</div>
+                      {section.body && (
+                        <div className="mt-3 prose prose-invert max-w-none prose-headings:tracking-tight prose-h1:text-xl prose-h2:text-lg prose-h3:text-base prose-p:text-zinc-300 prose-strong:text-zinc-100 prose-a:text-blue-300 prose-a:no-underline hover:prose-a:text-blue-200">
+                          <ReactMarkdown
+                            components={{
+                              table: ({ children }) => (
+                                <div className="overflow-auto rounded-xl border border-zinc-800/80 bg-zinc-950/40">
+                                  <table className="w-full border-collapse">{children}</table>
+                                </div>
+                              ),
+                              thead: ({ children }) => <thead className="bg-zinc-900/40">{children}</thead>,
+                              th: ({ children }) => (
+                                <th className="text-left text-[11px] font-semibold text-zinc-200 px-3 py-2 border-b border-zinc-800/80">
+                                  {children}
+                                </th>
+                              ),
+                              td: ({ children }) => (
+                                <td className="text-sm text-zinc-300 px-3 py-2 border-b border-zinc-900/70">{children}</td>
+                              ),
+                              blockquote: ({ children }) => (
+                                <blockquote className="border-l-2 border-blue-500/60 bg-blue-500/10 rounded-lg px-4 py-3 text-zinc-200">
+                                  {children}
+                                </blockquote>
+                              ),
+                              ul: ({ children }) => <ul className="list-disc list-inside space-y-1">{children}</ul>,
+                              ol: ({ children }) => <ol className="list-decimal list-inside space-y-1">{children}</ol>,
+                              hr: () => <div className="my-5 h-px w-full bg-zinc-900/70" />,
+                            }}
+                          >
+                            {section.body}
+                          </ReactMarkdown>
                         </div>
-                      ),
-                      thead: ({ children }) => <thead className="bg-zinc-900/40">{children}</thead>,
-                      th: ({ children }) => (
-                        <th className="text-left text-xs font-semibold text-zinc-200 px-3 py-2 border-b border-zinc-800/80">
-                          {children}
-                        </th>
-                      ),
-                      td: ({ children }) => (
-                        <td className="text-sm text-zinc-300 px-3 py-2 border-b border-zinc-900/70">{children}</td>
-                      ),
-                      hr: () => <div className="my-6 h-px w-full bg-zinc-900/70" />,
-                    }}
-                  >
-                    {report.analysis_text}
-                  </ReactMarkdown>
+                      )}
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
