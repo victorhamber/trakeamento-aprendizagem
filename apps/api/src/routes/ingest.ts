@@ -48,6 +48,14 @@ router.post('/events', async (req, res) => {
         user_data: {
           client_ip_address: req.ip || event.user_data.client_ip_address,
           client_user_agent: req.headers['user-agent'] || event.user_data.client_user_agent,
+          em: event.user_data.em,
+          ph: event.user_data.ph,
+          fn: event.user_data.fn,
+          ln: event.user_data.ln,
+          ct: event.user_data.ct,
+          st: event.user_data.st,
+          zp: event.user_data.zp,
+          db: event.user_data.db,
           fbp: event.user_data.fbp,
           fbc: event.user_data.fbc,
           external_id: event.user_data.external_id ? CapiService.hash(event.user_data.external_id) : undefined

@@ -13,6 +13,12 @@ interface CapiEvent {
     client_user_agent: string;
     em?: string; // hash
     ph?: string; // hash
+    fn?: string; // hash
+    ln?: string; // hash
+    ct?: string; // hash
+    st?: string; // hash
+    zp?: string; // hash
+    db?: string; // hash
     fbp?: string;
     fbc?: string;
     external_id?: string; // hash

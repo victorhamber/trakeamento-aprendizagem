@@ -28,6 +28,134 @@ router.get('/tracker.js', async (_req, res) => {
     setCookie('_ta_eid', id, 60*60*24*365*2);
     return id;
   }
+  function toHex(buf){
+    try{
+      var b = new Uint8Array(buf);
+      var out='';
+      for(var i=0;i<b.length;i++){
+        out += ('00' + b[i].toString(16)).slice(-2);
+      }
+      return out;
+    }catch(_e){ return ''; }
+  }
+  function sha256Hex(str, cb){
+    try{
+      if(!str) return cb('');
+      if(window.crypto && window.crypto.subtle && window.TextEncoder){
+        var enc = new TextEncoder().encode(str);
+        window.crypto.subtle.digest('SHA-256', enc).then(function(buf){
+          cb(toHex(buf));
+        }).catch(function(){ cb(''); });
+        return;
+      }
+    }catch(_e){}
+    cb('');
+  }
+  function normEmail(v){
+    return (v||'').toString().trim().toLowerCase();
+  }
+  function normPhone(v){
+    var s=(v||'').toString().trim();
+    s=s.replace(/[^\d+]/g,'');
+    return s;
+  }
+  function normName(v){
+    return (v||'').toString().trim().toLowerCase();
+  }
+  function normCityState(v){
+    return (v||'').toString().trim().toLowerCase();
+  }
+  function normZip(v){
+    return (v||'').toString().trim().toLowerCase().replace(/\s+/g,'');
+  }
+  function normDob(v){
+    return (v||'').toString().trim().toLowerCase().replace(/[^\d]/g,'');
+  }
+  function setHashedCookie(cookieName, rawValue, normalizer){
+    try{
+      var normalized = normalizer ? normalizer(rawValue) : (rawValue||'').toString();
+      if(!normalized) return;
+      sha256Hex(normalized, function(hash){
+        if(hash) setCookie(cookieName, hash, 60*60*24*365*2);
+      });
+    }catch(_e){}
+  }
+  function getMetaUserDataFromCookies(){
+    var out = {};
+    var em = getCookie('_ta_em'); if(em) out.em = em;
+    var ph = getCookie('_ta_ph'); if(ph) out.ph = ph;
+    var fn = getCookie('_ta_fn'); if(fn) out.fn = fn;
+    var ln = getCookie('_ta_ln'); if(ln) out.ln = ln;
+    var ct = getCookie('_ta_ct'); if(ct) out.ct = ct;
+    var st = getCookie('_ta_st'); if(st) out.st = st;
+    var zp = getCookie('_ta_zp'); if(zp) out.zp = zp;
+    var db = getCookie('_ta_db'); if(db) out.db = db;
+    return out;
+  }
+  function observeFormsForPii(){
+    function maybeCaptureFromForm(form){
+      try{
+        if(!form || !form.querySelectorAll) return;
+        var inputs = form.querySelectorAll('input,select,textarea');
+        for(var i=0;i<inputs.length;i++){
+          var el = inputs[i];
+          if(!el) continue;
+          var name = ((el.name||'') + ' ' + (el.id||'') + ' ' + (el.getAttribute && el.getAttribute('autocomplete') || '')).toLowerCase();
+          var type = ((el.type||'') + '').toLowerCase();
+          var val = el.value;
+          if(!val) continue;
+
+          if(type==='email' || name.indexOf('email')>=0){
+            setHashedCookie('_ta_em', val, normEmail);
+            continue;
+          }
+          if(type==='tel' || name.indexOf('phone')>=0 || name.indexOf('telefone')>=0 || name.indexOf('cel')>=0 || name.indexOf('whats')>=0){
+            setHashedCookie('_ta_ph', val, normPhone);
+            continue;
+          }
+          if(name.indexOf('first')>=0 || name.indexOf('nome')>=0 || name.indexOf('firstname')>=0){
+            setHashedCookie('_ta_fn', val, normName);
+            continue;
+          }
+          if(name.indexOf('last')>=0 || name.indexOf('sobrenome')>=0 || name.indexOf('lastname')>=0){
+            setHashedCookie('_ta_ln', val, normName);
+            continue;
+          }
+          if(name.indexOf('city')>=0 || name.indexOf('cidade')>=0){
+            setHashedCookie('_ta_ct', val, normCityState);
+            continue;
+          }
+          if(name.indexOf('state')>=0 || name.indexOf('estado')>=0 || name.indexOf('uf')>=0){
+            setHashedCookie('_ta_st', val, normCityState);
+            continue;
+          }
+          if(name.indexOf('zip')>=0 || name.indexOf('cep')>=0 || name.indexOf('postal')>=0){
+            setHashedCookie('_ta_zp', val, normZip);
+            continue;
+          }
+          if(type==='date' || name.indexOf('birth')>=0 || name.indexOf('nasc')>=0 || name.indexOf('dob')>=0){
+            setHashedCookie('_ta_db', val, normDob);
+            continue;
+          }
+        }
+      }catch(_e){}
+    }
+
+    document.addEventListener('submit', function(e){
+      try{
+        maybeCaptureFromForm(e.target);
+      }catch(_e){}
+    }, true);
+
+    document.addEventListener('change', function(e){
+      try{
+        var el = e.target;
+        if(!el) return;
+        var form = el.form;
+        if(form) maybeCaptureFromForm(form);
+      }catch(_e){}
+    }, true);
+  }
   function getFbc(){
     var fbc = getCookie('_fbc');
     if(fbc) return fbc;
@@ -85,7 +213,8 @@ router.get('/tracker.js', async (_req, res) => {
       if(!pixelId || metaLoaded) return;
       metaLoaded=true;
       !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
-      window.fbq('init', pixelId);
+      var am = getMetaUserDataFromCookies();
+      window.fbq('init', pixelId, am);
     }catch(_e){}
   }
   function trackMeta(eventName, params, eventId, isCustom){
@@ -183,6 +312,7 @@ router.get('/tracker.js', async (_req, res) => {
     var loadTimeMs=nav ? (nav.domContentLoadedEventEnd - nav.navigationStart) : undefined;
     var utm = getUtm();
     var externalId = getOrCreateExternalId();
+    var metaUser = getMetaUserDataFromCookies();
 
     var payload={
       event_name:'PageView',
@@ -193,7 +323,15 @@ router.get('/tracker.js', async (_req, res) => {
         client_user_agent: navigator.userAgent,
         fbp: getCookie('_fbp'),
         fbc: getFbc(),
-        external_id: externalId
+        external_id: externalId,
+        em: metaUser.em,
+        ph: metaUser.ph,
+        fn: metaUser.fn,
+        ln: metaUser.ln,
+        ct: metaUser.ct,
+        st: metaUser.st,
+        zp: metaUser.zp,
+        db: metaUser.db
       },
       custom_data: {
          page_title: document.title,
@@ -221,7 +359,15 @@ router.get('/tracker.js', async (_req, res) => {
             referrer: payload.custom_data.referrer,
             fbp: payload.user_data.fbp,
             fbc: payload.user_data.fbc,
-            external_id: payload.user_data.external_id
+            external_id: payload.user_data.external_id,
+            em: payload.user_data.em,
+            ph: payload.user_data.ph,
+            fn: payload.user_data.fn,
+            ln: payload.user_data.ln,
+            ct: payload.user_data.ct,
+            st: payload.user_data.st,
+            zp: payload.user_data.zp,
+            db: payload.user_data.db
           },
           getTimeFields(payload.event_time),
           utm
@@ -242,6 +388,7 @@ router.get('/tracker.js', async (_req, res) => {
       var dwellMs=Math.max(0, Date.now()-startMs);
       var utm = getUtm();
       var externalId = getOrCreateExternalId();
+      var metaUser = getMetaUserDataFromCookies();
       var payload={
         event_name:'PageEngagement',
         event_time: Math.floor(Date.now()/1000),
@@ -251,7 +398,15 @@ router.get('/tracker.js', async (_req, res) => {
           client_user_agent: navigator.userAgent,
           fbp: getCookie('_fbp'),
           fbc: getFbc(),
-          external_id: externalId
+          external_id: externalId,
+          em: metaUser.em,
+          ph: metaUser.ph,
+          fn: metaUser.fn,
+          ln: metaUser.ln,
+          ct: metaUser.ct,
+          st: metaUser.st,
+          zp: metaUser.zp,
+          db: metaUser.db
         },
         telemetry:{
           dwell_time_ms: dwellMs,
@@ -275,7 +430,15 @@ router.get('/tracker.js', async (_req, res) => {
               client_user_agent: navigator.userAgent,
               fbp: payload.user_data.fbp,
               fbc: payload.user_data.fbc,
-              external_id: payload.user_data.external_id
+              external_id: payload.user_data.external_id,
+              em: payload.user_data.em,
+              ph: payload.user_data.ph,
+              fn: payload.user_data.fn,
+              ln: payload.user_data.ln,
+              ct: payload.user_data.ct,
+              st: payload.user_data.st,
+              zp: payload.user_data.zp,
+              db: payload.user_data.db
             },
             payload.telemetry || {},
             getTimeFields(payload.event_time),
@@ -294,6 +457,7 @@ router.get('/tracker.js', async (_req, res) => {
   window.addEventListener('scroll', trackScroll, { passive:true });
   trackClicks();
   autoTagLinks();
+  observeFormsForPii();
   if(document.readyState==='complete' || document.readyState==='interactive') pageView();
   else document.addEventListener('DOMContentLoaded', pageView);
   window.addEventListener('beforeunload', pageEngagement);
