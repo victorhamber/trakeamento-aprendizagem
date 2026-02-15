@@ -30,7 +30,7 @@ export class MetaMarketingService {
       try {
         const token = decryptString(enc).trim().replace(/\s+/g, '');
         if (this.isProbablyValidToken(token)) return { token, adAccountId };
-      } catch (e) {
+      } catch {
         continue;
       }
     }
@@ -73,7 +73,11 @@ export class MetaMarketingService {
     return this.asNumber(found?.value);
   }
 
-  public async syncDailyInsights(siteId: number, datePreset: string = 'last_7d') {
+  public async syncDailyInsights(
+    siteId: number,
+    datePreset: string = 'last_7d',
+    timeRange?: { since: string; until: string }
+  ) {
     const cfg = await this.getConfig(siteId);
     if (!cfg) return;
 
@@ -108,11 +112,11 @@ export class MetaMarketingService {
         params: {
           access_token: cfg.token,
           level: 'ad',
-          date_preset: datePreset,
+          ...(timeRange ? { time_range: timeRange } : { date_preset: datePreset }),
           time_increment: 1,
           fields: fields,
-          limit: 1000
-        }
+          limit: 1000,
+        },
       });
 
       const insights = response.data.data;
@@ -129,7 +133,11 @@ export class MetaMarketingService {
     }
   }
 
-  public async fetchCampaignInsights(siteId: number, datePreset: string = 'last_7d') {
+  public async fetchCampaignInsights(
+    siteId: number,
+    datePreset: string = 'last_7d',
+    timeRange?: { since: string; until: string }
+  ) {
     const cfg = await this.getConfig(siteId);
     if (!cfg) return [];
 
@@ -139,6 +147,7 @@ export class MetaMarketingService {
       'spend',
       'impressions',
       'clicks',
+      'unique_clicks',
       'cpm',
       'cpc',
       'ctr',
@@ -152,7 +161,7 @@ export class MetaMarketingService {
       params: {
         access_token: cfg.token,
         level: 'campaign',
-        date_preset: datePreset,
+        ...(timeRange ? { time_range: timeRange } : { date_preset: datePreset }),
         fields: fields,
         limit: 500,
       },
@@ -165,6 +174,7 @@ export class MetaMarketingService {
       const spend = this.asNumber(row.spend) || 0;
       const impressions = this.asInt(row.impressions) || 0;
       const clicks = this.asInt(row.clicks) || 0;
+      const uniqueClicks = this.asInt(row.unique_clicks) || 0;
       const ctr = this.asNumber(row.ctr) ?? (impressions > 0 ? (clicks / impressions) * 100 : 0);
       const cpc = this.asNumber(row.cpc) ?? (clicks > 0 ? spend / clicks : 0);
       const cpm = this.asNumber(row.cpm) ?? (impressions > 0 ? (spend / impressions) * 1000 : 0);
@@ -172,6 +182,7 @@ export class MetaMarketingService {
         this.asInt(row.outbound_clicks) ?? this.getActionCount(actions, 'outbound_click') ?? 0;
       const landingPageViews = this.getActionCount(actions, 'landing_page_view') ?? 0;
       const leads = this.getActionCount(actions, 'lead') ?? 0;
+      const initiatesCheckout = this.getActionCount(actions, 'initiate_checkout') ?? 0;
       const purchases = this.getActionCount(actions, 'purchase') ?? 0;
       const costPerLead = this.getCostPerAction(costs, 'lead');
       const costPerPurchase = this.getCostPerAction(costs, 'purchase');
@@ -182,12 +193,14 @@ export class MetaMarketingService {
         spend,
         impressions,
         clicks,
+        unique_clicks: uniqueClicks,
         ctr,
         cpc,
         cpm,
         outbound_clicks: outboundClicks,
         landing_page_views: landingPageViews,
         leads,
+        initiates_checkout: initiatesCheckout,
         purchases,
         cost_per_lead: costPerLead,
         cost_per_purchase: costPerPurchase,

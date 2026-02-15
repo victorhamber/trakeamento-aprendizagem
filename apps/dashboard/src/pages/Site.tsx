@@ -33,12 +33,14 @@ type CampaignMetrics = {
   spend: number;
   impressions: number;
   clicks: number;
+  unique_clicks: number;
   ctr: number;
   cpc: number;
   cpm: number;
   outbound_clicks: number;
   landing_page_views: number;
   leads: number;
+  initiates_checkout: number;
   purchases: number;
 };
 
@@ -68,11 +70,16 @@ export const SitePage = () => {
   });
   const [webhookSecret, setWebhookSecret] = useState<string | null>(null);
   const [report, setReport] = useState<DiagnosisReport | null>(null);
-  const [campaigns, setCampaigns] = useState<Array<{ id: string; name: string; status: string; effective_status?: string }>>(
-    []
-  );
+  const [campaigns, setCampaigns] = useState<
+    Array<{ id: string; name: string; status: string; effective_status?: string; objective?: string | null }>
+  >([]);
   const [campaignMetrics, setCampaignMetrics] = useState<Record<string, CampaignMetrics>>({});
   const [selectedCampaignId, setSelectedCampaignId] = useState<string>('');
+  const [metricsPreset, setMetricsPreset] = useState<
+    'today' | 'yesterday' | 'last_7d' | 'last_14d' | 'last_30d' | 'maximum' | 'custom'
+  >('last_7d');
+  const [metricsSince, setMetricsSince] = useState('');
+  const [metricsUntil, setMetricsUntil] = useState('');
   const [loading, setLoading] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
   const reportSections = useMemo(() => {
@@ -212,7 +219,18 @@ export const SitePage = () => {
   }, [id]);
 
   const loadCampaignMetrics = useCallback(async () => {
-    const res = await api.get('/meta/campaigns/metrics', { params: { site_id: id, days: 7 } });
+    if (metricsPreset === 'custom' && (!metricsSince || !metricsUntil)) {
+      setFlash('Defina o período personalizado.');
+      return;
+    }
+    const params: Record<string, string | number> = { site_id: id };
+    if (metricsPreset === 'custom') {
+      params.since = metricsSince;
+      params.until = metricsUntil;
+    } else {
+      params.date_preset = metricsPreset;
+    }
+    const res = await api.get('/meta/campaigns/metrics', { params });
     if (res.data?.meta_error) {
       setFlash(`Meta: ${res.data.meta_error}`);
     }
@@ -221,7 +239,7 @@ export const SitePage = () => {
       return acc;
     }, {});
     setCampaignMetrics(map);
-  }, [id]);
+  }, [id, metricsPreset, metricsSince, metricsUntil]);
 
   useEffect(() => {
     if (!site) return;
@@ -241,6 +259,13 @@ export const SitePage = () => {
         .catch(() => {});
     }
   }, [tab, site, loadSnippet, loadMeta, loadCampaigns, loadCampaignMetrics, loadGa, loadMatching, loadWebhookSecret]);
+
+  useEffect(() => {
+    if (!site) return;
+    if (tab !== 'campaigns' && tab !== 'reports') return;
+    if (metricsPreset === 'custom' && (!metricsSince || !metricsUntil)) return;
+    loadCampaignMetrics().catch(() => {});
+  }, [site, tab, metricsPreset, metricsSince, metricsUntil, loadCampaignMetrics]);
 
   useEffect(() => {
     if (selectedCampaignId && !campaigns.find((c) => c.id === selectedCampaignId)) {
@@ -363,9 +388,56 @@ export const SitePage = () => {
     new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 2 }).format(value);
   const formatPercent = (value: number) =>
     new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
+  const getResultValue = (
+    campaign: { objective?: string | null } | null | undefined,
+    metrics: CampaignMetrics | undefined
+  ) => {
+    if (!metrics) return 0;
+    const objective = (campaign?.objective || '').toLowerCase();
+    if (objective.includes('lead')) return metrics.leads;
+    if (objective.includes('sale') || objective.includes('purchase')) return metrics.purchases;
+    if (objective.includes('convers')) return metrics.purchases;
+    if (objective.includes('traffic')) return metrics.landing_page_views;
+    if (objective.includes('engagement')) return metrics.outbound_clicks || metrics.clicks;
+    if (objective.includes('aware') || objective.includes('reach')) return metrics.impressions;
+    return metrics.leads;
+  };
 
   const canGenerate = !!site && (campaigns.length === 0 || !!selectedCampaignId);
   const selectedCampaign = selectedCampaignId ? campaigns.find((c) => c.id === selectedCampaignId) : null;
+  const periodSelector = (
+    <div className="flex flex-wrap items-center gap-2">
+      <select
+        value={metricsPreset}
+        onChange={(e) => setMetricsPreset(e.target.value as typeof metricsPreset)}
+        className="rounded-lg bg-zinc-900 border border-zinc-800 px-3 py-2 text-xs text-zinc-200"
+      >
+        <option value="today">Hoje</option>
+        <option value="yesterday">Ontem</option>
+        <option value="last_7d">7 dias</option>
+        <option value="last_14d">14 dias</option>
+        <option value="last_30d">30 dias</option>
+        <option value="maximum">Máximo</option>
+        <option value="custom">Personalizado</option>
+      </select>
+      {metricsPreset === 'custom' && (
+        <div className="flex items-center gap-2">
+          <input
+            type="date"
+            value={metricsSince}
+            onChange={(e) => setMetricsSince(e.target.value)}
+            className="rounded-lg bg-zinc-900 border border-zinc-800 px-3 py-2 text-xs text-zinc-200"
+          />
+          <input
+            type="date"
+            value={metricsUntil}
+            onChange={(e) => setMetricsUntil(e.target.value)}
+            className="rounded-lg bg-zinc-900 border border-zinc-800 px-3 py-2 text-xs text-zinc-200"
+          />
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <Layout
@@ -724,16 +796,19 @@ export const SitePage = () => {
                     Ative/pausa campanhas pelo painel. Depois, use o Diagnóstico IA para recomendações.
                   </div>
                 </div>
-                <button
-                  onClick={() =>
-                    Promise.all([loadCampaigns().catch(() => {}), loadCampaignMetrics().catch(() => {})]).catch(
-                      () => {}
-                    )
-                  }
-                  className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 px-4 py-2 rounded-lg text-sm"
-                >
-                  Atualizar
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  {periodSelector}
+                  <button
+                    onClick={() =>
+                      Promise.all([loadCampaigns().catch(() => {}), loadCampaignMetrics().catch(() => {})]).catch(
+                        () => {}
+                      )
+                    }
+                    className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 px-4 py-2 rounded-lg text-sm"
+                  >
+                    Atualizar
+                  </button>
+                </div>
               </div>
 
               {!meta?.has_facebook_connection && (
@@ -749,15 +824,20 @@ export const SitePage = () => {
               )}
 
               {meta?.has_facebook_connection && meta?.ad_account_id && (
-                <div className="rounded-xl border border-zinc-900 bg-zinc-950 overflow-hidden">
-                  <div className="grid grid-cols-[minmax(220px,1fr)_120px_120px_110px_90px_90px_90px_120px] gap-2 px-4 py-3 text-[11px] text-zinc-500 border-b border-zinc-900">
+                <div className="rounded-xl border border-zinc-900 bg-zinc-950 overflow-x-auto">
+                  <div className="grid grid-cols-[minmax(220px,1fr)_110px_110px_110px_90px_90px_90px_90px_110px_110px_110px_90px_110px_120px] gap-2 px-4 py-3 text-[11px] text-zinc-500 border-b border-zinc-900">
                     <div>Campanha</div>
                     <div>Status</div>
-                    <div>Spend</div>
+                    <div>Valor usado</div>
                     <div>Impressões</div>
                     <div>Cliques</div>
                     <div>CTR</div>
                     <div>CPC</div>
+                    <div>CPM</div>
+                    <div>Resultado</div>
+                    <div>Finalização</div>
+                    <div>Compra</div>
+                    <div>Connect Rate</div>
                     <div className="text-right">Ação</div>
                   </div>
                   {campaigns.length === 0 && (
@@ -766,7 +846,7 @@ export const SitePage = () => {
                   {campaigns.map((c) => (
                     <div
                       key={c.id}
-                      className="grid grid-cols-[minmax(220px,1fr)_120px_120px_110px_90px_90px_90px_120px] gap-2 px-4 py-3 text-sm border-b border-zinc-900 last:border-b-0"
+                      className="grid grid-cols-[minmax(220px,1fr)_110px_110px_110px_90px_90px_90px_90px_110px_110px_110px_90px_110px_120px] gap-2 px-4 py-3 text-sm border-b border-zinc-900 last:border-b-0"
                     >
                       <div>
                         <div className="text-zinc-100">{c.name}</div>
@@ -787,6 +867,27 @@ export const SitePage = () => {
                       </div>
                       <div className="text-zinc-200 text-xs">
                         {campaignMetrics[c.id] ? formatMoney(campaignMetrics[c.id].cpc) : '—'}
+                      </div>
+                      <div className="text-zinc-200 text-xs">
+                        {campaignMetrics[c.id] ? formatMoney(campaignMetrics[c.id].cpm) : '—'}
+                      </div>
+                      <div className="text-zinc-200 text-xs">
+                        {campaignMetrics[c.id] ? formatNumber(getResultValue(c, campaignMetrics[c.id])) : '—'}
+                      </div>
+                      <div className="text-zinc-200 text-xs">
+                        {campaignMetrics[c.id] ? formatNumber(campaignMetrics[c.id].initiates_checkout) : '—'}
+                      </div>
+                      <div className="text-zinc-200 text-xs">
+                        {campaignMetrics[c.id] ? formatNumber(campaignMetrics[c.id].purchases) : '—'}
+                      </div>
+                      <div className="text-zinc-200 text-xs">
+                        {campaignMetrics[c.id]
+                          ? `${formatPercent(
+                              campaignMetrics[c.id].unique_clicks > 0
+                                ? (campaignMetrics[c.id].landing_page_views / campaignMetrics[c.id].unique_clicks) * 100
+                                : 0
+                            )}%`
+                          : '—'}
                       </div>
                       <div className="flex justify-end">
                         {c.status === 'ACTIVE' ? (
@@ -900,10 +1001,19 @@ export const SitePage = () => {
                       {selectedCampaignId ? 'Pronto para gerar o diagnóstico.' : 'Obrigatório selecionar antes de gerar.'}
                     </div>
                   </div>
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    {periodSelector}
+                    <button
+                      onClick={() => loadCampaignMetrics().catch(() => {})}
+                      className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 px-4 py-2 rounded-lg text-sm"
+                    >
+                      Atualizar
+                    </button>
+                  </div>
                   {selectedCampaignId && campaignMetrics[selectedCampaignId] && (
-                    <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3 text-xs text-zinc-300">
+                    <div className="mt-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 text-xs text-zinc-300">
                       <div className="rounded-xl border border-zinc-900/70 bg-zinc-950/60 p-3">
-                        <div className="text-zinc-500">Spend</div>
+                        <div className="text-zinc-500">Valor usado</div>
                         <div className="text-zinc-100 text-sm">
                           {formatMoney(campaignMetrics[selectedCampaignId].spend)}
                         </div>
@@ -924,6 +1034,43 @@ export const SitePage = () => {
                         <div className="text-zinc-500">CTR</div>
                         <div className="text-zinc-100 text-sm">
                           {formatPercent(campaignMetrics[selectedCampaignId].ctr)}%
+                        </div>
+                      </div>
+                      <div className="rounded-xl border border-zinc-900/70 bg-zinc-950/60 p-3">
+                        <div className="text-zinc-500">CPM</div>
+                        <div className="text-zinc-100 text-sm">
+                          {formatMoney(campaignMetrics[selectedCampaignId].cpm)}
+                        </div>
+                      </div>
+                      <div className="rounded-xl border border-zinc-900/70 bg-zinc-950/60 p-3">
+                        <div className="text-zinc-500">Resultado</div>
+                        <div className="text-zinc-100 text-sm">
+                          {formatNumber(getResultValue(selectedCampaign, campaignMetrics[selectedCampaignId]))}
+                        </div>
+                      </div>
+                      <div className="rounded-xl border border-zinc-900/70 bg-zinc-950/60 p-3">
+                        <div className="text-zinc-500">Finalização</div>
+                        <div className="text-zinc-100 text-sm">
+                          {formatNumber(campaignMetrics[selectedCampaignId].initiates_checkout)}
+                        </div>
+                      </div>
+                      <div className="rounded-xl border border-zinc-900/70 bg-zinc-950/60 p-3">
+                        <div className="text-zinc-500">Compra</div>
+                        <div className="text-zinc-100 text-sm">
+                          {formatNumber(campaignMetrics[selectedCampaignId].purchases)}
+                        </div>
+                      </div>
+                      <div className="rounded-xl border border-zinc-900/70 bg-zinc-950/60 p-3">
+                        <div className="text-zinc-500">Connect Rate</div>
+                        <div className="text-zinc-100 text-sm">
+                          {formatPercent(
+                            campaignMetrics[selectedCampaignId].unique_clicks > 0
+                              ? (campaignMetrics[selectedCampaignId].landing_page_views /
+                                  campaignMetrics[selectedCampaignId].unique_clicks) *
+                                  100
+                              : 0
+                          )}
+                          %
                         </div>
                       </div>
                     </div>

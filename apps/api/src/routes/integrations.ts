@@ -157,7 +157,7 @@ router.get('/sites/:siteId/meta/campaigns', requireAuth, async (req, res) => {
   }
 
   const response = await axios.get(`https://graph.facebook.com/${fbApiVersion}/${encodeURIComponent(finalAdAccountId)}/campaigns`, {
-    params: { fields: 'id,name,status,effective_status', access_token: token, limit: 200 },
+    params: { fields: 'id,name,status,effective_status,objective', access_token: token, limit: 200 },
   });
 
   return res.json({ campaigns: response.data.data || [] });
