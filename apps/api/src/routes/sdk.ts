@@ -419,6 +419,9 @@ router.get('/tracker.js', async (_req, res) => {
         'PageView',
         Object.assign(
           {
+            ta_source: 'tracking_suite',
+            ta_site_key: cfg.siteKey,
+            ta_event_id: payload.event_id,
             event_url: (location.origin || '') + (location.pathname || '/'),
             event_source_url: payload.event_source_url,
             traffic_source: document.referrer || '',
@@ -495,6 +498,9 @@ router.get('/tracker.js', async (_req, res) => {
           'PageEngagement',
           Object.assign(
             {
+              ta_source: 'tracking_suite',
+              ta_site_key: cfg.siteKey,
+              ta_event_id: payload.event_id,
               event_url: (location.origin || '') + (location.pathname || '/'),
               event_source_url: payload.event_source_url,
               traffic_source: document.referrer || '',
