@@ -264,183 +264,224 @@ export const SitePage = () => {
               <div className="text-sm text-zinc-300 mb-3">
                 Cole este snippet no seu site (antes do fechamento do &lt;/head&gt;).
               </div>
-              <pre className="text-xs bg-zinc-900 border border-zinc-800 p-4 rounded-xl overflow-auto">
-                <code>{snippet}</code>
-              </pre>
+              <div className="relative group">
+                <pre className="text-xs bg-zinc-900 border border-zinc-800 p-4 rounded-xl overflow-auto custom-scrollbar">
+                  <code>{snippet}</code>
+                </pre>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(snippet);
+                    setFlash('Código copiado!');
+                  }}
+                  className="absolute top-2 right-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 p-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                  title="Copiar código"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                </button>
+              </div>
             </div>
           )}
 
           {tab === 'meta' && (
-            <form onSubmit={saveMeta} className="space-y-4">
+            <form onSubmit={saveMeta} className="max-w-3xl space-y-8">
               <input type="hidden" name="enabled" value="false" />
-              <div className="rounded-xl border border-zinc-900 bg-zinc-950 p-4">
-                <div className="flex items-center justify-between gap-3">
+              
+              {/* Conexão */}
+              <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
+                <div className="flex items-center justify-between gap-4">
                   <div>
-                    <div className="text-sm font-semibold">Conexão com Facebook</div>
-                    <div className="mt-1 text-xs text-zinc-500">
-                      Faça login para selecionar Conta de Anúncio e Pixel diretamente no painel.
-                    </div>
-                    <div className="mt-2 text-xs">
-                      {meta?.has_facebook_connection ? (
-                        <span className="text-emerald-400">Conectado</span>
-                      ) : (
-                        <span className="text-zinc-400">Desconectado</span>
-                      )}
+                    <h3 className="text-base font-medium text-zinc-100">Conexão com Facebook</h3>
+                    <p className="mt-1 text-sm text-zinc-400">
+                      Conecte sua conta para listar e selecionar contas de anúncio e pixels.
+                    </p>
+                    <div className="mt-3 flex items-center gap-2">
+                      <div className={`w-2 h-2 rounded-full ${meta?.has_facebook_connection ? 'bg-emerald-500' : 'bg-zinc-600'}`} />
+                      <span className="text-sm font-medium text-zinc-300">
+                        {meta?.has_facebook_connection ? 'Conectado' : 'Desconectado'}
+                      </span>
                     </div>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex gap-3">
                     {!meta?.has_facebook_connection ? (
                       <button
                         type="button"
                         onClick={connectFacebook}
-                        className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm"
+                        className="bg-[#1877F2] hover:bg-[#166fe5] text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors"
                       >
-                        Conectar
+                        Conectar com Facebook
                       </button>
                     ) : (
                       <button
                         type="button"
                         disabled={loading}
                         onClick={disconnectFacebook}
-                        className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 px-4 py-2 rounded-lg disabled:opacity-50 text-sm"
+                        className="bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-300 px-5 py-2.5 rounded-lg disabled:opacity-50 text-sm font-medium transition-colors"
                       >
                         Desconectar
                       </button>
                     )}
                   </div>
                 </div>
+
                 {meta?.has_facebook_connection && (
-                  <div className="mt-4 flex flex-wrap gap-3 items-end">
-                    <button
-                      type="button"
-                      onClick={() => loadAdAccounts().catch(() => {})}
-                      className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 px-4 py-2 rounded-lg text-sm"
-                    >
-                      Carregar contas
-                    </button>
-                    <div className="text-xs text-zinc-500">
-                      Selecione uma conta e carregue pixels para preencher automaticamente.
+                  <div className="mt-6 pt-6 border-t border-zinc-800">
+                    <div className="flex items-center justify-between mb-4">
+                       <label className="text-sm font-medium text-zinc-200">Contas de Anúncio</label>
+                       <button
+                          type="button"
+                          onClick={() => loadAdAccounts().catch(() => {})}
+                          className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"></path><path d="M16 16h5v5"></path></svg>
+                          Atualizar lista
+                        </button>
                     </div>
+                    
+                    {adAccounts.length === 0 && (
+                       <div className="text-sm text-zinc-500 italic py-2">
+                          Nenhuma conta carregada. Clique em atualizar.
+                       </div>
+                    )}
+
+                    <div className="space-y-2 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
+                       {adAccounts.map(acc => {
+                          const isSelected = meta?.ad_account_id === (acc.account_id || acc.id);
+                          return (
+                             <label 
+                                key={acc.id} 
+                                className={`flex items-center justify-between p-4 rounded-xl border cursor-pointer transition-all ${
+                                  isSelected 
+                                    ? 'bg-blue-500/10 border-blue-500/50' 
+                                    : 'bg-zinc-900 border-zinc-800 hover:border-zinc-700'
+                                }`}
+                             >
+                                <div>
+                                   <div className={`text-sm font-medium ${isSelected ? 'text-blue-200' : 'text-zinc-300'}`}>
+                                      {acc.business ? `${acc.name} (${acc.business.name})` : acc.name}
+                                   </div>
+                                   <div className="text-xs text-zinc-500 font-mono mt-0.5">
+                                      ID: {acc.account_id || acc.id}
+                                   </div>
+                                </div>
+                                
+                                <div className="relative">
+                                   <input 
+                                      type="radio" 
+                                      name="ad_account_id" 
+                                      className="sr-only peer"
+                                      value={acc.account_id || acc.id}
+                                      checked={isSelected}
+                                      onChange={(e) => {
+                                         const val = e.target.value;
+                                         setMeta((prev: any) => ({ ...prev, ad_account_id: val }));
+                                         loadPixels(val).catch(() => {});
+                                      }}
+                                   />
+                                   <div className={`w-5 h-5 rounded-full border flex items-center justify-center ${
+                                      isSelected ? 'border-blue-500 bg-blue-500' : 'border-zinc-600'
+                                   }`}>
+                                      {isSelected && <div className="w-2 h-2 bg-white rounded-full" />}
+                                   </div>
+                                </div>
+                             </label>
+                          );
+                       })}
+                    </div>
+                    {/* Hidden input fallback */}
+                    <input type="hidden" name="ad_account_id" value={meta?.ad_account_id || ''} />
                   </div>
                 )}
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="md:col-span-2 flex items-center gap-2">
+              {/* Configurações do Pixel */}
+              <div className="space-y-6">
+                <div className="flex items-center gap-3 pb-4 border-b border-zinc-800">
                   <input
                     id="meta-enabled"
                     name="enabled"
                     type="checkbox"
                     value="true"
                     defaultChecked={meta?.enabled ?? true}
-                    className="h-4 w-4"
+                    className="w-5 h-5 rounded border-zinc-700 bg-zinc-800 text-blue-600 focus:ring-blue-500/40"
                   />
-                  <label htmlFor="meta-enabled" className="text-sm text-zinc-200">
-                    Integração Meta ativa
-                  </label>
-                </div>
-
-                <div>
-                  <label className="block text-xs text-zinc-400">Pixel ID</label>
-                  <input
-                    name="pixel_id"
-                    defaultValue={meta?.pixel_id || ''}
-                    className="mt-1 w-full rounded-lg bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm outline-none focus:border-blue-500/60"
-                  />
-                  {pixels.length > 0 && (
-                    <div className="mt-2">
-                      <label className="block text-xs text-zinc-500">Sugestões</label>
-                      <select
-                        className="mt-1 w-full rounded-lg bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm outline-none focus:border-blue-500/60"
-                        onChange={(e) => {
-                          const el = e.target.value;
-                          const input = document.querySelector<HTMLInputElement>('input[name="pixel_id"]');
-                          if (input) input.value = el;
-                        }}
-                        defaultValue=""
-                      >
-                        <option value="" disabled>
-                          Selecionar Pixel
-                        </option>
-                        {pixels.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.name} ({p.id})
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-                </div>
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-zinc-300 mb-3">Contas de Anúncio (Meta)</label>
-                  
-                  {meta?.has_facebook_connection && adAccounts.length === 0 && (
-                     <div className="text-sm text-zinc-500 italic mb-2">
-                        Nenhuma conta encontrada. Clique em "Carregar contas" acima.
-                     </div>
-                  )}
-
-                  <div className="space-y-2 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
-                     {adAccounts.map(acc => {
-                        const isSelected = meta?.ad_account_id === (acc.account_id || acc.id);
-                        return (
-                           <div key={acc.id} className={`flex items-center justify-between p-3 rounded-lg border ${isSelected ? 'bg-blue-900/20 border-blue-500/50' : 'bg-zinc-900 border-zinc-800'}`}>
-                              <div>
-                                 <div className="text-sm font-medium text-zinc-200">
-                                    {acc.business ? `${acc.name} (${acc.business.name})` : acc.name}
-                                 </div>
-                                 <div className="text-xs text-zinc-500 font-mono">
-                                    {acc.account_id || acc.id}
-                                 </div>
-                              </div>
-                              
-                              <label className="relative inline-flex items-center cursor-pointer">
-                                 <input 
-                                    type="radio" 
-                                    name="ad_account_id" 
-                                    className="sr-only peer"
-                                    value={acc.account_id || acc.id}
-                                    checked={isSelected}
-                                    onChange={(e) => {
-                                       const val = e.target.value;
-                                       // Update local state immediately for visual feedback
-                                       setMeta((prev: any) => ({ ...prev, ad_account_id: val }));
-                                       loadPixels(val).catch(() => {});
-                                    }}
-                                 />
-                                 <div className="w-11 h-6 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                              </label>
-                           </div>
-                        );
-                     })}
+                  <div>
+                    <label htmlFor="meta-enabled" className="text-base font-medium text-zinc-200 block">
+                      Ativar Rastreamento
+                    </label>
+                    <span className="text-xs text-zinc-500">Habilita o envio de eventos para o Pixel e API de Conversões</span>
                   </div>
-                  
-                  {/* Hidden input to ensure form submission works */}
-                  <input type="hidden" name="ad_account_id" value={meta?.ad_account_id || ''} />
                 </div>
-                <div>
-                  <label className="block text-xs text-zinc-400">CAPI Token</label>
-                  <input
-                    name="capi_token"
-                    className="mt-1 w-full rounded-lg bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm outline-none focus:border-blue-500/60"
-                    placeholder={meta?.has_capi_token ? 'Já configurado (preencha para substituir)' : ''}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-zinc-400">Marketing Token</label>
-                  <input
-                    name="marketing_token"
-                    className="mt-1 w-full rounded-lg bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm outline-none focus:border-blue-500/60"
-                    placeholder={meta?.has_marketing_token ? 'Já configurado (preencha para substituir)' : ''}
-                  />
+
+                <div className="grid gap-6">
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-300 mb-2">Pixel ID</label>
+                    <input
+                      name="pixel_id"
+                      defaultValue={meta?.pixel_id || ''}
+                      placeholder="Ex: 1234567890"
+                      className="w-full rounded-lg bg-zinc-900 border border-zinc-800 px-4 py-2.5 text-sm text-zinc-200 outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/50 transition-all placeholder:text-zinc-600"
+                    />
+                    {pixels.length > 0 && (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <span className="text-xs text-zinc-500 py-1">Sugestões:</span>
+                        {pixels.map((p) => (
+                          <button
+                            type="button"
+                            key={p.id}
+                            onClick={() => {
+                              const input = document.querySelector<HTMLInputElement>('input[name="pixel_id"]');
+                              if (input) input.value = p.id;
+                            }}
+                            className="text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-2 py-1 rounded-md border border-zinc-700 transition-colors"
+                          >
+                            {p.name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-sm font-medium text-zinc-300 mb-2">
+                        CAPI Token <span className="text-zinc-500 font-normal">(Opcional)</span>
+                      </label>
+                      <input
+                        name="capi_token"
+                        type="password"
+                        className="w-full rounded-lg bg-zinc-900 border border-zinc-800 px-4 py-2.5 text-sm text-zinc-200 outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/50 transition-all placeholder:text-zinc-600"
+                        placeholder={meta?.has_capi_token ? '•••••••• (Configurado)' : 'Token de Acesso (EAA...)'}
+                      />
+                      <p className="mt-1.5 text-xs text-zinc-500">
+                        Recomendado para rastreamento server-side (anti-adblock).
+                      </p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-zinc-300 mb-2">
+                        Marketing Token <span className="text-zinc-500 font-normal">(Opcional)</span>
+                      </label>
+                      <input
+                        name="marketing_token"
+                        type="password"
+                        className="w-full rounded-lg bg-zinc-900 border border-zinc-800 px-4 py-2.5 text-sm text-zinc-200 outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/50 transition-all placeholder:text-zinc-600"
+                        placeholder={meta?.has_marketing_token ? '•••••••• (Configurado)' : 'Token de Leitura'}
+                      />
+                      <p className="mt-1.5 text-xs text-zinc-500">
+                        Usado apenas se a conexão automática falhar.
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </div>
-              <button
-                disabled={loading}
-                className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg disabled:opacity-50 text-sm"
-              >
-                {loading ? 'Salvando…' : 'Salvar Meta'}
-              </button>
+
+              <div className="pt-4">
+                <button
+                  disabled={loading}
+                  className="w-full sm:w-auto bg-blue-600 hover:bg-blue-500 text-white px-8 py-2.5 rounded-lg disabled:opacity-50 text-sm font-medium transition-all shadow-lg shadow-blue-900/20"
+                >
+                  {loading ? 'Salvando...' : 'Salvar Configurações'}
+                </button>
+              </div>
             </form>
           )}
 
