@@ -15,7 +15,8 @@ router.post('/sync', requireAuth, async (req, res) => {
     const owns = await pool.query('SELECT id FROM sites WHERE id = $1 AND account_id = $2', [siteId, auth.accountId]);
     if (!owns.rowCount) return res.status(404).json({ error: 'Site not found' });
 
-    const result = await metaMarketingService.syncDailyInsights(siteId, date_preset || 'yesterday');
+    const preset = typeof date_preset === 'string' && date_preset.trim() ? date_preset.trim() : 'last_7d';
+    const result = await metaMarketingService.syncDailyInsights(siteId, preset);
     res.json({ status: 'success', synced_records: result?.count });
   } catch (err: any) {
     res.status(500).json({ error: err.message });

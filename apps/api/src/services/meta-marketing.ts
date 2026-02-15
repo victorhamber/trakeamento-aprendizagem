@@ -14,7 +14,15 @@ export class MetaMarketingService {
     const row = result.rows[0];
     if (row.enabled === false) return null;
     if (!row.marketing_token_enc || !row.ad_account_id) return null;
-    return { token: decryptString(row.marketing_token_enc as string), adAccountId: row.ad_account_id as string };
+    const adAccountId = this.normalizeAdAccountId(String(row.ad_account_id || ''));
+    if (!adAccountId) return null;
+    return { token: decryptString(row.marketing_token_enc as string), adAccountId };
+  }
+
+  private normalizeAdAccountId(value: string): string | null {
+    const trimmed = String(value || '').trim();
+    if (!trimmed) return null;
+    return trimmed.startsWith('act_') ? trimmed : `act_${trimmed}`;
   }
 
   private asNumber(v: any): number | null {
@@ -46,7 +54,7 @@ export class MetaMarketingService {
     return this.asNumber(found?.value);
   }
 
-  public async syncDailyInsights(siteId: number, datePreset: string = 'yesterday') {
+  public async syncDailyInsights(siteId: number, datePreset: string = 'last_7d') {
     const cfg = await this.getConfig(siteId);
     if (!cfg) return;
 
@@ -82,6 +90,7 @@ export class MetaMarketingService {
           access_token: cfg.token,
           level: 'ad',
           date_preset: datePreset,
+          time_increment: 1,
           fields: fields,
           limit: 1000
         }

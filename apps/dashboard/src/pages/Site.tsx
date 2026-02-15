@@ -341,9 +341,9 @@ export const SitePage = () => {
               <div className="text-sm text-zinc-300 mb-3">
                 Cole este snippet no seu site (antes do fechamento do &lt;/head&gt;).
               </div>
-              <div className="relative group">
-                <pre className="text-xs bg-zinc-900 border border-zinc-800 p-4 rounded-xl overflow-auto custom-scrollbar">
-                  <code>{snippet}</code>
+              <div className="relative group overflow-x-hidden">
+                <pre className="text-xs bg-zinc-900 border border-zinc-800 p-4 rounded-xl w-full max-w-full max-h-64 overflow-y-auto overflow-x-hidden custom-scrollbar">
+                  <code className="block w-full max-w-full whitespace-pre-wrap break-all">{snippet}</code>
                 </pre>
                 <button
                   onClick={() => {
