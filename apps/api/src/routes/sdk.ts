@@ -14,6 +14,41 @@ router.get('/tracker.js', async (_req, res) => {
     var parts=value.split('; '+name+'=');
     if(parts.length===2) return parts.pop().split(';').shift();
   }
+  function setCookie(name, value, maxAgeSeconds){
+    try{
+      var cookie = name + '=' + encodeURIComponent(value) + '; path=/; samesite=lax';
+      if(maxAgeSeconds) cookie += '; max-age=' + String(maxAgeSeconds);
+      document.cookie = cookie;
+    }catch(_e){}
+  }
+  function getOrCreateExternalId(){
+    var v = getCookie('_ta_eid');
+    if(v) return v;
+    var id = 'eid_' + Math.random().toString(36).slice(2) + Date.now();
+    setCookie('_ta_eid', id, 60*60*24*365*2);
+    return id;
+  }
+  function getFbc(){
+    var fbc = getCookie('_fbc');
+    if(fbc) return fbc;
+    try{
+      var url = new URL(location.href);
+      var fbclid = url.searchParams.get('fbclid');
+      if(fbclid) return 'fb.1.'+Date.now()+'.'+fbclid;
+    }catch(_e){}
+    return undefined;
+  }
+  function getUtm(){
+    try{
+      var url = new URL(location.href);
+      var out = {};
+      ['utm_source','utm_medium','utm_campaign','utm_content','utm_term'].forEach(function(k){
+        var v = url.searchParams.get(k);
+        if(v) out[k]=v;
+      });
+      return out;
+    }catch(_e){ return {}; }
+  }
   function genEventId(){
     return 'evt_'+Math.random().toString(36).slice(2)+Date.now();
   }
@@ -112,7 +147,7 @@ router.get('/tracker.js', async (_req, res) => {
         var url=new URL(el.href);
         if(url.hostname===location.hostname) return;
         var fbp=getCookie('_fbp');
-        var fbc=getCookie('_fbc');
+        var fbc=getFbc();
         if(fbp) url.searchParams.set('fbp', fbp);
         if(fbc) url.searchParams.set('fbc', fbc);
         var cur=new URL(location.href);
@@ -129,15 +164,8 @@ router.get('/tracker.js', async (_req, res) => {
     if(!cfg || !cfg.apiUrl || !cfg.siteKey) return;
     var nav=performance && performance.timing ? performance.timing : null;
     var loadTimeMs=nav ? (nav.domContentLoadedEventEnd - nav.navigationStart) : undefined;
-
-    function getFbc() {
-       var fbc = getCookie('_fbc');
-       if(fbc) return fbc;
-       var url = new URL(location.href);
-       var fbclid = url.searchParams.get('fbclid');
-       if(fbclid) return 'fb.1.'+Date.now()+'.'+fbclid;
-       return undefined;
-    }
+    var utm = getUtm();
+    var externalId = getOrCreateExternalId();
 
     var payload={
       event_name:'PageView',
@@ -148,19 +176,37 @@ router.get('/tracker.js', async (_req, res) => {
         client_user_agent: navigator.userAgent,
         fbp: getCookie('_fbp'),
         fbc: getFbc(),
-        external_id: getCookie('external_id') || undefined
+        external_id: externalId
       },
       custom_data: {
          page_title: document.title,
          content_type: 'product',
-         referrer: document.referrer
+         referrer: document.referrer,
+         page_path: location.pathname
       }
     };
     if(nav && loadTimeMs) payload.custom_data.load_time_ms = loadTimeMs;
     send(cfg.apiUrl, cfg.siteKey, payload);
     if(cfg.metaPixelId){
       loadMetaPixel(cfg.metaPixelId);
-      trackMeta('PageView', { content_type: payload.custom_data.content_type, page_title: payload.custom_data.page_title }, payload.event_id, false);
+      trackMeta(
+        'PageView',
+        Object.assign(
+          {
+            content_type: payload.custom_data.content_type,
+            page_title: payload.custom_data.page_title,
+            page_path: payload.custom_data.page_path,
+            page_location: payload.event_source_url,
+            referrer: payload.custom_data.referrer,
+            fbp: payload.user_data.fbp,
+            fbc: payload.user_data.fbc,
+            external_id: payload.user_data.external_id
+          },
+          utm
+        ),
+        payload.event_id,
+        false
+      );
     }
     if(cfg.gaMeasurementId){
       loadGa(cfg.gaMeasurementId);
@@ -172,6 +218,8 @@ router.get('/tracker.js', async (_req, res) => {
       var cfg=window.TRACKING_CONFIG;
       if(!cfg || !cfg.apiUrl || !cfg.siteKey) return;
       var dwellMs=Math.max(0, Date.now()-startMs);
+      var utm = getUtm();
+      var externalId = getOrCreateExternalId();
       var payload={
         event_name:'PageEngagement',
         event_time: Math.floor(Date.now()/1000),
@@ -180,7 +228,8 @@ router.get('/tracker.js', async (_req, res) => {
         user_data:{
           client_user_agent: navigator.userAgent,
           fbp: getCookie('_fbp'),
-          fbc: getCookie('_fbc')
+          fbc: getFbc(),
+          external_id: externalId
         },
         telemetry:{
           dwell_time_ms: dwellMs,
@@ -194,7 +243,21 @@ router.get('/tracker.js', async (_req, res) => {
       send(cfg.apiUrl, cfg.siteKey, payload);
       if(cfg.metaPixelId){
         loadMetaPixel(cfg.metaPixelId);
-        trackMeta('PageEngagement', payload.telemetry, payload.event_id, true);
+        trackMeta(
+          'PageEngagement',
+          Object.assign(
+            {
+              event_source_url: payload.event_source_url,
+              fbp: payload.user_data.fbp,
+              fbc: payload.user_data.fbc,
+              external_id: payload.user_data.external_id
+            },
+            payload.telemetry || {},
+            utm
+          ),
+          payload.event_id,
+          true
+        );
       }
       if(cfg.gaMeasurementId){
         loadGa(cfg.gaMeasurementId);
@@ -211,7 +274,7 @@ router.get('/tracker.js', async (_req, res) => {
 })();`;
 
   res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
-  res.setHeader('Cache-Control', 'public, max-age=300');
+  res.setHeader('Cache-Control', 'no-store');
   return res.send(js);
 });
 

@@ -43,7 +43,10 @@ export class CapiService {
 
   public async sendEvent(siteKey: string, event: CapiEvent) {
     const cfg = await this.getSiteMetaConfig(siteKey);
-    if (!cfg) return;
+    if (!cfg) {
+      console.warn(`CAPI not configured for siteKey=${siteKey}`);
+      return;
+    }
 
     const payload = {
       data: [
@@ -62,7 +65,8 @@ export class CapiService {
         },
       ],
       access_token: cfg.capiToken,
-    };
+      ...(process.env.META_TEST_EVENT_CODE ? { test_event_code: process.env.META_TEST_EVENT_CODE } : {}),
+    } as any;
 
     try {
       const response = await axios.post(
