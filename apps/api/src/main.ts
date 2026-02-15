@@ -18,7 +18,16 @@ import { ensureSchema } from './db/schema';
 const app = express();
 const port = process.env.PORT || 3000;
 
-app.use(cors());
+app.use(cors({
+  origin: [
+    process.env.PUBLIC_DASHBOARD_BASE_URL || 'http://localhost:5173',
+    'http://localhost:5173',
+    'http://localhost:4173'
+  ],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Site-Key', 'x-site-key']
+}));
 app.use('/webhooks', bodyParser.raw({ type: 'application/json' }));
 app.use(bodyParser.json());
 
