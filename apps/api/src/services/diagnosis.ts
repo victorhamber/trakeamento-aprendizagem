@@ -1,12 +1,75 @@
 import { pool } from '../db/pool';
 import { llmService } from './llm';
+import { metaMarketingService } from './meta-marketing';
 
 export class DiagnosisService {
-  public async generateReport(siteKey: string, days = 7, campaignId?: string | null) {
+  public async generateReport(
+    siteKey: string,
+    days = 7,
+    campaignId?: string | null,
+    options?: { datePreset?: string; since?: string; until?: string }
+  ) {
     const siteRow = await pool.query('SELECT id FROM sites WHERE site_key = $1', [siteKey]);
     const siteId = siteRow.rowCount ? (siteRow.rows[0].id as number) : null;
-    const daysNum = Number.isFinite(Number(days)) ? Math.min(90, Math.max(1, Math.trunc(Number(days)))) : 7;
-    const since = new Date(Date.now() - daysNum * 24 * 60 * 60 * 1000);
+    const parseDate = (value: string) => {
+      const d = new Date(value);
+      return Number.isNaN(d.getTime()) ? null : d;
+    };
+
+    const datePresetRaw = options?.datePreset?.trim() || '';
+    const sinceRaw = options?.since?.trim() || '';
+    const untilRaw = options?.until?.trim() || '';
+    const customSince = sinceRaw ? parseDate(sinceRaw) : null;
+    const customUntil = untilRaw ? parseDate(untilRaw) : null;
+    const hasCustomRange = !!customSince && !!customUntil;
+    const now = new Date();
+
+    let since: Date;
+    let until: Date;
+    let preset = 'last_7d';
+    let daysNum = Number.isFinite(Number(days)) ? Math.min(90, Math.max(1, Math.trunc(Number(days)))) : 7;
+
+    if (hasCustomRange) {
+      const start = customSince!.getTime() > customUntil!.getTime() ? customUntil! : customSince!;
+      const end = customSince!.getTime() > customUntil!.getTime() ? customSince! : customUntil!;
+      since = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+      until = new Date(end.getFullYear(), end.getMonth(), end.getDate() + 1);
+      preset = 'custom';
+      daysNum = Math.max(1, Math.ceil((until.getTime() - since.getTime()) / (24 * 60 * 60 * 1000)));
+    } else if (datePresetRaw) {
+      preset = datePresetRaw;
+      if (datePresetRaw === 'today') {
+        since = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        until = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+        daysNum = 1;
+      } else if (datePresetRaw === 'yesterday') {
+        since = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+        until = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        daysNum = 1;
+      } else if (datePresetRaw === 'last_14d') {
+        daysNum = 14;
+        since = new Date(Date.now() - daysNum * 24 * 60 * 60 * 1000);
+        until = now;
+      } else if (datePresetRaw === 'last_30d') {
+        daysNum = 30;
+        since = new Date(Date.now() - daysNum * 24 * 60 * 60 * 1000);
+        until = now;
+      } else if (datePresetRaw === 'maximum') {
+        since = new Date('2000-01-01T00:00:00Z');
+        until = now;
+        daysNum = Math.max(1, Math.ceil((until.getTime() - since.getTime()) / (24 * 60 * 60 * 1000)));
+      } else {
+        daysNum = 7;
+        since = new Date(Date.now() - daysNum * 24 * 60 * 60 * 1000);
+        until = now;
+        preset = 'last_7d';
+      }
+    } else {
+      daysNum = Number.isFinite(Number(days)) ? Math.min(90, Math.max(1, Math.trunc(Number(days)))) : 7;
+      since = new Date(Date.now() - daysNum * 24 * 60 * 60 * 1000);
+      until = now;
+      preset = daysNum <= 7 ? 'last_7d' : daysNum <= 14 ? 'last_14d' : daysNum <= 30 ? 'last_30d' : 'last_30d';
+    }
 
     const metaAgg = await pool.query(
       `
@@ -15,6 +78,7 @@ export class DiagnosisService {
         COALESCE(SUM(impressions), 0)::bigint AS impressions,
         COALESCE(SUM(clicks), 0)::bigint AS clicks,
         COALESCE(SUM(unique_clicks), 0)::bigint AS unique_clicks,
+        COALESCE(SUM(unique_link_clicks), 0)::bigint AS unique_link_clicks,
         COALESCE(SUM(link_clicks), 0)::bigint AS link_clicks,
         COALESCE(SUM(inline_link_clicks), 0)::bigint AS inline_link_clicks,
         COALESCE(SUM(outbound_clicks), 0)::bigint AS outbound_clicks,
@@ -32,10 +96,10 @@ export class DiagnosisService {
         AVG(cost_per_lead)::numeric AS cost_per_lead_avg,
         AVG(cost_per_purchase)::numeric AS cost_per_purchase_avg
       FROM meta_insights_daily
-      WHERE site_id = $1 AND date_start >= $2
-      ${campaignId ? 'AND campaign_id = $3' : ''}
+      WHERE site_id = $1 AND date_start >= $2 AND date_start < $3
+      ${campaignId ? 'AND campaign_id = $4' : ''}
       `,
-      campaignId ? [siteId || 0, since, campaignId] : [siteId || 0, since]
+      campaignId ? [siteId || 0, since, until, campaignId] : [siteId || 0, since, until]
     );
 
     const sitePageViews = await pool.query(
@@ -53,8 +117,9 @@ export class DiagnosisService {
       WHERE site_key = $1
         AND event_name = 'PageView'
         AND event_time >= $2
+        AND event_time < $3
       `,
-      [siteKey, since]
+      [siteKey, since, until]
     );
 
     const siteEngagement = await pool.query(
@@ -86,8 +151,9 @@ export class DiagnosisService {
       WHERE site_key = $1
         AND event_name = 'PageEngagement'
         AND event_time >= $2
+        AND event_time < $3
       `,
-      [siteKey, since]
+      [siteKey, since, until]
     );
 
     const salesData = await pool.query(
@@ -96,9 +162,9 @@ export class DiagnosisService {
         COUNT(*)::bigint AS sales,
         COALESCE(SUM(amount), 0)::numeric AS revenue
       FROM purchases
-      WHERE site_key = $1 AND created_at >= $2
+      WHERE site_key = $1 AND created_at >= $2 AND created_at < $3
       `,
-      [siteKey, since]
+      [siteKey, since, until]
     );
 
     const m = metaAgg.rows[0] || {};
@@ -106,19 +172,55 @@ export class DiagnosisService {
     const se = siteEngagement.rows[0] || {};
     const s = salesData.rows[0] || {};
 
-    const spend = Number(m.spend || 0);
-    const impressions = Number(m.impressions || 0);
-    const clicks = Number(m.clicks || 0);
-    const landingPageViews = Number(m.landing_page_views || 0);
+    let spend = Number(m.spend || 0);
+    let impressions = Number(m.impressions || 0);
+    let clicks = Number(m.clicks || 0);
+    let uniqueClicks = Number(m.unique_clicks || 0);
+    let uniqueLinkClicks = Number(m.unique_link_clicks || 0);
+    let outboundClicks = Number(m.outbound_clicks || 0);
+    let landingPageViews = Number(m.landing_page_views || 0);
+    let leads = Number(m.leads || 0);
+    let initiatesCheckout = Number(m.initiates_checkout || 0);
+    let purchases = Number(m.purchases || 0);
+
+    const hasMetaData = spend > 0 || impressions > 0 || clicks > 0 || landingPageViews > 0;
+    if (!hasMetaData && campaignId && siteId) {
+      try {
+        const liveRows = await metaMarketingService.fetchCampaignInsights(
+          siteId,
+          preset,
+          hasCustomRange ? { since: sinceRaw, until: untilRaw } : undefined
+        );
+        const live = liveRows.find((row: { campaign_id?: string }) => row.campaign_id === campaignId);
+        if (live) {
+          spend = Number(live.spend || 0);
+          impressions = Number(live.impressions || 0);
+          clicks = Number(live.clicks || 0);
+          uniqueClicks = Number(live.unique_clicks || 0);
+          uniqueLinkClicks = Number(live.unique_link_clicks || 0);
+          outboundClicks = Number(live.outbound_clicks || 0);
+          landingPageViews = Number(live.landing_page_views || 0);
+          leads = Number(live.leads || 0);
+          initiatesCheckout = Number(live.initiates_checkout || 0);
+          purchases = Number(live.purchases || 0);
+        }
+      } catch (err) {
+        void err;
+      }
+    }
 
     const safeDiv = (a: number, b: number) => (b > 0 ? a / b : 0);
     const pct = (n: number) => Math.round(n * 10000) / 100;
 
+    const baseClicks = uniqueLinkClicks > 0 ? uniqueLinkClicks : clicks;
+    const resultMetric = purchases > 0 ? purchases : leads > 0 ? leads : landingPageViews;
     const derived = {
       ctr_calc_pct: pct(safeDiv(clicks, impressions)),
       cpm_calc: Math.round(safeDiv(spend, impressions) * 1000 * 100) / 100,
       cpc_calc: Math.round(safeDiv(spend, clicks) * 100) / 100,
-      click_to_lp_rate_pct: pct(safeDiv(landingPageViews, clicks)),
+      click_to_lp_rate_pct: pct(safeDiv(landingPageViews, baseClicks)),
+      connect_rate_pct: pct(safeDiv(landingPageViews, baseClicks)),
+      result_metric: resultMetric,
       lp_to_purchase_rate_pct: pct(safeDiv(Number(s.sales || 0), landingPageViews)),
       pv_to_purchase_rate_pct: pct(safeDiv(Number(s.sales || 0), Number(pv.pageviews || 0))),
       cta_per_engagement: Math.round(safeDiv(Number(se.clicks_cta || 0), Number(se.engagement_events || 0)) * 1000) / 1000,
@@ -197,7 +299,8 @@ export class DiagnosisService {
         spend,
         impressions,
         clicks,
-        unique_clicks: Number(m.unique_clicks || 0),
+        unique_clicks: uniqueClicks,
+        unique_link_clicks: uniqueLinkClicks,
         reach: Number(m.reach || 0),
         frequency_avg: m.frequency_avg !== null && m.frequency_avg !== undefined ? Number(m.frequency_avg) : null,
         cpm_avg: m.cpm_avg !== null && m.cpm_avg !== undefined ? Number(m.cpm_avg) : null,
@@ -206,12 +309,14 @@ export class DiagnosisService {
         unique_ctr_avg: m.unique_ctr_avg !== null && m.unique_ctr_avg !== undefined ? Number(m.unique_ctr_avg) : null,
         link_clicks: Number(m.link_clicks || 0),
         inline_link_clicks: Number(m.inline_link_clicks || 0),
-        outbound_clicks: Number(m.outbound_clicks || 0),
+        outbound_clicks: outboundClicks,
         landing_page_views: landingPageViews,
-        leads: Number(m.leads || 0),
+        leads,
         adds_to_cart: Number(m.adds_to_cart || 0),
-        initiates_checkout: Number(m.initiates_checkout || 0),
-        purchases: Number(m.purchases || 0),
+        initiates_checkout: initiatesCheckout,
+        purchases,
+        connect_rate_pct: derived.connect_rate_pct,
+        result_metric: derived.result_metric,
         cost_per_lead_avg: m.cost_per_lead_avg !== null && m.cost_per_lead_avg !== undefined ? Number(m.cost_per_lead_avg) : null,
         cost_per_purchase_avg:
           m.cost_per_purchase_avg !== null && m.cost_per_purchase_avg !== undefined ? Number(m.cost_per_purchase_avg) : null,

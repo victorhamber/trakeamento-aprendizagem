@@ -105,6 +105,7 @@ const schemaSql = `
     clicks INTEGER,
     unique_clicks INTEGER,
     link_clicks INTEGER,
+    unique_link_clicks INTEGER,
     inline_link_clicks INTEGER,
     outbound_clicks INTEGER,
     landing_page_views INTEGER,
@@ -161,6 +162,7 @@ export const ensureSchema = async (pool: Pool) => {
 
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS unique_clicks INTEGER');
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS link_clicks INTEGER');
+    await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS unique_link_clicks INTEGER');
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS inline_link_clicks INTEGER');
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS outbound_clicks INTEGER');
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS landing_page_views INTEGER');

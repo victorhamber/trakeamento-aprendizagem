@@ -3,6 +3,31 @@ import { pool } from '../db/pool';
 import { decryptString } from '../lib/crypto';
 
 export class MetaMarketingService {
+  private static isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
+  }
+
+  private static asArray(value: unknown): Array<Record<string, unknown>> {
+    return Array.isArray(value) ? (value.filter(MetaMarketingService.isRecord) as Array<Record<string, unknown>>) : [];
+  }
+
+  private static asString(value: unknown): string | null {
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+    return null;
+  }
+
+  private static getActionType(item: Record<string, unknown>): string | null {
+    const v = item.action_type;
+    return typeof v === 'string' ? v : null;
+  }
+
+  private static getValueField(item: Record<string, unknown>): string | number | null {
+    const v = item.value;
+    if (typeof v === 'string' || typeof v === 'number') return v;
+    return null;
+  }
+
   private isProbablyValidToken(token: string): boolean {
     const t = token.trim();
     if (t.length < 20) return false;
@@ -44,7 +69,7 @@ export class MetaMarketingService {
     return trimmed.startsWith('act_') ? trimmed : `act_${trimmed}`;
   }
 
-  private asNumber(v: any): number | null {
+  private asNumber(v: unknown): number | null {
     if (v === null || v === undefined) return null;
     if (typeof v === 'number') return Number.isFinite(v) ? v : null;
     if (typeof v === 'string') {
@@ -54,23 +79,23 @@ export class MetaMarketingService {
     return null;
   }
 
-  private asInt(v: any): number | null {
+  private asInt(v: unknown): number | null {
     const n = this.asNumber(v);
     if (n === null) return null;
     const i = Math.trunc(n);
     return Number.isFinite(i) ? i : null;
   }
 
-  private getActionCount(actions: any, actionType: string): number | null {
-    const list = Array.isArray(actions) ? actions : [];
-    const found = list.find((a) => a && a.action_type === actionType);
-    return this.asInt(found?.value);
+  private getActionCount(actions: unknown, actionType: string): number | null {
+    const list = MetaMarketingService.asArray(actions);
+    const found = list.find((a) => MetaMarketingService.getActionType(a) === actionType);
+    return this.asInt(found ? MetaMarketingService.getValueField(found) : null);
   }
 
-  private getCostPerAction(costs: any, actionType: string): number | null {
-    const list = Array.isArray(costs) ? costs : [];
-    const found = list.find((a) => a && a.action_type === actionType);
-    return this.asNumber(found?.value);
+  private getCostPerAction(costs: unknown, actionType: string): number | null {
+    const list = MetaMarketingService.asArray(costs);
+    const found = list.find((a) => MetaMarketingService.getActionType(a) === actionType);
+    return this.asNumber(found ? MetaMarketingService.getValueField(found) : null);
   }
 
   public async syncDailyInsights(
@@ -93,6 +118,7 @@ export class MetaMarketingService {
         'impressions',
         'clicks',
         'unique_clicks',
+        'unique_link_clicks',
         'reach',
         'frequency',
         'cpm',
@@ -127,8 +153,14 @@ export class MetaMarketingService {
       }
 
       return { count: insights.length };
-    } catch (error: any) {
-      console.error('Meta Marketing API Error:', error.response?.data || error.message);
+    } catch (error: unknown) {
+      if (axios.isAxiosError(error)) {
+        console.error('Meta Marketing API Error:', error.response?.data || error.message);
+      } else if (error instanceof Error) {
+        console.error('Meta Marketing API Error:', error.message);
+      } else {
+        console.error('Meta Marketing API Error:', error);
+      }
       throw error;
     }
   }
@@ -148,6 +180,7 @@ export class MetaMarketingService {
       'impressions',
       'clicks',
       'unique_clicks',
+      'unique_link_clicks',
       'cpm',
       'cpc',
       'ctr',
@@ -168,13 +201,14 @@ export class MetaMarketingService {
     });
 
     const rows = Array.isArray(response.data?.data) ? response.data.data : [];
-    return rows.map((row: any) => {
+    return rows.map((row: Record<string, unknown>) => {
       const actions = row.actions;
       const costs = row.cost_per_action_type;
       const spend = this.asNumber(row.spend) || 0;
       const impressions = this.asInt(row.impressions) || 0;
       const clicks = this.asInt(row.clicks) || 0;
       const uniqueClicks = this.asInt(row.unique_clicks) || 0;
+      const uniqueLinkClicks = this.asInt(row.unique_link_clicks) || 0;
       const ctr = this.asNumber(row.ctr) ?? (impressions > 0 ? (clicks / impressions) * 100 : 0);
       const cpc = this.asNumber(row.cpc) ?? (clicks > 0 ? spend / clicks : 0);
       const cpm = this.asNumber(row.cpm) ?? (impressions > 0 ? (spend / impressions) * 1000 : 0);
@@ -188,12 +222,13 @@ export class MetaMarketingService {
       const costPerPurchase = this.getCostPerAction(costs, 'purchase');
 
       return {
-        campaign_id: row.campaign_id,
-        campaign_name: row.campaign_name,
+        campaign_id: MetaMarketingService.asString(row.campaign_id),
+        campaign_name: MetaMarketingService.asString(row.campaign_name),
         spend,
         impressions,
         clicks,
         unique_clicks: uniqueClicks,
+        unique_link_clicks: uniqueLinkClicks,
         ctr,
         cpc,
         cpm,
@@ -208,20 +243,20 @@ export class MetaMarketingService {
     });
   }
 
-  private async persistInsight(siteId: number, row: any) {
+  private async persistInsight(siteId: number, row: Record<string, unknown>) {
     const query = `
       INSERT INTO meta_insights_daily (
         site_id, ad_id, ad_name, adset_id, adset_name, campaign_id, campaign_name,
-        spend, impressions, clicks, unique_clicks, link_clicks, inline_link_clicks, outbound_clicks, landing_page_views,
+        spend, impressions, clicks, unique_clicks, link_clicks, unique_link_clicks, inline_link_clicks, outbound_clicks, landing_page_views,
         reach, frequency, cpc, ctr, unique_ctr, cpm,
         leads, purchases, adds_to_cart, initiates_checkout, cost_per_lead, cost_per_purchase,
         date_start, date_stop, raw_payload
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7,
-        $8, $9, $10, $11, $12, $13, $14, $15,
-        $16, $17, $18, $19, $20, $21, $22, $23,
-        $24, $25, $26, $27, $28, $29,
-        $30, $31, $32
+        $8, $9, $10, $11, $12, $13, $14, $15, $16,
+        $17, $18, $19, $20, $21, $22, $23, $24,
+        $25, $26, $27, $28, $29, $30,
+        $31, $32, $33
       )
       ON CONFLICT (site_id, ad_id, date_start) DO UPDATE SET
         spend = EXCLUDED.spend,
@@ -229,6 +264,7 @@ export class MetaMarketingService {
         clicks = EXCLUDED.clicks,
         unique_clicks = EXCLUDED.unique_clicks,
         link_clicks = EXCLUDED.link_clicks,
+        unique_link_clicks = EXCLUDED.unique_link_clicks,
         inline_link_clicks = EXCLUDED.inline_link_clicks,
         outbound_clicks = EXCLUDED.outbound_clicks,
         landing_page_views = EXCLUDED.landing_page_views,
@@ -262,12 +298,18 @@ export class MetaMarketingService {
 
     const values = [
       siteId,
-      row.ad_id, row.ad_name, row.adset_id, row.adset_name, row.campaign_id, row.campaign_name,
+      MetaMarketingService.asString(row.ad_id),
+      MetaMarketingService.asString(row.ad_name),
+      MetaMarketingService.asString(row.adset_id),
+      MetaMarketingService.asString(row.adset_name),
+      MetaMarketingService.asString(row.campaign_id),
+      MetaMarketingService.asString(row.campaign_name),
       this.asNumber(row.spend),
       this.asInt(row.impressions),
       this.asInt(row.clicks),
       this.asInt(row.unique_clicks),
       linkClicks,
+      this.asInt(row.unique_link_clicks),
       this.asInt(row.inline_link_clicks),
       this.asInt(row.outbound_clicks),
       landingPageViews,
@@ -283,8 +325,8 @@ export class MetaMarketingService {
       initiateCheckoutCount,
       costPerLead,
       costPerPurchase,
-      row.date_start,
-      row.date_stop,
+      MetaMarketingService.asString(row.date_start),
+      MetaMarketingService.asString(row.date_stop),
       JSON.stringify(row)
     ];
 

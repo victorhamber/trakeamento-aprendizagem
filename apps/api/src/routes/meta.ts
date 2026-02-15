@@ -87,6 +87,7 @@ router.get('/campaigns/metrics', requireAuth, async (req, res) => {
           COALESCE(SUM(impressions), 0)::bigint AS impressions,
           COALESCE(SUM(clicks), 0)::bigint AS clicks,
           COALESCE(SUM(unique_clicks), 0)::bigint AS unique_clicks,
+          COALESCE(SUM(unique_link_clicks), 0)::bigint AS unique_link_clicks,
           COALESCE(SUM(outbound_clicks), 0)::bigint AS outbound_clicks,
           COALESCE(SUM(landing_page_views), 0)::bigint AS landing_page_views,
           COALESCE(SUM(leads), 0)::bigint AS leads,
@@ -144,6 +145,7 @@ router.get('/campaigns/metrics', requireAuth, async (req, res) => {
       const impressions = Number(row.impressions || 0);
       const clicks = Number(row.clicks || 0);
       const uniqueClicks = Number(row.unique_clicks || 0);
+      const uniqueLinkClicks = Number(row.unique_link_clicks || 0);
       const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
       const cpc = clicks > 0 ? spend / clicks : 0;
       const cpm = impressions > 0 ? (spend / impressions) * 1000 : 0;
@@ -154,6 +156,7 @@ router.get('/campaigns/metrics', requireAuth, async (req, res) => {
         impressions,
         clicks,
         unique_clicks: uniqueClicks,
+        unique_link_clicks: uniqueLinkClicks,
         ctr,
         cpc,
         cpm,

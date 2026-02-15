@@ -34,6 +34,7 @@ type CampaignMetrics = {
   impressions: number;
   clicks: number;
   unique_clicks: number;
+  unique_link_clicks: number;
   ctr: number;
   cpc: number;
   cpm: number;
@@ -366,14 +367,26 @@ export const SitePage = () => {
       setFlash('Selecione a campanha antes de gerar o diagnóstico.');
       return;
     }
+    if (metricsPreset === 'custom' && (!metricsSince || !metricsUntil)) {
+      setFlash('Defina o período personalizado.');
+      return;
+    }
     setLoading(true);
     try {
+      const params: Record<string, string> = {};
+      if (selectedCampaignId) params.campaign_id = selectedCampaignId;
+      if (metricsPreset === 'custom') {
+        params.since = metricsSince;
+        params.until = metricsUntil;
+      } else {
+        params.date_preset = metricsPreset;
+      }
       const res = await api.post(
         '/recommendations/generate',
         {},
         {
           headers: { 'x-site-key': site.site_key },
-          params: selectedCampaignId ? { campaign_id: selectedCampaignId } : undefined,
+          params,
         }
       );
       setReport(res.data);
@@ -401,6 +414,11 @@ export const SitePage = () => {
     if (objective.includes('engagement')) return metrics.outbound_clicks || metrics.clicks;
     if (objective.includes('aware') || objective.includes('reach')) return metrics.impressions;
     return metrics.leads;
+  };
+  const getConnectRate = (metrics: CampaignMetrics) => {
+    const base = metrics.unique_link_clicks > 0 ? metrics.unique_link_clicks : metrics.unique_clicks;
+    if (base <= 0) return 0;
+    return (metrics.landing_page_views / base) * 100;
   };
 
   const canGenerate = !!site && (campaigns.length === 0 || !!selectedCampaignId);
@@ -796,19 +814,6 @@ export const SitePage = () => {
                     Ative/pausa campanhas pelo painel. Depois, use o Diagnóstico IA para recomendações.
                   </div>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  {periodSelector}
-                  <button
-                    onClick={() =>
-                      Promise.all([loadCampaigns().catch(() => {}), loadCampaignMetrics().catch(() => {})]).catch(
-                        () => {}
-                      )
-                    }
-                    className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 px-4 py-2 rounded-lg text-sm"
-                  >
-                    Atualizar
-                  </button>
-                </div>
               </div>
 
               {!meta?.has_facebook_connection && (
@@ -824,8 +829,23 @@ export const SitePage = () => {
               )}
 
               {meta?.has_facebook_connection && meta?.ad_account_id && (
-                <div className="rounded-xl border border-zinc-900 bg-zinc-950 overflow-x-auto">
-                  <div className="grid grid-cols-[minmax(220px,1fr)_110px_110px_110px_90px_90px_90px_90px_110px_110px_110px_90px_110px_120px] gap-2 px-4 py-3 text-[11px] text-zinc-500 border-b border-zinc-900">
+                <div className="rounded-xl border border-zinc-900 bg-zinc-950 max-h-[420px] overflow-auto">
+                  <div className="sticky top-0 z-20 bg-zinc-950/95 backdrop-blur border-b border-zinc-900 px-4 py-2 min-h-[44px]">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {periodSelector}
+                      <button
+                        onClick={() =>
+                          Promise.all([loadCampaigns().catch(() => {}), loadCampaignMetrics().catch(() => {})]).catch(
+                            () => {}
+                          )
+                        }
+                        className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 px-4 py-2 rounded-lg text-sm"
+                      >
+                        Atualizar
+                      </button>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-[minmax(220px,1fr)_110px_110px_110px_90px_90px_90px_90px_110px_110px_110px_90px_110px_120px] gap-2 px-4 py-3 text-[11px] text-zinc-500 border-b border-zinc-900 sticky top-[44px] z-10 bg-zinc-950/95">
                     <div>Campanha</div>
                     <div>Status</div>
                     <div>Valor usado</div>
@@ -882,11 +902,7 @@ export const SitePage = () => {
                       </div>
                       <div className="text-zinc-200 text-xs">
                         {campaignMetrics[c.id]
-                          ? `${formatPercent(
-                              campaignMetrics[c.id].unique_clicks > 0
-                                ? (campaignMetrics[c.id].landing_page_views / campaignMetrics[c.id].unique_clicks) * 100
-                                : 0
-                            )}%`
+                          ? `${formatPercent(getConnectRate(campaignMetrics[c.id]))}%`
                           : '—'}
                       </div>
                       <div className="flex justify-end">
@@ -1063,13 +1079,7 @@ export const SitePage = () => {
                       <div className="rounded-xl border border-zinc-900/70 bg-zinc-950/60 p-3">
                         <div className="text-zinc-500">Connect Rate</div>
                         <div className="text-zinc-100 text-sm">
-                          {formatPercent(
-                            campaignMetrics[selectedCampaignId].unique_clicks > 0
-                              ? (campaignMetrics[selectedCampaignId].landing_page_views /
-                                  campaignMetrics[selectedCampaignId].unique_clicks) *
-                                  100
-                              : 0
-                          )}
+                          {formatPercent(getConnectRate(campaignMetrics[selectedCampaignId]))}
                           %
                         </div>
                       </div>

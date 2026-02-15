@@ -6,6 +6,33 @@ const router = Router();
 
 type EngagementBucket = 'low' | 'medium' | 'high';
 
+type IngestUserData = {
+  client_ip_address?: string;
+  client_user_agent?: string;
+  em?: string | string[];
+  ph?: string | string[];
+  fn?: string | string[];
+  ln?: string | string[];
+  ct?: string | string[];
+  st?: string | string[];
+  zp?: string | string[];
+  db?: string | string[];
+  fbp?: string;
+  fbc?: string;
+  external_id?: string;
+  [key: string]: unknown;
+};
+
+type IngestEvent = {
+  event_id?: string;
+  event_name?: string;
+  event_time?: number;
+  event_source_url?: string;
+  user_data?: IngestUserData;
+  custom_data?: Record<string, unknown>;
+  telemetry?: Record<string, unknown>;
+};
+
 function toNumber(value: unknown): number {
   if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
   if (typeof value === 'string') {
@@ -15,7 +42,7 @@ function toNumber(value: unknown): number {
   return 0;
 }
 
-function computeEngagement(event: any): { score: number; bucket: EngagementBucket } | null {
+function computeEngagement(event: IngestEvent): { score: number; bucket: EngagementBucket } | null {
   if (!event || !event.telemetry) return null;
   if (event.event_name !== 'PageEngagement' && event.event_name !== 'PageView') return null;
 
@@ -50,7 +77,7 @@ function computeEngagement(event: any): { score: number; bucket: EngagementBucke
 
 router.post('/events', async (req, res) => {
   const siteKey = req.query.key || req.headers['x-site-key'];
-  const event = req.body;
+  const event = req.body as IngestEvent;
 
   const engagement = computeEngagement(event);
   if (engagement) {
@@ -76,12 +103,17 @@ router.post('/events', async (req, res) => {
       RETURNING id
     `;
 
+    const eventTimeMs = event.event_time ? event.event_time * 1000 : Date.now();
+    const eventTimeSec = event.event_time ?? Math.floor(eventTimeMs / 1000);
+    const eventId = event.event_id || `evt_${eventTimeSec}_${Math.random().toString(36).slice(2, 8)}`;
+    const eventSourceUrl = event.event_source_url || '';
+    const eventName = typeof event.event_name === 'string' ? event.event_name : String(event.event_name || '');
     const values = [
       siteKey,
-      event.event_id,
-      event.event_name,
-      new Date(event.event_time * 1000), 
-      event.event_source_url,
+      eventId,
+      eventName,
+      new Date(eventTimeMs),
+      eventSourceUrl,
       event.user_data,
       event.custom_data,
       event.telemetry,
@@ -93,25 +125,29 @@ router.post('/events', async (req, res) => {
     // 2. Envio CAPI (Assíncrono na prática, aqui direto para MVP)
     if ((result.rowCount || 0) > 0) {
       // Prepara payload CAPI
+      const userData = event.user_data || {};
+      const pick = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
+      const clientIp = req.ip || userData.client_ip_address || '';
+      const clientUserAgent = req.headers['user-agent'] || userData.client_user_agent || '';
       const capiPayload = {
-        event_name: event.event_name,
-        event_time: event.event_time,
-        event_id: event.event_id,
-        event_source_url: event.event_source_url,
+        event_name: eventName,
+        event_time: eventTimeSec,
+        event_id: eventId,
+        event_source_url: eventSourceUrl,
         user_data: {
-          client_ip_address: req.ip || event.user_data.client_ip_address,
-          client_user_agent: req.headers['user-agent'] || event.user_data.client_user_agent,
-          em: event.user_data.em,
-          ph: event.user_data.ph,
-          fn: event.user_data.fn,
-          ln: event.user_data.ln,
-          ct: event.user_data.ct,
-          st: event.user_data.st,
-          zp: event.user_data.zp,
-          db: event.user_data.db,
-          fbp: event.user_data.fbp,
-          fbc: event.user_data.fbc,
-          external_id: event.user_data.external_id ? CapiService.hash(event.user_data.external_id) : undefined
+          client_ip_address: clientIp,
+          client_user_agent: clientUserAgent,
+          em: pick(userData.em),
+          ph: pick(userData.ph),
+          fn: pick(userData.fn),
+          ln: pick(userData.ln),
+          ct: pick(userData.ct),
+          st: pick(userData.st),
+          zp: pick(userData.zp),
+          db: pick(userData.db),
+          fbp: userData.fbp,
+          fbc: userData.fbc,
+          external_id: userData.external_id ? CapiService.hash(userData.external_id) : undefined
         },
         custom_data: {
           ...event.custom_data,
