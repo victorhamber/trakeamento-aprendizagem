@@ -44,8 +44,16 @@ app.get('/health', async (req, res) => {
 });
 
 (async () => {
-  await ensureSchema(pool);
-  app.listen(port, () => {
-    console.log(`API running on port ${port}`);
-  });
+  try {
+    console.log('Initializing API...');
+    await ensureSchema(pool);
+    console.log('Database schema ensured.');
+    
+    app.listen(port, () => {
+      console.log(`API running on port ${port}`);
+    });
+  } catch (err) {
+    console.error('CRITICAL ERROR during startup:', err);
+    process.exit(1);
+  }
 })();

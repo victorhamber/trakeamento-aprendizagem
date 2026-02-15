@@ -25,6 +25,17 @@ else dotenv.config();
 
 const databaseUrl = process.env.DATABASE_URL;
 
+console.log('--- DB CONNECTION DEBUG ---');
+if (databaseUrl) {
+  console.log('Using REAL Database (PostgreSQL)');
+  // Mask password in logs
+  console.log('Connection String:', databaseUrl.replace(/:([^:@]+)@/, ':***@'));
+} else {
+  console.log('WARNING: DATABASE_URL not found! Using IN-MEMORY (pg-mem) database.');
+  console.log('Data will be LOST on restart.');
+}
+console.log('---------------------------');
+
 export const pool: Pool = databaseUrl
   ? new Pool({ connectionString: databaseUrl })
   : (() => {
