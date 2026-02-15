@@ -371,44 +371,52 @@ export const SitePage = () => {
                     </div>
                   )}
                 </div>
-                <div>
-                  <label className="block text-xs text-zinc-400">Ad Account ID</label>
-                  {adAccounts.length > 0 ? (
-                    <select
-                      name="ad_account_id"
-                      className="mt-1 w-full rounded-lg bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm outline-none focus:border-blue-500/60"
-                      defaultValue={meta?.ad_account_id || ''}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        if (val) loadPixels(val).catch(() => {});
-                      }}
-                    >
-                       <option value="" disabled>Selecione a conta de anúncios</option>
-                       {adAccounts.map(acc => (
-                         <option key={acc.id} value={acc.account_id || acc.id}>
-                           {acc.business ? `${acc.name} (${acc.business.name})` : acc.name} ({acc.account_id || acc.id})
-                         </option>
-                       ))}
-                    </select>
-                  ) : (
-                    <div className="flex gap-2">
-                        <input
-                            name="ad_account_id"
-                            defaultValue={meta?.ad_account_id || ''}
-                            className="mt-1 w-full rounded-lg bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm outline-none focus:border-blue-500/60"
-                            placeholder="act_123123..."
-                        />
-                         {meta?.has_facebook_connection && (
-                            <button
-                                type="button"
-                                onClick={() => loadAdAccounts()}
-                                className="whitespace-nowrap bg-zinc-800 hover:bg-zinc-700 text-white px-3 py-2 rounded-lg text-sm"
-                            >
-                                ↻ Listar
-                            </button>
-                         )}
-                    </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-zinc-300 mb-3">Contas de Anúncio (Meta)</label>
+                  
+                  {meta?.has_facebook_connection && adAccounts.length === 0 && (
+                     <div className="text-sm text-zinc-500 italic mb-2">
+                        Nenhuma conta encontrada. Clique em "Carregar contas" acima.
+                     </div>
                   )}
+
+                  <div className="space-y-2 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
+                     {adAccounts.map(acc => {
+                        const isSelected = meta?.ad_account_id === (acc.account_id || acc.id);
+                        return (
+                           <div key={acc.id} className={`flex items-center justify-between p-3 rounded-lg border ${isSelected ? 'bg-blue-900/20 border-blue-500/50' : 'bg-zinc-900 border-zinc-800'}`}>
+                              <div>
+                                 <div className="text-sm font-medium text-zinc-200">
+                                    {acc.business ? `${acc.name} (${acc.business.name})` : acc.name}
+                                 </div>
+                                 <div className="text-xs text-zinc-500 font-mono">
+                                    {acc.account_id || acc.id}
+                                 </div>
+                              </div>
+                              
+                              <label className="relative inline-flex items-center cursor-pointer">
+                                 <input 
+                                    type="radio" 
+                                    name="ad_account_id" 
+                                    className="sr-only peer"
+                                    value={acc.account_id || acc.id}
+                                    checked={isSelected}
+                                    onChange={(e) => {
+                                       const val = e.target.value;
+                                       // Update local state immediately for visual feedback
+                                       setMeta(prev => ({ ...prev, ad_account_id: val }));
+                                       loadPixels(val).catch(() => {});
+                                    }}
+                                 />
+                                 <div className="w-11 h-6 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                              </label>
+                           </div>
+                        );
+                     })}
+                  </div>
+                  
+                  {/* Hidden input to ensure form submission works */}
+                  <input type="hidden" name="ad_account_id" value={meta?.ad_account_id || ''} />
                 </div>
                 <div>
                   <label className="block text-xs text-zinc-400">CAPI Token</label>
