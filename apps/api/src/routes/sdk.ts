@@ -49,6 +49,23 @@ router.get('/tracker.js', async (_req, res) => {
       return out;
     }catch(_e){ return {}; }
   }
+  function getTimeFields(epochSec){
+    try{
+      var d = new Date(epochSec * 1000);
+      var days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+      var months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+      var h = d.getHours();
+      return {
+        event_time: epochSec,
+        event_day: days[d.getDay()],
+        event_day_in_month: d.getDate(),
+        event_month: months[d.getMonth()],
+        event_time_interval: String(h) + '-' + String(h + 1)
+      };
+    }catch(_e){
+      return { event_time: epochSec };
+    }
+  }
   function genEventId(){
     return 'evt_'+Math.random().toString(36).slice(2)+Date.now();
   }
@@ -193,6 +210,10 @@ router.get('/tracker.js', async (_req, res) => {
         'PageView',
         Object.assign(
           {
+            event_url: (location.origin || '') + (location.pathname || '/'),
+            event_source_url: payload.event_source_url,
+            traffic_source: document.referrer || '',
+            client_user_agent: navigator.userAgent,
             content_type: payload.custom_data.content_type,
             page_title: payload.custom_data.page_title,
             page_path: payload.custom_data.page_path,
@@ -202,6 +223,7 @@ router.get('/tracker.js', async (_req, res) => {
             fbc: payload.user_data.fbc,
             external_id: payload.user_data.external_id
           },
+          getTimeFields(payload.event_time),
           utm
         ),
         payload.event_id,
@@ -247,12 +269,16 @@ router.get('/tracker.js', async (_req, res) => {
           'PageEngagement',
           Object.assign(
             {
+              event_url: (location.origin || '') + (location.pathname || '/'),
               event_source_url: payload.event_source_url,
+              traffic_source: document.referrer || '',
+              client_user_agent: navigator.userAgent,
               fbp: payload.user_data.fbp,
               fbc: payload.user_data.fbc,
               external_id: payload.user_data.external_id
             },
             payload.telemetry || {},
+            getTimeFields(payload.event_time),
             utm
           ),
           payload.event_id,
