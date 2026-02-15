@@ -33,5 +33,5 @@ ENV PORT=3000
 
 EXPOSE 3000
 
-# Comando de inicialização
-CMD ["npm", "start"]
+# Comando de inicialização direto (melhor para containers)
+CMD ["node", "dist/main.js"]

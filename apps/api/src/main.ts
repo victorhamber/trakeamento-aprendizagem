@@ -34,6 +34,10 @@ app.use('/webhooks', webhookRoutes);
 app.use('/meta', metaRoutes);
 app.use('/recommendations', recommendationRoutes);
 
+app.get('/', (req, res) => {
+  res.send('API Running');
+});
+
 app.get('/health', async (req, res) => {
   try {
     await pool.query('SELECT 1');

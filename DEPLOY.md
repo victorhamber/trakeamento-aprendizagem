@@ -25,7 +25,7 @@ Certifique-se de que o Easypanel tenha acesso a este repositório (se for privad
    - Dockerfile Path: `Dockerfile` (já estará na raiz do contexto `/apps/api`).
 5. **Variáveis de Ambiente (Environment)**:
    Adicione as seguintes chaves:
-   - `PORT`: `3001`
+   - `PORT`: `3000` (Padrão)
    - `DATABASE_URL`: (Cole a URL do banco que copiou no passo 2)
    - `META_APP_ID`: (Seu ID do App Meta)
    - `META_APP_SECRET`: (Seu Segredo do App Meta)
