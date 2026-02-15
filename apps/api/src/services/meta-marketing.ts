@@ -3,20 +3,39 @@ import { pool } from '../db/pool';
 import { decryptString } from '../lib/crypto';
 
 export class MetaMarketingService {
+  private isProbablyValidToken(token: string): boolean {
+    const t = token.trim();
+    if (t.length < 20) return false;
+    if (/\s/.test(t)) return false;
+    if (!/^[A-Za-z0-9._|-]+$/.test(t)) return false;
+    return true;
+  }
+
   private async getConfig(siteId: number) {
     const result = await pool.query(
-      `SELECT marketing_token_enc, ad_account_id, enabled
+      `SELECT marketing_token_enc, fb_user_token_enc, ad_account_id, enabled
        FROM integrations_meta
        WHERE site_id = $1`,
       [siteId]
     );
-    if (!(result.rowCount || 0)) return null;
+    if (!(result.rowCount || 0)) throw new Error('Integração Meta não configurada.');
     const row = result.rows[0];
-    if (row.enabled === false) return null;
-    if (!row.marketing_token_enc || !row.ad_account_id) return null;
+    if (row.enabled === false) throw new Error('Integração Meta desativada.');
+    if (!row.ad_account_id) throw new Error('Ad Account ID não configurado.');
     const adAccountId = this.normalizeAdAccountId(String(row.ad_account_id || ''));
-    if (!adAccountId) return null;
-    return { token: decryptString(row.marketing_token_enc as string), adAccountId };
+    if (!adAccountId) throw new Error('Ad Account ID inválido.');
+
+    const tokenCandidates = [row.marketing_token_enc, row.fb_user_token_enc].filter(Boolean) as string[];
+    for (const enc of tokenCandidates) {
+      try {
+        const token = decryptString(enc).trim().replace(/\s+/g, '');
+        if (this.isProbablyValidToken(token)) return { token, adAccountId };
+      } catch (e) {
+        continue;
+      }
+    }
+
+    throw new Error('Token Meta inválido ou ausente.');
   }
 
   private normalizeAdAccountId(value: string): string | null {
