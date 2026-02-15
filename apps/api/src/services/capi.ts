@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { pool } from '../db/pool';
 import { decryptString } from '../lib/crypto';
 
+type CapiCustomData = Record<string, unknown>;
 interface CapiEvent {
   event_name: string;
   event_time: number;
@@ -23,7 +24,7 @@ interface CapiEvent {
     fbc?: string;
     external_id?: string; // hash
   };
-  custom_data?: any;
+  custom_data?: CapiCustomData;
 }
 
 export class CapiService {
@@ -46,8 +47,9 @@ export class CapiService {
     if (!row.pixel_id || !row.capi_token_enc) return null;
     try {
       return { pixelId: row.pixel_id as string, capiToken: decryptString(row.capi_token_enc as string) };
-    } catch (e: any) {
-      console.error(`Failed to decrypt CAPI token for siteKey=${siteKey}: ${e.message}. Key mismatch or data corruption.`);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'unknown_error';
+      console.error(`Failed to decrypt CAPI token for siteKey=${siteKey}: ${message}. Key mismatch or data corruption.`);
       return null;
     }
   }
@@ -59,7 +61,19 @@ export class CapiService {
       return;
     }
 
-    const payload = {
+    const payload: {
+      data: Array<{
+        event_name: string;
+        event_time: number;
+        event_id: string;
+        event_source_url: string;
+        action_source: 'website';
+        user_data: CapiEvent['user_data'] & { fbc?: string; fbp?: string };
+        custom_data?: CapiCustomData;
+      }>;
+      access_token: string;
+      test_event_code?: string;
+    } = {
       data: [
         {
           event_name: event.event_name,
@@ -77,7 +91,7 @@ export class CapiService {
       ],
       access_token: cfg.capiToken,
       ...(process.env.META_TEST_EVENT_CODE ? { test_event_code: process.env.META_TEST_EVENT_CODE } : {}),
-    } as any;
+    };
 
     try {
       const response = await axios.post(
@@ -86,8 +100,12 @@ export class CapiService {
       );
       console.log(`CAPI Event Sent: ${event.event_name} - ID: ${event.event_id}`, response.data);
       return response.data;
-    } catch (error: any) {
-      console.error('CAPI Error:', error.response?.data || error.message);
+    } catch (error: unknown) {
+      if (axios.isAxiosError(error)) {
+        console.error('CAPI Error:', error.response?.data || error.message);
+      } else {
+        console.error('CAPI Error:', error instanceof Error ? error.message : 'unknown_error');
+      }
       // Aqui entraria lógica de DLQ/Retry
     }
   }

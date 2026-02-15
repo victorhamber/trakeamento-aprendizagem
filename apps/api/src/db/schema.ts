@@ -174,7 +174,9 @@ export const ensureSchema = async (pool: Pool) => {
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS initiates_checkout INTEGER');
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS cost_per_lead NUMERIC');
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS cost_per_purchase NUMERIC');
-  } catch {}
+  } catch (err) {
+    console.warn('Schema extension skipped:', err);
+  }
 
   if (!process.env.DATABASE_URL) {
     const existing = await pool.query('SELECT id FROM users LIMIT 1');

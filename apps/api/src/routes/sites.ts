@@ -10,7 +10,7 @@ const randomKey = (bytes: number) => crypto.randomBytes(bytes).toString('base64u
 const CANON_FIELDS = ['email', 'phone', 'fn', 'ln', 'ct', 'st', 'zp', 'db'] as const;
 type CanonField = (typeof CANON_FIELDS)[number];
 
-const sanitizeMapping = (input: any) => {
+const sanitizeMapping = (input: unknown) => {
   const mapping: Record<CanonField, string[]> = {
     email: [],
     phone: [],
@@ -24,7 +24,7 @@ const sanitizeMapping = (input: any) => {
 
   if (!input || typeof input !== 'object') return mapping;
   for (const key of CANON_FIELDS) {
-    const raw = (input as any)[key];
+    const raw = (input as Record<string, unknown>)[key];
     const arr = Array.isArray(raw) ? raw : typeof raw === 'string' ? raw.split(',') : [];
     const cleaned = arr
       .map((v) => (typeof v === 'string' ? v.trim() : ''))
@@ -71,7 +71,7 @@ router.get('/:siteId/secret', requireAuth, async (req, res) => {
   let secret: string;
   try {
     secret = decryptString(result.rows[0].webhook_secret_enc as string);
-  } catch (e) {
+  } catch {
     return res.status(500).json({ error: 'Failed to decrypt webhook secret. Key mismatch.' });
   }
 

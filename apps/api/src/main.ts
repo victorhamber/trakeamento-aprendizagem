@@ -51,8 +51,9 @@ app.get('/health', async (req, res) => {
   try {
     await pool.query('SELECT 1');
     res.json({ status: 'ok', db: 'connected' });
-  } catch (err: any) {
-    res.status(500).json({ status: 'error', db: err?.message || 'db_error' });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'db_error';
+    res.status(500).json({ status: 'error', db: message });
   }
 });
 

@@ -56,7 +56,7 @@ router.get('/tracker.js', async (_req, res) => {
   }
   function normPhone(v){
     var s=(v||'').toString().trim();
-    s=s.replace(/[^\d+]/g,'');
+    s=s.replace(/[^0-9+]/g,'');
     return s;
   }
   function normName(v){
@@ -66,10 +66,10 @@ router.get('/tracker.js', async (_req, res) => {
     return (v||'').toString().trim().toLowerCase();
   }
   function normZip(v){
-    return (v||'').toString().trim().toLowerCase().replace(/\s+/g,'');
+    return (v||'').toString().trim().toLowerCase().replace(/[ \t\r\n]+/g,'');
   }
   function normDob(v){
-    return (v||'').toString().trim().toLowerCase().replace(/[^\d]/g,'');
+    return (v||'').toString().trim().toLowerCase().replace(/[^0-9]/g,'');
   }
   function setHashedCookie(cookieName, rawValue, normalizer){
     try{

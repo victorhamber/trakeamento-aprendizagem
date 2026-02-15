@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import { api } from '../lib/api';
@@ -12,6 +12,21 @@ type Site = {
 };
 
 type Tab = 'snippet' | 'meta' | 'campaigns' | 'ga' | 'matching' | 'webhooks' | 'reports';
+type MetaConfig = {
+  pixel_id?: string | null;
+  ad_account_id?: string | null;
+  enabled?: boolean | null;
+  has_capi_token?: boolean;
+  has_marketing_token?: boolean;
+  has_facebook_connection?: boolean;
+  fb_user_id?: string | null;
+};
+type GaConfig = {
+  measurement_id?: string | null;
+  enabled?: boolean | null;
+  has_api_secret?: boolean;
+};
+type DiagnosisReport = { analysis_text?: string } & Record<string, unknown>;
 
 export const SitePage = () => {
   const { siteId } = useParams();
@@ -23,10 +38,10 @@ export const SitePage = () => {
   const initialTab = (searchParams.get('tab') as Tab) || 'snippet';
   const [tab, setTab] = useState<Tab>(initialTab);
   const [snippet, setSnippet] = useState<string>('');
-  const [meta, setMeta] = useState<any>(null);
+  const [meta, setMeta] = useState<MetaConfig | null>(null);
   const [adAccounts, setAdAccounts] = useState<Array<{ id: string; name: string; account_id?: string; business?: { id: string; name: string } }>>([]);
   const [pixels, setPixels] = useState<Array<{ id: string; name: string }>>([]);
-  const [ga, setGa] = useState<any>(null);
+  const [ga, setGa] = useState<GaConfig | null>(null);
   const [matching, setMatching] = useState<Record<string, string>>({
     email: '',
     phone: '',
@@ -38,22 +53,22 @@ export const SitePage = () => {
     db: '',
   });
   const [webhookSecret, setWebhookSecret] = useState<string | null>(null);
-  const [report, setReport] = useState<any>(null);
+  const [report, setReport] = useState<DiagnosisReport | null>(null);
   const [campaigns, setCampaigns] = useState<Array<{ id: string; name: string; status: string; effective_status?: string }>>(
     []
   );
   const [loading, setLoading] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
 
-  const loadSite = async () => {
+  const loadSite = useCallback(async () => {
     const res = await api.get(`/sites/${id}`);
     setSite(res.data.site);
-  };
+  }, [id]);
 
   useEffect(() => {
     if (!Number.isFinite(id)) return;
     loadSite().catch(() => nav('/'));
-  }, [id]);
+  }, [id, loadSite, nav]);
 
   const tabs = useMemo(
     () => [
@@ -68,30 +83,30 @@ export const SitePage = () => {
     []
   );
 
-  const loadSnippet = async () => {
+  const loadSnippet = useCallback(async () => {
     const res = await api.get(`/sites/${id}/snippet`);
     setSnippet(res.data.snippet);
-  };
+  }, [id]);
 
-  const loadMeta = async () => {
+  const loadMeta = useCallback(async () => {
     const res = await api.get(`/integrations/sites/${id}/meta`);
     setMeta(res.data.meta);
-  };
+  }, [id]);
 
-  const loadGa = async () => {
+  const loadGa = useCallback(async () => {
     const res = await api.get(`/integrations/sites/${id}/ga`);
     setGa(res.data.ga);
-  };
+  }, [id]);
 
-  const loadWebhookSecret = async () => {
+  const loadWebhookSecret = useCallback(async () => {
     const res = await api.get(`/sites/${id}/secret`);
     setWebhookSecret(res.data.secret);
-  };
+  }, [id]);
 
-  const loadMatching = async () => {
+  const loadMatching = useCallback(async () => {
     const res = await api.get(`/sites/${id}/identify-mapping`);
     const m = res.data?.mapping || {};
-    const asString = (v: any) => (Array.isArray(v) ? v.join(', ') : typeof v === 'string' ? v : '');
+    const asString = (v: unknown) => (Array.isArray(v) ? v.join(', ') : typeof v === 'string' ? v : '');
     setMatching({
       email: asString(m.email),
       phone: asString(m.phone),
@@ -102,21 +117,8 @@ export const SitePage = () => {
       zp: asString(m.zp),
       db: asString(m.db),
     });
-  };
+  }, [id]);
 
-  useEffect(() => {
-    if (!site) return;
-    if (tab === 'snippet') loadSnippet().catch(() => {});
-    if (tab === 'meta') loadMeta().catch(() => {});
-    if (tab === 'campaigns') {
-      loadMeta()
-        .then(() => loadCampaigns().catch(() => {}))
-        .catch(() => {});
-    }
-    if (tab === 'ga') loadGa().catch(() => {});
-    if (tab === 'matching') loadMatching().catch(() => {});
-    if (tab === 'webhooks') loadWebhookSecret().catch(() => {});
-  }, [tab, site?.id]);
 
   const connectFacebook = async () => {
     setLoading(true);
@@ -128,8 +130,11 @@ export const SitePage = () => {
         return;
       }
       setFlash('Não foi possível iniciar a conexão com o Facebook.');
-    } catch (err: any) {
-      const apiError = err?.response?.data?.error;
+    } catch (err: unknown) {
+      const apiError =
+        err && typeof err === 'object' && 'response' in err
+          ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
+          : undefined;
       if (apiError === 'META_APP_ID is missing') {
         setFlash('Credenciais Meta não configuradas no servidor.');
       } else {
@@ -153,20 +158,34 @@ export const SitePage = () => {
     }
   };
 
-  const loadAdAccounts = async () => {
+  const loadAdAccounts = useCallback(async () => {
     const res = await api.get(`/integrations/sites/${id}/meta/adaccounts`);
     setAdAccounts(res.data.ad_accounts || []);
-  };
+  }, [id]);
 
-  const loadPixels = async (adAccountId: string) => {
+  const loadPixels = useCallback(async (adAccountId: string) => {
     const res = await api.get(`/integrations/sites/${id}/meta/pixels`, { params: { ad_account_id: adAccountId } });
     setPixels(res.data.pixels || []);
-  };
+  }, [id]);
 
-  const loadCampaigns = async () => {
+  const loadCampaigns = useCallback(async () => {
     const res = await api.get(`/integrations/sites/${id}/meta/campaigns`);
     setCampaigns(res.data.campaigns || []);
-  };
+  }, [id]);
+
+  useEffect(() => {
+    if (!site) return;
+    if (tab === 'snippet') loadSnippet().catch(() => {});
+    if (tab === 'meta') loadMeta().catch(() => {});
+    if (tab === 'campaigns') {
+      loadMeta()
+        .then(() => loadCampaigns().catch(() => {}))
+        .catch(() => {});
+    }
+    if (tab === 'ga') loadGa().catch(() => {});
+    if (tab === 'matching') loadMatching().catch(() => {});
+    if (tab === 'webhooks') loadWebhookSecret().catch(() => {});
+  }, [tab, site, loadSnippet, loadMeta, loadCampaigns, loadGa, loadMatching, loadWebhookSecret]);
 
   const setCampaignStatus = async (campaignId: string, status: 'ACTIVE' | 'PAUSED') => {
     setLoading(true);
@@ -185,19 +204,18 @@ export const SitePage = () => {
       setFlash('Conexão atualizada com sucesso.');
       searchParams.delete('connected');
       setSearchParams(searchParams, { replace: true });
-      // Reload meta and then load ad accounts automatically
       loadMeta().then(() => {
         loadAdAccounts().catch(() => {});
       });
     }
-  }, []);
+  }, [loadAdAccounts, loadMeta, searchParams, setSearchParams]);
 
   // Auto-load ad accounts if connected but no accounts loaded yet (and no ad account selected)
   useEffect(() => {
     if (tab === 'meta' && meta?.has_facebook_connection && !meta?.ad_account_id && adAccounts.length === 0) {
-       loadAdAccounts().catch(() => {});
+      loadAdAccounts().catch(() => {});
     }
-  }, [tab, meta, adAccounts.length]);
+  }, [tab, meta, adAccounts.length, loadAdAccounts]);
 
   const saveMeta = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -430,7 +448,7 @@ export const SitePage = () => {
                                       checked={isSelected}
                                       onChange={(e) => {
                                          const val = e.target.value;
-                                         setMeta((prev: any) => ({ ...prev, ad_account_id: val }));
+                                        setMeta((prev) => ({ ...(prev || {}), ad_account_id: val }));
                                          loadPixels(val).catch(() => {});
                                       }}
                                    />
@@ -732,7 +750,7 @@ export const SitePage = () => {
           {tab === 'reports' && (
             <div className="prose prose-invert max-w-none">
               {!report && <div className="text-sm text-zinc-400">Gere um diagnóstico para visualizar aqui.</div>}
-              {report && <ReactMarkdown>{report.analysis_text}</ReactMarkdown>}
+              {report?.analysis_text && <ReactMarkdown>{report.analysis_text}</ReactMarkdown>}
             </div>
           )}
         </div>
