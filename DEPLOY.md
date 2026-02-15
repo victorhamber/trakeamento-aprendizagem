@@ -3,7 +3,8 @@
 Este guia explica como colocar o **Trakeamento e Aprendizagem** no ar usando sua infraestrutura Easypanel.
 
 ## 1. Preparação
-Certifique-se de que este código esteja em um repositório Git (GitHub, GitLab, etc) acessível ao seu Easypanel.
+O código já foi enviado para o repositório: **[https://github.com/victorhamber/trakeamento-aprendizagem](https://github.com/victorhamber/trakeamento-aprendizagem)**.
+Certifique-se de que o Easypanel tenha acesso a este repositório (se for privado, você precisará conectar sua conta GitHub no Easypanel).
 
 ## 2. Criar o Banco de Dados (PostgreSQL)
 1. No seu Projeto no Easypanel, clique em **+ Novo** -> **Serviço** -> **PostgreSQL**.
@@ -16,8 +17,9 @@ Certifique-se de que este código esteja em um repositório Git (GitHub, GitLab,
 2. Nomeie como `tracking-api`.
 3. **Fonte (Source)**:
    - Conecte seu repositório Git.
-   - **Branch**: main (ou a que estiver usando).
-   - **Root Directory**: `/apps/api` (Importante: define onde está o Dockerfile).
+   - **Branch**: main.
+   - **Root Directory**: `/apps/api`.
+   - **URL do Repositório**: `https://github.com/victorhamber/trakeamento-aprendizagem` (caso precise manual).
 4. **Build**:
    - Tipo: Dockerfile.
    - Dockerfile Path: `Dockerfile` (já estará na raiz do contexto `/apps/api`).
