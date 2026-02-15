@@ -66,7 +66,7 @@ router.get('/tracker.js', async (_req, res) => {
     return (v||'').toString().trim().toLowerCase();
   }
   function normZip(v){
-    return (v||'').toString().trim().toLowerCase().replace(/[ \t\r\n]+/g,'');
+    return (v||'').toString().trim().toLowerCase().replace(/[ \\t\\r\\n]+/g,'');
   }
   function normDob(v){
     return (v||'').toString().trim().toLowerCase().replace(/[^0-9]/g,'');
