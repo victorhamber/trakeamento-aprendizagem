@@ -29,6 +29,8 @@ Certifique-se de que o Easypanel tenha acesso a este repositório (se for privad
    - `DATABASE_URL`: (Cole a URL do banco que copiou no passo 2)
    - `META_APP_ID`: (Seu ID do App Meta)
    - `META_APP_SECRET`: (Seu Segredo do App Meta)
+   - `META_OAUTH_REDIRECT_URI`: (URL da sua API + /oauth/meta/callback, ex: https://api.seudominio.com/oauth/meta/callback)
+   - `PUBLIC_DASHBOARD_BASE_URL`: (URL do seu painel, ex: https://app.seudominio.com)
    - `JWT_SECRET`: (Crie uma senha forte e aleatória)
    - `OPENAI_API_KEY`: (Sua chave da OpenAI, opcional se não usar IA agora)
 6. Clique em **Criar / Deploy**.

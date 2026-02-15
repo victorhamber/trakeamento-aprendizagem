@@ -21,7 +21,7 @@ router.get('/meta/start', requireAuth, async (req, res) => {
   const appId = process.env.META_APP_ID;
   if (!appId) return res.status(500).json({ error: 'META_APP_ID is missing' });
 
-  const redirectUri = process.env.META_OAUTH_REDIRECT_URI || 'http://localhost:3001/oauth/meta/callback';
+  const redirectUri = process.env.META_OAUTH_REDIRECT_URI || 'http://localhost:3000/oauth/meta/callback';
 
   const state = jwt.sign(
     { siteId, accountId: auth.accountId, nonce: Math.random().toString(36).slice(2) },
@@ -57,7 +57,7 @@ router.get('/meta/callback', async (req, res) => {
   const appSecret = process.env.META_APP_SECRET;
   if (!appId || !appSecret) return res.status(500).send('META_APP_ID/META_APP_SECRET missing');
 
-  const redirectUri = process.env.META_OAUTH_REDIRECT_URI || 'http://localhost:3001/oauth/meta/callback';
+  const redirectUri = process.env.META_OAUTH_REDIRECT_URI || 'http://localhost:3000/oauth/meta/callback';
   const dashboardBase = process.env.PUBLIC_DASHBOARD_BASE_URL || 'http://localhost:3000';
 
   let payload: any;
