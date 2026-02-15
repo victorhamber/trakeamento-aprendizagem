@@ -5,7 +5,7 @@ WORKDIR /app
 # Copia package.json
 COPY package*.json ./
 
-# Instala dependências
+# Instala dependências (incluindo devDependencies para build)
 RUN npm install
 
 # Copia código fonte
@@ -14,18 +14,24 @@ COPY . .
 # Builda TypeScript
 RUN npm run build
 
-# Remove dependências de desenvolvimento para imagem final menor
-RUN npm prune --production
+# --- Stage Dependências de Produção ---
+FROM node:18-alpine AS deps
+
+WORKDIR /app
+
+COPY package*.json ./
+# Instala APENAS dependências de produção (mais seguro que prune)
+RUN npm install --production
 
 # --- Stage Final ---
 FROM node:18-alpine
 
 WORKDIR /app
 
-# Copia apenas o necessário do builder
-COPY --from=builder /app/package*.json ./
-COPY --from=builder /app/node_modules ./node_modules
+# Copia apenas o necessário
+COPY --from=deps /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/package*.json ./
 
 # Variáveis de ambiente padrão
 ENV NODE_ENV=production
