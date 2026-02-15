@@ -18,6 +18,7 @@ router.get('/campaigns/metrics', requireAuth, async (req, res) => {
     const days = Number.isFinite(daysRaw) ? Math.min(90, Math.max(1, Math.trunc(daysRaw))) : 7;
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
     const preset = days <= 7 ? 'last_7d' : days <= 30 ? 'last_30d' : days <= 90 ? 'last_90d' : 'last_30d';
+    let metaError: string | null = null;
 
     const queryMetrics = async () =>
       pool.query(
@@ -45,13 +46,33 @@ router.get('/campaigns/metrics', requireAuth, async (req, res) => {
     let result = await queryMetrics();
 
     if (!(result.rowCount || 0)) {
-      await metaMarketingService.syncDailyInsights(siteId, preset);
+      try {
+        await metaMarketingService.syncDailyInsights(siteId, preset);
+      } catch (err: any) {
+        metaError =
+          err?.response?.data?.error?.message ||
+          err?.response?.data?.error?.error_user_msg ||
+          err?.response?.data?.error?.error_user_title ||
+          err?.message ||
+          'Falha ao sincronizar dados da Meta.';
+      }
       result = await queryMetrics();
     }
 
     if (!(result.rowCount || 0)) {
-      const liveRows = await metaMarketingService.fetchCampaignInsights(siteId, preset);
-      return res.json({ campaigns: liveRows, days });
+      try {
+        const liveRows = await metaMarketingService.fetchCampaignInsights(siteId, preset);
+        if (liveRows.length) return res.json({ campaigns: liveRows, days });
+      } catch (err: any) {
+        metaError =
+          metaError ||
+          err?.response?.data?.error?.message ||
+          err?.response?.data?.error?.error_user_msg ||
+          err?.response?.data?.error?.error_user_title ||
+          err?.message ||
+          'Falha ao consultar campanhas na Meta.';
+      }
+      return res.json({ campaigns: [], days, meta_error: metaError });
     }
 
     const rows = result.rows.map((row) => {
@@ -77,7 +98,7 @@ router.get('/campaigns/metrics', requireAuth, async (req, res) => {
       };
     });
 
-    res.json({ campaigns: rows, days });
+    res.json({ campaigns: rows, days, meta_error: metaError });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

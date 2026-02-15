@@ -213,6 +213,9 @@ export const SitePage = () => {
 
   const loadCampaignMetrics = useCallback(async () => {
     const res = await api.get('/meta/campaigns/metrics', { params: { site_id: id, days: 7 } });
+    if (res.data?.meta_error) {
+      setFlash(`Meta: ${res.data.meta_error}`);
+    }
     const map = (res.data?.campaigns || []).reduce((acc: Record<string, CampaignMetrics>, row: CampaignMetrics) => {
       acc[row.campaign_id] = row;
       return acc;
