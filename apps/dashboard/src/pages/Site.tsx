@@ -36,7 +36,6 @@ export const SitePage = () => {
     st: '',
     zp: '',
     db: '',
-    external_id: '',
   });
   const [webhookSecret, setWebhookSecret] = useState<string | null>(null);
   const [report, setReport] = useState<any>(null);
@@ -102,7 +101,6 @@ export const SitePage = () => {
       st: asString(m.st),
       zp: asString(m.zp),
       db: asString(m.db),
-      external_id: asString(m.external_id),
     });
   };
 
@@ -246,7 +244,6 @@ export const SitePage = () => {
       st: parse(matching.st),
       zp: parse(matching.zp),
       db: parse(matching.db),
-      external_id: parse(matching.external_id),
     };
 
     try {
@@ -595,7 +592,6 @@ export const SitePage = () => {
                   { k: 'st', label: 'Estado (st)' },
                   { k: 'zp', label: 'CEP (zp)' },
                   { k: 'db', label: 'Nascimento (db)' },
-                  { k: 'external_id', label: 'External ID (external_id)' },
                 ].map((f) => (
                   <div key={f.k}>
                     <label className="block text-xs text-zinc-400">{f.label}</label>

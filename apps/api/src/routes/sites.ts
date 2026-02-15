@@ -7,7 +7,7 @@ import { encryptString, decryptString } from '../lib/crypto';
 const router = Router();
 
 const randomKey = (bytes: number) => crypto.randomBytes(bytes).toString('base64url');
-const CANON_FIELDS = ['email', 'phone', 'fn', 'ln', 'ct', 'st', 'zp', 'db', 'external_id'] as const;
+const CANON_FIELDS = ['email', 'phone', 'fn', 'ln', 'ct', 'st', 'zp', 'db'] as const;
 type CanonField = (typeof CANON_FIELDS)[number];
 
 const sanitizeMapping = (input: any) => {
@@ -20,7 +20,6 @@ const sanitizeMapping = (input: any) => {
     st: [],
     zp: [],
     db: [],
-    external_id: [],
   };
 
   if (!input || typeof input !== 'object') return mapping;

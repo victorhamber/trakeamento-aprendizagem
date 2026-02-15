@@ -225,8 +225,6 @@ router.get('/tracker.js', async (_req, res) => {
       var db = pick(cfg.identifyMap.db);
       if(db) setHashedCookie('_ta_db', db, normDob);
 
-      var eid = pick(cfg.identifyMap.external_id);
-      if(eid) setCookie('_ta_eid', eid, 60*60*24*365*2);
     }catch(_e){}
   }
   function getFbc(){
