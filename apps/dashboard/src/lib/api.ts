@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 export const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || '/api',
+  baseURL: 'https://meta-ads-tracking-api.u0oe83.easypanel.host',
 });
 
 export const setAuthToken = (token: string | null) => {
