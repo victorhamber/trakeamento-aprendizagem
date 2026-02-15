@@ -2,7 +2,7 @@ import { pool } from '../db/pool';
 import { llmService } from './llm';
 
 export class DiagnosisService {
-  public async generateReport(siteKey: string, days = 7) {
+  public async generateReport(siteKey: string, days = 7, campaignId?: string | null) {
     const siteRow = await pool.query('SELECT id FROM sites WHERE site_key = $1', [siteKey]);
     const siteId = siteRow.rowCount ? (siteRow.rows[0].id as number) : null;
     const daysNum = Number.isFinite(Number(days)) ? Math.min(90, Math.max(1, Math.trunc(Number(days)))) : 7;
@@ -33,8 +33,9 @@ export class DiagnosisService {
         AVG(cost_per_purchase)::numeric AS cost_per_purchase_avg
       FROM meta_insights_daily
       WHERE site_id = $1 AND date_start >= $2
+      ${campaignId ? 'AND campaign_id = $3' : ''}
       `,
-      [siteId || 0, since]
+      campaignId ? [siteId || 0, since, campaignId] : [siteId || 0, since]
     );
 
     const sitePageViews = await pool.query(

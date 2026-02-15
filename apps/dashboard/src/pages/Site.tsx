@@ -27,6 +27,20 @@ type GaConfig = {
   has_api_secret?: boolean;
 };
 type DiagnosisReport = { analysis_text?: string } & Record<string, unknown>;
+type CampaignMetrics = {
+  campaign_id: string;
+  campaign_name?: string | null;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  ctr: number;
+  cpc: number;
+  cpm: number;
+  outbound_clicks: number;
+  landing_page_views: number;
+  leads: number;
+  purchases: number;
+};
 
 export const SitePage = () => {
   const { siteId } = useParams();
@@ -57,6 +71,8 @@ export const SitePage = () => {
   const [campaigns, setCampaigns] = useState<Array<{ id: string; name: string; status: string; effective_status?: string }>>(
     []
   );
+  const [campaignMetrics, setCampaignMetrics] = useState<Record<string, CampaignMetrics>>({});
+  const [selectedCampaignId, setSelectedCampaignId] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
   const reportSections = useMemo(() => {
@@ -195,19 +211,39 @@ export const SitePage = () => {
     setCampaigns(res.data.campaigns || []);
   }, [id]);
 
+  const loadCampaignMetrics = useCallback(async () => {
+    const res = await api.get('/meta/campaigns/metrics', { params: { site_id: id, days: 7 } });
+    const map = (res.data?.campaigns || []).reduce((acc: Record<string, CampaignMetrics>, row: CampaignMetrics) => {
+      acc[row.campaign_id] = row;
+      return acc;
+    }, {});
+    setCampaignMetrics(map);
+  }, [id]);
+
   useEffect(() => {
     if (!site) return;
     if (tab === 'snippet') loadSnippet().catch(() => {});
     if (tab === 'meta') loadMeta().catch(() => {});
     if (tab === 'campaigns') {
       loadMeta()
-        .then(() => loadCampaigns().catch(() => {}))
+        .then(() => Promise.all([loadCampaigns().catch(() => {}), loadCampaignMetrics().catch(() => {})]))
         .catch(() => {});
     }
     if (tab === 'ga') loadGa().catch(() => {});
     if (tab === 'matching') loadMatching().catch(() => {});
     if (tab === 'webhooks') loadWebhookSecret().catch(() => {});
-  }, [tab, site, loadSnippet, loadMeta, loadCampaigns, loadGa, loadMatching, loadWebhookSecret]);
+    if (tab === 'reports') {
+      loadMeta()
+        .then(() => Promise.all([loadCampaigns().catch(() => {}), loadCampaignMetrics().catch(() => {})]))
+        .catch(() => {});
+    }
+  }, [tab, site, loadSnippet, loadMeta, loadCampaigns, loadCampaignMetrics, loadGa, loadMatching, loadWebhookSecret]);
+
+  useEffect(() => {
+    if (selectedCampaignId && !campaigns.find((c) => c.id === selectedCampaignId)) {
+      setSelectedCampaignId('');
+    }
+  }, [campaigns, selectedCampaignId]);
 
   const setCampaignStatus = async (campaignId: string, status: 'ACTIVE' | 'PAUSED') => {
     setLoading(true);
@@ -297,9 +333,21 @@ export const SitePage = () => {
 
   const generateReport = async () => {
     if (!site) return;
+    if (campaigns.length > 0 && !selectedCampaignId) {
+      setTab('reports');
+      setFlash('Selecione a campanha antes de gerar o diagnóstico.');
+      return;
+    }
     setLoading(true);
     try {
-      const res = await api.post('/recommendations/generate', {}, { headers: { 'x-site-key': site.site_key } });
+      const res = await api.post(
+        '/recommendations/generate',
+        {},
+        {
+          headers: { 'x-site-key': site.site_key },
+          params: selectedCampaignId ? { campaign_id: selectedCampaignId } : undefined,
+        }
+      );
       setReport(res.data);
       setTab('reports');
     } finally {
@@ -307,16 +355,25 @@ export const SitePage = () => {
     }
   };
 
+  const formatNumber = (value: number) => new Intl.NumberFormat('pt-BR').format(value);
+  const formatMoney = (value: number) =>
+    new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 2 }).format(value);
+  const formatPercent = (value: number) =>
+    new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
+
+  const canGenerate = !!site && (campaigns.length === 0 || !!selectedCampaignId);
+  const selectedCampaign = selectedCampaignId ? campaigns.find((c) => c.id === selectedCampaignId) : null;
+
   return (
     <Layout
       title={site ? site.name : 'Site'}
       right={
         <button
           onClick={generateReport}
-          disabled={loading || !site}
+          disabled={loading || !canGenerate}
           className="bg-blue-600 hover:bg-blue-500 text-white text-sm rounded-xl px-4 py-2 disabled:opacity-50 shadow-[0_0_0_1px_rgba(255,255,255,0.06)] transition-colors"
         >
-          {loading ? 'Processando…' : 'Gerar diagnóstico'}
+          {loading ? 'Processando…' : canGenerate ? 'Gerar diagnóstico' : 'Selecione campanha'}
         </button>
       }
     >
@@ -686,10 +743,15 @@ export const SitePage = () => {
 
               {meta?.has_facebook_connection && meta?.ad_account_id && (
                 <div className="rounded-xl border border-zinc-900 bg-zinc-950 overflow-hidden">
-                  <div className="grid grid-cols-[1fr_160px_140px] gap-2 px-4 py-3 text-xs text-zinc-500 border-b border-zinc-900">
+                  <div className="grid grid-cols-[minmax(220px,1fr)_120px_120px_110px_90px_90px_90px_120px] gap-2 px-4 py-3 text-[11px] text-zinc-500 border-b border-zinc-900">
                     <div>Campanha</div>
                     <div>Status</div>
-                    <div>Ação</div>
+                    <div>Spend</div>
+                    <div>Impressões</div>
+                    <div>Cliques</div>
+                    <div>CTR</div>
+                    <div>CPC</div>
+                    <div className="text-right">Ação</div>
                   </div>
                   {campaigns.length === 0 && (
                     <div className="px-4 py-6 text-sm text-zinc-400">Nenhuma campanha encontrada.</div>
@@ -697,13 +759,28 @@ export const SitePage = () => {
                   {campaigns.map((c) => (
                     <div
                       key={c.id}
-                      className="grid grid-cols-[1fr_160px_140px] gap-2 px-4 py-3 text-sm border-b border-zinc-900 last:border-b-0"
+                      className="grid grid-cols-[minmax(220px,1fr)_120px_120px_110px_90px_90px_90px_120px] gap-2 px-4 py-3 text-sm border-b border-zinc-900 last:border-b-0"
                     >
                       <div>
                         <div className="text-zinc-100">{c.name}</div>
                         <div className="text-xs text-zinc-500 font-mono">{c.id}</div>
                       </div>
                       <div className="text-zinc-300">{c.status}</div>
+                      <div className="text-zinc-200 text-xs">
+                        {campaignMetrics[c.id] ? formatMoney(campaignMetrics[c.id].spend) : '—'}
+                      </div>
+                      <div className="text-zinc-200 text-xs">
+                        {campaignMetrics[c.id] ? formatNumber(campaignMetrics[c.id].impressions) : '—'}
+                      </div>
+                      <div className="text-zinc-200 text-xs">
+                        {campaignMetrics[c.id] ? formatNumber(campaignMetrics[c.id].clicks) : '—'}
+                      </div>
+                      <div className="text-zinc-200 text-xs">
+                        {campaignMetrics[c.id] ? `${formatPercent(campaignMetrics[c.id].ctr)}%` : '—'}
+                      </div>
+                      <div className="text-zinc-200 text-xs">
+                        {campaignMetrics[c.id] ? formatMoney(campaignMetrics[c.id].cpc) : '—'}
+                      </div>
                       <div className="flex justify-end">
                         {c.status === 'ACTIVE' ? (
                           <button
@@ -773,6 +850,72 @@ export const SitePage = () => {
 
           {tab === 'reports' && (
             <div className="max-w-none">
+              {campaigns.length > 0 && (
+                <div className="rounded-2xl border border-zinc-900/70 bg-zinc-950/40 p-5 text-sm text-zinc-300 mb-4">
+                  <div className="flex items-center gap-2">
+                    <div className="text-sm font-semibold text-white">Campanha do diagnóstico</div>
+                    {selectedCampaign && (
+                      <span
+                        className={`text-[11px] px-2 py-0.5 rounded-full border ${
+                          selectedCampaign.status === 'ACTIVE'
+                            ? 'border-emerald-500/40 text-emerald-200 bg-emerald-500/10'
+                            : 'border-amber-500/40 text-amber-200 bg-amber-500/10'
+                        }`}
+                      >
+                        {selectedCampaign.status === 'ACTIVE' ? 'Ativa' : 'Pausada'}
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-2 grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 items-center">
+                    <div>
+                      <label className="block text-xs text-zinc-500 mb-1">Selecione a campanha</label>
+                      <select
+                        value={selectedCampaignId}
+                        onChange={(e) => setSelectedCampaignId(e.target.value)}
+                        className="w-full rounded-lg bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-blue-500/60"
+                      >
+                        <option value="">Escolha uma campanha</option>
+                        {campaigns.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="text-xs text-zinc-500">
+                      {selectedCampaignId ? 'Pronto para gerar o diagnóstico.' : 'Obrigatório selecionar antes de gerar.'}
+                    </div>
+                  </div>
+                  {selectedCampaignId && campaignMetrics[selectedCampaignId] && (
+                    <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3 text-xs text-zinc-300">
+                      <div className="rounded-xl border border-zinc-900/70 bg-zinc-950/60 p-3">
+                        <div className="text-zinc-500">Spend</div>
+                        <div className="text-zinc-100 text-sm">
+                          {formatMoney(campaignMetrics[selectedCampaignId].spend)}
+                        </div>
+                      </div>
+                      <div className="rounded-xl border border-zinc-900/70 bg-zinc-950/60 p-3">
+                        <div className="text-zinc-500">Impressões</div>
+                        <div className="text-zinc-100 text-sm">
+                          {formatNumber(campaignMetrics[selectedCampaignId].impressions)}
+                        </div>
+                      </div>
+                      <div className="rounded-xl border border-zinc-900/70 bg-zinc-950/60 p-3">
+                        <div className="text-zinc-500">Cliques</div>
+                        <div className="text-zinc-100 text-sm">
+                          {formatNumber(campaignMetrics[selectedCampaignId].clicks)}
+                        </div>
+                      </div>
+                      <div className="rounded-xl border border-zinc-900/70 bg-zinc-950/60 p-3">
+                        <div className="text-zinc-500">CTR</div>
+                        <div className="text-zinc-100 text-sm">
+                          {formatPercent(campaignMetrics[selectedCampaignId].ctr)}%
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
               {!report && (
                 <div className="rounded-2xl border border-zinc-900/70 bg-zinc-950/40 p-5 text-sm text-zinc-300">
                   <div className="font-semibold text-white">Diagnóstico</div>
