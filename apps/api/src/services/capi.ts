@@ -28,9 +28,19 @@ interface CapiEvent {
 }
 
 export class CapiService {
+  private static disabledUntil = new Map<string, number>();
+
   // Função auxiliar para hash SHA256
   public static hash(input: string): string {
     return crypto.createHash('sha256').update(input.toLowerCase().trim()).digest('hex');
+  }
+
+  private isProbablyValidToken(token: string): boolean {
+    const t = token.trim();
+    if (t.length < 20) return false;
+    if (/\s/.test(t)) return false;
+    if (!/^[A-Za-z0-9._|-]+$/.test(t)) return false;
+    return true;
   }
 
   private async getSiteMetaConfig(siteKey: string) {
@@ -46,7 +56,12 @@ export class CapiService {
     if (row.enabled === false) return null;
     if (!row.pixel_id || !row.capi_token_enc) return null;
     try {
-      return { pixelId: row.pixel_id as string, capiToken: decryptString(row.capi_token_enc as string) };
+      const capiToken = decryptString(row.capi_token_enc as string).trim().replace(/\s+/g, '');
+      if (!this.isProbablyValidToken(capiToken)) {
+        console.warn(`CAPI token inválido para siteKey=${siteKey}. Atualize o token no painel (use o token bruto, ex: EAA...).`);
+        return null;
+      }
+      return { pixelId: row.pixel_id as string, capiToken };
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : 'unknown_error';
       console.error(`Failed to decrypt CAPI token for siteKey=${siteKey}: ${message}. Key mismatch or data corruption.`);
@@ -55,6 +70,10 @@ export class CapiService {
   }
 
   public async sendEvent(siteKey: string, event: CapiEvent) {
+    const until = CapiService.disabledUntil.get(siteKey);
+    if (until && until > Date.now()) return;
+    if (until && until <= Date.now()) CapiService.disabledUntil.delete(siteKey);
+
     const cfg = await this.getSiteMetaConfig(siteKey);
     if (!cfg) {
       console.warn(`CAPI not configured for siteKey=${siteKey}`);
@@ -102,6 +121,15 @@ export class CapiService {
       return response.data;
     } catch (error: unknown) {
       if (axios.isAxiosError(error)) {
+        const code = (error.response?.data as { error?: { code?: number } } | undefined)?.error?.code;
+        const message = (error.response?.data as { error?: { message?: string } } | undefined)?.error?.message;
+        if (code === 190) {
+          CapiService.disabledUntil.set(siteKey, Date.now() + 60 * 60 * 1000);
+          console.error(
+            `CAPI desativado temporariamente para siteKey=${siteKey} (token inválido). Atualize o CAPI Token no painel. ${message || ''}`.trim()
+          );
+          return;
+        }
         console.error('CAPI Error:', error.response?.data || error.message);
       } else {
         console.error('CAPI Error:', error instanceof Error ? error.message : 'unknown_error');

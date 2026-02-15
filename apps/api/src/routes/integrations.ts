@@ -41,9 +41,12 @@ router.put('/sites/:siteId/meta', requireAuth, async (req, res) => {
   const { pixel_id, capi_token, marketing_token, ad_account_id, enabled } = req.body || {};
   const pixelId = typeof pixel_id === 'string' ? pixel_id.trim() : null;
   const adAccountId = typeof ad_account_id === 'string' ? ad_account_id.trim() : null;
-  const capiTokenEnc = typeof capi_token === 'string' && capi_token.trim() ? encryptString(capi_token.trim()) : null;
+  const capiTokenEnc =
+    typeof capi_token === 'string' && capi_token.trim() ? encryptString(capi_token.trim().replace(/\s+/g, '')) : null;
   const marketingTokenEnc =
-    typeof marketing_token === 'string' && marketing_token.trim() ? encryptString(marketing_token.trim()) : null;
+    typeof marketing_token === 'string' && marketing_token.trim()
+      ? encryptString(marketing_token.trim().replace(/\s+/g, ''))
+      : null;
   const enabledBool = typeof enabled === 'string' ? enabled === 'true' : typeof enabled === 'boolean' ? enabled : null;
 
   await pool.query(
