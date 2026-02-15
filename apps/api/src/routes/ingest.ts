@@ -46,13 +46,17 @@ router.post('/events', async (req, res) => {
         event_id: event.event_id,
         event_source_url: event.event_source_url,
         user_data: {
-          client_ip_address: req.ip || event.user_data.client_ip_address, // Pega IP real da request se possível
+          client_ip_address: req.ip || event.user_data.client_ip_address,
           client_user_agent: req.headers['user-agent'] || event.user_data.client_user_agent,
           fbp: event.user_data.fbp,
           fbc: event.user_data.fbc,
           external_id: event.user_data.external_id ? CapiService.hash(event.user_data.external_id) : undefined
         },
-        custom_data: event.custom_data
+        custom_data: {
+           ...event.custom_data,
+           content_name: event.custom_data?.page_title,
+           content_type: event.custom_data?.content_type || 'product'
+        }
       };
 
       // Não aguarda o envio para não bloquear a resposta do ingest (fire and forget)

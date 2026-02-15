@@ -91,6 +91,16 @@ router.get('/tracker.js', async (_req, res) => {
     if(!cfg || !cfg.apiUrl || !cfg.siteKey) return;
     var nav=performance && performance.timing ? performance.timing : null;
     var loadTimeMs=nav ? (nav.domContentLoadedEventEnd - nav.navigationStart) : undefined;
+
+    function getFbc() {
+       var fbc = getCookie('_fbc');
+       if(fbc) return fbc;
+       var url = new URL(location.href);
+       var fbclid = url.searchParams.get('fbclid');
+       if(fbclid) return 'fb.1.'+Date.now()+'.'+fbclid;
+       return undefined;
+    }
+
     var payload={
       event_name:'PageView',
       event_time: Math.floor(Date.now()/1000),
@@ -99,17 +109,16 @@ router.get('/tracker.js', async (_req, res) => {
       user_data:{
         client_user_agent: navigator.userAgent,
         fbp: getCookie('_fbp'),
-        fbc: getCookie('_fbc')
+        fbc: getFbc(),
+        external_id: getCookie('external_id') || undefined
       },
-      telemetry:{
-        load_time_ms: loadTimeMs,
-        screen_width: screen.width,
-        screen_height: screen.height,
-        referrer: document.referrer || '',
-        page_path: location.pathname || '',
-        page_title: document.title || ''
+      custom_data: {
+         page_title: document.title,
+         content_type: 'product',
+         referrer: document.referrer
       }
     };
+    if(nav && loadTimeMs) payload.custom_data.load_time_ms = loadTimeMs;
     send(cfg.apiUrl, cfg.siteKey, payload);
   }
   function pageEngagement(){
