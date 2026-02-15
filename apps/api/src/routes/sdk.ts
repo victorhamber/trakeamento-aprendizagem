@@ -384,6 +384,14 @@ router.get('/tracker.js', async (_req, res) => {
     var utm = getUtm();
     var externalId = getOrCreateExternalId();
     var metaUser = getMetaUserDataFromCookies();
+    var telemetrySnapshot={
+      dwell_time_ms: 0,
+      max_scroll_pct: Math.round(maxScroll),
+      clicks_total: totalClicks,
+      clicks_cta: ctaClicks,
+      page_path: location.pathname || '',
+      page_title: document.title || ''
+    };
 
     var payload={
       event_name:'PageView',
@@ -409,9 +417,13 @@ router.get('/tracker.js', async (_req, res) => {
          content_type: 'product',
          referrer: document.referrer,
          page_path: location.pathname
-      }
+      },
+      telemetry: telemetrySnapshot
     };
-    if(nav && loadTimeMs) payload.custom_data.load_time_ms = loadTimeMs;
+    if(nav && loadTimeMs){
+      payload.custom_data.load_time_ms = loadTimeMs;
+      payload.telemetry.load_time_ms = loadTimeMs;
+    }
     send(cfg.apiUrl, cfg.siteKey, payload);
     if(cfg.metaPixelId){
       loadMetaPixel(cfg.metaPixelId);
@@ -443,6 +455,7 @@ router.get('/tracker.js', async (_req, res) => {
             zp: payload.user_data.zp,
             db: payload.user_data.db
           },
+          payload.telemetry || {},
           getTimeFields(payload.event_time),
           utm
         ),

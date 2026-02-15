@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../state/auth';
 
@@ -73,6 +73,7 @@ const Item = ({ to, label, icon }: { to: string; label: string; icon: 'dashboard
 export const Layout = ({ title, children, right }: { title: string; children: React.ReactNode; right?: React.ReactNode }) => {
   const auth = useAuth();
   const location = useLocation();
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 grid grid-cols-1 lg:grid-cols-[288px_1fr]">
@@ -114,9 +115,21 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
       <main className="bg-gradient-to-b from-zinc-950 via-zinc-950 to-black">
         <header className="sticky top-0 z-10 bg-zinc-950/70 backdrop-blur border-b border-zinc-900/70">
           <div className="max-w-6xl mx-auto px-5 py-4 flex items-center justify-between gap-4">
-            <div>
-              <div className="text-xs text-zinc-500">Dashboard</div>
-              <div className="text-xl font-semibold tracking-tight text-white">{title}</div>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setMobileOpen((open) => !open)}
+                className="inline-flex lg:hidden items-center justify-center h-9 w-9 rounded-xl border border-zinc-800 bg-zinc-900/70 text-zinc-200"
+              >
+                <span className="sr-only">Abrir menu</span>
+                <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4">
+                  <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                </svg>
+              </button>
+              <div>
+                <div className="text-xs text-zinc-500">Dashboard</div>
+                <div className="text-xl font-semibold tracking-tight text-white">{title}</div>
+              </div>
             </div>
             <div className="flex items-center gap-3">
               <nav className="lg:hidden hidden sm:flex items-center gap-2">
@@ -162,6 +175,68 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
 
         <div className="max-w-6xl mx-auto px-5 py-6">{children}</div>
       </main>
+
+      {mobileOpen && (
+        <div className="lg:hidden fixed inset-0 z-40">
+          <button
+            type="button"
+            onClick={() => setMobileOpen(false)}
+            className="absolute inset-0 bg-black/60"
+          />
+          <div className="absolute inset-y-0 left-0 w-72 max-w-full bg-zinc-950 border-r border-zinc-900/80 p-4 flex flex-col">
+            <Link
+              to="/dashboard"
+              onClick={() => setMobileOpen(false)}
+              className="flex items-center gap-3 px-2 py-3 rounded-2xl hover:bg-zinc-900/40 transition-colors"
+            >
+              <div className="h-9 w-9 rounded-2xl bg-gradient-to-br from-blue-600/30 to-violet-600/20 border border-white/10 flex items-center justify-center shadow-[0_0_0_1px_rgba(255,255,255,0.05)]">
+                <div className="h-2.5 w-2.5 rounded-full bg-blue-500 shadow-[0_0_14px_rgba(59,130,246,0.55)]" />
+              </div>
+              <div className="leading-tight">
+                <div className="font-semibold tracking-tight">Trakeamento</div>
+                <div className="text-[11px] text-zinc-400">Tracking + Diagnóstico</div>
+              </div>
+            </Link>
+
+            <nav className="mt-4 space-y-1">
+              <Item
+                to="/dashboard"
+                label="Visão geral"
+                icon="dashboard"
+              />
+              <Item
+                to="/sites"
+                label="Sites"
+                icon="sites"
+              />
+              <Item
+                to="/ai"
+                label="Assistente IA"
+                icon="ai"
+              />
+              <div className="pt-2">
+                <div className="px-3 py-2 rounded-xl border border-zinc-900/70 bg-zinc-950/40 text-zinc-500 text-sm">
+                  Treinamentos <span className="text-xs">(em breve)</span>
+                </div>
+              </div>
+            </nav>
+
+            <div className="mt-auto pt-4 border-t border-zinc-900/70">
+              <div className="text-xs text-zinc-500">Conta</div>
+              <div className="text-sm text-zinc-200 truncate">{auth.user?.email}</div>
+              <button
+                onClick={() => {
+                  setMobileOpen(false);
+                  auth.logout();
+                }}
+                className="mt-3 w-full text-sm bg-zinc-900/60 hover:bg-zinc-900 border border-zinc-800/80 rounded-xl px-3 py-2 transition-colors"
+              >
+                Sair
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
