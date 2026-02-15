@@ -4,9 +4,62 @@ import { capiService, CapiService } from '../services/capi';
 
 const router = Router();
 
+type EngagementBucket = 'low' | 'medium' | 'high';
+
+function toNumber(value: unknown): number {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  if (typeof value === 'string') {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : 0;
+  }
+  return 0;
+}
+
+function computeEngagement(event: any): { score: number; bucket: EngagementBucket } | null {
+  if (!event || !event.telemetry) return null;
+  if (event.event_name !== 'PageEngagement' && event.event_name !== 'PageView') return null;
+
+  const t = event.telemetry || {};
+  const dwellMs = toNumber(t.dwell_time_ms);
+  const scroll = toNumber(t.max_scroll_pct);
+  const clicks = toNumber(t.clicks_total);
+  const ctaClicks = toNumber(t.clicks_cta);
+
+  let score = 0;
+
+  if (dwellMs >= 60000) score += 40;
+  else if (dwellMs >= 15000) score += 30;
+  else if (dwellMs >= 5000) score += 15;
+
+  if (scroll >= 80) score += 30;
+  else if (scroll >= 50) score += 20;
+  else if (scroll >= 20) score += 10;
+
+  score += Math.min(clicks * 4, 20);
+  score += Math.min(ctaClicks * 10, 30);
+
+  if (score < 0) score = 0;
+  if (score > 100) score = 100;
+
+  let bucket: EngagementBucket = 'low';
+  if (score >= 70) bucket = 'high';
+  else if (score >= 40) bucket = 'medium';
+
+  return { score, bucket };
+}
+
 router.post('/events', async (req, res) => {
   const siteKey = req.query.key || req.headers['x-site-key'];
   const event = req.body;
+
+  const engagement = computeEngagement(event);
+  if (engagement) {
+    event.telemetry = {
+      ...(event.telemetry || {}),
+      engagement_score: engagement.score,
+      engagement_bucket: engagement.bucket,
+    };
+  }
 
   if (!siteKey || !event.event_name) {
     return res.status(400).json({ error: 'Missing site key or event data' });
@@ -61,9 +114,12 @@ router.post('/events', async (req, res) => {
           external_id: event.user_data.external_id ? CapiService.hash(event.user_data.external_id) : undefined
         },
         custom_data: {
-           ...event.custom_data,
-           content_name: event.custom_data?.page_title,
-           content_type: event.custom_data?.content_type || 'product'
+          ...event.custom_data,
+          ...(event.telemetry || {}),
+          engagement_score: engagement?.score,
+          engagement_bucket: engagement?.bucket,
+          content_name: event.custom_data?.page_title,
+          content_type: event.custom_data?.content_type || 'product'
         }
       };
 

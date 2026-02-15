@@ -114,7 +114,7 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
 
       <main className="bg-gradient-to-b from-zinc-950 via-zinc-950 to-black">
         <header className="sticky top-0 z-10 bg-zinc-950/70 backdrop-blur border-b border-zinc-900/70">
-          <div className="max-w-6xl mx-auto px-5 py-4 flex items-center justify-between gap-4">
+          <div className="w-full px-5 py-4 flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               <button
                 type="button"
@@ -173,7 +173,7 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
           </div>
         </header>
 
-        <div className="max-w-6xl mx-auto px-5 py-6">{children}</div>
+        <div className="w-full px-5 py-6">{children}</div>
       </main>
 
       {mobileOpen && (
