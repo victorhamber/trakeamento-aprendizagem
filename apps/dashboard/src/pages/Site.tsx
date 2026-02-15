@@ -11,7 +11,7 @@ type Site = {
   site_key: string;
 };
 
-type Tab = 'snippet' | 'meta' | 'campaigns' | 'ga' | 'webhooks' | 'reports';
+type Tab = 'snippet' | 'meta' | 'campaigns' | 'ga' | 'matching' | 'webhooks' | 'reports';
 
 export const SitePage = () => {
   const { siteId } = useParams();
@@ -27,6 +27,17 @@ export const SitePage = () => {
   const [adAccounts, setAdAccounts] = useState<Array<{ id: string; name: string; account_id?: string; business?: { id: string; name: string } }>>([]);
   const [pixels, setPixels] = useState<Array<{ id: string; name: string }>>([]);
   const [ga, setGa] = useState<any>(null);
+  const [matching, setMatching] = useState<Record<string, string>>({
+    email: '',
+    phone: '',
+    fn: '',
+    ln: '',
+    ct: '',
+    st: '',
+    zp: '',
+    db: '',
+    external_id: '',
+  });
   const [webhookSecret, setWebhookSecret] = useState<string | null>(null);
   const [report, setReport] = useState<any>(null);
   const [campaigns, setCampaigns] = useState<Array<{ id: string; name: string; status: string; effective_status?: string }>>(
@@ -51,6 +62,7 @@ export const SitePage = () => {
       { key: 'meta' as const, label: 'Meta' },
       { key: 'campaigns' as const, label: 'Campanhas' },
       { key: 'ga' as const, label: 'Google Analytics' },
+      { key: 'matching' as const, label: 'Correspondência' },
       { key: 'webhooks' as const, label: 'Webhook Vendas' },
       { key: 'reports' as const, label: 'Diagnóstico' },
     ],
@@ -77,6 +89,23 @@ export const SitePage = () => {
     setWebhookSecret(res.data.secret);
   };
 
+  const loadMatching = async () => {
+    const res = await api.get(`/sites/${id}/identify-mapping`);
+    const m = res.data?.mapping || {};
+    const asString = (v: any) => (Array.isArray(v) ? v.join(', ') : typeof v === 'string' ? v : '');
+    setMatching({
+      email: asString(m.email),
+      phone: asString(m.phone),
+      fn: asString(m.fn),
+      ln: asString(m.ln),
+      ct: asString(m.ct),
+      st: asString(m.st),
+      zp: asString(m.zp),
+      db: asString(m.db),
+      external_id: asString(m.external_id),
+    });
+  };
+
   useEffect(() => {
     if (!site) return;
     if (tab === 'snippet') loadSnippet().catch(() => {});
@@ -87,6 +116,7 @@ export const SitePage = () => {
         .catch(() => {});
     }
     if (tab === 'ga') loadGa().catch(() => {});
+    if (tab === 'matching') loadMatching().catch(() => {});
     if (tab === 'webhooks') loadWebhookSecret().catch(() => {});
   }, [tab, site?.id]);
 
@@ -194,6 +224,35 @@ export const SitePage = () => {
       await api.put(`/integrations/sites/${id}/ga`, payload);
       await loadGa();
       setFlash('Configuração Google Analytics salva.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const saveMatching = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    const parse = (s: string) =>
+      s
+        .split(',')
+        .map((x) => x.trim())
+        .filter(Boolean);
+    const mapping = {
+      email: parse(matching.email),
+      phone: parse(matching.phone),
+      fn: parse(matching.fn),
+      ln: parse(matching.ln),
+      ct: parse(matching.ct),
+      st: parse(matching.st),
+      zp: parse(matching.zp),
+      db: parse(matching.db),
+      external_id: parse(matching.external_id),
+    };
+
+    try {
+      await api.put(`/sites/${id}/identify-mapping`, { mapping });
+      await loadMatching();
+      setFlash('Correspondência salva.');
     } finally {
       setLoading(false);
     }
@@ -517,6 +576,43 @@ export const SitePage = () => {
                 className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg disabled:opacity-50 text-sm"
               >
                 {loading ? 'Salvando…' : 'Salvar GA'}
+              </button>
+            </form>
+          )}
+
+          {tab === 'matching' && (
+            <form onSubmit={saveMatching} className="space-y-4">
+              <div className="text-sm text-zinc-400">
+                Configure quais chaves o seu site usa. Separe por vírgula para múltiplos aliases.
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-3xl">
+                {[
+                  { k: 'email', label: 'Email (email)' },
+                  { k: 'phone', label: 'Telefone (phone)' },
+                  { k: 'fn', label: 'Nome (fn)' },
+                  { k: 'ln', label: 'Sobrenome (ln)' },
+                  { k: 'ct', label: 'Cidade (ct)' },
+                  { k: 'st', label: 'Estado (st)' },
+                  { k: 'zp', label: 'CEP (zp)' },
+                  { k: 'db', label: 'Nascimento (db)' },
+                  { k: 'external_id', label: 'External ID (external_id)' },
+                ].map((f) => (
+                  <div key={f.k}>
+                    <label className="block text-xs text-zinc-400">{f.label}</label>
+                    <input
+                      value={matching[f.k] || ''}
+                      onChange={(e) => setMatching((prev) => ({ ...prev, [f.k]: e.target.value }))}
+                      placeholder="Ex: email, e-mail, user_email"
+                      className="mt-1 w-full rounded-lg bg-zinc-900 border border-zinc-800 px-3 py-2 text-sm outline-none focus:border-blue-500/60"
+                    />
+                  </div>
+                ))}
+              </div>
+              <button
+                disabled={loading}
+                className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg disabled:opacity-50 text-sm"
+              >
+                {loading ? 'Salvando…' : 'Salvar Correspondência'}
               </button>
             </form>
           )}

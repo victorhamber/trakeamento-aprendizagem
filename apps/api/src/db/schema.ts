@@ -134,6 +134,14 @@ const schemaSql = `
     created_at TIMESTAMP DEFAULT NOW()
   );
 
+  CREATE TABLE IF NOT EXISTS site_identify_mappings (
+    id SERIAL PRIMARY KEY,
+    site_id INTEGER NOT NULL UNIQUE REFERENCES sites(id) ON DELETE CASCADE,
+    mapping JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+  );
+
   CREATE INDEX IF NOT EXISTS idx_sites_account ON sites(account_id);
   CREATE INDEX IF NOT EXISTS idx_web_events_time ON web_events(event_time);
   CREATE INDEX IF NOT EXISTS idx_web_events_name ON web_events(event_name);

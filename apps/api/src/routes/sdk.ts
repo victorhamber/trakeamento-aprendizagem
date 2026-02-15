@@ -156,6 +156,79 @@ router.get('/tracker.js', async (_req, res) => {
       }catch(_e){}
     }, true);
   }
+  function getByPath(obj, path){
+    try{
+      if(!obj || !path) return undefined;
+      var cur=obj;
+      var parts=path.split('.');
+      for(var i=0;i<parts.length;i++){
+        var k=parts[i];
+        if(!k) return undefined;
+        if(cur && Object.prototype.hasOwnProperty.call(cur, k)) cur=cur[k];
+        else return undefined;
+      }
+      return cur;
+    }catch(_e){ return undefined; }
+  }
+  function coerceString(v){
+    if(v==null) return '';
+    if(Array.isArray(v)){
+      for(var i=0;i<v.length;i++){
+        var s=coerceString(v[i]);
+        if(s) return s;
+      }
+      return '';
+    }
+    if(typeof v==='string') return v;
+    if(typeof v==='number') return String(v);
+    return '';
+  }
+  function applyIdentify(raw){
+    try{
+      var cfg=window.TRACKING_CONFIG;
+      if(!cfg || !cfg.identifyMap) return;
+      if(!raw || typeof raw!=='object') return;
+
+      function pick(keys){
+        if(!keys || !keys.length) return '';
+        for(var i=0;i<keys.length;i++){
+          var k=keys[i];
+          if(!k) continue;
+          var v = Object.prototype.hasOwnProperty.call(raw, k) ? raw[k] : getByPath(raw, k);
+          var s = coerceString(v);
+          if(s) return s;
+        }
+        return '';
+      }
+
+      var email = pick(cfg.identifyMap.email);
+      if(email) setHashedCookie('_ta_em', email, normEmail);
+
+      var phone = pick(cfg.identifyMap.phone);
+      if(phone) setHashedCookie('_ta_ph', phone, normPhone);
+
+      var fn = pick(cfg.identifyMap.fn);
+      if(fn) setHashedCookie('_ta_fn', fn, normName);
+
+      var ln = pick(cfg.identifyMap.ln);
+      if(ln) setHashedCookie('_ta_ln', ln, normName);
+
+      var ct = pick(cfg.identifyMap.ct);
+      if(ct) setHashedCookie('_ta_ct', ct, normCityState);
+
+      var st = pick(cfg.identifyMap.st);
+      if(st) setHashedCookie('_ta_st', st, normCityState);
+
+      var zp = pick(cfg.identifyMap.zp);
+      if(zp) setHashedCookie('_ta_zp', zp, normZip);
+
+      var db = pick(cfg.identifyMap.db);
+      if(db) setHashedCookie('_ta_db', db, normDob);
+
+      var eid = pick(cfg.identifyMap.external_id);
+      if(eid) setCookie('_ta_eid', eid, 60*60*24*365*2);
+    }catch(_e){}
+  }
   function getFbc(){
     var fbc = getCookie('_fbc');
     if(fbc) return fbc;
@@ -458,6 +531,15 @@ router.get('/tracker.js', async (_req, res) => {
   trackClicks();
   autoTagLinks();
   observeFormsForPii();
+  try{
+    window.taIdentify = function(obj){
+      try{
+        applyIdentify(obj);
+        window.__TA_IDENTIFY = Object.assign(window.__TA_IDENTIFY || {}, obj || {});
+      }catch(_e){}
+    };
+    if(window.TA_IDENTIFY) window.taIdentify(window.TA_IDENTIFY);
+  }catch(_e){}
   if(document.readyState==='complete' || document.readyState==='interactive') pageView();
   else document.addEventListener('DOMContentLoaded', pageView);
   window.addEventListener('beforeunload', pageEngagement);

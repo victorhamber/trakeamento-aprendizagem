@@ -7,6 +7,34 @@ import { encryptString, decryptString } from '../lib/crypto';
 const router = Router();
 
 const randomKey = (bytes: number) => crypto.randomBytes(bytes).toString('base64url');
+const CANON_FIELDS = ['email', 'phone', 'fn', 'ln', 'ct', 'st', 'zp', 'db', 'external_id'] as const;
+type CanonField = (typeof CANON_FIELDS)[number];
+
+const sanitizeMapping = (input: any) => {
+  const mapping: Record<CanonField, string[]> = {
+    email: [],
+    phone: [],
+    fn: [],
+    ln: [],
+    ct: [],
+    st: [],
+    zp: [],
+    db: [],
+    external_id: [],
+  };
+
+  if (!input || typeof input !== 'object') return mapping;
+  for (const key of CANON_FIELDS) {
+    const raw = (input as any)[key];
+    const arr = Array.isArray(raw) ? raw : typeof raw === 'string' ? raw.split(',') : [];
+    const cleaned = arr
+      .map((v) => (typeof v === 'string' ? v.trim() : ''))
+      .filter(Boolean)
+      .slice(0, 20);
+    mapping[key] = cleaned;
+  }
+  return mapping;
+};
 
 router.get('/', requireAuth, async (req, res) => {
   const auth = req.auth!;
@@ -64,6 +92,38 @@ router.post('/', requireAuth, async (req, res) => {
   return res.status(201).json({ site: result.rows[0], webhook_secret: webhookSecretPlain });
 });
 
+router.get('/:siteId/identify-mapping', requireAuth, async (req, res) => {
+  const auth = req.auth!;
+  const siteId = Number(req.params.siteId);
+  if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
+
+  const site = await pool.query('SELECT id FROM sites WHERE id = $1 AND account_id = $2', [siteId, auth.accountId]);
+  if (!site.rowCount) return res.status(404).json({ error: 'Site not found' });
+
+  const result = await pool.query('SELECT mapping FROM site_identify_mappings WHERE site_id = $1', [siteId]);
+  const mapping = result.rowCount ? sanitizeMapping(result.rows[0].mapping) : sanitizeMapping(null);
+  return res.json({ mapping });
+});
+
+router.put('/:siteId/identify-mapping', requireAuth, async (req, res) => {
+  const auth = req.auth!;
+  const siteId = Number(req.params.siteId);
+  if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
+
+  const site = await pool.query('SELECT id FROM sites WHERE id = $1 AND account_id = $2', [siteId, auth.accountId]);
+  if (!site.rowCount) return res.status(404).json({ error: 'Site not found' });
+
+  const mapping = sanitizeMapping(req.body?.mapping ?? req.body);
+  await pool.query(
+    `INSERT INTO site_identify_mappings (site_id, mapping)
+     VALUES ($1, $2)
+     ON CONFLICT (site_id) DO UPDATE SET mapping = $2, updated_at = NOW()`,
+    [siteId, mapping]
+  );
+
+  return res.json({ ok: true, mapping });
+});
+
 router.get('/:siteId/snippet', requireAuth, async (req, res) => {
   const auth = req.auth!;
   const siteId = Number(req.params.siteId);
@@ -94,8 +154,11 @@ router.get('/:siteId/snippet', requireAuth, async (req, res) => {
         ? gaRow.measurement_id.trim()
         : null;
 
+  const identify = await pool.query('SELECT mapping FROM site_identify_mappings WHERE site_id = $1', [siteId]);
+  const identifyMap = identify.rowCount ? sanitizeMapping(identify.rows[0].mapping) : sanitizeMapping(null);
+
   const snippet = [
-    `<script>window.TRACKING_CONFIG={apiUrl:${JSON.stringify(apiBaseUrl)},siteKey:${JSON.stringify(siteKey)},metaPixelId:${JSON.stringify(metaPixelId)},gaMeasurementId:${JSON.stringify(gaMeasurementId)}};</script>`,
+    `<script>window.TRACKING_CONFIG={apiUrl:${JSON.stringify(apiBaseUrl)},siteKey:${JSON.stringify(siteKey)},metaPixelId:${JSON.stringify(metaPixelId)},gaMeasurementId:${JSON.stringify(gaMeasurementId)},identifyMap:${JSON.stringify(identifyMap)}};</script>`,
     `<script async src=${JSON.stringify(sdkUrl)}></script>`,
   ].join('\n');
 
@@ -106,6 +169,7 @@ router.get('/:siteId/snippet', requireAuth, async (req, res) => {
     site_key: siteKey,
     meta_pixel_id: metaPixelId,
     ga_measurement_id: gaMeasurementId,
+    identify_map: identifyMap,
   });
 });
 
