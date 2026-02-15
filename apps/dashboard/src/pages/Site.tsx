@@ -404,7 +404,7 @@ export const SitePage = () => {
                                     onChange={(e) => {
                                        const val = e.target.value;
                                        // Update local state immediately for visual feedback
-                                       setMeta(prev => ({ ...prev, ad_account_id: val }));
+                                       setMeta((prev: any) => ({ ...prev, ad_account_id: val }));
                                        loadPixels(val).catch(() => {});
                                     }}
                                  />
