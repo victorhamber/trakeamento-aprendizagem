@@ -89,13 +89,13 @@ export const DashboardPage = () => {
       right={
         <Link
           to="/sites"
-          className="bg-blue-600 hover:bg-blue-500 text-white text-sm rounded-xl px-4 py-2 shadow-[0_0_0_1px_rgba(255,255,255,0.06)] transition-colors"
+          className="bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 hover:from-blue-500 hover:via-indigo-500 hover:to-violet-500 text-white text-sm rounded-xl px-4 py-2 shadow-[0_12px_30px_rgba(59,130,246,0.35)] transition-all"
         >
           Novo site
         </Link>
       }
     >
-      <div className="rounded-3xl border border-zinc-900/70 bg-zinc-950/40 p-6 shadow-[0_0_0_1px_rgba(255,255,255,0.03)]">
+      <div className="rounded-3xl border border-white/5 bg-zinc-950/50 p-6 shadow-[0_12px_30px_rgba(0,0,0,0.35)]">
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="text-sm font-semibold text-white">Controle em tempo real, sem complicação</div>
@@ -103,8 +103,8 @@ export const DashboardPage = () => {
               Conecte seus sites, acompanhe eventos e receba diagnósticos claros sobre o que está travando suas vendas.
             </div>
           </div>
-          <div className="hidden md:flex items-center gap-2 rounded-2xl border border-zinc-800/70 bg-zinc-950/50 px-4 py-3">
-            <span className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.55)]" />
+          <div className="hidden md:flex items-center gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3">
+            <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.6)]" />
             <div className="text-xs text-zinc-300">Coleta ativa</div>
           </div>
         </div>
@@ -142,7 +142,7 @@ export const DashboardPage = () => {
       </div>
 
       <div className="mt-6 grid grid-cols-1 xl:grid-cols-3 gap-4">
-        <div className="xl:col-span-2 rounded-3xl border border-zinc-900/70 bg-zinc-950/40 p-6 shadow-[0_0_0_1px_rgba(255,255,255,0.03)]">
+        <div className="xl:col-span-2 rounded-3xl border border-white/5 bg-zinc-950/50 p-6 shadow-[0_12px_30px_rgba(0,0,0,0.35)]">
           <div className="flex items-start justify-between gap-4">
             <div>
               <div className="text-sm font-semibold text-white">Ações rápidas</div>
@@ -154,7 +154,7 @@ export const DashboardPage = () => {
           <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
             <Link
               to="/sites"
-              className="group rounded-2xl border border-zinc-900/70 bg-zinc-950/40 hover:bg-zinc-900/40 p-4 transition-colors"
+              className="group rounded-2xl border border-white/5 bg-zinc-950/50 hover:bg-white/5 p-4 transition-all"
             >
               <div className="text-xs text-zinc-400">Sites</div>
               <div className="mt-1 text-sm font-semibold text-white">Criar ou gerenciar sites</div>
@@ -164,7 +164,7 @@ export const DashboardPage = () => {
 
             <Link
               to="/ai"
-              className="group rounded-2xl border border-zinc-900/70 bg-zinc-950/40 hover:bg-zinc-900/40 p-4 transition-colors"
+              className="group rounded-2xl border border-white/5 bg-zinc-950/50 hover:bg-white/5 p-4 transition-all"
             >
               <div className="text-xs text-zinc-400">Assistente IA</div>
               <div className="mt-1 text-sm font-semibold text-white">Configurar diagnósticos</div>
@@ -174,13 +174,13 @@ export const DashboardPage = () => {
               <div className="mt-3 text-xs text-blue-300 group-hover:text-blue-200">Configurar →</div>
             </Link>
 
-            <div className="rounded-2xl border border-zinc-900/70 bg-zinc-950/40 p-4">
+            <div className="rounded-2xl border border-white/5 bg-zinc-950/50 p-4">
               <div className="text-xs text-zinc-400">Treinamentos</div>
               <div className="mt-1 text-sm font-semibold text-zinc-200">Conteúdo guiado (em breve)</div>
               <div className="mt-2 text-xs text-zinc-500">Aulas com o passo a passo completo, do zero até escala.</div>
             </div>
 
-            <div className="rounded-2xl border border-zinc-900/70 bg-zinc-950/40 p-4">
+            <div className="rounded-2xl border border-white/5 bg-zinc-950/50 p-4">
               <div className="text-xs text-zinc-400">Dica rápida</div>
               <div className="mt-1 text-sm font-semibold text-zinc-200">Diagnóstico funciona com dados</div>
               <div className="mt-2 text-xs text-zinc-500">
@@ -190,7 +190,7 @@ export const DashboardPage = () => {
           </div>
         </div>
 
-        <div className="rounded-3xl border border-zinc-900/70 bg-zinc-950/40 p-6 shadow-[0_0_0_1px_rgba(255,255,255,0.03)]">
+        <div className="rounded-3xl border border-white/5 bg-zinc-950/50 p-6 shadow-[0_12px_30px_rgba(0,0,0,0.35)]">
           <div className="text-sm font-semibold text-white">Status do sistema</div>
           <div className="mt-4 space-y-3 text-sm text-zinc-200">
             <div className="flex items-center justify-between">

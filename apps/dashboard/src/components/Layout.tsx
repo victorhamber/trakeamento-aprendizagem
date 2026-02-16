@@ -58,14 +58,14 @@ const Item = ({ to, label, icon }: { to: string; label: string; icon: 'dashboard
   <NavLink
     to={to}
     className={({ isActive }) =>
-      `group flex items-center gap-3 px-3 py-2 rounded-xl text-sm transition-colors ${
+      `group flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all ${
         isActive
-          ? 'bg-zinc-900/70 text-white border border-zinc-800/70 shadow-[0_0_0_1px_rgba(255,255,255,0.04)]'
-          : 'text-zinc-300 hover:bg-zinc-900/50 hover:text-white'
+          ? 'bg-white/10 text-white border border-white/10 shadow-[0_10px_30px_rgba(0,0,0,0.35)]'
+          : 'text-zinc-300/80 hover:text-white hover:bg-white/5 border border-transparent'
       }`
     }
   >
-    <Icon name={icon} className="h-5 w-5 text-zinc-400 group-hover:text-zinc-200" />
+    <Icon name={icon} className="h-5 w-5 text-zinc-400/80 group-hover:text-white" />
     <span>{label}</span>
   </NavLink>
 );
@@ -76,11 +76,14 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 grid grid-cols-1 lg:grid-cols-[288px_1fr]">
-      <aside className="hidden lg:flex flex-col bg-gradient-to-b from-zinc-950 via-zinc-950 to-black border-r border-zinc-900/70 p-4">
-        <Link to="/dashboard" className="flex items-center gap-3 px-2 py-3 rounded-2xl hover:bg-zinc-900/40 transition-colors">
-          <div className="h-10 w-10 rounded-2xl bg-gradient-to-br from-blue-600/30 to-violet-600/20 border border-white/10 flex items-center justify-center shadow-[0_0_0_1px_rgba(255,255,255,0.05)]">
-            <div className="h-3 w-3 rounded-full bg-blue-500 shadow-[0_0_18px_rgba(59,130,246,0.55)]" />
+    <div className="min-h-screen bg-[#0b0f17] text-zinc-100 grid grid-cols-1 lg:grid-cols-[288px_1fr]">
+      <aside className="hidden lg:flex flex-col bg-gradient-to-b from-[#0b0f17] via-zinc-950 to-black border-r border-white/5 p-4">
+        <Link
+          to="/dashboard"
+          className="flex items-center gap-3 px-3 py-3 rounded-2xl bg-white/[0.02] border border-white/5 hover:bg-white/5 transition-colors"
+        >
+          <div className="h-10 w-10 rounded-2xl bg-gradient-to-br from-blue-500/30 via-indigo-500/20 to-fuchsia-500/20 border border-white/10 flex items-center justify-center shadow-[0_0_0_1px_rgba(255,255,255,0.08)]">
+            <div className="h-3 w-3 rounded-full bg-blue-400 shadow-[0_0_18px_rgba(96,165,250,0.6)]" />
           </div>
           <div className="leading-tight">
             <div className="font-semibold tracking-tight">Trakeamento</div>
@@ -94,18 +97,18 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
           <Item to="/ai" label="Assistente IA" icon="ai" />
 
           <div className="pt-4">
-            <div className="px-3 py-2 rounded-xl border border-zinc-900/70 bg-zinc-950/40 text-zinc-500 text-sm">
+            <div className="px-3 py-2 rounded-xl border border-white/5 bg-white/[0.02] text-zinc-400 text-sm">
               Treinamentos <span className="text-xs">(em breve)</span>
             </div>
           </div>
         </nav>
 
-        <div className="mt-auto pt-4 border-t border-zinc-900/70">
+        <div className="mt-auto pt-4 border-t border-white/5">
           <div className="text-xs text-zinc-500">Conta</div>
           <div className="text-sm text-zinc-200 truncate">{auth.user?.email}</div>
           <button
             onClick={() => auth.logout()}
-            className="mt-3 w-full text-sm bg-zinc-900/60 hover:bg-zinc-900 border border-zinc-800/80 rounded-xl px-3 py-2 transition-colors"
+            className="mt-3 w-full text-sm bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl px-3 py-2 transition-colors"
           >
             Sair
           </button>
@@ -113,14 +116,14 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
         </div>
       </aside>
 
-      <main className="bg-gradient-to-b from-zinc-950 via-zinc-950 to-black">
-        <header className="sticky top-0 z-10 bg-zinc-950/70 backdrop-blur border-b border-zinc-900/70">
+      <main className="bg-gradient-to-b from-[#0b0f17] via-zinc-950 to-black">
+        <header className="sticky top-0 z-10 bg-zinc-950/80 backdrop-blur border-b border-white/5">
           <div className="w-full px-5 py-4 flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               <button
                 type="button"
                 onClick={() => setMobileOpen((open) => !open)}
-                className="inline-flex lg:hidden items-center justify-center h-9 w-9 rounded-xl border border-zinc-800 bg-zinc-900/70 text-zinc-200"
+                className="inline-flex lg:hidden items-center justify-center h-9 w-9 rounded-xl border border-white/10 bg-white/5 text-zinc-200"
               >
                 <span className="sr-only">Abrir menu</span>
                 <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4">
@@ -138,7 +141,7 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
                   to="/dashboard"
                   className={({ isActive }) =>
                     `px-3 py-2 rounded-xl text-xs border transition-colors ${
-                      isActive ? 'border-zinc-700 bg-zinc-900/70 text-white' : 'border-transparent text-zinc-400 hover:text-white'
+                      isActive ? 'border-white/15 bg-white/10 text-white' : 'border-transparent text-zinc-400 hover:text-white hover:bg-white/5'
                     }`
                   }
                 >
@@ -148,7 +151,7 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
                   to="/sites"
                   className={({ isActive }) =>
                     `px-3 py-2 rounded-xl text-xs border transition-colors ${
-                      isActive ? 'border-zinc-700 bg-zinc-900/70 text-white' : 'border-transparent text-zinc-400 hover:text-white'
+                      isActive ? 'border-white/15 bg-white/10 text-white' : 'border-transparent text-zinc-400 hover:text-white hover:bg-white/5'
                     }`
                   }
                 >
@@ -158,15 +161,15 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
                   to="/ai"
                   className={({ isActive }) =>
                     `px-3 py-2 rounded-xl text-xs border transition-colors ${
-                      isActive ? 'border-zinc-700 bg-zinc-900/70 text-white' : 'border-transparent text-zinc-400 hover:text-white'
+                      isActive ? 'border-white/15 bg-white/10 text-white' : 'border-transparent text-zinc-400 hover:text-white hover:bg-white/5'
                     }`
                   }
                 >
                   IA
                 </NavLink>
               </nav>
-              <div className="hidden md:flex items-center gap-2 px-3 py-2 rounded-xl bg-zinc-900/50 border border-zinc-800/80 shadow-[0_0_0_1px_rgba(255,255,255,0.03)]">
-                <span className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.55)]" />
+              <div className="hidden md:flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+                <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.6)]" />
                 <span className="text-xs text-zinc-200">Sistema online</span>
               </div>
               {right}
@@ -179,19 +182,15 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
 
       {mobileOpen && (
         <div className="lg:hidden fixed inset-0 z-40">
-          <button
-            type="button"
-            onClick={() => setMobileOpen(false)}
-            className="absolute inset-0 bg-black/60"
-          />
-          <div className="absolute inset-y-0 left-0 w-72 max-w-full bg-zinc-950 border-r border-zinc-900/80 p-4 flex flex-col">
+          <button type="button" onClick={() => setMobileOpen(false)} className="absolute inset-0 bg-black/70" />
+          <div className="absolute inset-y-0 left-0 w-72 max-w-full bg-[#0b0f17] border-r border-white/10 p-4 flex flex-col">
             <Link
               to="/dashboard"
               onClick={() => setMobileOpen(false)}
-              className="flex items-center gap-3 px-2 py-3 rounded-2xl hover:bg-zinc-900/40 transition-colors"
+              className="flex items-center gap-3 px-3 py-3 rounded-2xl bg-white/[0.02] border border-white/5 hover:bg-white/5 transition-colors"
             >
-              <div className="h-9 w-9 rounded-2xl bg-gradient-to-br from-blue-600/30 to-violet-600/20 border border-white/10 flex items-center justify-center shadow-[0_0_0_1px_rgba(255,255,255,0.05)]">
-                <div className="h-2.5 w-2.5 rounded-full bg-blue-500 shadow-[0_0_14px_rgba(59,130,246,0.55)]" />
+              <div className="h-9 w-9 rounded-2xl bg-gradient-to-br from-blue-500/30 via-indigo-500/20 to-fuchsia-500/20 border border-white/10 flex items-center justify-center shadow-[0_0_0_1px_rgba(255,255,255,0.08)]">
+                <div className="h-2.5 w-2.5 rounded-full bg-blue-400 shadow-[0_0_14px_rgba(96,165,250,0.6)]" />
               </div>
               <div className="leading-tight">
                 <div className="font-semibold tracking-tight">Trakeamento</div>
@@ -216,13 +215,13 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
                 icon="ai"
               />
               <div className="pt-2">
-                <div className="px-3 py-2 rounded-xl border border-zinc-900/70 bg-zinc-950/40 text-zinc-500 text-sm">
+                <div className="px-3 py-2 rounded-xl border border-white/5 bg-white/[0.02] text-zinc-400 text-sm">
                   Treinamentos <span className="text-xs">(em breve)</span>
                 </div>
               </div>
             </nav>
 
-            <div className="mt-auto pt-4 border-t border-zinc-900/70">
+            <div className="mt-auto pt-4 border-t border-white/5">
               <div className="text-xs text-zinc-500">Conta</div>
               <div className="text-sm text-zinc-200 truncate">{auth.user?.email}</div>
               <button
@@ -230,7 +229,7 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
                   setMobileOpen(false);
                   auth.logout();
                 }}
-                className="mt-3 w-full text-sm bg-zinc-900/60 hover:bg-zinc-900 border border-zinc-800/80 rounded-xl px-3 py-2 transition-colors"
+                className="mt-3 w-full text-sm bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl px-3 py-2 transition-colors"
               >
                 Sair
               </button>

@@ -16,22 +16,22 @@ export const Card = ({
   accent?: 'zinc' | 'blue' | 'emerald' | 'violet' | 'amber';
 }) => (
   <div
-    className={`rounded-2xl bg-zinc-950/50 border p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)] transition-colors ${
+    className={`rounded-2xl bg-gradient-to-br from-zinc-950/80 via-zinc-950/60 to-zinc-900/40 border p-5 shadow-[0_12px_30px_rgba(0,0,0,0.35)] transition-all ${
       accent === 'blue'
-        ? 'border-blue-500/15 hover:border-blue-500/25'
+        ? 'border-blue-500/25 hover:border-blue-500/45'
         : accent === 'emerald'
-          ? 'border-emerald-500/15 hover:border-emerald-500/25'
+          ? 'border-emerald-500/25 hover:border-emerald-500/45'
           : accent === 'violet'
-            ? 'border-violet-500/15 hover:border-violet-500/25'
+            ? 'border-violet-500/25 hover:border-violet-500/45'
             : accent === 'amber'
-              ? 'border-amber-500/15 hover:border-amber-500/25'
-              : 'border-zinc-900/70 hover:border-zinc-800/80'
+              ? 'border-amber-500/25 hover:border-amber-500/45'
+              : 'border-white/5 hover:border-white/10'
     }`}
   >
     <div className="flex items-start justify-between gap-3">
       <div className="flex items-start gap-3">
         {icon && (
-          <div className="mt-0.5 h-10 w-10 rounded-2xl bg-zinc-900/50 border border-zinc-800/70 flex items-center justify-center text-zinc-200">
+          <div className="mt-0.5 h-10 w-10 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-zinc-100">
             {icon}
           </div>
         )}
