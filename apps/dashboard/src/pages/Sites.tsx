@@ -139,8 +139,15 @@ export const SitesPage = () => {
 
           <div className="space-y-3">
             {resolvedTab && (
-              <div className="rounded-xl border border-primary/30 bg-primary/10 px-4 py-3 text-xs text-primary">
-                Selecione um site para abrir {tabLabels[resolvedTab]}.
+              <div className="flex flex-col gap-2 rounded-xl border border-primary/30 bg-primary/10 px-4 py-3 text-xs text-primary sm:flex-row sm:items-center sm:justify-between">
+                <span>Selecione um site para abrir {tabLabels[resolvedTab]}.</span>
+                <button
+                  type="button"
+                  onClick={() => nav('/sites')}
+                  className="self-start rounded-lg border border-primary/40 bg-primary/20 px-3 py-1 text-[11px] font-semibold text-primary transition-colors hover:bg-primary/30 sm:self-auto"
+                >
+                  Selecionar site
+                </button>
               </div>
             )}
             {sites.length === 0 && (
