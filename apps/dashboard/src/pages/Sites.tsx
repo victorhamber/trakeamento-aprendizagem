@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { Layout } from '../components/Layout';
 import { Plus, ArrowRight, Globe } from 'lucide-react';
@@ -14,12 +14,26 @@ type Site = {
 
 export const SitesPage = () => {
   const nav = useNavigate();
+  const location = useLocation();
   const [sites, setSites] = useState<Site[]>([]);
   const [name, setName] = useState('');
   const [domain, setDomain] = useState('');
   const [loading, setLoading] = useState(false);
   const [createdSecret, setCreatedSecret] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const intentTab = (location.state as { intentTab?: string } | null)?.intentTab;
+  const validTabs = ['snippet', 'meta', 'campaigns', 'ga', 'matching', 'webhooks', 'reports'];
+  const resolvedTab = intentTab && validTabs.includes(intentTab) ? intentTab : null;
+  const tabLabels: Record<string, string> = {
+    snippet: 'Tracking',
+    meta: 'Integração Meta',
+    campaigns: 'Campanhas',
+    ga: 'Google Analytics',
+    matching: 'Correspondência',
+    webhooks: 'Webhook Vendas',
+    reports: 'Recomendações',
+  };
+  const getSiteLink = (id: number) => (resolvedTab ? `/sites/${id}?tab=${resolvedTab}` : `/sites/${id}`);
 
   const load = async () => {
     const res = await api.get('/sites');
@@ -124,6 +138,11 @@ export const SitesPage = () => {
           </div>
 
           <div className="space-y-3">
+            {resolvedTab && (
+              <div className="rounded-xl border border-primary/30 bg-primary/10 px-4 py-3 text-xs text-primary">
+                Selecione um site para abrir {tabLabels[resolvedTab]}.
+              </div>
+            )}
             {sites.length === 0 && (
               <div className="text-center py-12 border-2 border-dashed border-border rounded-xl">
                 <Globe className="h-8 w-8 text-muted-foreground mx-auto mb-3 opacity-50" />
@@ -134,7 +153,7 @@ export const SitesPage = () => {
             {sites.map((s) => (
               <Link
                 key={s.id}
-                to={`/sites/${s.id}`}
+                to={getSiteLink(s.id)}
                 className="group block rounded-xl border border-border bg-card/50 hover:bg-card hover:border-primary/30 p-4 transition-all duration-200"
               >
                 <div className="flex items-center justify-between gap-4">

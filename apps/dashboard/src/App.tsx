@@ -17,8 +17,10 @@ const RequireAuth = ({ children }: { children: React.ReactNode }) => {
 const SiteRedirect = ({ tab }: { tab: string }) => {
   const raw = typeof window !== 'undefined' ? window.localStorage.getItem('lastSiteId') : null;
   const id = raw ? Number(raw) : NaN;
-  const to = Number.isFinite(id) && id > 0 ? `/sites/${id}?tab=${tab}` : '/sites';
-  return <Navigate to={to} replace />;
+  if (Number.isFinite(id) && id > 0) {
+    return <Navigate to={`/sites/${id}?tab=${tab}`} replace />;
+  }
+  return <Navigate to="/sites" state={{ intentTab: tab }} replace />;
 };
 
 function App() {
