@@ -328,29 +328,28 @@ export const SitePage = () => {
     if (tab === 'snippet') loadSnippet().catch(() => {});
     if (tab === 'meta') loadMeta().catch(() => {});
     if (tab === 'campaigns') {
-      loadMeta()
-        .then(() => loadCampaigns())
-        .catch(() => {});
+      loadMeta().catch(() => {});
     }
     if (tab === 'ga') loadGa().catch(() => {});
     if (tab === 'matching') loadMatching().catch(() => {});
     if (tab === 'webhooks') loadWebhookSecret().catch(() => {});
     if (tab === 'reports') {
-      loadMeta()
-        .then(() => loadCampaigns())
-        .catch(() => {});
+      setMetaLevel('campaign');
+      setMetaParentId(null);
+      setMetaBreadcrumbs([{ id: null, name: 'Campanhas', level: 'campaign' }]);
+      loadMeta().catch(() => {});
     }
-  }, [tab, site, loadSnippet, loadMeta, loadCampaigns, loadGa, loadMatching, loadWebhookSecret]);
+  }, [tab, site, loadSnippet, loadMeta, loadGa, loadMatching, loadWebhookSecret]);
 
   const handleMetaDrillDown = (item: any) => {
     if (metaLevel === 'campaign') {
       setMetaLevel('adset');
       setMetaParentId(item.id);
-      setMetaBreadcrumbs([...metaBreadcrumbs, { id: item.id, name: item.name, level: 'adset' }]);
+      setMetaBreadcrumbs((prev) => [...prev, { id: item.id, name: item.name, level: 'adset' }]);
     } else if (metaLevel === 'adset') {
       setMetaLevel('ad');
       setMetaParentId(item.id);
-      setMetaBreadcrumbs([...metaBreadcrumbs, { id: item.id, name: item.name, level: 'ad' }]);
+      setMetaBreadcrumbs((prev) => [...prev, { id: item.id, name: item.name, level: 'ad' }]);
     }
   };
 
@@ -431,11 +430,6 @@ export const SitePage = () => {
 
   const generateReport = async () => {
     if (!site) return;
-    if (campaigns.length > 0 && !selectedCampaignId) {
-      setTab('reports');
-      setFlash('Selecione a campanha antes de gerar o diagnóstico.');
-      return;
-    }
     if (metricsPreset === 'custom' && (!metricsSince || !metricsUntil)) {
       setFlash('Defina o período personalizado.');
       return;
@@ -459,6 +453,14 @@ export const SitePage = () => {
         }
       );
       setReport(res.data);
+      setTab('reports');
+    } catch (err: unknown) {
+      console.error(err);
+      const apiError =
+        err && typeof err === 'object' && 'response' in err
+          ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
+          : undefined;
+      setFlash(apiError || 'Erro ao gerar diagnóstico.');
       setTab('reports');
     } finally {
       setLoading(false);
@@ -558,7 +560,7 @@ export const SitePage = () => {
     return (metrics.landing_page_views / base) * 100;
   };
 
-  const canGenerate = !!site && (campaigns.length === 0 || !!selectedCampaignId);
+  const canGenerate = !!site;
   const selectedCampaign = selectedCampaignId ? campaigns.find((c) => c.id === selectedCampaignId) : null;
   const periodSelector = (
     <div className="flex flex-wrap items-center gap-2">
@@ -603,7 +605,7 @@ export const SitePage = () => {
           disabled={loading || !canGenerate}
           className="bg-blue-600 hover:bg-blue-500 text-white text-sm rounded-xl px-4 py-2 disabled:opacity-50 shadow-[0_0_0_1px_rgba(255,255,255,0.06)] transition-colors"
         >
-          {loading ? 'Processando…' : canGenerate ? 'Gerar diagnóstico' : 'Selecione campanha'}
+          {loading ? 'Processando…' : 'Gerar diagnóstico'}
         </button>
       }
     >
