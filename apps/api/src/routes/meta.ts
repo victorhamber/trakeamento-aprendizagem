@@ -91,6 +91,8 @@ router.get('/campaigns/metrics', requireAuth, async (req, res) => {
           COALESCE(SUM(outbound_clicks), 0)::bigint AS outbound_clicks,
           COALESCE(SUM(landing_page_views), 0)::bigint AS landing_page_views,
           COALESCE(SUM(leads), 0)::bigint AS leads,
+          COALESCE(SUM(contacts), 0)::bigint AS contacts,
+          COALESCE(SUM(adds_to_cart), 0)::bigint AS adds_to_cart,
           COALESCE(SUM(initiates_checkout), 0)::bigint AS initiates_checkout,
           COALESCE(SUM(purchases), 0)::bigint AS purchases
         FROM meta_insights_daily
@@ -162,7 +164,9 @@ router.get('/campaigns/metrics', requireAuth, async (req, res) => {
         cpm,
         outbound_clicks: Number(row.outbound_clicks || 0),
         landing_page_views: Number(row.landing_page_views || 0),
+        contacts: Number(row.contacts || 0),
         leads: Number(row.leads || 0),
+        adds_to_cart: Number(row.adds_to_cart || 0),
         initiates_checkout: Number(row.initiates_checkout || 0),
         purchases: Number(row.purchases || 0),
       };

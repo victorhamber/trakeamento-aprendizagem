@@ -116,6 +116,7 @@ const schemaSql = `
     unique_ctr NUMERIC,
     cpm NUMERIC,
     leads INTEGER,
+    contacts INTEGER,
     purchases INTEGER,
     adds_to_cart INTEGER,
     initiates_checkout INTEGER,
@@ -171,6 +172,7 @@ export const ensureSchema = async (pool: Pool) => {
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS unique_ctr NUMERIC');
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS cpm NUMERIC');
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS leads INTEGER');
+    await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS contacts INTEGER');
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS purchases INTEGER');
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS adds_to_cart INTEGER');
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS initiates_checkout INTEGER');

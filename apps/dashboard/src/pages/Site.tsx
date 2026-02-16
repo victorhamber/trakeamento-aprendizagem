@@ -40,7 +40,9 @@ type CampaignMetrics = {
   cpm: number;
   outbound_clicks: number;
   landing_page_views: number;
+  contacts: number;
   leads: number;
+  adds_to_cart: number;
   initiates_checkout: number;
   purchases: number;
 };
@@ -83,6 +85,7 @@ export const SitePage = () => {
   const [metricsUntil, setMetricsUntil] = useState('');
   const [loading, setLoading] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
+  const reportStorageKey = useMemo(() => `diagnosis:${id}`, [id]);
   const reportSections = useMemo(() => {
     const text = report?.analysis_text?.trim() || '';
     if (!text) return [];
@@ -105,6 +108,38 @@ export const SitePage = () => {
     }
     return sections;
   }, [report?.analysis_text]);
+  useEffect(() => {
+    if (!site) return;
+    if (report) return;
+    const raw = localStorage.getItem(reportStorageKey);
+    if (!raw) return;
+    try {
+      const saved = JSON.parse(raw);
+      if (saved?.report) {
+        setReport(saved.report);
+        if (saved.selectedCampaignId) setSelectedCampaignId(saved.selectedCampaignId);
+        if (saved.metricsPreset) setMetricsPreset(saved.metricsPreset);
+        if (saved.metricsSince) setMetricsSince(saved.metricsSince);
+        if (saved.metricsUntil) setMetricsUntil(saved.metricsUntil);
+      }
+    } catch (err) {
+      void err;
+    }
+  }, [site, report, reportStorageKey]);
+
+  useEffect(() => {
+    if (!site) return;
+    if (!report) return;
+    const payload = {
+      report,
+      selectedCampaignId,
+      metricsPreset,
+      metricsSince,
+      metricsUntil,
+      savedAt: new Date().toISOString(),
+    };
+    localStorage.setItem(reportStorageKey, JSON.stringify(payload));
+  }, [site, report, selectedCampaignId, metricsPreset, metricsSince, metricsUntil, reportStorageKey]);
 
   const loadSite = useCallback(async () => {
     const res = await api.get(`/sites/${id}`);
@@ -407,13 +442,59 @@ export const SitePage = () => {
   ) => {
     if (!metrics) return 0;
     const objective = (campaign?.objective || '').toLowerCase();
-    if (objective.includes('lead')) return metrics.leads;
-    if (objective.includes('sale') || objective.includes('purchase')) return metrics.purchases;
-    if (objective.includes('convers')) return metrics.purchases;
-    if (objective.includes('traffic')) return metrics.landing_page_views;
-    if (objective.includes('engagement')) return metrics.outbound_clicks || metrics.clicks;
-    if (objective.includes('aware') || objective.includes('reach')) return metrics.impressions;
-    return metrics.leads;
+    const leadValue = metrics.contacts > 0 ? metrics.contacts : metrics.leads;
+    const salesValue =
+      metrics.purchases > 0
+        ? metrics.purchases
+        : metrics.initiates_checkout > 0
+          ? metrics.initiates_checkout
+          : metrics.adds_to_cart > 0
+            ? metrics.adds_to_cart
+            : 0;
+    const trafficValue =
+      metrics.landing_page_views > 0
+        ? metrics.landing_page_views
+        : metrics.outbound_clicks > 0
+          ? metrics.outbound_clicks
+          : metrics.clicks;
+    const engagementValue = metrics.outbound_clicks > 0 ? metrics.outbound_clicks : metrics.clicks;
+    if (
+      objective.includes('lead') ||
+      objective.includes('contact') ||
+      objective.includes('lead_generation') ||
+      objective.includes('outcome_leads')
+    )
+      return leadValue;
+    if (
+      objective.includes('sale') ||
+      objective.includes('purchase') ||
+      objective.includes('conversion') ||
+      objective.includes('catalog') ||
+      objective.includes('outcome_sales')
+    )
+      return salesValue;
+    if (objective.includes('traffic') || objective.includes('link_click') || objective.includes('outcome_traffic'))
+      return trafficValue;
+    if (
+      objective.includes('engagement') ||
+      objective.includes('post_engagement') ||
+      objective.includes('page_likes') ||
+      objective.includes('outcome_engagement')
+    )
+      return engagementValue;
+    if (
+      objective.includes('aware') ||
+      objective.includes('reach') ||
+      objective.includes('brand') ||
+      objective.includes('outcome_awareness')
+    )
+      return metrics.impressions;
+    if (metrics.contacts > 0) return metrics.contacts;
+    if (metrics.leads > 0) return metrics.leads;
+    if (metrics.purchases > 0) return metrics.purchases;
+    if (metrics.initiates_checkout > 0) return metrics.initiates_checkout;
+    if (metrics.adds_to_cart > 0) return metrics.adds_to_cart;
+    return metrics.outbound_clicks || metrics.landing_page_views || metrics.clicks;
   };
   const getConnectRate = (metrics: CampaignMetrics) => {
     const base = metrics.unique_link_clicks > 0 ? metrics.unique_link_clicks : metrics.unique_clicks;
@@ -830,7 +911,7 @@ export const SitePage = () => {
 
               {meta?.has_facebook_connection && meta?.ad_account_id && (
                 <div className="rounded-xl border border-zinc-900 bg-zinc-950 overflow-hidden">
-                  <div className="max-h-[420px] overflow-auto">
+                  <div className="h-[calc(100vh-320px)] max-h-[520px] min-h-[260px] overflow-auto">
                     <div className="sticky top-0 z-20 bg-zinc-950/95 backdrop-blur border-b border-zinc-900 px-4 py-2 min-h-[44px]">
                       <div className="flex flex-wrap items-center gap-2">
                         {periodSelector}

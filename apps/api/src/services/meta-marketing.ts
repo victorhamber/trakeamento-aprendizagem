@@ -214,7 +214,13 @@ export class MetaMarketingService {
       const outboundClicks =
         this.asInt(row.outbound_clicks) ?? this.getActionCount(actions, 'outbound_click') ?? 0;
       const landingPageViews = this.getActionCount(actions, 'landing_page_view') ?? 0;
+      const contacts =
+        this.getActionCount(actions, 'contact') ??
+        this.getActionCount(actions, 'omni_contact') ??
+        this.getActionCount(actions, 'onsite_conversion.contact') ??
+        0;
       const leads = this.getActionCount(actions, 'lead') ?? 0;
+      const addsToCart = this.getActionCount(actions, 'add_to_cart') ?? 0;
       const initiatesCheckout = this.getActionCount(actions, 'initiate_checkout') ?? 0;
       const purchases = this.getActionCount(actions, 'purchase') ?? 0;
       const costPerLead = this.getCostPerAction(costs, 'lead');
@@ -233,7 +239,9 @@ export class MetaMarketingService {
         cpm,
         outbound_clicks: outboundClicks,
         landing_page_views: landingPageViews,
+        contacts,
         leads,
+        adds_to_cart: addsToCart,
         initiates_checkout: initiatesCheckout,
         purchases,
         cost_per_lead: costPerLead,
@@ -248,14 +256,14 @@ export class MetaMarketingService {
         site_id, ad_id, ad_name, adset_id, adset_name, campaign_id, campaign_name,
         spend, impressions, clicks, unique_clicks, link_clicks, unique_link_clicks, inline_link_clicks, outbound_clicks, landing_page_views,
         reach, frequency, cpc, ctr, unique_ctr, cpm,
-        leads, purchases, adds_to_cart, initiates_checkout, cost_per_lead, cost_per_purchase,
+        leads, contacts, purchases, adds_to_cart, initiates_checkout, cost_per_lead, cost_per_purchase,
         date_start, date_stop, raw_payload
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7,
         $8, $9, $10, $11, $12, $13, $14, $15, $16,
         $17, $18, $19, $20, $21, $22, $23, $24,
-        $25, $26, $27, $28, $29, $30,
-        $31, $32, $33
+        $25, $26, $27, $28, $29, $30, $31,
+        $32, $33, $34
       )
       ON CONFLICT (site_id, ad_id, date_start) DO UPDATE SET
         spend = EXCLUDED.spend,
@@ -274,6 +282,7 @@ export class MetaMarketingService {
         unique_ctr = EXCLUDED.unique_ctr,
         cpm = EXCLUDED.cpm,
         leads = EXCLUDED.leads,
+        contacts = EXCLUDED.contacts,
         purchases = EXCLUDED.purchases,
         adds_to_cart = EXCLUDED.adds_to_cart,
         initiates_checkout = EXCLUDED.initiates_checkout,
@@ -285,6 +294,10 @@ export class MetaMarketingService {
     const actions = row.actions;
     const costs = row.cost_per_action_type;
 
+    const contactCount =
+      this.getActionCount(actions, 'contact') ??
+      this.getActionCount(actions, 'omni_contact') ??
+      this.getActionCount(actions, 'onsite_conversion.contact');
     const leadCount = this.getActionCount(actions, 'lead');
     const purchaseCount = this.getActionCount(actions, 'purchase');
     const addToCartCount = this.getActionCount(actions, 'add_to_cart');
@@ -321,6 +334,7 @@ export class MetaMarketingService {
       this.asNumber(row.unique_ctr),
       this.asNumber(row.cpm),
       leadCount,
+      contactCount,
       purchaseCount,
       addToCartCount,
       initiateCheckoutCount,
