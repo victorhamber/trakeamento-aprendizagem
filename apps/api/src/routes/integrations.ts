@@ -96,7 +96,7 @@ router.get('/sites/:siteId/meta/adaccounts', requireAuth, async (req, res) => {
   let token: string;
   try {
     token = decryptString(tokenEnc);
-  } catch (e) {
+  } catch {
     return res.status(500).json({ error: 'Failed to decrypt Facebook token. Please reconnect.' });
   }
 
@@ -123,7 +123,7 @@ router.get('/sites/:siteId/meta/pixels', requireAuth, async (req, res) => {
   let token: string;
   try {
     token = decryptString(tokenEnc);
-  } catch (e) {
+  } catch {
     return res.status(500).json({ error: 'Failed to decrypt Facebook token. Please reconnect.' });
   }
 
@@ -152,7 +152,7 @@ router.get('/sites/:siteId/meta/campaigns', requireAuth, async (req, res) => {
   let token: string;
   try {
     token = decryptString(tokenEnc);
-  } catch (e) {
+  } catch {
     return res.status(500).json({ error: 'Failed to decrypt Facebook token. Please reconnect.' });
   }
 
@@ -180,7 +180,7 @@ router.patch('/sites/:siteId/meta/campaigns/:campaignId', requireAuth, async (re
   let token: string;
   try {
     token = decryptString(tokenEnc);
-  } catch (e) {
+  } catch {
     return res.status(500).json({ error: 'Failed to decrypt Facebook token. Please reconnect.' });
   }
 
