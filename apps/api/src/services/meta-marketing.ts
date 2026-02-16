@@ -118,7 +118,6 @@ export class MetaMarketingService {
         'impressions',
         'clicks',
         'unique_clicks',
-        'unique_link_clicks',
         'reach',
         'frequency',
         'cpm',
@@ -180,7 +179,6 @@ export class MetaMarketingService {
       'impressions',
       'clicks',
       'unique_clicks',
-      'unique_link_clicks',
       'cpm',
       'cpc',
       'ctr',
@@ -208,7 +206,8 @@ export class MetaMarketingService {
       const impressions = this.asInt(row.impressions) || 0;
       const clicks = this.asInt(row.clicks) || 0;
       const uniqueClicks = this.asInt(row.unique_clicks) || 0;
-      const uniqueLinkClicks = this.asInt(row.unique_link_clicks) || 0;
+      const uniqueLinkClicks =
+        this.asInt(row.unique_link_clicks) ?? this.asInt(row.unique_clicks) ?? this.getActionCount(actions, 'link_click') ?? 0;
       const ctr = this.asNumber(row.ctr) ?? (impressions > 0 ? (clicks / impressions) * 100 : 0);
       const cpc = this.asNumber(row.cpc) ?? (clicks > 0 ? spend / clicks : 0);
       const cpm = this.asNumber(row.cpm) ?? (impressions > 0 ? (spend / impressions) * 1000 : 0);
@@ -292,6 +291,8 @@ export class MetaMarketingService {
     const initiateCheckoutCount = this.getActionCount(actions, 'initiate_checkout');
     const landingPageViews = this.getActionCount(actions, 'landing_page_view');
     const linkClicks = this.getActionCount(actions, 'link_click');
+    const uniqueLinkClicks =
+      this.asInt(row.unique_link_clicks) ?? this.asInt(row.unique_clicks) ?? linkClicks ?? null;
 
     const costPerLead = this.getCostPerAction(costs, 'lead');
     const costPerPurchase = this.getCostPerAction(costs, 'purchase');
@@ -309,7 +310,7 @@ export class MetaMarketingService {
       this.asInt(row.clicks),
       this.asInt(row.unique_clicks),
       linkClicks,
-      this.asInt(row.unique_link_clicks),
+      uniqueLinkClicks,
       this.asInt(row.inline_link_clicks),
       this.asInt(row.outbound_clicks),
       landingPageViews,
