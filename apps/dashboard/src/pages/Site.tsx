@@ -84,6 +84,12 @@ export const SitePage = () => {
   const [metricsUntil, setMetricsUntil] = useState('');
   const [loading, setLoading] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (Number.isFinite(id) && id > 0) {
+      window.localStorage.setItem('lastSiteId', String(id));
+    }
+  }, [id]);
   
   // Meta Level State
   const [metaLevel, setMetaLevel] = useState<'campaign' | 'adset' | 'ad'>('campaign');
