@@ -45,6 +45,7 @@ type CampaignMetrics = {
   adds_to_cart: number;
   initiates_checkout: number;
   purchases: number;
+  reach?: number;
 };
 
 export const SitePage = () => {
@@ -73,10 +74,8 @@ export const SitePage = () => {
   });
   const [webhookSecret, setWebhookSecret] = useState<string | null>(null);
   const [report, setReport] = useState<DiagnosisReport | null>(null);
-  const [campaigns, setCampaigns] = useState<
-    Array<{ id: string; name: string; status: string; effective_status?: string; objective?: string | null }>
-  >([]);
-  const [campaignMetrics, setCampaignMetrics] = useState<Record<string, CampaignMetrics>>({});
+  const [campaigns, setCampaigns] = useState<any[]>([]);
+  const [campaignMetrics, setCampaignMetrics] = useState<Record<string, any>>({});
   const [selectedCampaignId, setSelectedCampaignId] = useState<string>('');
   const [metricsPreset, setMetricsPreset] = useState<
     'today' | 'yesterday' | 'last_7d' | 'last_14d' | 'last_30d' | 'maximum' | 'custom'
@@ -85,6 +84,14 @@ export const SitePage = () => {
   const [metricsUntil, setMetricsUntil] = useState('');
   const [loading, setLoading] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
+  
+  // Meta Level State
+  const [metaLevel, setMetaLevel] = useState<'campaign' | 'adset' | 'ad'>('campaign');
+  const [metaParentId, setMetaParentId] = useState<string | null>(null);
+  const [metaBreadcrumbs, setMetaBreadcrumbs] = useState<{ id: string | null; name: string; level: string }[]>([
+    { id: null, name: 'Campanhas', level: 'campaign' },
+  ]);
+
   const reportStorageKey = useMemo(() => `diagnosis:${id}`, [id]);
   const reportSections = useMemo(() => {
     const text = report?.analysis_text?.trim() || '';
@@ -201,6 +208,34 @@ export const SitePage = () => {
   }, [id]);
 
 
+  const saveMeta = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    const formData = new FormData(e.target as HTMLFormElement);
+    const data: Record<string, any> = {
+      site_id: id,
+      ad_account_id: formData.get('ad_account_id'),
+      pixel_id: formData.get('pixel_id'),
+      enabled: formData.get('enabled') === 'true',
+    };
+    
+    const capi = formData.get('capi_token');
+    const marketing = formData.get('marketing_token');
+    if (capi) data.capi_token = capi;
+    if (marketing) data.marketing_token = marketing;
+
+    try {
+      await api.put(`/integrations/sites/${id}/meta`, data);
+      setFlash('Configurações salvas!');
+      await loadMeta();
+    } catch (err) {
+      console.error(err);
+      setFlash('Erro ao salvar Meta.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const connectFacebook = async () => {
     setLoading(true);
     try {
@@ -250,32 +285,43 @@ export const SitePage = () => {
   }, [id]);
 
   const loadCampaigns = useCallback(async () => {
-    const res = await api.get(`/integrations/sites/${id}/meta/campaigns`);
-    setCampaigns(res.data.campaigns || []);
-  }, [id]);
-
-  const loadCampaignMetrics = useCallback(async () => {
-    if (metricsPreset === 'custom' && (!metricsSince || !metricsUntil)) {
-      setFlash('Defina o período personalizado.');
-      return;
+    if (metricsPreset === 'custom' && (!metricsSince || !metricsUntil)) return;
+    
+    setLoading(true);
+    try {
+      const params: any = { 
+        site_id: id,
+        level: metaLevel,
+        parent_id: metaParentId
+      };
+      
+      if (metricsPreset === 'custom') {
+        params.since = metricsSince;
+        params.until = metricsUntil;
+      } else {
+        params.date_preset = metricsPreset;
+      }
+      
+      const res = await api.get('/meta/campaigns/metrics', { params });
+      
+      if (res.data?.meta_error) {
+        setFlash(`Meta: ${res.data.meta_error}`);
+      }
+      
+      setCampaigns(res.data.data || []);
+      
+      const map = (res.data.data || []).reduce((acc: Record<string, any>, row: any) => {
+        acc[row.id] = row;
+        return acc;
+      }, {});
+      setCampaignMetrics(map);
+    } catch (err) {
+      console.error(err);
+      setFlash('Erro ao carregar dados.');
+    } finally {
+      setLoading(false);
     }
-    const params: Record<string, string | number> = { site_id: id };
-    if (metricsPreset === 'custom') {
-      params.since = metricsSince;
-      params.until = metricsUntil;
-    } else {
-      params.date_preset = metricsPreset;
-    }
-    const res = await api.get('/meta/campaigns/metrics', { params });
-    if (res.data?.meta_error) {
-      setFlash(`Meta: ${res.data.meta_error}`);
-    }
-    const map = (res.data?.campaigns || []).reduce((acc: Record<string, CampaignMetrics>, row: CampaignMetrics) => {
-      acc[row.campaign_id] = row;
-      return acc;
-    }, {});
-    setCampaignMetrics(map);
-  }, [id, metricsPreset, metricsSince, metricsUntil]);
+  }, [id, metricsPreset, metricsSince, metricsUntil, metaLevel, metaParentId]);
 
   useEffect(() => {
     if (!site) return;
@@ -283,7 +329,7 @@ export const SitePage = () => {
     if (tab === 'meta') loadMeta().catch(() => {});
     if (tab === 'campaigns') {
       loadMeta()
-        .then(() => Promise.all([loadCampaigns().catch(() => {}), loadCampaignMetrics().catch(() => {})]))
+        .then(() => loadCampaigns())
         .catch(() => {});
     }
     if (tab === 'ga') loadGa().catch(() => {});
@@ -291,34 +337,36 @@ export const SitePage = () => {
     if (tab === 'webhooks') loadWebhookSecret().catch(() => {});
     if (tab === 'reports') {
       loadMeta()
-        .then(() => Promise.all([loadCampaigns().catch(() => {}), loadCampaignMetrics().catch(() => {})]))
+        .then(() => loadCampaigns())
         .catch(() => {});
     }
-  }, [tab, site, loadSnippet, loadMeta, loadCampaigns, loadCampaignMetrics, loadGa, loadMatching, loadWebhookSecret]);
+  }, [tab, site, loadSnippet, loadMeta, loadCampaigns, loadGa, loadMatching, loadWebhookSecret]);
+
+  const handleMetaDrillDown = (item: any) => {
+    if (metaLevel === 'campaign') {
+      setMetaLevel('adset');
+      setMetaParentId(item.id);
+      setMetaBreadcrumbs([...metaBreadcrumbs, { id: item.id, name: item.name, level: 'adset' }]);
+    } else if (metaLevel === 'adset') {
+      setMetaLevel('ad');
+      setMetaParentId(item.id);
+      setMetaBreadcrumbs([...metaBreadcrumbs, { id: item.id, name: item.name, level: 'ad' }]);
+    }
+  };
+
+  const handleMetaBreadcrumbClick = (index: number) => {
+    const target = metaBreadcrumbs[index];
+    setMetaLevel(target.level as any);
+    setMetaParentId(target.id);
+    setMetaBreadcrumbs(metaBreadcrumbs.slice(0, index + 1));
+  };
 
   useEffect(() => {
     if (!site) return;
     if (tab !== 'campaigns' && tab !== 'reports') return;
     if (metricsPreset === 'custom' && (!metricsSince || !metricsUntil)) return;
-    loadCampaignMetrics().catch(() => {});
-  }, [site, tab, metricsPreset, metricsSince, metricsUntil, loadCampaignMetrics]);
-
-  useEffect(() => {
-    if (selectedCampaignId && !campaigns.find((c) => c.id === selectedCampaignId)) {
-      setSelectedCampaignId('');
-    }
-  }, [campaigns, selectedCampaignId]);
-
-  const setCampaignStatus = async (campaignId: string, status: 'ACTIVE' | 'PAUSED') => {
-    setLoading(true);
-    try {
-      await api.patch(`/integrations/sites/${id}/meta/campaigns/${campaignId}`, { status });
-      await loadCampaigns();
-      setFlash('Campanha atualizada.');
-    } finally {
-      setLoading(false);
-    }
-  };
+    loadCampaigns().catch(() => {});
+  }, [site, tab, metricsPreset, metricsSince, metricsUntil, loadCampaigns]);
 
   useEffect(() => {
     const connected = searchParams.get('connected');
@@ -338,20 +386,6 @@ export const SitePage = () => {
       loadAdAccounts().catch(() => {});
     }
   }, [tab, meta, adAccounts.length, loadAdAccounts]);
-
-  const saveMeta = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    try {
-      const form = e.target as HTMLFormElement;
-      const payload = Object.fromEntries(new FormData(form).entries());
-      await api.put(`/integrations/sites/${id}/meta`, payload);
-      await loadMeta();
-      setFlash('Configuração Meta salva.');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const saveGa = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -437,64 +471,86 @@ export const SitePage = () => {
   const formatPercent = (value: number) =>
     new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
   const getResultValue = (
-    campaign: { objective?: string | null } | null | undefined,
+    item: { objective?: string | null } | null | undefined,
     metrics: CampaignMetrics | undefined
   ) => {
     if (!metrics) return 0;
-    const objective = (campaign?.objective || '').toLowerCase();
-    const leadValue = metrics.contacts > 0 ? metrics.contacts : metrics.leads;
-    const salesValue =
-      metrics.purchases > 0
-        ? metrics.purchases
-        : metrics.initiates_checkout > 0
-          ? metrics.initiates_checkout
-          : metrics.adds_to_cart > 0
-            ? metrics.adds_to_cart
-            : 0;
-    const trafficValue =
-      metrics.landing_page_views > 0
-        ? metrics.landing_page_views
-        : metrics.outbound_clicks > 0
-          ? metrics.outbound_clicks
-          : metrics.clicks;
-    const engagementValue = metrics.outbound_clicks > 0 ? metrics.outbound_clicks : metrics.clicks;
-    if (
-      objective.includes('lead') ||
-      objective.includes('contact') ||
-      objective.includes('lead_generation') ||
-      objective.includes('outcome_leads')
-    )
-      return leadValue;
+    
+    // Tenta usar o objetivo da campanha/conjunto se disponível
+    // Se for nível de anúncio, pode herdar do pai se tivermos essa info, mas por enquanto usa heurística
+    const objective = (item?.objective || '').toLowerCase();
+
+    // Vendas/Conversão
     if (
       objective.includes('sale') ||
       objective.includes('purchase') ||
       objective.includes('conversion') ||
       objective.includes('catalog') ||
       objective.includes('outcome_sales')
-    )
-      return salesValue;
-    if (objective.includes('traffic') || objective.includes('link_click') || objective.includes('outcome_traffic'))
-      return trafficValue;
+    ) {
+      if (metrics.purchases > 0) return metrics.purchases;
+      if (metrics.initiates_checkout > 0) return metrics.initiates_checkout;
+      if (metrics.adds_to_cart > 0) return metrics.adds_to_cart;
+      return 0;
+    }
+
+    // Leads/Cadastros
+    if (
+      objective.includes('lead') ||
+      objective.includes('contact') ||
+      objective.includes('lead_generation') ||
+      objective.includes('outcome_leads')
+    ) {
+      if (metrics.contacts > 0) return metrics.contacts;
+      if (metrics.leads > 0) return metrics.leads;
+      return 0;
+    }
+
+    // Tráfego
+    if (
+      objective.includes('traffic') ||
+      objective.includes('link_click') ||
+      objective.includes('outcome_traffic')
+    ) {
+      if (metrics.landing_page_views > 0) return metrics.landing_page_views;
+      if (metrics.outbound_clicks > 0) return metrics.outbound_clicks;
+      if (metrics.clicks > 0) return metrics.clicks;
+      return 0;
+    }
+
+    // Engajamento
     if (
       objective.includes('engagement') ||
       objective.includes('post_engagement') ||
       objective.includes('page_likes') ||
       objective.includes('outcome_engagement')
-    )
-      return engagementValue;
+    ) {
+      // Engajamento pode ser muitas coisas, mas outbound clicks é um bom proxy se não houver post reactions específicas mapeadas
+      if (metrics.outbound_clicks > 0) return metrics.outbound_clicks;
+      if (metrics.clicks > 0) return metrics.clicks;
+      return 0;
+    }
+
+    // Reconhecimento/Alcance
     if (
       objective.includes('aware') ||
       objective.includes('reach') ||
       objective.includes('brand') ||
       objective.includes('outcome_awareness')
-    )
-      return metrics.impressions;
+    ) {
+      return metrics.reach || metrics.impressions;
+    }
+
+    // Fallback genérico priorizando fundo de funil
+    if (metrics.purchases > 0) return metrics.purchases;
     if (metrics.contacts > 0) return metrics.contacts;
     if (metrics.leads > 0) return metrics.leads;
-    if (metrics.purchases > 0) return metrics.purchases;
     if (metrics.initiates_checkout > 0) return metrics.initiates_checkout;
     if (metrics.adds_to_cart > 0) return metrics.adds_to_cart;
-    return metrics.outbound_clicks || metrics.landing_page_views || metrics.clicks;
+    if (metrics.landing_page_views > 0) return metrics.landing_page_views;
+    if (metrics.outbound_clicks > 0) return metrics.outbound_clicks;
+    
+    return 0;
   };
   const getConnectRate = (metrics: CampaignMetrics) => {
     const base = metrics.unique_link_clicks > 0 ? metrics.unique_link_clicks : metrics.unique_clicks;
@@ -910,104 +966,141 @@ export const SitePage = () => {
               )}
 
               {meta?.has_facebook_connection && meta?.ad_account_id && (
-                <div className="rounded-xl border border-zinc-900 bg-zinc-950 overflow-hidden">
-                  <div className="h-[calc(100vh-320px)] max-h-[520px] min-h-[260px] overflow-auto">
-                    <div className="sticky top-0 z-20 bg-zinc-950/95 backdrop-blur border-b border-zinc-900 px-4 py-2 min-h-[44px]">
-                      <div className="flex flex-wrap items-center gap-2">
-                        {periodSelector}
+                <div className="rounded-xl border border-zinc-900 bg-zinc-950 overflow-hidden flex flex-col h-full">
+                  {/* Meta Breadcrumbs */}
+                  <div className="flex items-center gap-2 px-4 py-3 border-b border-zinc-900 bg-zinc-950/50">
+                    {metaBreadcrumbs.map((crumb, idx) => (
+                      <React.Fragment key={idx}>
                         <button
-                          onClick={() =>
-                            Promise.all([loadCampaigns().catch(() => {}), loadCampaignMetrics().catch(() => {})]).catch(
-                              () => {}
-                            )
-                          }
-                          className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 px-4 py-2 rounded-lg text-sm"
+                          onClick={() => handleMetaBreadcrumbClick(idx)}
+                          className={`text-sm ${
+                            idx === metaBreadcrumbs.length - 1 ? 'text-zinc-200 font-medium' : 'text-zinc-500 hover:text-zinc-300'
+                          }`}
+                        >
+                          {crumb.name}
+                        </button>
+                        {idx < metaBreadcrumbs.length - 1 && <span className="text-zinc-600">/</span>}
+                      </React.Fragment>
+                    ))}
+                  </div>
+
+                  <div className="flex-1 overflow-auto max-h-[520px] min-h-[300px]">
+                    <div className="sticky top-0 z-20 bg-zinc-950/95 backdrop-blur border-b border-zinc-900 px-4 py-2 min-h-[44px]">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          {periodSelector}
+                        </div>
+                        <button
+                          onClick={() => loadCampaigns()}
+                          className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 px-4 py-2 rounded-lg text-sm transition-colors"
                         >
                           Atualizar
                         </button>
                       </div>
                     </div>
-                    <div className="grid grid-cols-[minmax(220px,1fr)_110px_110px_110px_90px_90px_90px_90px_110px_110px_110px_90px_110px_120px] gap-2 px-4 py-3 text-[11px] text-zinc-500 border-b border-zinc-900 sticky top-[44px] z-10 bg-zinc-950/95">
-                      <div>Campanha</div>
-                      <div>Status</div>
-                      <div>Valor usado</div>
-                      <div>Impressões</div>
-                      <div>Cliques</div>
-                      <div>CTR</div>
-                      <div>CPC</div>
-                      <div>CPM</div>
-                      <div>Resultado</div>
-                      <div>Finalização</div>
-                      <div>Compra</div>
-                      <div>Connect Rate</div>
-                      <div className="text-right">Ação</div>
-                    </div>
-                    {campaigns.length === 0 && (
-                      <div className="px-4 py-6 text-sm text-zinc-400">Nenhuma campanha encontrada.</div>
-                    )}
-                    {campaigns.map((c) => (
-                      <div
-                        key={c.id}
-                        className="grid grid-cols-[minmax(220px,1fr)_110px_110px_110px_90px_90px_90px_90px_110px_110px_110px_90px_110px_120px] gap-2 px-4 py-3 text-sm border-b border-zinc-900 last:border-b-0"
-                      >
-                        <div>
-                          <div className="text-zinc-100">{c.name}</div>
-                          <div className="text-xs text-zinc-500 font-mono">{c.id}</div>
-                        </div>
-                        <div className="text-zinc-300">{c.status}</div>
-                        <div className="text-zinc-200 text-xs">
-                          {campaignMetrics[c.id] ? formatMoney(campaignMetrics[c.id].spend) : '—'}
-                        </div>
-                        <div className="text-zinc-200 text-xs">
-                          {campaignMetrics[c.id] ? formatNumber(campaignMetrics[c.id].impressions) : '—'}
-                        </div>
-                        <div className="text-zinc-200 text-xs">
-                          {campaignMetrics[c.id] ? formatNumber(campaignMetrics[c.id].clicks) : '—'}
-                        </div>
-                        <div className="text-zinc-200 text-xs">
-                          {campaignMetrics[c.id] ? `${formatPercent(campaignMetrics[c.id].ctr)}%` : '—'}
-                        </div>
-                        <div className="text-zinc-200 text-xs">
-                          {campaignMetrics[c.id] ? formatMoney(campaignMetrics[c.id].cpc) : '—'}
-                        </div>
-                        <div className="text-zinc-200 text-xs">
-                          {campaignMetrics[c.id] ? formatMoney(campaignMetrics[c.id].cpm) : '—'}
-                        </div>
-                        <div className="text-zinc-200 text-xs">
-                          {campaignMetrics[c.id] ? formatNumber(getResultValue(c, campaignMetrics[c.id])) : '—'}
-                        </div>
-                        <div className="text-zinc-200 text-xs">
-                          {campaignMetrics[c.id] ? formatNumber(campaignMetrics[c.id].initiates_checkout) : '—'}
-                        </div>
-                        <div className="text-zinc-200 text-xs">
-                          {campaignMetrics[c.id] ? formatNumber(campaignMetrics[c.id].purchases) : '—'}
-                        </div>
-                        <div className="text-zinc-200 text-xs">
-                          {campaignMetrics[c.id]
-                            ? `${formatPercent(getConnectRate(campaignMetrics[c.id]))}%`
-                            : '—'}
-                        </div>
-                        <div className="flex justify-end">
-                          {c.status === 'ACTIVE' ? (
-                            <button
-                              disabled={loading}
-                              onClick={() => setCampaignStatus(c.id, 'PAUSED')}
-                              className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 px-3 py-1.5 rounded-lg disabled:opacity-50 text-sm"
-                            >
-                              Pausar
-                            </button>
-                          ) : (
-                            <button
-                              disabled={loading}
-                              onClick={() => setCampaignStatus(c.id, 'ACTIVE')}
-                              className="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg disabled:opacity-50 text-sm"
-                            >
-                              Ativar
-                            </button>
-                          )}
-                        </div>
+                    
+                    <div className="w-full overflow-x-auto">
+                      <div className="min-w-[1200px] grid grid-cols-[minmax(250px,2fr)_100px_100px_100px_100px_80px_80px_80px_100px_100px_100px_100px_100px_100px_100px] gap-2 px-4 py-3 text-[11px] text-zinc-500 border-b border-zinc-900 sticky top-[52px] z-10 bg-zinc-950/95 whitespace-nowrap">
+                        <div>Nome</div>
+                        <div>Status</div>
+                        <div>Valor usado</div>
+                        <div>Resultados</div>
+                        <div>Custo por res.</div>
+                        <div>Impr.</div>
+                        <div>Cliques</div>
+                        <div>CTR</div>
+                        <div>CPC</div>
+                        <div>CPM</div>
+                        <div>Finalização</div>
+                        <div>Compra</div>
+                        <div>Connect Rate</div>
+                        <div className="text-right">Ação</div>
                       </div>
-                    ))}
+
+                      {campaigns.length === 0 && (
+                        <div className="px-4 py-12 text-center text-sm text-zinc-500">
+                          Nenhum item encontrado neste nível.
+                        </div>
+                      )}
+
+                      {campaigns.map((c) => {
+                        const metrics = campaignMetrics[c.id];
+                        const resultVal = metrics ? getResultValue(c, metrics) : 0;
+                        const cpr = resultVal > 0 && metrics?.spend ? metrics.spend / resultVal : 0;
+
+                        return (
+                          <div
+                            key={c.id}
+                            className="min-w-[1200px] grid grid-cols-[minmax(250px,2fr)_100px_100px_100px_100px_80px_80px_80px_100px_100px_100px_100px_100px_100px_100px] gap-2 px-4 py-3 text-sm border-b border-zinc-900 last:border-b-0 hover:bg-zinc-900/30 transition-colors items-center"
+                          >
+                            <div className="overflow-hidden">
+                              <button 
+                                onClick={() => handleMetaDrillDown(c)}
+                                className="text-left hover:text-blue-400 transition-colors truncate w-full block font-medium text-zinc-200"
+                                disabled={metaLevel === 'ad'}
+                              >
+                                {c.name}
+                              </button>
+                              <div className="text-[10px] text-zinc-600 font-mono truncate">{c.id}</div>
+                            </div>
+                            
+                            <div className="text-zinc-400 text-xs truncate">
+                              {c.status || 'UNKNOWN'}
+                            </div>
+
+                            <div className="text-zinc-300 text-xs">
+                              {metrics ? formatMoney(metrics.spend) : '—'}
+                            </div>
+
+                            <div className="text-zinc-200 text-xs font-medium">
+                              {metrics ? formatNumber(resultVal) : '—'}
+                            </div>
+
+                            <div className="text-zinc-300 text-xs">
+                               {metrics && resultVal > 0 ? formatMoney(cpr) : '—'}
+                            </div>
+
+                            <div className="text-zinc-400 text-xs">
+                              {metrics ? formatNumber(metrics.impressions) : '—'}
+                            </div>
+
+                            <div className="text-zinc-400 text-xs">
+                              {metrics ? formatNumber(metrics.clicks) : '—'}
+                            </div>
+
+                            <div className="text-zinc-400 text-xs">
+                              {metrics ? `${formatPercent(metrics.ctr)}%` : '—'}
+                            </div>
+
+                            <div className="text-zinc-400 text-xs">
+                              {metrics ? formatMoney(metrics.cpc) : '—'}
+                            </div>
+                            
+                            <div className="text-zinc-400 text-xs">
+                              {metrics ? formatMoney(metrics.cpm) : '—'}
+                            </div>
+
+                            <div className="text-zinc-300 text-xs">
+                              {metrics ? formatNumber(metrics.initiates_checkout) : '—'}
+                            </div>
+
+                            <div className="text-zinc-300 text-xs">
+                              {metrics ? formatNumber(metrics.purchases) : '—'}
+                            </div>
+
+                            <div className="text-zinc-300 text-xs">
+                              {metrics ? `${formatPercent(getConnectRate(metrics))}%` : '—'}
+                            </div>
+
+                            <div className="flex justify-end">
+                               <button className="text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-2 py-1 rounded border border-zinc-700">
+                                 Ver
+                               </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
               )}
@@ -1103,7 +1196,7 @@ export const SitePage = () => {
                   <div className="mt-3 flex flex-wrap items-center gap-2">
                     {periodSelector}
                     <button
-                      onClick={() => loadCampaignMetrics().catch(() => {})}
+                      onClick={() => loadCampaigns().catch(() => {})}
                       className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 px-4 py-2 rounded-lg text-sm"
                     >
                       Atualizar

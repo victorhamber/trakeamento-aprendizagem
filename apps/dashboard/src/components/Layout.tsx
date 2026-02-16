@@ -92,7 +92,19 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
           <Item to="/dashboard" label="Visão geral" icon="dashboard" />
           <Item to="/sites" label="Sites" icon="sites" />
           <Item to="/ai" label="Assistente IA" icon="ai" />
-          <div className="pt-2">
+          
+          <div className="pt-4 pb-2 text-[10px] uppercase tracking-wider font-semibold text-zinc-600 px-3">
+            Ferramentas
+          </div>
+          
+          <div className="space-y-1">
+            <Item to="/connection" label="Conexão" icon="sites" />
+            <Item to="/meta" label="Meta Ads" icon="dashboard" />
+            <Item to="/settings" label="Configuração" icon="ai" />
+            <Item to="/diagnostics" label="Diagnóstico" icon="ai" />
+          </div>
+
+          <div className="pt-4">
             <div className="px-3 py-2 rounded-xl border border-zinc-900/70 bg-zinc-950/40 text-zinc-500 text-sm">
               Treinamentos <span className="text-xs">(em breve)</span>
             </div>

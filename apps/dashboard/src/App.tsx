@@ -51,6 +51,12 @@ function App() {
           </RequireAuth>
         }
       />
+      {/* Rotas de ferramentas (Redirecionam para o primeiro site por enquanto ou página de sites se não houver ID) */}
+      <Route path="/connection" element={<Navigate to="/sites" replace />} />
+      <Route path="/meta" element={<Navigate to="/sites" replace />} />
+      <Route path="/settings" element={<Navigate to="/sites" replace />} />
+      <Route path="/diagnostics" element={<Navigate to="/sites" replace />} />
+      
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

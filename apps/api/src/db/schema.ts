@@ -178,6 +178,40 @@ export const ensureSchema = async (pool: Pool) => {
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS initiates_checkout INTEGER');
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS cost_per_lead NUMERIC');
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS cost_per_purchase NUMERIC');
+    
+    // Migração para flexibilizar a constraint UNIQUE de meta_insights_daily
+    try {
+      // 1. Remover NOT NULL da coluna ad_id
+      await pool.query('ALTER TABLE meta_insights_daily ALTER COLUMN ad_id DROP NOT NULL');
+
+      // 2. Remover constraints antigas se existirem
+      await pool.query('ALTER TABLE meta_insights_daily DROP CONSTRAINT IF EXISTS unique_meta_insights_daily');
+      await pool.query('ALTER TABLE meta_insights_daily DROP CONSTRAINT IF EXISTS meta_insights_daily_site_id_ad_id_date_start_key');
+
+      // 3. Criar índices parciais únicos para cada nível (Ad, AdSet, Campaign)
+      // Nível Anúncio
+      await pool.query(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_meta_insights_daily_ad 
+        ON meta_insights_daily (site_id, ad_id, date_start) 
+        WHERE ad_id IS NOT NULL
+      `);
+
+      // Nível Conjunto de Anúncios (ad_id NULL, adset_id NOT NULL)
+      await pool.query(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_meta_insights_daily_adset 
+        ON meta_insights_daily (site_id, adset_id, date_start) 
+        WHERE adset_id IS NOT NULL AND ad_id IS NULL
+      `);
+
+      // Nível Campanha (adset_id NULL, campaign_id NOT NULL)
+      await pool.query(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_meta_insights_daily_campaign 
+        ON meta_insights_daily (site_id, campaign_id, date_start) 
+        WHERE campaign_id IS NOT NULL AND adset_id IS NULL
+      `);
+    } catch (migErr) {
+      console.warn('Migration for flexible meta insights skipped/failed:', migErr);
+    }
   } catch (err) {
     console.warn('Schema extension skipped:', err);
   }
