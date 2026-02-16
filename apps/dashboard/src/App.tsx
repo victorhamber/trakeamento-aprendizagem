@@ -6,7 +6,6 @@ import { RegisterPage } from './pages/Register';
 import { DashboardPage } from './pages/Dashboard';
 import { AiSettingsPage } from './pages/AiSettings';
 import { SitesPage } from './pages/Sites';
-import { SitePage } from './pages/Site';
 
 const RequireAuth = ({ children }: { children: React.ReactNode }) => {
   const auth = useAuth();
@@ -28,6 +27,14 @@ function App() {
         }
       />
       <Route
+        path="/campaigns"
+        element={
+          <RequireAuth>
+            <DashboardPage />
+          </RequireAuth>
+        }
+      />
+      <Route
         path="/sites"
         element={
           <RequireAuth>
@@ -36,18 +43,18 @@ function App() {
         }
       />
       <Route
-        path="/sites/:siteId"
+        path="/recommendations"
         element={
           <RequireAuth>
-            <SitePage />
+            <AiSettingsPage />
           </RequireAuth>
         }
       />
       <Route
-        path="/ai"
+        path="/tracking"
         element={
           <RequireAuth>
-            <AiSettingsPage />
+            <SitesPage />
           </RequireAuth>
         }
       />
