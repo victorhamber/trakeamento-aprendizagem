@@ -83,13 +83,28 @@ router.delete('/:siteId', requireAuth, async (req, res) => {
   const siteId = Number(req.params.siteId);
   if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
 
-  const result = await pool.query(
-    'DELETE FROM sites WHERE id = $1 AND account_id = $2 RETURNING id',
-    [siteId, auth.accountId]
-  );
+  try {
+    await pool.query('BEGIN');
 
-  if (!(result.rowCount || 0)) return res.status(404).json({ error: 'Site not found' });
-  return res.json({ ok: true });
+    await pool.query('DELETE FROM meta_insights_daily WHERE site_id = $1', [siteId]);
+
+    const result = await pool.query(
+      'DELETE FROM sites WHERE id = $1 AND account_id = $2 RETURNING id',
+      [siteId, auth.accountId]
+    );
+
+    if (!(result.rowCount || 0)) {
+      await pool.query('ROLLBACK');
+      return res.status(404).json({ error: 'Site not found' });
+    }
+
+    await pool.query('COMMIT');
+    return res.json({ ok: true });
+  } catch (err) {
+    await pool.query('ROLLBACK');
+    console.error('Delete site error:', err);
+    return res.status(500).json({ error: 'Failed to delete site' });
+  }
 });
 
 router.post('/', requireAuth, async (req, res) => {
@@ -193,4 +208,3 @@ router.get('/:siteId/snippet', requireAuth, async (req, res) => {
 });
 
 export default router;
-

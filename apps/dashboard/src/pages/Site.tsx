@@ -970,7 +970,7 @@ export const SitePage = () => {
               )}
 
               {meta?.has_facebook_connection && meta?.ad_account_id && (
-                <div className="rounded-xl border border-zinc-900 bg-zinc-950 overflow-hidden flex flex-col h-full max-w-full min-w-0">
+                <div className="rounded-xl border border-zinc-900 bg-zinc-950 overflow-x-auto flex flex-col h-full max-w-full min-w-0">
                   {/* Meta Breadcrumbs */}
                   <div className="flex items-center gap-2 px-4 py-3 border-b border-zinc-900 bg-zinc-950/50">
                     {metaBreadcrumbs.map((crumb, idx) => (
@@ -1003,7 +1003,7 @@ export const SitePage = () => {
                       </div>
                     </div>
                     
-                    <div className="w-full overflow-x-auto">
+                    <div className="w-full">
                       <div className="min-w-[1200px] grid grid-cols-[minmax(250px,2fr)_100px_100px_100px_100px_80px_80px_80px_100px_100px_100px_100px_100px_100px_100px] gap-2 px-4 py-3 text-[11px] text-zinc-500 border-b border-zinc-900 sticky top-[52px] z-10 bg-zinc-950/95 whitespace-nowrap">
                         <div>Nome</div>
                         <div>Status</div>
