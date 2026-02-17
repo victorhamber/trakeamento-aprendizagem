@@ -54,8 +54,9 @@ export const SitesPage = () => {
     try {
       await api.delete(`/sites/${id}`);
       await load();
-    } catch (err) {
-      alert('Erro ao excluir site.');
+    } catch (err: any) {
+      const msg = err?.response?.data?.error || 'Erro ao excluir site.';
+      alert(msg);
     }
   };
 
@@ -145,4 +146,3 @@ export const SitesPage = () => {
     </Layout>
   );
 };
-

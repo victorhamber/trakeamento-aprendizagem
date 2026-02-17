@@ -211,14 +211,16 @@ export const SitePage = () => {
   const saveMeta = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    const formData = new FormData(e.target as HTMLFormElement);
+    const form = e.target as HTMLFormElement;
+    const formData = new FormData(form);
+    const enabledInput = form.elements.namedItem('enabled') as HTMLInputElement | null;
     const data: Record<string, any> = {
       site_id: id,
       ad_account_id: formData.get('ad_account_id'),
       pixel_id: formData.get('pixel_id'),
-      enabled: formData.get('enabled') === 'true',
+      enabled: enabledInput ? enabledInput.checked : true,
     };
-    
+
     const capi = formData.get('capi_token');
     const marketing = formData.get('marketing_token');
     if (capi) data.capi_token = capi;
@@ -381,7 +383,7 @@ export const SitePage = () => {
 
   // Auto-load ad accounts if connected but no accounts loaded yet (and no ad account selected)
   useEffect(() => {
-    if (tab === 'meta' && meta?.has_facebook_connection && !meta?.ad_account_id && adAccounts.length === 0) {
+    if (tab === 'meta' && meta?.has_facebook_connection && adAccounts.length === 0) {
       loadAdAccounts().catch(() => {});
     }
   }, [tab, meta, adAccounts.length, loadAdAccounts]);
@@ -968,7 +970,7 @@ export const SitePage = () => {
               )}
 
               {meta?.has_facebook_connection && meta?.ad_account_id && (
-                <div className="rounded-xl border border-zinc-900 bg-zinc-950 overflow-hidden flex flex-col h-full">
+                <div className="rounded-xl border border-zinc-900 bg-zinc-950 overflow-hidden flex flex-col h-full max-w-full min-w-0">
                   {/* Meta Breadcrumbs */}
                   <div className="flex items-center gap-2 px-4 py-3 border-b border-zinc-900 bg-zinc-950/50">
                     {metaBreadcrumbs.map((crumb, idx) => (
@@ -986,7 +988,7 @@ export const SitePage = () => {
                     ))}
                   </div>
 
-                  <div className="flex-1 overflow-auto max-h-[520px] min-h-[300px] max-w-full">
+                  <div className="flex-1 overflow-auto max-h-[520px] min-h-[300px] max-w-full min-w-0">
                     <div className="sticky top-0 z-20 bg-zinc-950/95 backdrop-blur border-b border-zinc-900 px-4 py-2 min-h-[44px]">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
@@ -1324,4 +1326,3 @@ export const SitePage = () => {
     </Layout>
   );
 };
-
