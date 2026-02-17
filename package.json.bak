@@ -1,0 +1,14 @@
+{
+  "name": "trakeamento-aprendizagem",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev:api": "cd apps/api && npm run dev",
+    "dev:sdk": "cd apps/web-sdk && npm run dev",
+    "db:migrate": "cd apps/api && npm run migrate"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ]
+}

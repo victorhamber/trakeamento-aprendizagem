@@ -1,0 +1,35 @@
+{
+  "name": "@trakeamento/api",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "ts-node-dev src/main.ts",
+    "build": "tsc",
+    "start": "node dist/main.js",
+    "migrate": "ts-node src/scripts/migrate.ts",
+    "migrate:prod": "node dist/scripts/migrate.js",
+    "migrate:all": "ts-node src/scripts/migrate_all.ts"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "pg": "^8.11.0",
+    "bullmq": "^4.0.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.0.3",
+    "body-parser": "^1.20.2",
+    "axios": "^1.4.0",
+    "bcryptjs": "^2.4.3",
+    "crypto-js": "^4.1.1",
+    "jsonwebtoken": "^9.0.2",
+    "pg-mem": "^3.0.5"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.17",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/jsonwebtoken": "^9.0.6",
+    "@types/pg": "^8.6.6",
+    "@types/cors": "^2.8.13",
+    "@types/node": "^20.0.0",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.0.0"
+  }
+}
