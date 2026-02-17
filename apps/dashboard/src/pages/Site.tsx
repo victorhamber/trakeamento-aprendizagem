@@ -91,6 +91,7 @@ export const SitePage = () => {
   const [metaBreadcrumbs, setMetaBreadcrumbs] = useState<{ id: string | null; name: string; level: string }[]>([
     { id: null, name: 'Campanhas', level: 'campaign' },
   ]);
+  const [showAdAccountSelector, setShowAdAccountSelector] = useState(false);
 
   const reportStorageKey = useMemo(() => `diagnosis:${id}`, [id]);
   const reportSections = useMemo(() => {
@@ -133,6 +134,11 @@ export const SitePage = () => {
       void err;
     }
   }, [site, report, reportStorageKey]);
+
+  useEffect(() => {
+    if (!meta) return;
+    setShowAdAccountSelector(!meta.ad_account_id);
+  }, [meta?.ad_account_id]);
 
   useEffect(() => {
     if (!site) return;
@@ -190,6 +196,14 @@ export const SitePage = () => {
     const res = await api.get(`/sites/${id}/secret`);
     setWebhookSecret(res.data.secret);
   }, [id]);
+
+  const selectedAdAccountName = useMemo(() => {
+    if (!meta?.ad_account_id) return '';
+    const acc = adAccounts.find((a) => (a.account_id || a.id) === meta.ad_account_id);
+    if (!acc) return meta.ad_account_id || '';
+    if (acc.business) return `${acc.name} (${acc.business.name})`;
+    return acc.name;
+  }, [meta?.ad_account_id, adAccounts]);
 
   const loadMatching = useCallback(async () => {
     const res = await api.get(`/sites/${id}/identify-mapping`);
@@ -716,68 +730,113 @@ export const SitePage = () => {
                 {meta?.has_facebook_connection && (
                   <div className="mt-6 pt-6 border-t border-zinc-800">
                     <div className="flex items-center justify-between mb-4">
-                       <label className="text-sm font-medium text-zinc-200">Contas de Anúncio</label>
-                       <button
-                          type="button"
-                          onClick={() => loadAdAccounts().catch(() => {})}
-                          className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"
+                      <div>
+                        <label className="text-sm font-medium text-zinc-200">Contas de Anúncio</label>
+                        {meta?.ad_account_id && !showAdAccountSelector && (
+                          <div className="text-xs text-zinc-400 mt-1">
+                            Conta selecionada:{' '}
+                            <span className="text-zinc-200 font-mono">
+                              {selectedAdAccountName || meta.ad_account_id}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowAdAccountSelector(true);
+                          loadAdAccounts().catch(() => {});
+                        }}
+                        className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"
+                      >
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="12"
+                          height="12"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
                         >
-                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"></path><path d="M16 16h5v5"></path></svg>
-                          Atualizar lista
-                        </button>
+                          <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+                          <path d="M3 3v5h5"></path>
+                          <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"></path>
+                          <path d="M16 16h5v5"></path>
+                        </svg>
+                        Atualizar lista
+                      </button>
                     </div>
-                    
-                    {adAccounts.length === 0 && (
-                       <div className="text-sm text-zinc-500 italic py-2">
-                          Nenhuma conta carregada. Clique em atualizar.
-                       </div>
-                    )}
 
-                    <div className="space-y-2 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
-                       {adAccounts.map(acc => {
-                          const isSelected = meta?.ad_account_id === (acc.account_id || acc.id);
-                          return (
-                             <label 
-                                key={acc.id} 
+                    {showAdAccountSelector ? (
+                      <>
+                        {adAccounts.length === 0 && (
+                          <div className="text-sm text-zinc-500 italic py-2">
+                            Nenhuma conta carregada. Clique em atualizar.
+                          </div>
+                        )}
+
+                        <div className="space-y-2 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
+                          {adAccounts.map((acc) => {
+                            const isSelected = meta?.ad_account_id === (acc.account_id || acc.id);
+                            return (
+                              <label
+                                key={acc.id}
                                 className={`flex items-center justify-between p-4 rounded-xl border cursor-pointer transition-all ${
-                                  isSelected 
-                                    ? 'bg-blue-500/10 border-blue-500/50' 
+                                  isSelected
+                                    ? 'bg-blue-500/10 border-blue-500/50'
                                     : 'bg-zinc-900 border-zinc-800 hover:border-zinc-700'
                                 }`}
-                             >
+                              >
                                 <div>
-                                   <div className={`text-sm font-medium ${isSelected ? 'text-blue-200' : 'text-zinc-300'}`}>
-                                      {acc.business ? `${acc.name} (${acc.business.name})` : acc.name}
-                                   </div>
-                                   <div className="text-xs text-zinc-500 font-mono mt-0.5">
-                                      ID: {acc.account_id || acc.id}
-                                   </div>
+                                  <div
+                                    className={`text-sm font-medium ${
+                                      isSelected ? 'text-blue-200' : 'text-zinc-300'
+                                    }`}
+                                  >
+                                    {acc.business ? `${acc.name} (${acc.business.name})` : acc.name}
+                                  </div>
+                                  <div className="text-xs text-zinc-500 font-mono mt-0.5">
+                                    ID: {acc.account_id || acc.id}
+                                  </div>
                                 </div>
-                                
+
                                 <div className="relative">
-                                   <input 
-                                      type="radio" 
-                                      name="ad_account_id" 
-                                      className="sr-only peer"
-                                      value={acc.account_id || acc.id}
-                                      checked={isSelected}
-                                      onChange={(e) => {
-                                         const val = e.target.value;
-                                        setMeta((prev) => ({ ...(prev || {}), ad_account_id: val }));
-                                         loadPixels(val).catch(() => {});
-                                      }}
-                                   />
-                                   <div className={`w-5 h-5 rounded-full border flex items-center justify-center ${
+                                  <input
+                                    type="radio"
+                                    name="ad_account_id"
+                                    className="sr-only peer"
+                                    value={acc.account_id || acc.id}
+                                    checked={isSelected}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setMeta((prev) => ({ ...(prev || {}), ad_account_id: val }));
+                                      loadPixels(val).catch(() => {});
+                                      setShowAdAccountSelector(false);
+                                    }}
+                                  />
+                                  <div
+                                    className={`w-5 h-5 rounded-full border flex items-center justify-center ${
                                       isSelected ? 'border-blue-500 bg-blue-500' : 'border-zinc-600'
-                                   }`}>
-                                      {isSelected && <div className="w-2 h-2 bg-white rounded-full" />}
-                                   </div>
+                                    }`}
+                                  >
+                                    {isSelected && <div className="w-2 h-2 bg-white rounded-full" />}
+                                  </div>
                                 </div>
-                             </label>
-                          );
-                       })}
-                    </div>
-                    {/* Hidden input fallback */}
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </>
+                    ) : (
+                      !meta?.ad_account_id && (
+                        <div className="text-sm text-zinc-500 italic py-2">
+                          Nenhuma conta selecionada. Clique em atualizar para carregar a lista.
+                        </div>
+                      )
+                    )}
+
                     <input type="hidden" name="ad_account_id" value={meta?.ad_account_id || ''} />
                   </div>
                 )}
