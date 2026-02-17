@@ -44,39 +44,37 @@ export class CapiService {
   }
 
   private async getSiteMetaConfig(siteKey: string) {
-    const result = await pool.query(
-      `SELECT m.pixel_id, m.capi_token_enc, m.enabled
+    const { rows } = await pool.query(
+      `SELECT i.pixel_id, i.capi_token_enc, i.enabled, i.test_code
        FROM sites s
-       LEFT JOIN integrations_meta m ON m.site_id = s.id
+       JOIN integrations_meta i ON i.site_id = s.id
        WHERE s.site_key = $1`,
       [siteKey]
     );
-    
-    // Fallback: tentar pegar do campo JSON meta_config na tabela sites (migração progressiva)
-    if (!(result.rowCount || 0) || !result.rows[0].pixel_id) {
-       const site = await pool.query('SELECT meta_config FROM sites WHERE site_key = $1', [siteKey]);
-       if (site.rowCount && site.rows[0].meta_config) {
-          const conf = site.rows[0].meta_config;
-          if (conf.pixel_id && conf.capi_token) {
-             return { pixelId: conf.pixel_id, capiToken: conf.capi_token };
-          }
-       }
-       return null;
+
+    const cfg = rows[0];
+    if (!cfg) {
+      console.log(`[CAPI] Config not found for siteKey=${siteKey}`);
+      return null;
+    }
+    if (!cfg.enabled) {
+      console.log(`[CAPI] Meta integration disabled for siteKey=${siteKey}`);
+      return null;
+    }
+    if (!cfg.pixel_id || !cfg.capi_token_enc) {
+      console.log(`[CAPI] Missing pixel_id or capi_token for siteKey=${siteKey}`);
+      return null;
     }
 
-    const row = result.rows[0];
-    if (row.enabled === false) return null;
-    if (!row.pixel_id || !row.capi_token_enc) return null;
     try {
-      const capiToken = decryptString(row.capi_token_enc as string).trim().replace(/\s+/g, '');
-      if (!this.isProbablyValidToken(capiToken)) {
-        console.warn(`CAPI token inválido para siteKey=${siteKey}. Atualize o token no painel (use o token bruto, ex: EAA...).`);
-        return null;
+      const token = decryptString(cfg.capi_token_enc);
+      if (!token) {
+         console.log(`[CAPI] Failed to decrypt token for siteKey=${siteKey}`);
+         return null;
       }
-      return { pixelId: row.pixel_id as string, capiToken };
-    } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : 'unknown_error';
-      console.error(`Failed to decrypt CAPI token for siteKey=${siteKey}: ${message}. Key mismatch or data corruption.`);
+      return { pixelId: cfg.pixel_id, capiToken: token, testCode: cfg.test_code };
+    } catch (e) {
+      console.log(`[CAPI] Decrypt error for siteKey=${siteKey}`, e);
       return null;
     }
   }

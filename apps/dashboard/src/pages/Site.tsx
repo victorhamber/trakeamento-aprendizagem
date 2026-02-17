@@ -625,8 +625,8 @@ export const SitePage = () => {
         </div>
       )}
 
-      <div className="mt-5 rounded-3xl border border-zinc-900/70 bg-zinc-950/40 shadow-[0_0_0_1px_rgba(255,255,255,0.03)] h-[calc(100vh-200px)] flex flex-col">
-        <div className="border-b border-zinc-900/70 flex flex-wrap gap-2 p-3 shrink-0">
+      <div className="mt-5 rounded-3xl border border-zinc-900/70 bg-zinc-950/40 shadow-[0_0_0_1px_rgba(255,255,255,0.03)]">
+        <div className="border-b border-zinc-900/70 flex flex-wrap gap-2 p-3">
           {tabs.map((t) => (
             <button
               key={t.key}
@@ -646,9 +646,8 @@ export const SitePage = () => {
           ))}
         </div>
 
-    <div className="flex flex-col h-full overflow-hidden">
-      <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
-        {tab === 'snippet' && (
+        <div className="p-6">
+          {tab === 'snippet' && (
             <div>
               <div className="text-sm text-zinc-300 mb-3">
                 Cole este snippet no seu site (antes do fechamento do &lt;/head&gt;).
@@ -987,7 +986,7 @@ export const SitePage = () => {
                     ))}
                   </div>
 
-                  <div className="flex-1 overflow-auto max-h-[520px] min-h-[300px]">
+                  <div className="flex-1 overflow-auto max-h-[520px] min-h-[300px] max-w-full">
                     <div className="sticky top-0 z-20 bg-zinc-950/95 backdrop-blur border-b border-zinc-900 px-4 py-2 min-h-[44px]">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
@@ -1021,7 +1020,7 @@ export const SitePage = () => {
                       </div>
 
                       {campaigns.length === 0 && (
-                        <div className="px-4 py-12 text-center text-sm text-zinc-500">
+                        <div className="px-4 py-12 text-center text-sm text-zinc-500 min-w-[1200px]">
                           Nenhum item encontrado neste nível.
                         </div>
                       )}
@@ -1322,7 +1321,6 @@ export const SitePage = () => {
           )}
         </div>
       </div>
-    </div>
     </Layout>
   );
 };
