@@ -91,6 +91,7 @@ export const SitePage = () => {
   const [metaBreadcrumbs, setMetaBreadcrumbs] = useState<{ id: string | null; name: string; level: string }[]>([
     { id: null, name: 'Campanhas', level: 'campaign' },
   ]);
+  const [metaStatusFilter, setMetaStatusFilter] = useState<'active' | 'all'>('active');
   const [showAdAccountSelector, setShowAdAccountSelector] = useState(false);
 
   const reportStorageKey = useMemo(() => `diagnosis:${id}`, [id]);
@@ -317,16 +318,52 @@ export const SitePage = () => {
       } else {
         params.date_preset = metricsPreset;
       }
-      
       const res = await api.get('/meta/campaigns/metrics', { params });
-      
+
       if (res.data?.meta_error) {
         setFlash(`Meta: ${res.data.meta_error}`);
       }
-      
-      setCampaigns(res.data.data || []);
-      
-      const map = (res.data.data || []).reduce((acc: Record<string, any>, row: any) => {
+
+      let rows: any[] = res.data?.data || [];
+
+      if (metaLevel === 'campaign') {
+        try {
+          const metaRes = await api.get(`/integrations/sites/${id}/meta/campaigns`);
+          const metaList: any[] = metaRes.data?.campaigns || [];
+          const metaMap = metaList.reduce((acc: Record<string, any>, item: any) => {
+            acc[item.id] = item;
+            return acc;
+          }, {});
+
+          rows = rows.map((row: any) => {
+            const metaInfo = metaMap[row.id] || {};
+            const status = metaInfo.status || row.status || null;
+            const effectiveStatus = metaInfo.effective_status || row.effective_status || status || null;
+            return {
+              ...row,
+              name: row.name || metaInfo.name || row.campaign_name,
+              status,
+              effective_status: effectiveStatus,
+              objective: metaInfo.objective || row.objective || null,
+            };
+          });
+
+          if (metaStatusFilter === 'active') {
+            rows = rows.filter((row) => {
+              const eff = String(row.effective_status || row.status || '').toUpperCase();
+              if (!eff) return true;
+              if (eff === 'DELETED' || eff === 'ARCHIVED') return false;
+              return true;
+            });
+          }
+        } catch (err) {
+          console.error(err);
+        }
+      }
+
+      setCampaigns(rows);
+
+      const map = rows.reduce((acc: Record<string, any>, row: any) => {
         acc[row.id] = row;
         return acc;
       }, {});
@@ -337,7 +374,7 @@ export const SitePage = () => {
     } finally {
       setLoading(false);
     }
-  }, [id, metricsPreset, metricsSince, metricsUntil, metaLevel, metaParentId]);
+  }, [id, metricsPreset, metricsSince, metricsUntil, metaLevel, metaParentId, metaStatusFilter]);
 
   useEffect(() => {
     if (!site) return;
@@ -366,6 +403,20 @@ export const SitePage = () => {
       setMetaLevel('ad');
       setMetaParentId(item.id);
       setMetaBreadcrumbs((prev) => [...prev, { id: item.id, name: item.name, level: 'ad' }]);
+    }
+  };
+
+  const toggleCampaignStatus = async (item: any) => {
+    if (metaLevel !== 'campaign') return;
+    const current = String(item.effective_status || item.status || '').toUpperCase();
+    const nextStatus = current === 'ACTIVE' ? 'PAUSED' : 'ACTIVE';
+    try {
+      await api.patch(`/integrations/sites/${id}/meta/campaigns/${item.id}`, { status: nextStatus });
+      await loadCampaigns();
+      setFlash(nextStatus === 'ACTIVE' ? 'Campanha ativada com sucesso.' : 'Campanha pausada com sucesso.');
+    } catch (err) {
+      console.error(err);
+      setFlash('Erro ao atualizar status da campanha.');
     }
   };
 
@@ -488,6 +539,15 @@ export const SitePage = () => {
     new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 2 }).format(value);
   const formatPercent = (value: number) =>
     new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
+  const getStatusLabel = (item: any) => {
+    const eff = String(item?.effective_status || item?.status || '').toUpperCase();
+    if (!eff) return 'UNKNOWN';
+    if (eff === 'ACTIVE') return 'Ativa';
+    if (eff === 'PAUSED') return 'Pausada';
+    if (eff === 'ARCHIVED') return 'Arquivada';
+    if (eff === 'DELETED') return 'Excluída';
+    return eff;
+  };
   const getResultValue = (
     item: { objective?: string | null } | null | undefined,
     metrics: CampaignMetrics | undefined
@@ -1049,20 +1109,28 @@ export const SitePage = () => {
 
                   <div className="flex-1 overflow-auto max-h-[520px] min-h-[300px] max-w-full min-w-0">
                     <div className="sticky top-0 z-20 bg-zinc-950/95 backdrop-blur border-b border-zinc-900 px-4 py-2 min-h-[44px]">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2 justify-start">
+                        <div className="flex flex-wrap items-center gap-2">
                           {periodSelector}
+                          <select
+                            value={metaStatusFilter}
+                            onChange={(e) => setMetaStatusFilter(e.target.value as 'active' | 'all')}
+                            className="rounded-lg bg-zinc-900 border border-zinc-800 px-3 py-2 text-xs text-zinc-200"
+                          >
+                            <option value="active">Somente ativos</option>
+                            <option value="all">Todos</option>
+                          </select>
+                          <button
+                            onClick={() => loadCampaigns()}
+                            className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 px-4 py-2 rounded-lg text-sm transition-colors"
+                          >
+                            Atualizar
+                          </button>
                         </div>
-                        <button
-                          onClick={() => loadCampaigns()}
-                          className="bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 px-4 py-2 rounded-lg text-sm transition-colors"
-                        >
-                          Atualizar
-                        </button>
                       </div>
                     </div>
                     
-                    <div className="w-full">
+                    <div className="w-full overflow-x-auto">
                       <div className="min-w-[1200px] grid grid-cols-[minmax(250px,2fr)_100px_100px_100px_100px_80px_80px_80px_100px_100px_100px_100px_100px_100px_100px] gap-2 px-4 py-3 text-[11px] text-zinc-500 border-b border-zinc-900 sticky top-[52px] z-10 bg-zinc-950/95 whitespace-nowrap">
                         <div>Nome</div>
                         <div>Status</div>
@@ -1108,7 +1176,7 @@ export const SitePage = () => {
                             </div>
                             
                             <div className="text-zinc-400 text-xs truncate">
-                              {c.status || 'UNKNOWN'}
+                              {getStatusLabel(c)}
                             </div>
 
                             <div className="text-zinc-300 text-xs">
@@ -1155,10 +1223,24 @@ export const SitePage = () => {
                               {metrics ? `${formatPercent(getConnectRate(metrics))}%` : '—'}
                             </div>
 
-                            <div className="flex justify-end">
-                               <button className="text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-2 py-1 rounded border border-zinc-700">
-                                 Ver
-                               </button>
+                            <div className="flex justify-end gap-2">
+                              {metaLevel === 'campaign' && (
+                                <button
+                                  onClick={() => toggleCampaignStatus(c)}
+                                  className="text-xs bg-zinc-900 hover:bg-zinc-800 text-zinc-200 px-2 py-1 rounded border border-zinc-700"
+                                >
+                                  {(c.effective_status || c.status || '').toUpperCase() === 'ACTIVE'
+                                    ? 'Pausar'
+                                    : 'Ativar'}
+                                </button>
+                              )}
+                              <button
+                                onClick={() => handleMetaDrillDown(c)}
+                                className="text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-2 py-1 rounded border border-zinc-700"
+                                disabled={metaLevel === 'ad'}
+                              >
+                                Ver
+                              </button>
                             </div>
                           </div>
                         );
