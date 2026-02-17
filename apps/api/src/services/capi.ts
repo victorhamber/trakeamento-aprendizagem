@@ -51,7 +51,19 @@ export class CapiService {
        WHERE s.site_key = $1`,
       [siteKey]
     );
-    if (!(result.rowCount || 0)) return null;
+    
+    // Fallback: tentar pegar do campo JSON meta_config na tabela sites (migração progressiva)
+    if (!(result.rowCount || 0) || !result.rows[0].pixel_id) {
+       const site = await pool.query('SELECT meta_config FROM sites WHERE site_key = $1', [siteKey]);
+       if (site.rowCount && site.rows[0].meta_config) {
+          const conf = site.rows[0].meta_config;
+          if (conf.pixel_id && conf.capi_token) {
+             return { pixelId: conf.pixel_id, capiToken: conf.capi_token };
+          }
+       }
+       return null;
+    }
+
     const row = result.rows[0];
     if (row.enabled === false) return null;
     if (!row.pixel_id || !row.capi_token_enc) return null;

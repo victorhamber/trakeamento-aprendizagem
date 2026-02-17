@@ -625,8 +625,8 @@ export const SitePage = () => {
         </div>
       )}
 
-      <div className="mt-5 rounded-3xl border border-zinc-900/70 bg-zinc-950/40 shadow-[0_0_0_1px_rgba(255,255,255,0.03)]">
-        <div className="border-b border-zinc-900/70 flex flex-wrap gap-2 p-3">
+      <div className="mt-5 rounded-3xl border border-zinc-900/70 bg-zinc-950/40 shadow-[0_0_0_1px_rgba(255,255,255,0.03)] h-[calc(100vh-200px)] flex flex-col">
+        <div className="border-b border-zinc-900/70 flex flex-wrap gap-2 p-3 shrink-0">
           {tabs.map((t) => (
             <button
               key={t.key}
@@ -646,8 +646,9 @@ export const SitePage = () => {
           ))}
         </div>
 
-        <div className="p-6">
-          {tab === 'snippet' && (
+    <div className="flex flex-col h-full overflow-hidden">
+      <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
+        {tab === 'snippet' && (
             <div>
               <div className="text-sm text-zinc-300 mb-3">
                 Cole este snippet no seu site (antes do fechamento do &lt;/head&gt;).
@@ -1321,6 +1322,7 @@ export const SitePage = () => {
           )}
         </div>
       </div>
+    </div>
     </Layout>
   );
 };

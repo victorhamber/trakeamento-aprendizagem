@@ -97,6 +97,20 @@ router.post('/', requireAuth, async (req, res) => {
   return res.status(201).json({ site: result.rows[0], webhook_secret: webhookSecretPlain });
 });
 
+router.delete('/:siteId', requireAuth, async (req, res) => {
+  const auth = req.auth!;
+  const siteId = Number(req.params.siteId);
+  if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
+
+  const result = await pool.query('DELETE FROM sites WHERE id = $1 AND account_id = $2 RETURNING id', [
+    siteId,
+    auth.accountId,
+  ]);
+
+  if (!result.rowCount) return res.status(404).json({ error: 'Site not found' });
+  return res.json({ success: true });
+});
+
 router.get('/:siteId/identify-mapping', requireAuth, async (req, res) => {
   const auth = req.auth!;
   const siteId = Number(req.params.siteId);

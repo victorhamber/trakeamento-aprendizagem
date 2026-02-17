@@ -32,6 +32,23 @@ router.put('/', requireAuth, async (req, res) => {
 
     await pool.query('UPDATE sites SET meta_config = $1 WHERE id = $2', [newConfig, siteId]);
 
+    // Also update integrations_meta table for consistency
+    const capiEnc = capi_token ? encryptString(capi_token) : undefined;
+    const marketingEnc = marketing_token ? encryptString(marketing_token) : undefined;
+    
+    await pool.query(
+      `INSERT INTO integrations_meta (site_id, pixel_id, capi_token_enc, marketing_token_enc, ad_account_id, enabled)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (site_id) DO UPDATE SET
+         pixel_id = COALESCE($2, integrations_meta.pixel_id),
+         capi_token_enc = COALESCE($3, integrations_meta.capi_token_enc),
+         marketing_token_enc = COALESCE($4, integrations_meta.marketing_token_enc),
+         ad_account_id = COALESCE($5, integrations_meta.ad_account_id),
+         enabled = COALESCE($6, integrations_meta.enabled),
+         updated_at = NOW()`,
+      [siteId, pixel_id, capiEnc, marketingEnc, ad_account_id, enabled]
+    );
+
     res.json({ success: true, meta: newConfig });
   } catch (err: any) {
     console.error('Update Meta config error:', err);

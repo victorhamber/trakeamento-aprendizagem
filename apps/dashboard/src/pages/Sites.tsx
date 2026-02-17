@@ -47,6 +47,19 @@ export const SitesPage = () => {
     }
   };
 
+  const deleteSite = async (id: number) => {
+    if (!confirm('Tem certeza que deseja excluir este site?')) return;
+    setLoading(true);
+    try {
+      await api.delete(`/sites/${id}`);
+      await load();
+    } catch (err: any) {
+      alert('Erro ao excluir site');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <Layout title="Sites" right={<button onClick={() => nav('/sites')} className="hidden" />}>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -114,7 +127,19 @@ export const SitesPage = () => {
                     <div className="font-semibold text-zinc-100">{s.name}</div>
                     <div className="text-sm text-zinc-500">{s.domain || '—'}</div>
                   </div>
-                  <div className="text-xs font-mono text-zinc-600 group-hover:text-zinc-500">{s.site_key}</div>
+                  <div className="flex items-center gap-3">
+                    <div className="text-xs font-mono text-zinc-600 group-hover:text-zinc-500">{s.site_key}</div>
+                    <button
+                      onClick={(e) => {
+                        e.preventDefault();
+                        deleteSite(s.id);
+                      }}
+                      className="p-2 text-zinc-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                      title="Excluir site"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
+                    </button>
+                  </div>
                 </div>
               </Link>
             ))}
