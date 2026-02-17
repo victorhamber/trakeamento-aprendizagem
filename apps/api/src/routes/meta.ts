@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { metaMarketingService } from '../services/meta-marketing';
 import { requireAuth } from '../middleware/auth';
 import { pool } from '../db/pool';
+import { encryptString } from '../lib/crypto';
 
 const router = Router();
 
