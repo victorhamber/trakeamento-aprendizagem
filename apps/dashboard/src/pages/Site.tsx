@@ -1130,26 +1130,27 @@ export const SitePage = () => {
                       </div>
                     </div>
                     
-                    <div className="w-full min-w-0">
-                      <div className="min-w-[1200px] grid grid-cols-[minmax(250px,2fr)_100px_100px_100px_100px_80px_80px_80px_100px_100px_100px_100px_100px_100px_100px] gap-2 px-4 py-3 text-[11px] text-zinc-500 border-b border-zinc-900 sticky top-[52px] z-10 bg-zinc-950/95 whitespace-nowrap">
-                        <div>Nome</div>
-                        <div>Status</div>
-                        <div>Valor usado</div>
-                        <div>Resultados</div>
-                        <div>Custo por res.</div>
-                        <div>Impr.</div>
-                        <div>Cliques</div>
-                        <div>CTR</div>
-                        <div>CPC</div>
-                        <div>CPM</div>
-                        <div>Finalização</div>
-                        <div>Compra</div>
-                        <div>Connect Rate</div>
-                        <div className="text-right">Ação</div>
-                      </div>
+                    <div className="w-full min-w-0 overflow-x-auto">
+                      <div className="min-w-[1200px]">
+                        <div className="grid grid-cols-[minmax(250px,2fr)_100px_100px_100px_100px_80px_80px_80px_100px_100px_100px_100px_100px_100px_100px] gap-2 px-4 py-3 text-[11px] text-zinc-500 border-b border-zinc-900 sticky top-[52px] z-10 bg-zinc-950/95 whitespace-nowrap">
+                          <div>Nome</div>
+                          <div>Status</div>
+                          <div>Valor usado</div>
+                          <div>Resultados</div>
+                          <div>Custo por res.</div>
+                          <div>Impr.</div>
+                          <div>Cliques</div>
+                          <div>CTR</div>
+                          <div>CPC</div>
+                          <div>CPM</div>
+                          <div>Finalização</div>
+                          <div>Compra</div>
+                          <div>Connect Rate</div>
+                          <div className="text-right">Ação</div>
+                        </div>
 
                       {campaigns.length === 0 && (
-                        <div className="px-4 py-12 text-center text-sm text-zinc-500 min-w-[1200px]">
+                        <div className="px-4 py-12 text-center text-sm text-zinc-500">
                           Nenhum item encontrado neste nível.
                         </div>
                       )}
@@ -1162,7 +1163,7 @@ export const SitePage = () => {
                         return (
                           <div
                             key={c.id}
-                            className="min-w-[1200px] grid grid-cols-[minmax(250px,2fr)_100px_100px_100px_100px_80px_80px_80px_100px_100px_100px_100px_100px_100px_100px] gap-2 px-4 py-3 text-sm border-b border-zinc-900 last:border-b-0 hover:bg-zinc-900/30 transition-colors items-center"
+                            className="grid grid-cols-[minmax(250px,2fr)_100px_100px_100px_100px_80px_80px_80px_100px_100px_100px_100px_100px_100px_100px] gap-2 px-4 py-3 text-sm border-b border-zinc-900 last:border-b-0 hover:bg-zinc-900/30 transition-colors items-center"
                           >
                             <div className="overflow-hidden">
                               <button 
@@ -1245,6 +1246,7 @@ export const SitePage = () => {
                           </div>
                         );
                       })}
+                      </div>
                     </div>
                   </div>
                 </div>

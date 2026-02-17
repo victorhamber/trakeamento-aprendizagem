@@ -45,7 +45,7 @@ export class CapiService {
 
   private async getSiteMetaConfig(siteKey: string) {
     const { rows } = await pool.query(
-      `SELECT i.pixel_id, i.capi_token_enc, i.enabled, i.test_code
+      `SELECT i.pixel_id, i.capi_token_enc, i.enabled
        FROM sites s
        JOIN integrations_meta i ON i.site_id = s.id
        WHERE s.site_key = $1`,
@@ -72,7 +72,7 @@ export class CapiService {
          console.log(`[CAPI] Failed to decrypt token for siteKey=${siteKey}`);
          return null;
       }
-      return { pixelId: cfg.pixel_id, capiToken: token, testCode: cfg.test_code };
+      return { pixelId: cfg.pixel_id, capiToken: token };
     } catch (e) {
       console.log(`[CAPI] Decrypt error for siteKey=${siteKey}`, e);
       return null;
