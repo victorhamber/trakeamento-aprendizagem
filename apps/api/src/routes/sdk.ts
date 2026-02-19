@@ -495,40 +495,35 @@ router.get('/tracker.js', async (_req, res) => {
     if(cfg.metaPixelId){
       loadMetaPixel(cfg.metaPixelId);
       trackMeta(
-        'PageView',
-        Object.assign(
-          {
-            ta_source: 'tracking_suite',
-            ta_site_key: cfg.siteKey,
-            ta_event_id: payload.event_id,
-            event_url: (location.origin || '') + (location.pathname || '/'),
-            event_source_url: payload.event_source_url,
-            traffic_source: document.referrer || '',
-            client_user_agent: navigator.userAgent,
-            content_type: payload.custom_data.content_type,
-            page_title: payload.custom_data.page_title,
-            page_path: payload.custom_data.page_path,
-            page_location: payload.event_source_url,
-            referrer: payload.custom_data.referrer,
-            fbp: payload.user_data.fbp,
-            fbc: payload.user_data.fbc,
-            external_id: payload.user_data.external_id,
-            em: payload.user_data.em,
-            ph: payload.user_data.ph,
-            fn: payload.user_data.fn,
-            ln: payload.user_data.ln,
-            ct: payload.user_data.ct,
-            st: payload.user_data.st,
-            zp: payload.user_data.zp,
-            db: payload.user_data.db
-          },
-          payload.telemetry || {},
-          getTimeFields(payload.event_time),
-          attrs
-        ),
-        payload.event_id,
-        false
-      );
+          'PageView',
+          Object.assign(
+            {
+              ta_source: 'tracking_suite',
+              ta_site_key: cfg.siteKey,
+              ta_event_id: payload.event_id,
+              event_url: (location.origin || '') + (location.pathname || '/'),
+              event_source_url: payload.event_source_url,
+              traffic_source: document.referrer || '',
+              client_user_agent: navigator.userAgent,
+              fbp: payload.user_data.fbp,
+              fbc: payload.user_data.fbc,
+              external_id: payload.user_data.external_id,
+              em: payload.user_data.em,
+              ph: payload.user_data.ph,
+              fn: payload.user_data.fn,
+              ln: payload.user_data.ln,
+              ct: payload.user_data.ct,
+              st: payload.user_data.st,
+              zp: payload.user_data.zp,
+              db: payload.user_data.db
+            },
+            payload.telemetry || {},
+            getTimeFields(payload.event_time),
+            payload.custom_data || {}
+          ),
+          payload.event_id,
+          false
+        );
     }
     if(cfg.gaMeasurementId){
       loadGa(cfg.gaMeasurementId);
@@ -600,7 +595,7 @@ router.get('/tracker.js', async (_req, res) => {
             },
             payload.telemetry || {},
             getTimeFields(payload.event_time),
-            attrs
+            payload.custom_data || {}
           ),
           payload.event_id,
           true
@@ -662,7 +657,7 @@ router.get('/tracker.js', async (_req, res) => {
         // Determine if standard or custom
         var standards = ['AddPaymentInfo','AddToCart','AddToWishlist','CompleteRegistration','Contact','CustomizeProduct','Donate','FindLocation','InitiateCheckout','Lead','Purchase','Schedule','Search','StartTrial','SubmitApplication','Subscribe','ViewContent','PageView'];
         var isCustom = standards.indexOf(eventName) < 0;
-        trackMeta(eventName, customData, payload.event_id, isCustom);
+        trackMeta(eventName, payload.custom_data, payload.event_id, isCustom);
       }
       if(cfg.gaMeasurementId){
         loadGa(cfg.gaMeasurementId);
