@@ -8,6 +8,14 @@ export interface EventPayload {
     fbp?: string;
     fbc?: string;
     external_id?: string;
+    email?: string;
+    phone?: string;
+    fn?: string;
+    ln?: string;
+    ct?: string;
+    st?: string;
+    zp?: string;
+    db?: string;
   };
   custom_data?: Record<string, any>;
   telemetry?: {
@@ -20,16 +28,62 @@ export interface EventPayload {
 export class Tracker {
   private apiUrl: string;
   private siteKey: string;
+  private eventRules: Array<{ rule_type: string; match_value: string; event_name: string }> = [];
+  private lastPath: string = '';
 
-  constructor(apiUrl: string, siteKey: string) {
+  constructor(apiUrl: string, siteKey: string, eventRules: any[] = []) {
     this.apiUrl = apiUrl;
     this.siteKey = siteKey;
+    this.eventRules = eventRules;
     this.init();
   }
 
   private init() {
     this.trackPageView();
     this.autoTagLinks();
+    this.setupUrlRules();
+  }
+
+  public identify(userData: Record<string, any>) {
+    try {
+      const existing = JSON.parse(localStorage.getItem('ta_user_data') || '{}');
+      const updated = { ...existing, ...userData };
+      localStorage.setItem('ta_user_data', JSON.stringify(updated));
+    } catch (e) {
+      console.error('Error saving user data', e);
+    }
+  }
+
+  private setupUrlRules() {
+    this.checkUrlRules();
+    
+    const pushState = history.pushState;
+    history.pushState = (...args) => {
+      pushState.apply(history, args);
+      this.checkUrlRules();
+    };
+
+    const replaceState = history.replaceState;
+    history.replaceState = (...args) => {
+      replaceState.apply(history, args);
+      this.checkUrlRules();
+    };
+
+    window.addEventListener('popstate', () => {
+      this.checkUrlRules();
+    });
+  }
+
+  private checkUrlRules() {
+    const currentPath = window.location.pathname + window.location.search;
+    if (currentPath === this.lastPath) return;
+    this.lastPath = currentPath;
+
+    this.eventRules.forEach(rule => {
+      if (rule.rule_type === 'url_contains' && currentPath.includes(rule.match_value)) {
+        this.track(rule.event_name);
+      }
+    });
   }
 
   private getCookie(name: string): string | undefined {
@@ -38,23 +92,90 @@ export class Tracker {
     if (parts.length === 2) return parts.pop()?.split(';').shift();
   }
 
+  private setCookie(name: string, value: string, maxAgeSeconds?: number) {
+    const cookie = [`${name}=${encodeURIComponent(value)}`, 'path=/', 'samesite=lax'];
+    if (maxAgeSeconds) cookie.push(`max-age=${maxAgeSeconds}`);
+    document.cookie = cookie.join('; ');
+  }
+
+  private getOrCreateExternalId(): string {
+    const existing = this.getCookie('_ta_eid');
+    if (existing) return existing;
+    const id = `eid_${Math.random().toString(36).slice(2)}${Date.now()}`;
+    this.setCookie('_ta_eid', id, 60 * 60 * 24 * 365 * 2);
+    return id;
+  }
+
+  private getFbc(): string | undefined {
+    const existing = this.getCookie('_fbc');
+    if (existing) return existing;
+    try {
+      const url = new URL(window.location.href);
+      const fbclid = url.searchParams.get('fbclid');
+      if (fbclid) {
+        const generated = `fb.1.${Date.now()}.${fbclid}`;
+        this.setCookie('_fbc', generated, 60 * 60 * 24 * 90);
+        return generated;
+      }
+    } catch {
+      return undefined;
+    }
+  }
+
+  private getAttributionParams(): Record<string, string> {
+    const out: Record<string, string> = {};
+    try {
+      const url = new URL(window.location.href);
+      const keys = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'click_id'];
+      keys.forEach((k) => {
+        const v = url.searchParams.get(k);
+        if (v) {
+          out[k] = v;
+          try {
+            sessionStorage.setItem(`ta_${k}`, v);
+          } catch {
+            return;
+          }
+        } else {
+          try {
+            const stored = sessionStorage.getItem(`ta_${k}`);
+            if (stored) out[k] = stored;
+          } catch {
+            return;
+          }
+        }
+      });
+    } catch {
+      return out;
+    }
+    return out;
+  }
+
   private generateEventId(): string {
     return 'evt_' + Math.random().toString(36).substr(2, 9) + Date.now();
   }
 
   public track(eventName: string, customData?: Record<string, any>) {
+    const attrs = this.getAttributionParams();
+    let userData: any = {
+      client_user_agent: navigator.userAgent,
+      fbp: this.getCookie('_fbp'),
+      fbc: this.getFbc(),
+      external_id: this.getOrCreateExternalId(),
+    };
+
+    try {
+      const stored = JSON.parse(localStorage.getItem('ta_user_data') || '{}');
+      userData = { ...userData, ...stored };
+    } catch {}
+
     const payload: EventPayload = {
       event_name: eventName,
       event_time: Math.floor(Date.now() / 1000),
       event_id: this.generateEventId(),
       event_source_url: window.location.href,
-      user_data: {
-        client_user_agent: navigator.userAgent,
-        fbp: this.getCookie('_fbp'),
-        fbc: this.getCookie('_fbc'),
-        // external_id pode vir de um cookie ou variável global se o user estiver logado
-      },
-      custom_data: customData,
+      user_data: userData,
+      custom_data: { ...attrs, ...(customData || {}) },
       telemetry: {
         load_time_ms: window.performance?.timing?.domContentLoadedEventEnd - window.performance?.timing?.navigationStart,
         screen_width: window.screen.width,
@@ -92,18 +213,18 @@ export class Tracker {
       if (target && target.href) {
         const url = new URL(target.href);
         const fbp = this.getCookie('_fbp');
-        const fbc = this.getCookie('_fbc');
+        const fbc = this.getFbc();
+        const externalId = this.getOrCreateExternalId();
         
         // Se o link for externo (checkout), injeta os parâmetros
         if (url.hostname !== window.location.hostname) {
           if (fbp) url.searchParams.set('fbp', fbp);
           if (fbc) url.searchParams.set('fbc', fbc);
+          if (externalId) url.searchParams.set('external_id', externalId);
           
-          // Preserva UTMs atuais da página
-          const currentUrl = new URL(window.location.href);
-          ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'].forEach(utm => {
-            const val = currentUrl.searchParams.get(utm);
-            if (val) url.searchParams.set(utm, val);
+          const attrs = this.getAttributionParams();
+          Object.entries(attrs).forEach(([key, value]) => {
+            if (value) url.searchParams.set(key, value);
           });
 
           target.href = url.toString();
@@ -116,5 +237,5 @@ export class Tracker {
 // Inicialização automática se script configurado
 if ((window as any).TRACKING_CONFIG) {
   const config = (window as any).TRACKING_CONFIG;
-  (window as any).tracker = new Tracker(config.apiUrl, config.siteKey);
+  (window as any).tracker = new Tracker(config.apiUrl, config.siteKey, config.eventRules);
 }

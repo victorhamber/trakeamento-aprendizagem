@@ -83,7 +83,7 @@ export const AiSettingsPage = () => {
                 <select
                   value={openaiModel}
                   onChange={(e) => setOpenaiModel(e.target.value)}
-                  className="mt-1 w-full rounded-xl bg-zinc-950/40 border border-zinc-800/80 px-3 py-2 text-sm outline-none focus:border-blue-500/60 transition-colors"
+                  className="mt-1 w-full rounded-lg bg-zinc-950 border border-zinc-800 px-3.5 py-2.5 text-sm text-zinc-200 outline-none focus:border-zinc-600 transition-colors"
                 >
                   <option value="gpt-4o">gpt-4o</option>
                   <option value="gpt-4o-mini">gpt-4o-mini</option>
@@ -95,7 +95,7 @@ export const AiSettingsPage = () => {
                 <input
                   value={openaiApiKey}
                   onChange={(e) => setOpenaiApiKey(e.target.value)}
-                  className="mt-1 w-full rounded-xl bg-zinc-950/40 border border-zinc-800/80 px-3 py-2 text-sm outline-none focus:border-blue-500/60 transition-colors"
+                  className="mt-1 w-full rounded-lg bg-zinc-950 border border-zinc-800 px-3.5 py-2.5 text-sm text-zinc-200 outline-none focus:border-zinc-600 transition-colors placeholder:text-zinc-600"
                   placeholder={settings?.has_openai_key ? '•••••••••••• (preencha para substituir)' : 'sk-...'}
                 />
               </div>

@@ -56,8 +56,9 @@ router.get('/tracker.js', async (_req, res) => {
   }
   function normPhone(v){
     var s=(v||'').toString().trim();
-    s=s.replace(/[^0-9+]/g,'');
-    return s;
+    var digits=s.replace(/[^0-9]/g,'');
+    if(!digits) return '';
+    return '+' + digits;
   }
   function normName(v){
     return (v||'').toString().trim().toLowerCase();
@@ -183,10 +184,44 @@ router.get('/tracker.js', async (_req, res) => {
     if(typeof v==='number') return String(v);
     return '';
   }
+  function autoExtractIdentify(raw){
+    var out = { email:'', phone:'', fn:'', ln:'', ct:'', st:'', zp:'', db:'' };
+    var seen = [];
+    function consider(key, val){
+      var s = coerceString(val);
+      if(!s) return;
+      var k = (key||'').toString().toLowerCase();
+      if(!out.email && (k==='email' || k.indexOf('email')>=0 || k.indexOf('e-mail')>=0)) { out.email = s; return; }
+      if(!out.phone && (k==='phone' || k.indexOf('phone')>=0 || k.indexOf('telefone')>=0 || k.indexOf('cel')>=0 || k.indexOf('whats')>=0 || k.indexOf('fone')>=0)) { out.phone = s; return; }
+      if(!out.fn && (k==='fn' || k.indexOf('first')>=0 || k.indexOf('nome')>=0 || k.indexOf('firstname')>=0)) { out.fn = s; return; }
+      if(!out.ln && (k==='ln' || k.indexOf('last')>=0 || k.indexOf('sobrenome')>=0 || k.indexOf('lastname')>=0)) { out.ln = s; return; }
+      if(!out.ct && (k==='ct' || k.indexOf('city')>=0 || k.indexOf('cidade')>=0)) { out.ct = s; return; }
+      if(!out.st && (k==='st' || k.indexOf('state')>=0 || k.indexOf('estado')>=0 || k==='uf')) { out.st = s; return; }
+      if(!out.zp && (k==='zp' || k.indexOf('zip')>=0 || k.indexOf('cep')>=0 || k.indexOf('postal')>=0)) { out.zp = s; return; }
+      if(!out.db && (k==='db' || k.indexOf('birth')>=0 || k.indexOf('nasc')>=0 || k.indexOf('dob')>=0 || k.indexOf('birthday')>=0)) { out.db = s; return; }
+    }
+    function walk(obj, depth){
+      if(!obj || depth>4) return;
+      if(Array.isArray(obj)){
+        for(var i=0;i<obj.length;i++) walk(obj[i], depth+1);
+        return;
+      }
+      if(typeof obj !== 'object') return;
+      if(seen.indexOf(obj)>=0) return;
+      seen.push(obj);
+      for(var k in obj){
+        if(!Object.prototype.hasOwnProperty.call(obj, k)) continue;
+        var v = obj[k];
+        consider(k, v);
+        if(typeof v === 'object') walk(v, depth+1);
+      }
+    }
+    walk(raw, 0);
+    return out;
+  }
   function applyIdentify(raw){
     try{
       var cfg=window.TRACKING_CONFIG;
-      if(!cfg || !cfg.identifyMap) return;
       if(!raw || typeof raw!=='object') return;
 
       function pick(keys){
@@ -200,30 +235,23 @@ router.get('/tracker.js', async (_req, res) => {
         }
         return '';
       }
-
-      var email = pick(cfg.identifyMap.email);
+      var email = pick(['email','e-mail']);
       if(email) setHashedCookie('_ta_em', email, normEmail);
 
-      var phone = pick(cfg.identifyMap.phone);
+      var phone = pick(['phone','telefone','cel','whats','fone']);
       if(phone) setHashedCookie('_ta_ph', phone, normPhone);
 
-      var fn = pick(cfg.identifyMap.fn);
+      var fn = pick(['fn','first_name','firstname','nome']);
       if(fn) setHashedCookie('_ta_fn', fn, normName);
 
-      var ln = pick(cfg.identifyMap.ln);
+      var ln = pick(['ln','last_name','lastname','sobrenome']);
       if(ln) setHashedCookie('_ta_ln', ln, normName);
 
-      var ct = pick(cfg.identifyMap.ct);
-      if(ct) setHashedCookie('_ta_ct', ct, normCityState);
-
-      var st = pick(cfg.identifyMap.st);
-      if(st) setHashedCookie('_ta_st', st, normCityState);
-
-      var zp = pick(cfg.identifyMap.zp);
-      if(zp) setHashedCookie('_ta_zp', zp, normZip);
-
-      var db = pick(cfg.identifyMap.db);
-      if(db) setHashedCookie('_ta_db', db, normDob);
+      var auto = autoExtractIdentify(raw);
+      if(auto.ct) setHashedCookie('_ta_ct', auto.ct, normCityState);
+      if(auto.st) setHashedCookie('_ta_st', auto.st, normCityState);
+      if(auto.zp) setHashedCookie('_ta_zp', auto.zp, normZip);
+      if(auto.db) setHashedCookie('_ta_db', auto.db, normDob);
 
     }catch(_e){}
   }
@@ -233,20 +261,34 @@ router.get('/tracker.js', async (_req, res) => {
     try{
       var url = new URL(location.href);
       var fbclid = url.searchParams.get('fbclid');
-      if(fbclid) return 'fb.1.'+Date.now()+'.'+fbclid;
+      if(fbclid){
+        var generated = 'fb.1.'+Date.now()+'.'+fbclid;
+        setCookie('_fbc', generated, 60*60*24*90);
+        return generated;
+      }
     }catch(_e){}
     return undefined;
   }
-  function getUtm(){
+  function getAttributionParams(){
+    var out = {};
     try{
       var url = new URL(location.href);
-      var out = {};
-      ['utm_source','utm_medium','utm_campaign','utm_content','utm_term'].forEach(function(k){
+      var keys = ['utm_source','utm_medium','utm_campaign','utm_content','utm_term','click_id'];
+      for(var i=0;i<keys.length;i++){
+        var k = keys[i];
         var v = url.searchParams.get(k);
-        if(v) out[k]=v;
-      });
-      return out;
-    }catch(_e){ return {}; }
+        if(v){
+          out[k]=v;
+          try{ sessionStorage.setItem('ta_'+k, v); }catch(_e){}
+        }else{
+          try{
+            var sv = sessionStorage.getItem('ta_'+k);
+            if(sv) out[k]=sv;
+          }catch(_e){}
+        }
+      }
+    }catch(_e){}
+    return out;
   }
   function getTimeFields(epochSec){
     try{
@@ -365,13 +407,17 @@ router.get('/tracker.js', async (_req, res) => {
         if(url.hostname===location.hostname) return;
         var fbp=getCookie('_fbp');
         var fbc=getFbc();
+        var externalId = getOrCreateExternalId();
         if(fbp) url.searchParams.set('fbp', fbp);
         if(fbc) url.searchParams.set('fbc', fbc);
-        var cur=new URL(location.href);
-        ['utm_source','utm_medium','utm_campaign','utm_content','utm_term'].forEach(function(k){
-          var v=cur.searchParams.get(k);
-          if(v) url.searchParams.set(k,v);
-        });
+        if(externalId) url.searchParams.set('external_id', externalId);
+        var attrs = getAttributionParams();
+        var keys = Object.keys(attrs);
+        for(var i=0;i<keys.length;i++){
+          var k = keys[i];
+          var v = attrs[k];
+          if(v) url.searchParams.set(k, v);
+        }
         el.href=url.toString();
       }catch(_e){}
     }, true);
@@ -381,7 +427,7 @@ router.get('/tracker.js', async (_req, res) => {
     if(!cfg || !cfg.apiUrl || !cfg.siteKey) return;
     var nav=performance && performance.timing ? performance.timing : null;
     var loadTimeMs=nav ? (nav.domContentLoadedEventEnd - nav.navigationStart) : undefined;
-    var utm = getUtm();
+    var attrs = getAttributionParams();
     var externalId = getOrCreateExternalId();
     var metaUser = getMetaUserDataFromCookies();
     var telemetrySnapshot={
@@ -412,12 +458,15 @@ router.get('/tracker.js', async (_req, res) => {
         zp: metaUser.zp,
         db: metaUser.db
       },
-      custom_data: {
-         page_title: document.title,
-         content_type: 'product',
-         referrer: document.referrer,
-         page_path: location.pathname
-      },
+      custom_data: Object.assign(
+        {
+          page_title: document.title,
+          content_type: 'product',
+          referrer: document.referrer,
+          page_path: location.pathname
+        },
+        attrs
+      ),
       telemetry: telemetrySnapshot
     };
     if(nav && loadTimeMs){
@@ -457,7 +506,7 @@ router.get('/tracker.js', async (_req, res) => {
           },
           payload.telemetry || {},
           getTimeFields(payload.event_time),
-          utm
+          attrs
         ),
         payload.event_id,
         false
@@ -473,7 +522,7 @@ router.get('/tracker.js', async (_req, res) => {
       var cfg=window.TRACKING_CONFIG;
       if(!cfg || !cfg.apiUrl || !cfg.siteKey) return;
       var dwellMs=Math.max(0, Date.now()-startMs);
-      var utm = getUtm();
+      var attrs = getAttributionParams();
       var externalId = getOrCreateExternalId();
       var metaUser = getMetaUserDataFromCookies();
       var payload={
@@ -502,7 +551,8 @@ router.get('/tracker.js', async (_req, res) => {
           clicks_cta: ctaClicks,
           page_path: location.pathname || '',
           page_title: document.title || ''
-        }
+        },
+        custom_data: attrs
       };
       send(cfg.apiUrl, cfg.siteKey, payload);
       if(cfg.metaPixelId){
@@ -532,7 +582,7 @@ router.get('/tracker.js', async (_req, res) => {
             },
             payload.telemetry || {},
             getTimeFields(payload.event_time),
-            utm
+            attrs
           ),
           payload.event_id,
           true
@@ -548,6 +598,93 @@ router.get('/tracker.js', async (_req, res) => {
   trackClicks();
   autoTagLinks();
   observeFormsForPii();
+
+  function track(eventName, customData){
+    try{
+      var cfg=window.TRACKING_CONFIG;
+      if(!cfg || !cfg.apiUrl || !cfg.siteKey) return;
+      
+      var fbp=getCookie('_fbp');
+      var fbc=getFbc();
+      var externalId=getOrCreateExternalId();
+      var attrs=getAttributionParams();
+      var userData={
+        client_user_agent:navigator.userAgent,
+        fbp:fbp,
+        fbc:fbc,
+        external_id:externalId,
+        em:getCookie('_ta_em'),
+        ph:getCookie('_ta_ph'),
+        fn:getCookie('_ta_fn'),
+        ln:getCookie('_ta_ln'),
+        ct:getCookie('_ta_ct'),
+        st:getCookie('_ta_st'),
+        zp:getCookie('_ta_zp'),
+        db:getCookie('_ta_db')
+      };
+
+      var payload = {
+        event_name: eventName,
+        event_time: Math.floor(Date.now()/1000),
+        event_id: genEventId(),
+        event_source_url: window.location.href,
+        user_data: userData,
+        custom_data: Object.assign({}, attrs, customData || {}),
+        telemetry: {
+          load_time_ms: 0,
+          screen_width: window.screen.width,
+          screen_height: window.screen.height
+        }
+      };
+      
+      send(cfg.apiUrl, cfg.siteKey, payload);
+      
+      if(cfg.metaPixelId){
+        loadMetaPixel(cfg.metaPixelId);
+        // Determine if standard or custom
+        var standards = ['AddPaymentInfo','AddToCart','AddToWishlist','CompleteRegistration','Contact','CustomizeProduct','Donate','FindLocation','InitiateCheckout','Lead','Purchase','Schedule','Search','StartTrial','SubmitApplication','Subscribe','ViewContent','PageView'];
+        var isCustom = standards.indexOf(eventName) < 0;
+        trackMeta(eventName, customData, payload.event_id, isCustom);
+      }
+      if(cfg.gaMeasurementId){
+        loadGa(cfg.gaMeasurementId);
+        trackGa(eventName, customData);
+      }
+    }catch(_e){}
+  }
+
+  var lastPath = '';
+  function checkUrlRules(){
+    try{
+      var cfg=window.TRACKING_CONFIG;
+      if(!cfg || !cfg.eventRules || !cfg.eventRules.length) return;
+      var currentPath = window.location.pathname + window.location.search;
+      if(currentPath === lastPath) return;
+      lastPath = currentPath;
+      
+      for(var i=0; i<cfg.eventRules.length; i++){
+        var rule = cfg.eventRules[i];
+        if(rule.rule_type === 'url_contains' && currentPath.indexOf(rule.match_value) >= 0){
+          track(rule.event_name);
+        }
+      }
+    }catch(_e){}
+  }
+
+  try{
+    var pushState = history.pushState;
+    history.pushState = function(){
+      pushState.apply(history, arguments);
+      checkUrlRules();
+    };
+    var replaceState = history.replaceState;
+    history.replaceState = function(){
+      replaceState.apply(history, arguments);
+      checkUrlRules();
+    };
+    window.addEventListener('popstate', checkUrlRules);
+  }catch(_e){}
+
   try{
     window.taIdentify = function(obj){
       try{
@@ -556,9 +693,22 @@ router.get('/tracker.js', async (_req, res) => {
       }catch(_e){}
     };
     if(window.TA_IDENTIFY) window.taIdentify(window.TA_IDENTIFY);
+
+    window.tracker = {
+      identify: window.taIdentify,
+      track: track
+    };
   }catch(_e){}
-  if(document.readyState==='complete' || document.readyState==='interactive') pageView();
-  else document.addEventListener('DOMContentLoaded', pageView);
+
+  if(document.readyState==='complete' || document.readyState==='interactive') {
+    pageView();
+    checkUrlRules();
+  } else {
+    document.addEventListener('DOMContentLoaded', function(){
+      pageView();
+      checkUrlRules();
+    });
+  }
   window.addEventListener('beforeunload', pageEngagement);
 })();`;
 
@@ -568,4 +718,3 @@ router.get('/tracker.js', async (_req, res) => {
 });
 
 export default router;
-

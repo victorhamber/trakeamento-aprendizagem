@@ -1,7 +1,7 @@
 # 📋 Checklist de Progresso
 
-- [ ] PRD criado e aprovado
-- [ ] Mapeamento técnico criado e revisado
+- [x] PRD atualizado
+- [x] Mapeamento técnico atualizado
 - [x] Modelo de dados definido e migrado (PostgreSQL)
 - [x] Web SDK MVP (PageView + telemetria + event_id)
 - [x] Endpoint de ingestão com validação e persistência
@@ -9,6 +9,10 @@
 - [x] Webhook de compra (assinatura, normalização, Purchase via CAPI)
 - [ ] Sync de insights do Meta Ads (jobs agendados)
 - [ ] Dashboard MVP (funil, páginas, anúncios)
+- [x] Tabela de campanhas com drilldown e métricas de funil
+- [x] Ações de status por campanha/conjunto/anúncio
+- [x] UX de filtros UTM (autocomplete/colar URL)
+- [x] Configuração de Eventos por URL e Gerador de Formulário
 - [ ] Diagnóstico heurístico (regras/score) para gargalos
 - [ ] Relatórios e recomendações via LLM (sem PII em claro)
 - [ ] Segurança e privacidade (LGPD/consentimento) validadas
@@ -16,4 +20,3 @@
 - [ ] Observabilidade (auditoria de envios e falhas)
 - [ ] Revisão final (performance, segurança, manutenção)
 - [ ] Empacotamento e release (documentação + versão)
-

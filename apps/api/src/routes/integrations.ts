@@ -156,11 +156,163 @@ router.get('/sites/:siteId/meta/campaigns', requireAuth, async (req, res) => {
     return res.status(500).json({ error: 'Failed to decrypt Facebook token. Please reconnect.' });
   }
 
-  const response = await axios.get(`https://graph.facebook.com/${fbApiVersion}/${encodeURIComponent(finalAdAccountId)}/campaigns`, {
-    params: { fields: 'id,name,status,effective_status,objective', access_token: token, limit: 200 },
+  let response;
+  try {
+    response = await axios.get(`https://graph.facebook.com/${fbApiVersion}/${encodeURIComponent(finalAdAccountId)}/campaigns`, {
+      params: {
+        fields: 'id,name,status,effective_status,objective',
+        access_token: token,
+        limit: 200,
+        effective_status: ['ACTIVE', 'PAUSED', 'IN_PROCESS', 'PENDING_REVIEW', 'WITH_ISSUES'],
+      },
+    });
+  } catch {
+    response = await axios.get(`https://graph.facebook.com/${fbApiVersion}/${encodeURIComponent(finalAdAccountId)}/campaigns`, {
+      params: { fields: 'id,name,status,effective_status,objective', access_token: token, limit: 200 },
+    });
+  }
+
+  const adsets: any[] = [];
+  let nextUrl: string | null = `https://graph.facebook.com/${fbApiVersion}/${encodeURIComponent(finalAdAccountId)}/adsets`;
+  let nextParams: any = { fields: 'campaign_id,optimization_goal,promoted_object', access_token: token, limit: 500 };
+  while (nextUrl) {
+    const adsetRes: any = await axios.get(nextUrl, nextParams ? { params: nextParams } : undefined);
+    const data = Array.isArray(adsetRes.data?.data) ? adsetRes.data.data : [];
+    adsets.push(...data);
+    nextUrl = adsetRes.data?.paging?.next || null;
+    nextParams = null;
+  }
+
+  const optByCampaign = new Map<
+    string,
+    { counts: Record<string, number>; promoted: Record<string, unknown> | null }
+  >();
+
+  for (const adset of adsets) {
+    const campaignId = typeof adset.campaign_id === 'string' ? adset.campaign_id : null;
+    if (!campaignId) continue;
+    const opt = typeof adset.optimization_goal === 'string' ? adset.optimization_goal : null;
+    const promoted =
+      adset.promoted_object && typeof adset.promoted_object === 'object'
+        ? (adset.promoted_object as Record<string, unknown>)
+        : null;
+
+    let entry = optByCampaign.get(campaignId);
+    if (!entry) {
+      entry = { counts: {}, promoted: null };
+      optByCampaign.set(campaignId, entry);
+    }
+
+    if (opt) {
+      entry.counts[opt] = (entry.counts[opt] || 0) + 1;
+    }
+
+    if (!entry.promoted && promoted) {
+      entry.promoted = promoted;
+    }
+  }
+
+  const campaigns = (response.data.data || []).map((c: any) => {
+    const entry = c?.id ? optByCampaign.get(String(c.id)) : undefined;
+    let optimizationGoal: string | null = null;
+    if (entry) {
+      let best = 0;
+      for (const [key, count] of Object.entries(entry.counts)) {
+        if (count > best) {
+          best = count;
+          optimizationGoal = key;
+        }
+      }
+    }
+    return {
+      ...c,
+      optimization_goal: optimizationGoal,
+      promoted_object: entry?.promoted || null,
+    };
   });
 
-  return res.json({ campaigns: response.data.data || [] });
+  return res.json({ campaigns });
+});
+
+router.get('/sites/:siteId/meta/adsets', requireAuth, async (req, res) => {
+  const auth = req.auth!;
+  const siteId = Number(req.params.siteId);
+  const campaignId = typeof req.query.campaign_id === 'string' ? req.query.campaign_id.trim() : '';
+  if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
+  if (!(await requireSiteOwnership(auth.accountId, siteId))) return res.status(404).json({ error: 'Site not found' });
+
+  const metaRow = await pool.query('SELECT fb_user_token_enc, ad_account_id FROM integrations_meta WHERE site_id = $1', [
+    siteId,
+  ]);
+  const tokenEnc = metaRow.rows[0]?.fb_user_token_enc as string | undefined;
+  const adAccountId = String(req.query.ad_account_id || metaRow.rows[0]?.ad_account_id || '');
+  if (!tokenEnc) return res.status(400).json({ error: 'Facebook not connected' });
+  if (!adAccountId) return res.status(400).json({ error: 'Missing ad_account_id' });
+
+  const finalAdAccountId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
+
+  let token: string;
+  try {
+    token = decryptString(tokenEnc);
+  } catch {
+    return res.status(500).json({ error: 'Failed to decrypt Facebook token. Please reconnect.' });
+  }
+
+  const adsets: any[] = [];
+  let nextUrl: string | null = campaignId
+    ? `https://graph.facebook.com/${fbApiVersion}/${encodeURIComponent(campaignId)}/adsets`
+    : `https://graph.facebook.com/${fbApiVersion}/${encodeURIComponent(finalAdAccountId)}/adsets`;
+  let nextParams: any = {
+    fields: 'id,name,status,effective_status,campaign_id,optimization_goal,promoted_object',
+    access_token: token,
+    limit: 500,
+  };
+  while (nextUrl) {
+    const adsetRes: any = await axios.get(nextUrl, nextParams ? { params: nextParams } : undefined);
+    const data = Array.isArray(adsetRes.data?.data) ? adsetRes.data.data : [];
+    adsets.push(...data);
+    nextUrl = adsetRes.data?.paging?.next || null;
+    nextParams = null;
+  }
+
+  return res.json({ adsets });
+});
+
+router.get('/sites/:siteId/meta/ads', requireAuth, async (req, res) => {
+  const auth = req.auth!;
+  const siteId = Number(req.params.siteId);
+  const adsetId = typeof req.query.adset_id === 'string' ? req.query.adset_id.trim() : '';
+  if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
+  if (!adsetId) return res.status(400).json({ error: 'Missing adset_id' });
+  if (!(await requireSiteOwnership(auth.accountId, siteId))) return res.status(404).json({ error: 'Site not found' });
+
+  const metaRow = await pool.query('SELECT fb_user_token_enc FROM integrations_meta WHERE site_id = $1', [siteId]);
+  const tokenEnc = metaRow.rows[0]?.fb_user_token_enc as string | undefined;
+  if (!tokenEnc) return res.status(400).json({ error: 'Facebook not connected' });
+
+  let token: string;
+  try {
+    token = decryptString(tokenEnc);
+  } catch {
+    return res.status(500).json({ error: 'Failed to decrypt Facebook token. Please reconnect.' });
+  }
+
+  const ads: any[] = [];
+  let nextUrl: string | null = `https://graph.facebook.com/${fbApiVersion}/${encodeURIComponent(adsetId)}/ads`;
+  let nextParams: any = {
+    fields: 'id,name,status,effective_status,adset_id,campaign_id',
+    access_token: token,
+    limit: 500,
+  };
+  while (nextUrl) {
+    const adsRes: any = await axios.get(nextUrl, nextParams ? { params: nextParams } : undefined);
+    const data = Array.isArray(adsRes.data?.data) ? adsRes.data.data : [];
+    ads.push(...data);
+    nextUrl = adsRes.data?.paging?.next || null;
+    nextParams = null;
+  }
+
+  return res.json({ ads });
 });
 
 router.patch('/sites/:siteId/meta/campaigns/:campaignId', requireAuth, async (req, res) => {
@@ -186,6 +338,66 @@ router.patch('/sites/:siteId/meta/campaigns/:campaignId', requireAuth, async (re
 
   await axios.post(
     `https://graph.facebook.com/${fbApiVersion}/${encodeURIComponent(campaignId)}`,
+    null,
+    { params: { status, access_token: token } }
+  );
+
+  return res.json({ ok: true });
+});
+
+router.patch('/sites/:siteId/meta/adsets/:adsetId', requireAuth, async (req, res) => {
+  const auth = req.auth!;
+  const siteId = Number(req.params.siteId);
+  const adsetId = String(req.params.adsetId || '');
+  const { status } = req.body || {};
+  if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
+  if (!adsetId) return res.status(400).json({ error: 'Invalid adsetId' });
+  if (!(await requireSiteOwnership(auth.accountId, siteId))) return res.status(404).json({ error: 'Site not found' });
+  if (status !== 'PAUSED' && status !== 'ACTIVE') return res.status(400).json({ error: 'Invalid status' });
+
+  const metaRow = await pool.query('SELECT fb_user_token_enc FROM integrations_meta WHERE site_id = $1', [siteId]);
+  const tokenEnc = metaRow.rows[0]?.fb_user_token_enc as string | undefined;
+  if (!tokenEnc) return res.status(400).json({ error: 'Facebook not connected' });
+
+  let token: string;
+  try {
+    token = decryptString(tokenEnc);
+  } catch {
+    return res.status(500).json({ error: 'Failed to decrypt Facebook token. Please reconnect.' });
+  }
+
+  await axios.post(
+    `https://graph.facebook.com/${fbApiVersion}/${encodeURIComponent(adsetId)}`,
+    null,
+    { params: { status, access_token: token } }
+  );
+
+  return res.json({ ok: true });
+});
+
+router.patch('/sites/:siteId/meta/ads/:adId', requireAuth, async (req, res) => {
+  const auth = req.auth!;
+  const siteId = Number(req.params.siteId);
+  const adId = String(req.params.adId || '');
+  const { status } = req.body || {};
+  if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
+  if (!adId) return res.status(400).json({ error: 'Invalid adId' });
+  if (!(await requireSiteOwnership(auth.accountId, siteId))) return res.status(404).json({ error: 'Site not found' });
+  if (status !== 'PAUSED' && status !== 'ACTIVE') return res.status(400).json({ error: 'Invalid status' });
+
+  const metaRow = await pool.query('SELECT fb_user_token_enc FROM integrations_meta WHERE site_id = $1', [siteId]);
+  const tokenEnc = metaRow.rows[0]?.fb_user_token_enc as string | undefined;
+  if (!tokenEnc) return res.status(400).json({ error: 'Facebook not connected' });
+
+  let token: string;
+  try {
+    token = decryptString(tokenEnc);
+  } catch {
+    return res.status(500).json({ error: 'Failed to decrypt Facebook token. Please reconnect.' });
+  }
+
+  await axios.post(
+    `https://graph.facebook.com/${fbApiVersion}/${encodeURIComponent(adId)}`,
     null,
     { params: { status, access_token: token } }
   );
@@ -233,4 +445,3 @@ router.put('/sites/:siteId/ga', requireAuth, async (req, res) => {
 });
 
 export default router;
-

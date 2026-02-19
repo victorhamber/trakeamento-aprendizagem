@@ -18,13 +18,12 @@ Arquitetura recomendada em 3 camadas:
    - Visualizar funil, performance e diagnósticos.
    - Configurar integrações (Meta, webhook) e políticas de dados.
 
-## 2) Stack de Tecnologias (proposta)
+## 2) Stack de Tecnologias (atual)
 
 ### Backend
-- **Node.js + TypeScript** com **NestJS** (módulos, DI, validação) ou alternativa equivalente.
-- Banco: **PostgreSQL** (JSONB + índices) para eventos e insights.
-- Fila/Jobs: **BullMQ + Redis** (sync com Meta, reprocessamento, retries).
-- HTTP: REST (OpenAPI) e Webhooks.
+- **Node.js + TypeScript** com **Express**.
+- Banco: **PostgreSQL** para eventos e insights.
+- HTTP: REST e Webhooks.
 - Autenticação: JWT para painel + chaves por site para ingestão.
 
 ### Web SDK
@@ -32,50 +31,39 @@ Arquitetura recomendada em 3 camadas:
 - Coleta de performance via Web Performance API (ex.: Navigation Timing / PerformanceObserver).
 
 ### Dashboard
-- Web app (React/Next.js ou equivalente) consumindo a API.
+- Web app **React + Vite** consumindo a API.
 - Gráficos (ex.: Recharts/ECharts), tabelas e filtros.
 
 ### LLM
 - Integração com **OpenAI** para geração de diagnósticos e recomendações.
 
-## 3) Estrutura de Pastas (monorepo sugerido)
+## 3) Estrutura de Pastas (monorepo atual)
 
 ```
 /apps
   /api
     /src
-      /modules
-        /auth
-        /ingest
-        /meta
-        /webhooks
-        /analytics
-        /recommendations
-      /common
+      /db
+      /lib
+      /middleware
+      /routes
+      /scripts
+      /services
       main.ts
   /dashboard
     /src
-      /pages (ou /app)
       /components
-      /features
       /lib
+      /pages
+      /state
+      App.tsx
+      main.tsx
   /web-sdk
     /src
       index.ts
-      events.ts
-      perf.ts
-      identity.ts
-      transport.ts
-/packages
-  /shared
-    /src
-      types
-      validators
-      utils
+      tracker.ts
 /infra
-  /migrations
   /docker
-  /scripts
 ```
 
 ## 4) Componentes e Responsabilidades
@@ -96,10 +84,13 @@ Arquitetura recomendada em 3 camadas:
 - Normaliza dados do comprador (hashing SHA-256) e produtos.
 - Dispara Purchase via CAPI e grava compra.
 
-### 4.4 Insights Meta Ads (`/modules/meta` + jobs)
+### 4.4 Insights Meta Ads (services + routes)
 - Sync agendado para coletar:
-  - `campaign_id`, `adset_id`, `ad_id`, `spend`, `impressions`, `clicks`, `ctr`, `cpc`, `cpm`, `actions`, `purchases` etc.
+  - `campaign_id`, `adset_id`, `ad_id`, `spend`, `impressions`, `reach`, `clicks`, `ctr`, `cpc`, `cpm`, `actions`, `purchases` etc.
 - Armazena snapshots por dia.
+ - Normaliza resultados por objetivo e eventos personalizados.
+ - Calcula Hook Rate e métricas de LP View.
+ - Permite alternar status de campanha, conjunto e anúncio.
 
 ### 4.5 Analytics e Diagnóstico (`/modules/analytics`)
 - Funis e métricas:
@@ -146,13 +137,27 @@ Arquitetura recomendada em 3 camadas:
 
 ### Configuração (Dashboard)
 - `POST /v1/sites`
+- `GET /v1/sites/:siteId`
+- `GET /v1/sites/:siteId/utms`
+- `GET /sites/:siteId/event-rules`
+- `POST /sites/:siteId/event-rules`
+- `DELETE /sites/:siteId/event-rules/:id`
 - `POST /v1/meta/connect`
 - `POST /v1/meta/test-event`
+- `GET /integrations/sites/:siteId/meta`
+- `GET /integrations/sites/:siteId/meta/campaigns`
+- `GET /integrations/sites/:siteId/meta/adsets`
+- `GET /integrations/sites/:siteId/meta/ads`
+- `PATCH /integrations/sites/:siteId/meta/campaigns/:campaignId`
+- `PATCH /integrations/sites/:siteId/meta/adsets/:adsetId`
+- `PATCH /integrations/sites/:siteId/meta/ads/:adId`
 
 ### Analytics
 - `GET /v1/analytics/funnel`
 - `GET /v1/analytics/pages`
 - `GET /v1/analytics/ads`
+### Campanhas (Meta)
+- `GET /meta/campaigns/metrics`
 
 ### Recomendações
 - `POST /v1/recommendations/generate`
@@ -163,4 +168,3 @@ Arquitetura recomendada em 3 camadas:
 - Criptografia em repouso para tokens (KMS ou chave de app).
 - Rate limiting na ingestão e webhook.
 - Consentimento: flag por sessão/evento para bloquear envio quando não consentido.
-

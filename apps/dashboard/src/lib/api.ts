@@ -8,6 +8,8 @@ const sanitizeBaseUrl = (value: unknown) => {
 
 const envBaseUrl = sanitizeBaseUrl(import.meta.env.VITE_API_URL);
 
+export const apiBaseUrl = envBaseUrl;
+
 export const api = axios.create({
   baseURL: envBaseUrl || '',
 });

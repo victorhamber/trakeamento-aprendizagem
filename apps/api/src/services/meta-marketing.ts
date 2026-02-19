@@ -8,7 +8,9 @@ export class MetaMarketingService {
   }
 
   private static asArray(value: unknown): Array<Record<string, unknown>> {
-    return Array.isArray(value) ? (value.filter(MetaMarketingService.isRecord) as Array<Record<string, unknown>>) : [];
+    return Array.isArray(value)
+      ? (value.filter(MetaMarketingService.isRecord) as Array<Record<string, unknown>>)
+      : [];
   }
 
   private static asString(value: unknown): string | null {
@@ -50,7 +52,9 @@ export class MetaMarketingService {
     const adAccountId = this.normalizeAdAccountId(String(row.ad_account_id || ''));
     if (!adAccountId) throw new Error('Ad Account ID inválido.');
 
-    const tokenCandidates = [row.marketing_token_enc, row.fb_user_token_enc].filter(Boolean) as string[];
+    const tokenCandidates = [row.marketing_token_enc, row.fb_user_token_enc].filter(
+      Boolean
+    ) as string[];
     for (const enc of tokenCandidates) {
       try {
         const token = decryptString(enc).trim().replace(/\s+/g, '');
@@ -86,16 +90,176 @@ export class MetaMarketingService {
     return Number.isFinite(i) ? i : null;
   }
 
-  private getActionCount(actions: unknown, actionType: string): number | null {
+  /**
+   * Normalize the 'results' field from Meta API which can be a number or a complex object.
+   * Format: [ { values: [ { value: '1', ... } ], indicator: '...' } ]
+   */
+  private normalizeResults(v: unknown): number | null {
+    if (v === null || v === undefined) return null;
+    
+    // Direct number/string
+    const simple = this.asInt(v);
+    if (simple !== null) return simple;
+
+    // Array structure
+    if (Array.isArray(v) && v.length > 0) {
+      const first = v[0];
+      if (first && typeof first === 'object') {
+        const values = (first as any).values;
+        if (Array.isArray(values) && values.length > 0) {
+          const val = values[0].value;
+          return this.asInt(val);
+        }
+      }
+    }
+    
+    return null;
+  }
+
+  /**
+   * Sum all entries of an action_type from an actions array.
+   * The Meta API can return multiple entries for the same action_type (e.g. per window).
+   * We pick the last/deduplicated entry — Meta typically returns one per type at insight level,
+   * but if duplicates exist we take the max to avoid double-counting.
+   */
+  private getActionCount(actions: unknown, ...actionTypes: string[]): number | null {
     const list = MetaMarketingService.asArray(actions);
-    const found = list.find((a) => MetaMarketingService.getActionType(a) === actionType);
-    return this.asInt(found ? MetaMarketingService.getValueField(found) : null);
+    let found: number | null = null;
+    for (const actionType of actionTypes) {
+      const matches = list.filter(
+        (a) => MetaMarketingService.getActionType(a) === actionType
+      );
+      if (matches.length === 0) continue;
+      // Take max in case of duplicate windows
+      const val = Math.max(
+        ...matches.map((m) => this.asInt(MetaMarketingService.getValueField(m)) ?? 0)
+      );
+      if (found === null || val > found) found = val;
+      break; // use first matching action type in priority order
+    }
+    return found;
   }
 
   private getCostPerAction(costs: unknown, actionType: string): number | null {
     const list = MetaMarketingService.asArray(costs);
     const found = list.find((a) => MetaMarketingService.getActionType(a) === actionType);
     return this.asNumber(found ? MetaMarketingService.getValueField(found) : null);
+  }
+
+  /**
+   * Extract outbound_clicks from the outbound_clicks array field.
+   * The Meta API returns outbound_clicks as an array: [{action_type: "outbound_click", value: "N"}]
+   * NOT as a top-level numeric field.
+   */
+  private getOutboundClicks(row: Record<string, unknown>): number {
+    const arr = MetaMarketingService.asArray(row.outbound_clicks);
+    if (arr.length > 0) {
+      // Sum all entries (usually just one: action_type "outbound_click")
+      return arr.reduce((sum, item) => {
+        return sum + (this.asInt(MetaMarketingService.getValueField(item)) ?? 0);
+      }, 0);
+    }
+    // Fallback: try as a direct number (shouldn't happen but just in case)
+    return this.asInt(row.outbound_clicks) ?? 0;
+  }
+
+  private getVideo3sViews(actions: unknown, row: Record<string, unknown>): number {
+    const fromActions = this.getActionCount(actions, 'video_view', 'video_3_sec_watched');
+    if (fromActions !== null) return fromActions;
+    const arr = MetaMarketingService.asArray(row.video_3_sec_watched_actions);
+    if (arr.length > 0) {
+      return arr.reduce((sum, item) => {
+        return sum + (this.asInt(MetaMarketingService.getValueField(item)) ?? 0);
+      }, 0);
+    }
+    return this.asInt(row.video_3_sec_watched_actions) ?? 0;
+  }
+
+  private getCustomEvent(actions: unknown): { name: string | null; count: number | null } {
+    const list = MetaMarketingService.asArray(actions);
+    const prefix = 'offsite_conversion.custom.';
+    let bestName: string | null = null;
+    let bestCount: number | null = null;
+    for (const item of list) {
+      const actionType = MetaMarketingService.getActionType(item);
+      if (!actionType) continue;
+      const isCustom = actionType.startsWith(prefix) || actionType === 'offsite_conversion.fb_pixel_custom';
+      if (!isCustom) continue;
+      const count = this.asInt(MetaMarketingService.getValueField(item));
+      if (count === null) continue;
+      const name = actionType.startsWith(prefix) ? actionType.slice(prefix.length) : 'fb_pixel_custom';
+      if (bestCount === null || count > bestCount) {
+        bestCount = count;
+        bestName = name || null;
+      }
+    }
+    return { name: bestName, count: bestCount };
+  }
+
+  /**
+   * Fields to request from Meta API.
+   * Note: outbound_clicks and unique_link_clicks are returned as arrays by Meta,
+   * so they must be in the fields list but parsed as arrays, not numbers.
+   */
+  private static readonly BASE_FIELDS = [
+    'campaign_name',
+    'campaign_id',
+    'spend',
+    'impressions',
+    'clicks',
+    'unique_clicks',
+    'reach',
+    'frequency',
+    'cpm',
+    'cpc',
+    'ctr',
+    'unique_ctr',
+    'inline_link_clicks',
+    'outbound_clicks',     // returned as array [{action_type, value}]
+    'actions',
+    'cost_per_action_type',
+    'date_start',
+    'date_stop',
+    'objective',
+    'results',
+    'result_rate',
+  ] as const;
+
+  /**
+   * Resolve the date range that will be synced, given a preset or explicit range.
+   * Returns ISO date strings for the since/until window.
+   */
+  private resolveDateRange(
+    datePreset: string,
+    timeRange?: { since: string; until: string }
+  ): { since: string; until: string } {
+    if (timeRange) return timeRange;
+
+    const today = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const fmt = (d: Date) =>
+      `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    const addDays = (d: Date, n: number) =>
+      new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+
+    const todayStr = fmt(today);
+
+    if (datePreset === 'today') return { since: todayStr, until: todayStr };
+    if (datePreset === 'yesterday') {
+      const y = fmt(addDays(today, -1));
+      return { since: y, until: y };
+    }
+    if (datePreset === 'last_7d')
+      return { since: fmt(addDays(today, -7)), until: todayStr };
+    if (datePreset === 'last_14d')
+      return { since: fmt(addDays(today, -14)), until: todayStr };
+    if (datePreset === 'last_30d')
+      return { since: fmt(addDays(today, -30)), until: todayStr };
+    if (datePreset === 'maximum')
+      return { since: '2020-01-01', until: todayStr };
+
+    // default
+    return { since: fmt(addDays(today, -7)), until: todayStr };
   }
 
   public async syncDailyInsights(
@@ -106,84 +270,67 @@ export class MetaMarketingService {
     const cfg = await this.getConfig(siteId);
     if (!cfg) return;
 
+    // Resolve the actual date window so we can delete stale rows before inserting
+    const range = this.resolveDateRange(datePreset, timeRange);
+    const timeParams = { time_range: { since: range.since, until: range.until } };
+
     try {
-      const commonFields = [
-        'campaign_name', 'campaign_id',
-        'spend', 'impressions', 'clicks', 'unique_clicks',
-        'reach', 'frequency', 'cpm', 'cpc', 'ctr', 'unique_ctr',
-        'inline_link_clicks', 'outbound_clicks',
-        'actions', 'cost_per_action_type',
-        'date_start', 'date_stop',
-      ];
+      const baseUrl = `https://graph.facebook.com/v19.0/${cfg.adAccountId}/insights`;
 
-      // 1. Fetch Ad Level Insights
+      // ── Fetch all three levels ────────────────────────────────────────────
+
       const adFields = [
-        ...commonFields,
-        'adset_name', 'adset_id',
-        'ad_name', 'ad_id',
+        ...MetaMarketingService.BASE_FIELDS,
+        'adset_name', 'adset_id', 'ad_name', 'ad_id',
       ].join(',');
 
-      const adUrl = `https://graph.facebook.com/v19.0/${cfg.adAccountId}/insights`;
-      const adResponse = await axios.get(adUrl, {
-        params: {
-          access_token: cfg.token,
-          level: 'ad',
-          ...(timeRange ? { time_range: timeRange } : { date_preset: datePreset }),
-          time_increment: 1,
-          fields: adFields,
-          limit: 1000,
-        },
-      });
-
-      const adInsights = adResponse.data.data;
-      console.log(`Fetched ${adInsights.length} ad insights records`);
-      for (const row of adInsights) {
-        await this.persistAdInsight(siteId, row);
-      }
-
-      // 2. Fetch AdSet Level Insights
       const adSetFields = [
-        ...commonFields,
+        ...MetaMarketingService.BASE_FIELDS,
         'adset_name', 'adset_id',
       ].join(',');
-      
-      const adSetResponse = await axios.get(adUrl, {
-        params: {
-          access_token: cfg.token,
-          level: 'adset',
-          ...(timeRange ? { time_range: timeRange } : { date_preset: datePreset }),
-          time_increment: 1,
-          fields: adSetFields,
-          limit: 1000,
-        },
-      });
 
-      const adSetInsights = adSetResponse.data.data;
-      console.log(`Fetched ${adSetInsights.length} adset insights records`);
-      for (const row of adSetInsights) {
-        await this.persistAdSetInsight(siteId, row);
-      }
+      const campaignFields = [...MetaMarketingService.BASE_FIELDS].join(',');
 
-      // 3. Fetch Campaign Level Insights
-      const campaignFields = [...commonFields].join(',');
-      const campaignResponse = await axios.get(adUrl, {
-        params: {
-          access_token: cfg.token,
-          level: 'campaign',
-          ...(timeRange ? { time_range: timeRange } : { date_preset: datePreset }),
-          time_increment: 1,
-          fields: campaignFields,
-          limit: 1000,
-        },
-      });
+      const [adResponse, adSetResponse, campaignResponse] = await Promise.all([
+        axios.get(baseUrl, {
+          params: { access_token: cfg.token, level: 'ad', ...timeParams, time_increment: 1, fields: adFields, limit: 1000 },
+        }),
+        axios.get(baseUrl, {
+          params: { access_token: cfg.token, level: 'adset', ...timeParams, time_increment: 1, fields: adSetFields, limit: 1000 },
+        }),
+        axios.get(baseUrl, {
+          params: { access_token: cfg.token, level: 'campaign', ...timeParams, time_increment: 1, fields: campaignFields, limit: 1000 },
+        }),
+      ]);
 
-      const campaignInsights = campaignResponse.data.data;
-      console.log(`Fetched ${campaignInsights.length} campaign insights records`);
-      for (const row of campaignInsights) {
-        await this.persistCampaignInsight(siteId, row);
-      }
+      const adInsights: Record<string, unknown>[] = adResponse.data.data ?? [];
+      const adSetInsights: Record<string, unknown>[] = adSetResponse.data.data ?? [];
+      const campaignInsights: Record<string, unknown>[] = campaignResponse.data.data ?? [];
 
-      return { count: adInsights.length + adSetInsights.length + campaignInsights.length };
+      console.log(
+        `[MetaSync] site=${siteId} range=${range.since}→${range.until} ` +
+        `campaigns=${campaignInsights.length} adsets=${adSetInsights.length} ads=${adInsights.length}`
+      );
+
+      // ── DELETE existing rows for this site+range before re-inserting ──────
+      // This guarantees idempotency regardless of whether the DB has the
+      // partial unique indexes. Without this, repeated syncs double-count.
+      await pool.query(
+        `DELETE FROM meta_insights_daily
+         WHERE site_id = $1
+           AND date_start >= $2
+           AND date_start <= $3`,
+        [siteId, range.since, range.until]
+      );
+
+      // ── Insert fresh rows ─────────────────────────────────────────────────
+      for (const row of campaignInsights) await this.persistCampaignInsight(siteId, row);
+      for (const row of adSetInsights) await this.persistAdSetInsight(siteId, row);
+      for (const row of adInsights) await this.persistAdInsight(siteId, row);
+
+      return {
+        count: adInsights.length + adSetInsights.length + campaignInsights.length,
+      };
     } catch (error: unknown) {
       if (axios.isAxiosError(error)) {
         console.error('Meta Marketing API Error:', error.response?.data || error.message);
@@ -204,20 +351,7 @@ export class MetaMarketingService {
     const cfg = await this.getConfig(siteId);
     if (!cfg) return [];
 
-    const fields = [
-      'campaign_name',
-      'campaign_id',
-      'spend',
-      'impressions',
-      'clicks',
-      'unique_clicks',
-      'cpm',
-      'cpc',
-      'ctr',
-      'outbound_clicks',
-      'actions',
-      'cost_per_action_type',
-    ].join(',');
+    const fields = [...MetaMarketingService.BASE_FIELDS].join(',');
     const url = `https://graph.facebook.com/v19.0/${cfg.adAccountId}/insights`;
 
     const response = await axios.get(url, {
@@ -225,44 +359,81 @@ export class MetaMarketingService {
         access_token: cfg.token,
         level: 'campaign',
         ...(timeRange ? { time_range: timeRange } : { date_preset: datePreset }),
-        fields: fields,
+        fields,
         limit: 500,
       },
     });
 
-    const rows = Array.isArray(response.data?.data) ? response.data.data : [];
-    return rows.map((row: Record<string, unknown>) => {
+    const rows: Record<string, unknown>[] = Array.isArray(response.data?.data)
+      ? response.data.data
+      : [];
+
+    return rows.map((row) => {
       const actions = row.actions;
       const costs = row.cost_per_action_type;
-      const spend = this.asNumber(row.spend) || 0;
-      const impressions = this.asInt(row.impressions) || 0;
-      const clicks = this.asInt(row.clicks) || 0;
-      const uniqueClicks = this.asInt(row.unique_clicks) || 0;
+
+      const spend = this.asNumber(row.spend) ?? 0;
+      const impressions = this.asInt(row.impressions) ?? 0;
+      const frequency = this.asNumber(row.frequency) ?? 0;
+      const clicks = this.asInt(row.clicks) ?? 0;
+      const uniqueClicks = this.asInt(row.unique_clicks) ?? 0;
+      const linkClicks = this.getActionCount(actions, 'link_click') ?? 0;
+      const uniqueLinkClicksArr = MetaMarketingService.asArray(row.unique_link_clicks);
       const uniqueLinkClicks =
-        this.asInt(row.unique_link_clicks) ?? this.asInt(row.unique_clicks) ?? this.getActionCount(actions, 'link_click') ?? 0;
-      const ctr = this.asNumber(row.ctr) ?? (impressions > 0 ? (clicks / impressions) * 100 : 0);
-      const cpc = this.asNumber(row.cpc) ?? (clicks > 0 ? spend / clicks : 0);
+        uniqueLinkClicksArr.length > 0
+          ? uniqueLinkClicksArr.reduce(
+              (sum, item) => sum + (this.asInt(MetaMarketingService.getValueField(item)) ?? 0),
+              0
+            )
+          : linkClicks > 0
+            ? linkClicks
+            : uniqueClicks;
+      const linkBase = linkClicks > 0 ? linkClicks : uniqueLinkClicks > 0 ? uniqueLinkClicks : clicks;
+      const ctr = impressions > 0 ? (linkBase / impressions) * 100 : 0;
+      const cpc = linkBase > 0 ? spend / linkBase : 0;
       const cpm = this.asNumber(row.cpm) ?? (impressions > 0 ? (spend / impressions) * 1000 : 0);
-      const outboundClicks =
-        this.asInt(row.outbound_clicks) ?? this.getActionCount(actions, 'outbound_click') ?? 0;
+
+      // outbound_clicks is an array field from Meta, not a scalar
+      const outboundClicks = this.getOutboundClicks(row);
+      const video3sViews = this.getVideo3sViews(actions, row);
+
+      // unique_link_clicks is also an array field from Meta
+
       const landingPageViews = this.getActionCount(actions, 'landing_page_view') ?? 0;
+
+      // Contacts: try multiple action_type aliases in priority order
       const contacts =
-        this.getActionCount(actions, 'contact') ??
-        this.getActionCount(actions, 'omni_contact') ??
-        this.getActionCount(actions, 'onsite_conversion.contact') ??
-        0;
-      const leads = this.getActionCount(actions, 'lead') ?? 0;
-      const addsToCart = this.getActionCount(actions, 'add_to_cart') ?? 0;
-      const initiatesCheckout = this.getActionCount(actions, 'initiate_checkout') ?? 0;
-      const purchases = this.getActionCount(actions, 'purchase') ?? 0;
+        this.getActionCount(
+          actions,
+          'onsite_conversion.messaging_conversation_started_7d',
+          'onsite_conversion.total_messaging_connection',
+          'contact',
+          'omni_contact',
+          'onsite_conversion.contact',
+          'onsite_conversion.messaging_first_reply',
+          'messaging_conversation_started_7d',
+          'total_messaging_connection',
+          'offsite_conversion.fb_pixel_custom'
+        ) ?? 0;
+
+      const leads = this.getActionCount(actions, 'lead', 'omni_lead') ?? 0;
+      const addsToCart = this.getActionCount(actions, 'add_to_cart', 'omni_add_to_cart') ?? 0;
+      const initiatesCheckout =
+        this.getActionCount(actions, 'initiate_checkout', 'omni_initiated_checkout') ?? 0;
+      const purchases = this.getActionCount(actions, 'purchase', 'omni_purchase') ?? 0;
       const costPerLead = this.getCostPerAction(costs, 'lead');
       const costPerPurchase = this.getCostPerAction(costs, 'purchase');
+      const objective = MetaMarketingService.asString(row.objective);
+      const results = this.normalizeResults(row.results) ?? 0;
+      const resultRate = this.asNumber(row.result_rate) ?? 0;
+      const customEvent = this.getCustomEvent(actions);
 
       return {
         campaign_id: MetaMarketingService.asString(row.campaign_id),
         campaign_name: MetaMarketingService.asString(row.campaign_name),
         spend,
         impressions,
+        frequency,
         clicks,
         unique_clicks: uniqueClicks,
         unique_link_clicks: uniqueLinkClicks,
@@ -270,6 +441,7 @@ export class MetaMarketingService {
         cpc,
         cpm,
         outbound_clicks: outboundClicks,
+        video_3s_views: video3sViews,
         landing_page_views: landingPageViews,
         contacts,
         leads,
@@ -278,219 +450,216 @@ export class MetaMarketingService {
         purchases,
         cost_per_lead: costPerLead,
         cost_per_purchase: costPerPurchase,
+        objective,
+        results,
+        result_rate: resultRate,
+        custom_event_name: customEvent.name,
+        custom_event_count: customEvent.count ?? 0,
       };
     });
   }
 
-  private getInsightValues(siteId: number, row: Record<string, unknown>) {
+  /**
+   * Extract all common metric values from a Meta insights row.
+   * Returns exactly 31 values matching the column order in persistAdInsight /
+   * persistAdSetInsight / persistCampaignInsight (after their respective prefixes).
+   *
+   * Column order:
+   *   spend, impressions, clicks, unique_clicks,
+   *   link_clicks, unique_link_clicks, inline_link_clicks, outbound_clicks, video_3s_views, landing_page_views,
+   *   reach, frequency, cpc, ctr, unique_ctr, cpm,
+   *   leads, contacts, purchases, adds_to_cart, initiates_checkout,
+   *   cost_per_lead, cost_per_purchase,
+   *   date_start, date_stop, raw_payload
+   */
+  private getInsightValues(siteId: number, row: Record<string, unknown>): unknown[] {
     const actions = row.actions;
     const costs = row.cost_per_action_type;
 
-    const contactCount =
-      this.getActionCount(actions, 'contact') ??
-      this.getActionCount(actions, 'omni_contact') ??
-      this.getActionCount(actions, 'onsite_conversion.contact');
-    const leadCount = this.getActionCount(actions, 'lead');
-    const purchaseCount = this.getActionCount(actions, 'purchase');
-    const addToCartCount = this.getActionCount(actions, 'add_to_cart');
-    const initiateCheckoutCount = this.getActionCount(actions, 'initiate_checkout');
-    const landingPageViews = this.getActionCount(actions, 'landing_page_view');
+    // --- Scalar fields (Meta returns these as strings) ---
+    const spend = this.asNumber(row.spend);
+    const impressions = this.asInt(row.impressions);
+    const clicks = this.asInt(row.clicks);
+    const uniqueClicks = this.asInt(row.unique_clicks);
+    const inlineLinkClicks = this.asInt(row.inline_link_clicks);
+    const reach = this.asInt(row.reach);
+    const frequency = this.asNumber(row.frequency);
+    const cpc = this.asNumber(row.cpc);
+    const ctr = this.asNumber(row.ctr);
+    const uniqueCtr = this.asNumber(row.unique_ctr);
+    const cpm = this.asNumber(row.cpm);
+
+    // --- Array fields from Meta API ---
+
+    // link_clicks: from actions array
     const linkClicks = this.getActionCount(actions, 'link_click');
+
+    // unique_link_clicks: Meta returns this as an array [{action_type, value}], NOT a scalar
+    const uniqueLinkClicksArr = MetaMarketingService.asArray(row.unique_link_clicks);
     const uniqueLinkClicks =
-      this.asInt(row.unique_link_clicks) ?? this.asInt(row.unique_clicks) ?? linkClicks ?? null;
+      uniqueLinkClicksArr.length > 0
+        ? uniqueLinkClicksArr.reduce(
+            (sum, item) => sum + (this.asInt(MetaMarketingService.getValueField(item)) ?? 0),
+            0
+          )
+        : linkClicks; // fallback to link_clicks if not present
+
+    // outbound_clicks: Meta returns this as an array [{action_type: "outbound_click", value}]
+    const outboundClicks = this.getOutboundClicks(row);
+
+    const video3sViews = this.getVideo3sViews(actions, row);
+
+    // landing_page_view: from actions array
+    const landingPageViews = this.getActionCount(actions, 'landing_page_view');
+
+    // --- Conversion actions (multiple aliases per type) ---
+    const leads = this.getActionCount(actions, 'lead', 'omni_lead');
+    const contacts = this.getActionCount(
+      actions,
+      'onsite_conversion.messaging_conversation_started_7d',
+      'onsite_conversion.total_messaging_connection',
+      'contact',
+      'omni_contact',
+      'onsite_conversion.contact',
+      'onsite_conversion.messaging_first_reply',
+      'messaging_conversation_started_7d',
+      'total_messaging_connection',
+      'offsite_conversion.fb_pixel_custom'
+    );
+    const purchases = this.getActionCount(actions, 'purchase', 'omni_purchase');
+    const addsToCart = this.getActionCount(actions, 'add_to_cart', 'omni_add_to_cart');
+    const initiatesCheckout = this.getActionCount(
+      actions,
+      'initiate_checkout',
+      'omni_initiated_checkout'
+    );
 
     const costPerLead = this.getCostPerAction(costs, 'lead');
     const costPerPurchase = this.getCostPerAction(costs, 'purchase');
+    const objective = MetaMarketingService.asString(row.objective);
+    const results = this.normalizeResults(row.results);
+    const resultRate = this.asNumber(row.result_rate);
+    const customEvent = this.getCustomEvent(actions);
 
     return [
-      this.asNumber(row.spend),
-      this.asInt(row.impressions),
-      this.asInt(row.clicks),
-      this.asInt(row.unique_clicks),
+      spend,
+      impressions,
+      clicks,
+      uniqueClicks,
       linkClicks,
       uniqueLinkClicks,
-      this.asInt(row.inline_link_clicks),
-      this.asInt(row.outbound_clicks),
+      inlineLinkClicks,
+      outboundClicks,
+      video3sViews,
       landingPageViews,
-      this.asInt(row.reach),
-      this.asNumber(row.frequency),
-      this.asNumber(row.cpc),
-      this.asNumber(row.ctr),
-      this.asNumber(row.unique_ctr),
-      this.asNumber(row.cpm),
-      leadCount,
-      contactCount,
-      purchaseCount,
-      addToCartCount,
-      initiateCheckoutCount,
+      reach,
+      frequency,
+      cpc,
+      ctr,
+      uniqueCtr,
+      cpm,
+      leads,
+      contacts,
+      purchases,
+      addsToCart,
+      initiatesCheckout,
       costPerLead,
       costPerPurchase,
+      objective,
+      results,
+      resultRate,
       MetaMarketingService.asString(row.date_start),
       MetaMarketingService.asString(row.date_stop),
-      JSON.stringify(row)
+      JSON.stringify(row),
+      customEvent.name,
+      customEvent.count,
     ];
   }
 
   private async persistAdInsight(siteId: number, row: Record<string, unknown>) {
-    const query = `
-      INSERT INTO meta_insights_daily (
+    // syncDailyInsights deletes rows for this site+range before calling persist*,
+    // so a plain INSERT is safe and avoids fragile partial-index ON CONFLICT logic.
+    await pool.query(
+      `INSERT INTO meta_insights_daily (
         site_id, ad_id, ad_name, adset_id, adset_name, campaign_id, campaign_name,
-        spend, impressions, clicks, unique_clicks, link_clicks, unique_link_clicks, inline_link_clicks, outbound_clicks, landing_page_views,
+        spend, impressions, clicks, unique_clicks, link_clicks, unique_link_clicks, inline_link_clicks, outbound_clicks, video_3s_views, landing_page_views,
         reach, frequency, cpc, ctr, unique_ctr, cpm,
         leads, contacts, purchases, adds_to_cart, initiates_checkout, cost_per_lead, cost_per_purchase,
-        date_start, date_stop, raw_payload
+        objective, results, result_rate,
+        date_start, date_stop, raw_payload, custom_event_name, custom_event_count
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7,
-        $8, $9, $10, $11, $12, $13, $14, $15, $16,
-        $17, $18, $19, $20, $21, $22, $23, $24,
-        $25, $26, $27, $28, $29, $30,
-        $31, $32
-      )
-      ON CONFLICT (site_id, ad_id, date_start) WHERE ad_id IS NOT NULL DO UPDATE SET
-        spend = EXCLUDED.spend,
-        impressions = EXCLUDED.impressions,
-        clicks = EXCLUDED.clicks,
-        unique_clicks = EXCLUDED.unique_clicks,
-        link_clicks = EXCLUDED.link_clicks,
-        unique_link_clicks = EXCLUDED.unique_link_clicks,
-        inline_link_clicks = EXCLUDED.inline_link_clicks,
-        outbound_clicks = EXCLUDED.outbound_clicks,
-        landing_page_views = EXCLUDED.landing_page_views,
-        reach = EXCLUDED.reach,
-        frequency = EXCLUDED.frequency,
-        cpc = EXCLUDED.cpc,
-        ctr = EXCLUDED.ctr,
-        unique_ctr = EXCLUDED.unique_ctr,
-        cpm = EXCLUDED.cpm,
-        leads = EXCLUDED.leads,
-        contacts = EXCLUDED.contacts,
-        purchases = EXCLUDED.purchases,
-        adds_to_cart = EXCLUDED.adds_to_cart,
-        initiates_checkout = EXCLUDED.initiates_checkout,
-        cost_per_lead = EXCLUDED.cost_per_lead,
-        cost_per_purchase = EXCLUDED.cost_per_purchase,
-        raw_payload = EXCLUDED.raw_payload
-    `;
-    
-    const commonValues = this.getInsightValues(siteId, row);
-    const values = [
-      siteId,
-      MetaMarketingService.asString(row.ad_id),
-      MetaMarketingService.asString(row.ad_name),
-      MetaMarketingService.asString(row.adset_id),
-      MetaMarketingService.asString(row.adset_name),
-      MetaMarketingService.asString(row.campaign_id),
-      MetaMarketingService.asString(row.campaign_name),
-      ...commonValues
-    ];
-
-    await pool.query(query, values);
+        $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
+        $18, $19, $20, $21, $22, $23,
+        $24, $25, $26, $27, $28, $29, $30,
+        $31, $32, $33,
+        $34, $35, $36, $37, $38
+      )`,
+      [
+        siteId,
+        MetaMarketingService.asString(row.ad_id),
+        MetaMarketingService.asString(row.ad_name),
+        MetaMarketingService.asString(row.adset_id),
+        MetaMarketingService.asString(row.adset_name),
+        MetaMarketingService.asString(row.campaign_id),
+        MetaMarketingService.asString(row.campaign_name),
+        ...this.getInsightValues(siteId, row),
+      ]
+    );
   }
 
   private async persistAdSetInsight(siteId: number, row: Record<string, unknown>) {
-    const query = `
-      INSERT INTO meta_insights_daily (
+    await pool.query(
+      `INSERT INTO meta_insights_daily (
         site_id, adset_id, adset_name, campaign_id, campaign_name,
-        spend, impressions, clicks, unique_clicks, link_clicks, unique_link_clicks, inline_link_clicks, outbound_clicks, landing_page_views,
+        spend, impressions, clicks, unique_clicks, link_clicks, unique_link_clicks, inline_link_clicks, outbound_clicks, video_3s_views, landing_page_views,
         reach, frequency, cpc, ctr, unique_ctr, cpm,
         leads, contacts, purchases, adds_to_cart, initiates_checkout, cost_per_lead, cost_per_purchase,
-        date_start, date_stop, raw_payload
+        objective, results, result_rate,
+        date_start, date_stop, raw_payload, custom_event_name, custom_event_count
       ) VALUES (
         $1, $2, $3, $4, $5,
-        $6, $7, $8, $9, $10, $11, $12, $13, $14,
-        $15, $16, $17, $18, $19, $20,
-        $21, $22, $23, $24, $25, $26, $27,
-        $28, $29, $30
-      )
-      ON CONFLICT (site_id, adset_id, date_start) WHERE adset_id IS NOT NULL AND ad_id IS NULL DO UPDATE SET
-        spend = EXCLUDED.spend,
-        impressions = EXCLUDED.impressions,
-        clicks = EXCLUDED.clicks,
-        unique_clicks = EXCLUDED.unique_clicks,
-        link_clicks = EXCLUDED.link_clicks,
-        unique_link_clicks = EXCLUDED.unique_link_clicks,
-        inline_link_clicks = EXCLUDED.inline_link_clicks,
-        outbound_clicks = EXCLUDED.outbound_clicks,
-        landing_page_views = EXCLUDED.landing_page_views,
-        reach = EXCLUDED.reach,
-        frequency = EXCLUDED.frequency,
-        cpc = EXCLUDED.cpc,
-        ctr = EXCLUDED.ctr,
-        unique_ctr = EXCLUDED.unique_ctr,
-        cpm = EXCLUDED.cpm,
-        leads = EXCLUDED.leads,
-        contacts = EXCLUDED.contacts,
-        purchases = EXCLUDED.purchases,
-        adds_to_cart = EXCLUDED.adds_to_cart,
-        initiates_checkout = EXCLUDED.initiates_checkout,
-        cost_per_lead = EXCLUDED.cost_per_lead,
-        cost_per_purchase = EXCLUDED.cost_per_purchase,
-        raw_payload = EXCLUDED.raw_payload
-    `;
-
-    const commonValues = this.getInsightValues(siteId, row);
-    const values = [
-      siteId,
-      MetaMarketingService.asString(row.adset_id),
-      MetaMarketingService.asString(row.adset_name),
-      MetaMarketingService.asString(row.campaign_id),
-      MetaMarketingService.asString(row.campaign_name),
-      ...commonValues
-    ];
-
-    await pool.query(query, values);
+        $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
+        $16, $17, $18, $19, $20, $21,
+        $22, $23, $24, $25, $26, $27, $28,
+        $29, $30, $31,
+        $32, $33, $34, $35, $36
+      )`,
+      [
+        siteId,
+        MetaMarketingService.asString(row.adset_id),
+        MetaMarketingService.asString(row.adset_name),
+        MetaMarketingService.asString(row.campaign_id),
+        MetaMarketingService.asString(row.campaign_name),
+        ...this.getInsightValues(siteId, row),
+      ]
+    );
   }
 
   private async persistCampaignInsight(siteId: number, row: Record<string, unknown>) {
-    const query = `
-      INSERT INTO meta_insights_daily (
+    await pool.query(
+      `INSERT INTO meta_insights_daily (
         site_id, campaign_id, campaign_name,
-        spend, impressions, clicks, unique_clicks, link_clicks, unique_link_clicks, inline_link_clicks, outbound_clicks, landing_page_views,
+        spend, impressions, clicks, unique_clicks, link_clicks, unique_link_clicks, inline_link_clicks, outbound_clicks, video_3s_views, landing_page_views,
         reach, frequency, cpc, ctr, unique_ctr, cpm,
         leads, contacts, purchases, adds_to_cart, initiates_checkout, cost_per_lead, cost_per_purchase,
-        date_start, date_stop, raw_payload
+        objective, results, result_rate,
+        date_start, date_stop, raw_payload, custom_event_name, custom_event_count
       ) VALUES (
         $1, $2, $3,
-        $4, $5, $6, $7, $8, $9, $10, $11, $12,
-        $13, $14, $15, $16, $17, $18,
-        $19, $20, $21, $22, $23, $24, $25,
-        $26, $27, $28
-      )
-      ON CONFLICT (site_id, campaign_id, date_start) WHERE campaign_id IS NOT NULL AND adset_id IS NULL DO UPDATE SET
-        spend = EXCLUDED.spend,
-        impressions = EXCLUDED.impressions,
-        clicks = EXCLUDED.clicks,
-        unique_clicks = EXCLUDED.unique_clicks,
-        link_clicks = EXCLUDED.link_clicks,
-        unique_link_clicks = EXCLUDED.unique_link_clicks,
-        inline_link_clicks = EXCLUDED.inline_link_clicks,
-        outbound_clicks = EXCLUDED.outbound_clicks,
-        landing_page_views = EXCLUDED.landing_page_views,
-        reach = EXCLUDED.reach,
-        frequency = EXCLUDED.frequency,
-        cpc = EXCLUDED.cpc,
-        ctr = EXCLUDED.ctr,
-        unique_ctr = EXCLUDED.unique_ctr,
-        cpm = EXCLUDED.cpm,
-        leads = EXCLUDED.leads,
-        contacts = EXCLUDED.contacts,
-        purchases = EXCLUDED.purchases,
-        adds_to_cart = EXCLUDED.adds_to_cart,
-        initiates_checkout = EXCLUDED.initiates_checkout,
-        cost_per_lead = EXCLUDED.cost_per_lead,
-        cost_per_purchase = EXCLUDED.cost_per_purchase,
-        raw_payload = EXCLUDED.raw_payload
-    `;
-
-    const commonValues = this.getInsightValues(siteId, row);
-    const values = [
-      siteId,
-      MetaMarketingService.asString(row.campaign_id),
-      MetaMarketingService.asString(row.campaign_name),
-      ...commonValues
-    ];
-
-    await pool.query(query, values);
+        $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
+        $14, $15, $16, $17, $18, $19,
+        $20, $21, $22, $23, $24, $25, $26,
+        $27, $28, $29,
+        $30, $31, $32, $33, $34
+      )`,
+      [
+        siteId,
+        MetaMarketingService.asString(row.campaign_id),
+        MetaMarketingService.asString(row.campaign_name),
+        ...this.getInsightValues(siteId, row),
+      ]
+    );
   }
 }
 

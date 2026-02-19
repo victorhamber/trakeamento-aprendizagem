@@ -12,21 +12,51 @@ import statsRoutes from './routes/stats';
 import { pool } from './db/pool';
 import metaRoutes from './routes/meta';
 import recommendationRoutes from './routes/recommendations';
+import { formsRouter } from './routes/forms';
 import { ensureSchema } from './db/schema';
 
 const app = express();
 const port = process.env.PORT || 3000;
 
 app.set('trust proxy', true);
+
+// Middleware de CORS manual
 app.use((req, res, next) => {
-  const origin = req.headers.origin as string | undefined;
-  if (origin) res.setHeader('Access-Control-Allow-Origin', origin);
-  res.setHeader('Vary', 'Origin');
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Site-Key,x-site-key');
+  const origin = req.headers.origin;
+  
+  // Lista de origens permitidas (dashboard em prod + localhost)
+  const allowedOrigins = [
+    process.env.PUBLIC_DASHBOARD_BASE_URL,
+    'http://localhost:5173',
+    'http://127.0.0.1:5173'
+  ].filter(Boolean) as string[];
+
+  // Rotas públicas que devem ser acessíveis de qualquer lugar (SDK, Ingest, Forms públicos)
+  const isPublicRoute = 
+    req.path.startsWith('/sdk') || 
+    req.path.startsWith('/ingest') || 
+    req.path.startsWith('/public');
+
+  if (origin) {
+    if (isPublicRoute) {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+    } else if (allowedOrigins.some(o => origin.startsWith(o))) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+    }
+  } else {
+    // Se não tem origin (ex: curl ou server-to-server), permite se for rota pública
+    if (isPublicRoute) {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+    }
+  }
+  
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Site-Key, x-site-key');
+  
   if (req.method === 'OPTIONS') return res.sendStatus(204);
-  return next();
+  
+  next();
 });
 app.use('/webhooks', bodyParser.raw({ type: 'application/json' }));
 app.use(bodyParser.json());
@@ -42,6 +72,7 @@ app.use('/ingest', ingestRoutes);
 app.use('/webhooks', webhookRoutes);
 app.use('/meta', metaRoutes);
 app.use('/recommendations', recommendationRoutes);
+app.use('/', formsRouter);
 
 app.get('/', (req, res) => {
   res.send('API Running');

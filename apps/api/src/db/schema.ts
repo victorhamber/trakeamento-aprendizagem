@@ -108,6 +108,7 @@ const schemaSql = `
     unique_link_clicks INTEGER,
     inline_link_clicks INTEGER,
     outbound_clicks INTEGER,
+    video_3s_views INTEGER,
     landing_page_views INTEGER,
     reach INTEGER,
     frequency NUMERIC,
@@ -122,6 +123,8 @@ const schemaSql = `
     initiates_checkout INTEGER,
     cost_per_lead NUMERIC,
     cost_per_purchase NUMERIC,
+    custom_event_name VARCHAR(120),
+    custom_event_count INTEGER,
     date_start DATE NOT NULL,
     date_stop DATE,
     raw_payload JSONB,
@@ -140,6 +143,40 @@ const schemaSql = `
     id SERIAL PRIMARY KEY,
     site_id INTEGER NOT NULL UNIQUE REFERENCES sites(id) ON DELETE CASCADE,
     mapping JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+  );
+
+  CREATE TABLE IF NOT EXISTS saved_utm_links (
+    id SERIAL PRIMARY KEY,
+    site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+    name VARCHAR(150) NOT NULL,
+    url_base TEXT,
+    utm_source VARCHAR(255),
+    utm_medium VARCHAR(255),
+    utm_campaign VARCHAR(255),
+    utm_content VARCHAR(255),
+    utm_term VARCHAR(255),
+    click_id VARCHAR(255),
+    created_at TIMESTAMP DEFAULT NOW()
+  );
+
+  CREATE TABLE IF NOT EXISTS site_url_rules (
+    id SERIAL PRIMARY KEY,
+    site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+    rule_type VARCHAR(50) NOT NULL,
+    match_value TEXT NOT NULL,
+    event_name VARCHAR(100) NOT NULL,
+    event_type VARCHAR(50) NOT NULL DEFAULT 'custom',
+    created_at TIMESTAMP DEFAULT NOW()
+  );
+
+  CREATE TABLE IF NOT EXISTS site_forms (
+    id SERIAL PRIMARY KEY,
+    public_id UUID NOT NULL DEFAULT gen_random_uuid() UNIQUE,
+    site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+    name VARCHAR(150) NOT NULL,
+    config JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
   );
@@ -166,6 +203,7 @@ export const ensureSchema = async (pool: Pool) => {
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS unique_link_clicks INTEGER');
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS inline_link_clicks INTEGER');
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS outbound_clicks INTEGER');
+    await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS video_3s_views INTEGER');
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS landing_page_views INTEGER');
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS reach INTEGER');
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS frequency NUMERIC');
@@ -178,6 +216,8 @@ export const ensureSchema = async (pool: Pool) => {
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS initiates_checkout INTEGER');
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS cost_per_lead NUMERIC');
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS cost_per_purchase NUMERIC');
+    await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS custom_event_name VARCHAR(120)');
+    await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS custom_event_count INTEGER');
     
     // Migração para flexibilizar a constraint UNIQUE de meta_insights_daily
     try {

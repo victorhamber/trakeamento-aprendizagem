@@ -66,9 +66,24 @@ O documento descreve como dor principal:
 
 ### 5.4 Coleta de Performance do Meta Ads
 - Conectar a conta Meta (token) e buscar métricas por:
-  - Campanha / conjunto / anúncio / criativo.
-  - Períodos diários e janelas configuráveis.
+  - Campanha / conjunto / anúncio com drilldown.
+  - Períodos diários e janelas configuráveis (hoje, ontem, últimos 7/14/30, máximo, personalizado).
 - Armazenar snapshots para análise histórica.
+- Exibir métricas de funil e eficiência:
+  - Alcance, Impressões, Cliques, CTR.
+  - LP Views, Taxa LP View, Custo por LP View.
+  - CPC, CPM, Frequência, Hook Rate (3s ÷ impressões).
+- Resultados por objetivo (leads, compras, finalizações, eventos personalizados).
+- Operação de status em cada nível (campanha, conjunto, anúncio) com atualização em tempo real.
+
+### 5.6 Gestão de Eventos e Formulários
+- **Regras de Eventos por URL**:
+  - Permitir configurar disparos automáticos de eventos (Standard ou Custom) baseados em correspondência de URL (ex: URL contém "/obrigado").
+  - Execução no client-side via Web SDK.
+- **Gerador de Formulário de Captura**:
+  - Interface no painel para criar formulários HTML (Nome, Email, Telefone).
+  - Personalização de texto do botão e tipo de evento (Lead, Contact, Purchase, etc).
+  - Geração de código pronto para cópia, integrado ao Web SDK (`tracker.identify` + `tracker.track`).
 
 ### 5.5 Diagnóstico e Recomendações (Agente GPT)
 - Gerar relatório de análise baseado em:
@@ -115,6 +130,7 @@ O documento descreve como dor principal:
   - Relatórios gerados sem erro e com recomendações acionáveis.
 - Operação:
   - Erros críticos = 0 em produção; latência de ingestão aceitável.
+  - Métricas de funil exibidas com consistência entre Meta e painel.
 
 ## 10) Riscos Conhecidos
 - Restrições e mudanças do Meta (CAPI/Marketing API) e requisitos de permissões.
@@ -196,4 +212,3 @@ O documento descreve como dor principal:
 ### Marco 7 — Hardening e Beta (1–2 semanas)
 - Performance, segurança, privacidade (LGPD/consentimento) e testes de integração.
 - Pilot com 1–3 sites e ajuste de heurísticas.
-

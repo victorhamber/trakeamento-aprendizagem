@@ -124,7 +124,7 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
         </div>
       </aside>
 
-      <main className="flex flex-col">
+      <main className="flex flex-col min-w-0">
         <header className="sticky top-0 z-10 bg-[#05070a]/80 backdrop-blur-xl border-b border-white/5">
           <div className="w-full px-8 py-4 flex items-center justify-between">
             <div className="flex items-center gap-4">

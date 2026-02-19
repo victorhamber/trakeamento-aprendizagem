@@ -84,9 +84,28 @@ router.delete('/:siteId', requireAuth, async (req, res) => {
   if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
 
   try {
+    const siteCheck = await pool.query(
+      'SELECT site_key FROM sites WHERE id = $1 AND account_id = $2',
+      [siteId, auth.accountId]
+    );
+
+    if (!(siteCheck.rowCount || 0)) {
+      return res.status(404).json({ error: 'Site not found' });
+    }
+    const siteKey = siteCheck.rows[0].site_key;
+
     await pool.query('BEGIN');
 
+    // Delete related tables by site_id
     await pool.query('DELETE FROM meta_insights_daily WHERE site_id = $1', [siteId]);
+    await pool.query('DELETE FROM integrations_meta WHERE site_id = $1', [siteId]);
+    await pool.query('DELETE FROM integrations_ga WHERE site_id = $1', [siteId]);
+    await pool.query('DELETE FROM site_identify_mappings WHERE site_id = $1', [siteId]);
+
+    // Delete related tables by site_key
+    await pool.query('DELETE FROM web_events WHERE site_key = $1', [siteKey]);
+    await pool.query('DELETE FROM purchases WHERE site_key = $1', [siteKey]);
+    await pool.query('DELETE FROM recommendation_reports WHERE site_key = $1', [siteKey]);
 
     const result = await pool.query(
       'DELETE FROM sites WHERE id = $1 AND account_id = $2 RETURNING id',
@@ -188,11 +207,11 @@ router.get('/:siteId/snippet', requireAuth, async (req, res) => {
         ? gaRow.measurement_id.trim()
         : null;
 
-  const identify = await pool.query('SELECT mapping FROM site_identify_mappings WHERE site_id = $1', [siteId]);
-  const identifyMap = identify.rowCount ? sanitizeMapping(identify.rows[0].mapping) : sanitizeMapping(null);
+  const rules = await pool.query('SELECT rule_type, match_value, event_name, event_type FROM site_url_rules WHERE site_id = $1', [siteId]);
+  const eventRules = rules.rows;
 
   const snippet = [
-    `<script>window.TRACKING_CONFIG={apiUrl:${JSON.stringify(apiBaseUrl)},siteKey:${JSON.stringify(siteKey)},metaPixelId:${JSON.stringify(metaPixelId)},gaMeasurementId:${JSON.stringify(gaMeasurementId)},identifyMap:${JSON.stringify(identifyMap)}};</script>`,
+    `<script>window.TRACKING_CONFIG={apiUrl:${JSON.stringify(apiBaseUrl)},siteKey:${JSON.stringify(siteKey)},metaPixelId:${JSON.stringify(metaPixelId)},gaMeasurementId:${JSON.stringify(gaMeasurementId)},eventRules:${JSON.stringify(eventRules)}};</script>`,
     `<script async src=${JSON.stringify(sdkUrl)}></script>`,
   ].join('\n');
 
@@ -203,8 +222,148 @@ router.get('/:siteId/snippet', requireAuth, async (req, res) => {
     site_key: siteKey,
     meta_pixel_id: metaPixelId,
     ga_measurement_id: gaMeasurementId,
-    identify_map: identifyMap,
+    event_rules: eventRules,
   });
+});
+
+router.get('/:siteId/event-rules', requireAuth, async (req, res) => {
+  const auth = req.auth!;
+  const siteId = Number(req.params.siteId);
+  if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
+
+  const site = await pool.query('SELECT id FROM sites WHERE id = $1 AND account_id = $2', [siteId, auth.accountId]);
+  if (!site.rowCount) return res.status(404).json({ error: 'Site not found' });
+
+  const result = await pool.query(
+    'SELECT * FROM site_url_rules WHERE site_id = $1 ORDER BY created_at DESC',
+    [siteId]
+  );
+  return res.json({ rules: result.rows });
+});
+
+router.post('/:siteId/event-rules', requireAuth, async (req, res) => {
+  const auth = req.auth!;
+  const siteId = Number(req.params.siteId);
+  if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
+
+  const site = await pool.query('SELECT id FROM sites WHERE id = $1 AND account_id = $2', [siteId, auth.accountId]);
+  if (!site.rowCount) return res.status(404).json({ error: 'Site not found' });
+
+  const { rule_type, match_value, event_name, event_type } = req.body;
+  if (!match_value || !event_name) return res.status(400).json({ error: 'Missing fields' });
+
+  const result = await pool.query(
+    `INSERT INTO site_url_rules (site_id, rule_type, match_value, event_name, event_type)
+     VALUES ($1, $2, $3, $4, $5)
+     RETURNING *`,
+    [siteId, rule_type || 'url_contains', match_value, event_name, event_type || 'custom']
+  );
+
+  return res.status(201).json({ rule: result.rows[0] });
+});
+
+router.delete('/:siteId/event-rules/:id', requireAuth, async (req, res) => {
+  const auth = req.auth!;
+  const siteId = Number(req.params.siteId);
+  const id = Number(req.params.id);
+  
+  const site = await pool.query('SELECT id FROM sites WHERE id = $1 AND account_id = $2', [siteId, auth.accountId]);
+  if (!site.rowCount) return res.status(404).json({ error: 'Site not found' });
+
+  await pool.query('DELETE FROM site_url_rules WHERE id = $1 AND site_id = $2', [id, siteId]);
+  return res.json({ ok: true });
+});
+
+router.get('/:siteId/utms', requireAuth, async (req, res) => {
+  const auth = req.auth!;
+  const siteId = Number(req.params.siteId);
+  if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
+
+  const site = await pool.query('SELECT site_key FROM sites WHERE id = $1 AND account_id = $2', [siteId, auth.accountId]);
+  if (!site.rowCount) return res.status(404).json({ error: 'Site not found' });
+
+  const siteKey = site.rows[0].site_key;
+
+  try {
+    const query = `
+      SELECT
+        ARRAY_AGG(DISTINCT (custom_data->>'utm_source')) FILTER (WHERE custom_data->>'utm_source' IS NOT NULL AND custom_data->>'utm_source' != '') as sources,
+        ARRAY_AGG(DISTINCT (custom_data->>'utm_medium')) FILTER (WHERE custom_data->>'utm_medium' IS NOT NULL AND custom_data->>'utm_medium' != '') as mediums,
+        ARRAY_AGG(DISTINCT (custom_data->>'utm_campaign')) FILTER (WHERE custom_data->>'utm_campaign' IS NOT NULL AND custom_data->>'utm_campaign' != '') as campaigns,
+        ARRAY_AGG(DISTINCT (custom_data->>'utm_content')) FILTER (WHERE custom_data->>'utm_content' IS NOT NULL AND custom_data->>'utm_content' != '') as contents,
+        ARRAY_AGG(DISTINCT (custom_data->>'utm_term')) FILTER (WHERE custom_data->>'utm_term' IS NOT NULL AND custom_data->>'utm_term' != '') as terms
+      FROM (
+        SELECT custom_data FROM web_events 
+        WHERE site_key = $1 
+        ORDER BY id DESC 
+        LIMIT 5000
+      ) sub
+    `;
+
+    const result = await pool.query(query, [siteKey]);
+    const row = result.rows[0] || {};
+
+    return res.json({
+      sources: row.sources || [],
+      mediums: row.mediums || [],
+      campaigns: row.campaigns || [],
+      contents: row.contents || [],
+      terms: row.terms || []
+    });
+  } catch (err) {
+    console.error('Error fetching UTMs:', err);
+    return res.status(500).json({ error: 'Failed to fetch UTMs' });
+  }
+});
+
+router.get('/:siteId/saved-utms', requireAuth, async (req, res) => {
+  const auth = req.auth!;
+  const siteId = Number(req.params.siteId);
+  if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
+
+  const site = await pool.query('SELECT id FROM sites WHERE id = $1 AND account_id = $2', [siteId, auth.accountId]);
+  if (!site.rowCount) return res.status(404).json({ error: 'Site not found' });
+
+  const result = await pool.query(
+    'SELECT * FROM saved_utm_links WHERE site_id = $1 ORDER BY created_at DESC',
+    [siteId]
+  );
+  return res.json({ saved_utms: result.rows });
+});
+
+router.post('/:siteId/saved-utms', requireAuth, async (req, res) => {
+  const auth = req.auth!;
+  const siteId = Number(req.params.siteId);
+  if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
+
+  const site = await pool.query('SELECT id FROM sites WHERE id = $1 AND account_id = $2', [siteId, auth.accountId]);
+  if (!site.rowCount) return res.status(404).json({ error: 'Site not found' });
+
+  const { name, url_base, utm_source, utm_medium, utm_campaign, utm_content, utm_term, click_id } = req.body;
+  if (!name || typeof name !== 'string') return res.status(400).json({ error: 'Name is required' });
+
+  const result = await pool.query(
+    `INSERT INTO saved_utm_links 
+     (site_id, name, url_base, utm_source, utm_medium, utm_campaign, utm_content, utm_term, click_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+     RETURNING *`,
+    [siteId, name.trim(), url_base, utm_source, utm_medium, utm_campaign, utm_content, utm_term, click_id]
+  );
+
+  return res.status(201).json({ saved_utm: result.rows[0] });
+});
+
+router.delete('/:siteId/saved-utms/:id', requireAuth, async (req, res) => {
+  const auth = req.auth!;
+  const siteId = Number(req.params.siteId);
+  const id = Number(req.params.id);
+  if (!Number.isFinite(siteId) || !Number.isFinite(id)) return res.status(400).json({ error: 'Invalid ID' });
+
+  const site = await pool.query('SELECT id FROM sites WHERE id = $1 AND account_id = $2', [siteId, auth.accountId]);
+  if (!site.rowCount) return res.status(404).json({ error: 'Site not found' });
+
+  await pool.query('DELETE FROM saved_utm_links WHERE id = $1 AND site_id = $2', [id, siteId]);
+  return res.json({ ok: true });
 });
 
 export default router;

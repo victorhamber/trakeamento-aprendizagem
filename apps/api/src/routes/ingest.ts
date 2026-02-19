@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import geoip from 'geoip-lite';
 import { pool } from '../db/pool';
 import { capiService, CapiService } from '../services/capi';
 
@@ -16,6 +17,7 @@ type IngestUserData = {
   ct?: string | string[];
   st?: string | string[];
   zp?: string | string[];
+  country?: string | string[];
   db?: string | string[];
   fbp?: string;
   fbc?: string;
@@ -129,6 +131,23 @@ router.post('/events', async (req, res) => {
       const pick = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
       const clientIp = req.ip || userData.client_ip_address || '';
       const clientUserAgent = req.headers['user-agent'] || userData.client_user_agent || '';
+
+      // Tenta recuperar geolocalização se não vier no payload
+      let ct = pick(userData.ct);
+      let st = pick(userData.st);
+      let zp = pick(userData.zp);
+      let country = pick(userData.country);
+
+      if (clientIp && clientIp.length > 6) {
+        const geo = geoip.lookup(clientIp);
+        if (geo) {
+          if (!ct) ct = CapiService.hash(geo.city);
+          if (!st) st = CapiService.hash(geo.region);
+          if (!country) country = CapiService.hash(geo.country);
+          // if (!zp) zp = CapiService.hash(geo.zip); // Zip from geoip is often inaccurate
+        }
+      }
+
       const capiPayload = {
         event_name: eventName,
         event_time: eventTimeSec,
@@ -141,9 +160,10 @@ router.post('/events', async (req, res) => {
           ph: pick(userData.ph),
           fn: pick(userData.fn),
           ln: pick(userData.ln),
-          ct: pick(userData.ct),
-          st: pick(userData.st),
-          zp: pick(userData.zp),
+          ct,
+          st,
+          zp,
+          country,
           db: pick(userData.db),
           fbp: userData.fbp,
           fbc: userData.fbc,
