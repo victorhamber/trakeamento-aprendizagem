@@ -333,8 +333,26 @@ router.get('/tracker.js', async (_req, res) => {
   function trackMeta(eventName, params, eventId, isCustom){
     try{
       if(!window.fbq) return;
-      if(isCustom) window.fbq('trackCustom', eventName, params || {}, eventId ? { eventID: eventId } : undefined);
-      else window.fbq('track', eventName, params || {}, eventId ? { eventID: eventId } : undefined);
+      var opts = eventId ? { eventID: eventId } : {};
+      
+      // Ensure params has advanced matching data if available, even if not passed explicitly
+      if(params && typeof params === 'object') {
+         // Se params já tem em/ph/fn/ln, o pixel usará. 
+         // Mas para garantir, podemos reinjetar do cookie se estiver vazio no params
+         var am = getMetaUserDataFromCookies();
+         if(!params.em && am.em) params.em = am.em;
+         if(!params.ph && am.ph) params.ph = am.ph;
+         if(!params.fn && am.fn) params.fn = am.fn;
+         if(!params.ln && am.ln) params.ln = am.ln;
+         if(!params.ct && am.ct) params.ct = am.ct;
+         if(!params.st && am.st) params.st = am.st;
+         if(!params.zp && am.zp) params.zp = am.zp;
+         if(!params.db && am.db) params.db = am.db;
+         if(!params.external_id && am.external_id) params.external_id = am.external_id;
+      }
+
+      if(isCustom) window.fbq('trackCustom', eventName, params || {}, opts);
+      else window.fbq('track', eventName, params || {}, opts);
     }catch(_e){}
   }
   var gaLoaded=false;
