@@ -247,29 +247,28 @@ export class Tracker {
   private send(payload: EventPayload) {
     const url = `${this.apiUrl}/ingest/events?key=${this.siteKey}`;
     const body = JSON.stringify(payload);
-    
-    // Debug log
-    if (window.location.search.includes('trk_debug=1')) {
-      console.log('[TRK] Sending event:', payload.event_name, payload);
-    }
-
-    // Try fetch with keepalive first (modern standard)
-    if (typeof window.fetch === 'function') {
-      fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Site-Key': this.siteKey
-        },
-        body: body,
-        keepalive: true
-      }).catch((err) => {
-        if (window.location.search.includes('trk_debug=1')) {
-          console.error('[TRK] Fetch error:', err);
-        }
-      });
-      return;
-    }
+     
+     // Debug log (Habilitado temporariamente para diagnóstico)
+     console.log('[TRK] Sending event:', payload.event_name, payload, 'to', url);
+ 
+     // Try fetch with keepalive first (modern standard)
+     if (typeof window.fetch === 'function') {
+       fetch(url, {
+         method: 'POST',
+         headers: {
+           'Content-Type': 'application/json',
+           'X-Site-Key': this.siteKey
+         },
+         body: body,
+         keepalive: true
+       }).then(res => {
+         if (!res.ok) console.error('[TRK] Server error:', res.status, res.statusText);
+         else console.log('[TRK] Event sent successfully');
+       }).catch((err) => {
+         console.error('[TRK] Fetch error:', err);
+       });
+       return;
+     }
     
     // Fallback to sendBeacon
     if (navigator.sendBeacon) {
@@ -311,7 +310,14 @@ export class Tracker {
 }
 
 // Inicialização automática se script configurado
-if ((window as any).TRACKING_CONFIG) {
-  const config = (window as any).TRACKING_CONFIG;
-  (window as any).tracker = new Tracker(config.apiUrl, config.siteKey, config.eventRules);
+try {
+  if ((window as any).TRACKING_CONFIG) {
+    const config = (window as any).TRACKING_CONFIG;
+    console.log('[TRK] Initializing tracker with config:', config);
+    (window as any).tracker = new Tracker(config.apiUrl, config.siteKey, config.eventRules);
+  } else {
+    console.warn('[TRK] TRACKING_CONFIG not found on window');
+  }
+} catch (e) {
+  console.error('[TRK] Failed to initialize tracker:', e);
 }
