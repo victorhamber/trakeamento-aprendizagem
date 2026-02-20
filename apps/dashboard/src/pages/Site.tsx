@@ -871,11 +871,17 @@ ${scriptContent}
     setLoading(true);
     try {
       const res = await api.post(`/integrations/sites/${id}/meta/test-capi`);
+      console.log('[CAPI Test]', JSON.stringify(res.data, null, 2));
       if (res.data?.ok) {
         showFlash('Evento do servidor enviado com sucesso!');
       } else {
-        showFlash(res.data?.error || 'Falha ao enviar evento do servidor.', 'error');
+        const diag = res.data?.diagnostic;
+        let msg = res.data?.error || 'Falha ao enviar evento do servidor.';
+        if (diag && !diag.decrypt_ok) msg += ` (Erro decrypt: ${diag.decrypt_error})`;
+        else if (diag && !diag.token_passes_validation) msg += ` (Token descriptografado: ${diag.decrypted_token_length} chars)`;
+        showFlash(msg, 'error');
       }
+      await loadMeta();
     } catch (err) {
       console.error(err);
       showFlash('Erro ao testar evento do servidor.', 'error');
@@ -1645,8 +1651,8 @@ ${scriptContent}
       {flash && (
         <div
           className={`mt-4 flex items-center gap-3 rounded-xl border px-4 py-3 text-sm transition-all ${flashType === 'error'
-              ? 'border-red-500/25 bg-red-500/10 text-red-300'
-              : 'border-emerald-500/25 bg-emerald-500/10 text-emerald-300'
+            ? 'border-red-500/25 bg-red-500/10 text-red-300'
+            : 'border-emerald-500/25 bg-emerald-500/10 text-emerald-300'
             }`}
         >
           {flashType === 'error' ? (
@@ -1700,8 +1706,8 @@ ${scriptContent}
                 setSearchParams(searchParams, { replace: true });
               }}
               className={`relative px-3.5 py-2 text-[13px] font-medium rounded-t-lg transition-all ${tab === t.key
-                  ? 'text-zinc-100 bg-zinc-900/80'
-                  : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900/40'
+                ? 'text-zinc-100 bg-zinc-900/80'
+                : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900/40'
                 }`}
             >
               {t.label}
@@ -1851,8 +1857,8 @@ ${scriptContent}
                 const expired = daysLeft <= 0;
                 return (
                   <div className={`rounded-xl border p-4 flex items-start gap-3 ${expired
-                      ? 'border-red-500/40 bg-red-500/10'
-                      : 'border-amber-500/30 bg-amber-500/8'
+                    ? 'border-red-500/40 bg-red-500/10'
+                    : 'border-amber-500/30 bg-amber-500/8'
                     }`}>
                     <div className="text-2xl mt-0.5">{expired ? '🔴' : '⚠️'}</div>
                     <div>
@@ -1980,8 +1986,8 @@ ${scriptContent}
                             <label
                               key={acc.id}
                               className={`flex items-center justify-between p-3.5 rounded-xl border cursor-pointer transition-all ${isSelected
-                                  ? 'bg-blue-500/10 border-blue-500/40'
-                                  : 'bg-zinc-900/60 border-zinc-800 hover:border-zinc-700'
+                                ? 'bg-blue-500/10 border-blue-500/40'
+                                : 'bg-zinc-900/60 border-zinc-800 hover:border-zinc-700'
                                 }`}
                               onClick={() => {
                                 if (isSelected) setShowAdAccountSelector(false);
@@ -2036,8 +2042,8 @@ ${scriptContent}
                     {meta?.last_capi_status ? (
                       <span
                         className={`inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full border ${meta.last_capi_status === 'ok'
-                            ? 'bg-emerald-500/12 text-emerald-300 border-emerald-500/25'
-                            : 'bg-rose-500/12 text-rose-300 border-rose-500/25'
+                          ? 'bg-emerald-500/12 text-emerald-300 border-emerald-500/25'
+                          : 'bg-rose-500/12 text-rose-300 border-rose-500/25'
                           }`}
                       >
                         {meta.last_capi_status === 'ok' ? 'OK' : 'ERRO'}
@@ -2781,8 +2787,8 @@ ${scriptContent}
                         <button
                           onClick={() => handleMetaBreadcrumbClick(idx)}
                           className={`text-xs transition-colors ${idx === metaBreadcrumbs.length - 1
-                              ? 'text-zinc-200 font-medium'
-                              : 'text-zinc-500 hover:text-zinc-300'
+                            ? 'text-zinc-200 font-medium'
+                            : 'text-zinc-500 hover:text-zinc-300'
                             }`}
                         >
                           {crumb.name}
@@ -2877,8 +2883,8 @@ ${scriptContent}
                             <th
                               key={h}
                               className={`text-left text-[10px] font-medium uppercase tracking-widest text-zinc-600 px-4 py-3 whitespace-nowrap ${index === 0
-                                  ? 'sticky left-0 z-10 bg-zinc-950/95 border-r border-zinc-800/60'
-                                  : ''
+                                ? 'sticky left-0 z-10 bg-zinc-950/95 border-r border-zinc-800/60'
+                                : ''
                                 }`}
                             >
                               {h}
@@ -2983,8 +2989,8 @@ ${scriptContent}
                                   <button
                                     onClick={() => toggleMetaStatus(c)}
                                     className={`text-[11px] px-2.5 py-1 rounded-md border transition-colors ${resolveDisplayStatus(c) === 'ACTIVE'
-                                        ? 'bg-zinc-900 border-zinc-700 text-zinc-400 hover:text-amber-300 hover:border-amber-500/40'
-                                        : 'bg-zinc-900 border-zinc-700 text-zinc-400 hover:text-emerald-300 hover:border-emerald-500/40'
+                                      ? 'bg-zinc-900 border-zinc-700 text-zinc-400 hover:text-amber-300 hover:border-amber-500/40'
+                                      : 'bg-zinc-900 border-zinc-700 text-zinc-400 hover:text-emerald-300 hover:border-emerald-500/40'
                                       }`}
                                   >
                                     {resolveDisplayStatus(c) === 'ACTIVE' ? 'Pausar' : 'Ativar'}
