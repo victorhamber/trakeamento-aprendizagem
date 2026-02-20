@@ -253,15 +253,16 @@ export class Tracker {
  
      // Try fetch with keepalive first (modern standard)
      if (typeof window.fetch === 'function') {
-       fetch(url, {
-         method: 'POST',
-         headers: {
-           'Content-Type': 'application/json',
-           'X-Site-Key': this.siteKey
-         },
-         body: body,
-         keepalive: true
-       }).then(res => {
+        fetch(url, {
+          method: 'POST',
+          credentials: 'omit', // Importante: não enviar cookies para evitar erro de CORS com wildcard/origem dinâmica pública
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Site-Key': this.siteKey
+          },
+          body: body,
+          keepalive: true
+        }).then(res => {
          if (!res.ok) console.error('[TRK] Server error:', res.status, res.statusText);
          else console.log('[TRK] Event sent successfully');
        }).catch((err) => {
