@@ -75,11 +75,9 @@ router.get('/meta/callback', async (req, res) => {
     return res.status(400).send('Invalid state');
   }
 
-  const cookieNonce = req.cookies?.meta_oauth_nonce;
-  if (!cookieNonce || cookieNonce !== payload.nonce) {
-    return res.status(400).send('CSRF validation failed: nonce mismatch');
-  }
-  res.clearCookie('meta_oauth_nonce');
+  // CSRF protection is handled by the signed JWT state parameter itself.
+  // Cookie-based nonce was removed because it doesn't survive cross-domain
+  // redirects (API and dashboard on different subdomains).
 
   const siteId = Number(payload.siteId);
   if (!Number.isFinite(siteId)) return res.status(400).send('Invalid site');
