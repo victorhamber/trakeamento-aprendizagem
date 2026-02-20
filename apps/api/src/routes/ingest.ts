@@ -150,6 +150,25 @@ function computeEngagement(event: IngestEvent): { score: number; bucket: Engagem
   return { score, bucket };
 }
 
+function getTimeDimensions(eventTimeSec: number) {
+  const d = new Date(eventTimeSec * 1000);
+  const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const months = [
+    'January','February','March','April','May','June',
+    'July','August','September','October','November','December'
+  ];
+
+  const hour = d.getHours();
+
+  return {
+    event_day: days[d.getDay()],
+    event_day_in_month: d.getDate(),
+    event_month: months[d.getMonth()],
+    event_time_interval: `${hour}-${hour + 1}`,
+    event_hour: hour,
+  };
+}
+
 // ─── Deduplication (in-memory fallback + Postgres) ───────────────────────────
 // Para produção: troque pelo Redis com TTL de 24h
 const recentEventIds = new Map<string, number>();
@@ -285,6 +304,7 @@ router.post('/events', async (req, res) => {
   const eventId       = event.event_id   || `evt_${eventTimeSec}_${Math.random().toString(36).slice(2, 8)}`;
   const eventName     = event.event_name;
   const eventSourceUrl = event.event_source_url || '';
+  const timeDimensions = getTimeDimensions(eventTimeSec);
 
   // Deduplicação em memória (rápida) — o ON CONFLICT no Postgres é a garantia definitiva
   if (isDuplicate(siteKey, eventId)) {
@@ -327,6 +347,14 @@ router.post('/events', async (req, res) => {
         user_data:        capiUser,
         custom_data: {
           ...event.custom_data,
+          event_time:       eventTimeSec,
+          event_url:        eventSourceUrl,
+          event_day:        timeDimensions.event_day,
+          event_day_in_month: timeDimensions.event_day_in_month,
+          event_month:      timeDimensions.event_month,
+          event_time_interval: timeDimensions.event_time_interval,
+          event_hour:       timeDimensions.event_hour,
+          page_title:       event.custom_data?.['page_title'],
           // Telemetria relevante para otimização do Meta
           engagement_score:  engagement?.score,
           engagement_bucket: engagement?.bucket,

@@ -155,8 +155,30 @@ export class Tracker {
     return 'evt_' + Math.random().toString(36).substr(2, 9) + Date.now();
   }
 
+  private getTimeFields(epochSec: number) {
+    try {
+      const d = new Date(epochSec * 1000);
+      const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+      const months = [
+        'January','February','March','April','May','June',
+        'July','August','September','October','November','December'
+      ];
+      const h = d.getHours();
+      return {
+        event_day: days[d.getDay()],
+        event_day_in_month: d.getDate(),
+        event_month: months[d.getMonth()],
+        event_time_interval: `${h}-${h + 1}`,
+        event_hour: h,
+      };
+    } catch {
+      return {};
+    }
+  }
+
   public track(eventName: string, customData?: Record<string, any>) {
     const eventId = this.generateEventId();
+    const eventTime = Math.floor(Date.now() / 1000);
     const attrs = this.getAttributionParams();
     let userData: any = {
       client_user_agent: navigator.userAgent,
@@ -170,13 +192,22 @@ export class Tracker {
       userData = { ...userData, ...stored };
     } catch {}
 
+    const baseCustom = {
+      page_title: document.title,
+      page_path: window.location.pathname,
+      content_type: 'product',
+      event_url: window.location.origin + window.location.pathname,
+      event_source_url: window.location.href,
+      ...this.getTimeFields(eventTime),
+    };
+
     const payload: EventPayload = {
       event_name: eventName,
-      event_time: Math.floor(Date.now() / 1000),
+      event_time: eventTime,
       event_id: eventId,
       event_source_url: window.location.href,
       user_data: userData,
-      custom_data: { ...attrs, ...(customData || {}) },
+      custom_data: { ...baseCustom, ...attrs, ...(customData || {}) },
       telemetry: {
         load_time_ms: window.performance?.timing?.domContentLoadedEventEnd - window.performance?.timing?.navigationStart,
         screen_width: window.screen.width,

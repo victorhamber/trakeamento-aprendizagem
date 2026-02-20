@@ -664,6 +664,13 @@ router.get('/tracker.js', async (_req, res) => {
       var eventId   = genEventId();
       var attrs     = getAttributionParams();
 
+      var baseCustom = {
+        page_title:       document.title,
+        page_path:        location.pathname,
+        content_type:     'product',
+        event_url:        location.origin + location.pathname
+      };
+
       var payload = {
         event_name:       eventName,
         event_time:       eventTime,
@@ -671,12 +678,8 @@ router.get('/tracker.js', async (_req, res) => {
         event_source_url: location.href,
         action_source:    'website',
         user_data:        buildUserData(),
-        custom_data:      Object.assign({}, attrs, customData || {}),
-        telemetry: {
-          screen_width:  screen.width,
-          screen_height: screen.height,
-          page_path:     location.pathname
-        }
+        custom_data:      Object.assign({}, baseCustom, attrs, customData || {}),
+        telemetry:        buildTelemetry({ page_path: location.pathname, page_title: document.title })
       };
 
       getFingerprintHash(function(fp) {
@@ -687,7 +690,19 @@ router.get('/tracker.js', async (_req, res) => {
       if (cfg.metaPixelId) {
         loadMetaPixel(cfg.metaPixelId);
         var isCustom = STANDARD_EVENTS.indexOf(eventName) < 0;
-        trackMeta(eventName, Object.assign({}, payload.custom_data, getTimeFields(eventTime)), eventId, isCustom);
+        var metaParams = Object.assign(
+          {
+            ta_source:   'tracking_suite',
+            ta_site_key: cfg.siteKey,
+            ta_event_id: eventId,
+            event_url:   location.origin + location.pathname,
+            event_source_url: location.href,
+            page_title:  document.title
+          },
+          payload.custom_data,
+          getTimeFields(eventTime)
+        );
+        trackMeta(eventName, metaParams, eventId, isCustom);
       }
 
       if (cfg.gaMeasurementId) {
