@@ -9,6 +9,7 @@ type Site = {
   id: number;
   name: string;
   domain: string | null;
+  tracking_domain: string | null;
   site_key: string;
 };
 
@@ -147,10 +148,13 @@ export const SitePage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const id = Number(siteId);
   const apiBaseUrl = (api.defaults.baseURL || '').replace(/\/+$/, '');
+  const apiHost = apiBaseUrl.replace(/^https?:\/\//, '');
   const [site, setSite] = useState<Site | null>(null);
   const initialTab = (searchParams.get('tab') as Tab) || 'snippet';
   const [tab, setTab] = useState<Tab>(initialTab);
   const [snippet, setSnippet] = useState<string>('');
+  const [trackingDomainInput, setTrackingDomainInput] = useState('');
+  const [savingTrackingDomain, setSavingTrackingDomain] = useState(false);
   const [meta, setMeta] = useState<MetaConfig | null>(null);
   const [adAccounts, setAdAccounts] = useState<
     Array<{ id: string; name: string; account_id?: string; business?: { id: string; name: string } }>
@@ -536,6 +540,11 @@ export const SitePage = () => {
     }
   }, [site, utmBaseUrl]);
 
+  useEffect(() => {
+    if (!site) return;
+    setTrackingDomainInput(site.tracking_domain || '');
+  }, [site]);
+
   const loadEventRules = useCallback(async () => {
     try {
       const res = await api.get(`/sites/${id}/event-rules`);
@@ -780,6 +789,24 @@ ${scriptContent}
     const res = await api.get(`/sites/${id}/snippet`);
     setSnippet(res.data.snippet);
   }, [id]);
+
+  const saveTrackingDomain = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!site) return;
+    setSavingTrackingDomain(true);
+    try {
+      await api.put(`/sites/${id}`, {
+        tracking_domain: trackingDomainInput.trim() || null,
+      });
+      await loadSite();
+      await loadSnippet();
+      showFlash('Domínio de rastreamento atualizado!');
+    } catch (err) {
+      showFlash('Erro ao salvar domínio de rastreamento', 'error');
+    } finally {
+      setSavingTrackingDomain(false);
+    }
+  };
 
   const loadMeta = useCallback(async () => {
     const res = await api.get(`/integrations/sites/${id}/meta`);
@@ -1674,6 +1701,33 @@ ${scriptContent}
                 Cole este snippet no seu site, antes do fechamento da tag{' '}
                 <code className="text-zinc-300 bg-zinc-800/60 px-1.5 py-0.5 rounded text-xs">&lt;/head&gt;</code>.
               </p>
+              <form
+                onSubmit={saveTrackingDomain}
+                className="mb-4 rounded-xl border border-zinc-800 bg-zinc-900/40 p-4"
+              >
+                <div className="text-xs font-medium text-zinc-300">Domínio de rastreamento (CNAME)</div>
+                <div className="mt-1 text-[11px] text-zinc-500">
+                  Use um subdomínio do cliente para enviar eventos como first-party.
+                </div>
+                <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
+                  <input
+                    className="w-full rounded-xl bg-zinc-950/60 border border-white/10 px-3 py-2 text-sm outline-none focus:border-blue-500/60 transition-colors"
+                    value={trackingDomainInput}
+                    onChange={(e) => setTrackingDomainInput(e.target.value)}
+                    placeholder="ex: track.cliente.com"
+                  />
+                  <button
+                    disabled={savingTrackingDomain}
+                    className="whitespace-nowrap bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-xl text-sm transition-colors disabled:opacity-50"
+                  >
+                    {savingTrackingDomain ? 'Salvando…' : 'Salvar'}
+                  </button>
+                </div>
+                <div className="mt-3 text-[11px] text-zinc-500">
+                  Aponte um CNAME de <span className="text-zinc-300">{trackingDomainInput || 'track.cliente.com'}</span> para{' '}
+                  <span className="text-zinc-300">{apiHost || 'seu-dominio-api.com'}</span>.
+                </div>
+              </form>
               <div className="relative group rounded-xl border border-zinc-800 bg-zinc-900/60 overflow-hidden">
                 <div className="flex items-center justify-between px-4 py-2.5 border-b border-zinc-800/60 bg-zinc-900/80">
                   <div className="flex items-center gap-1.5">

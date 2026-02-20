@@ -14,51 +14,51 @@ type EngagementBucket = 'low' | 'medium' | 'high';
 // ─── Zod Schemas ─────────────────────────────────────────────────────────────
 
 const UserDataSchema = z.object({
-  client_ip_address:  z.string().optional(),
-  client_user_agent:  z.string().optional(),
-  em:         z.union([z.string(), z.array(z.string())]).optional(),
-  ph:         z.union([z.string(), z.array(z.string())]).optional(),
-  fn:         z.union([z.string(), z.array(z.string())]).optional(),
-  ln:         z.union([z.string(), z.array(z.string())]).optional(),
-  ct:         z.union([z.string(), z.array(z.string())]).optional(),
-  st:         z.union([z.string(), z.array(z.string())]).optional(),
-  zp:         z.union([z.string(), z.array(z.string())]).optional(),
-  country:    z.union([z.string(), z.array(z.string())]).optional(),
-  db:         z.union([z.string(), z.array(z.string())]).optional(),
-  fbp:        z.string().optional(),
-  fbc:        z.string().optional(),
+  client_ip_address: z.string().optional(),
+  client_user_agent: z.string().optional(),
+  em: z.union([z.string(), z.array(z.string())]).optional(),
+  ph: z.union([z.string(), z.array(z.string())]).optional(),
+  fn: z.union([z.string(), z.array(z.string())]).optional(),
+  ln: z.union([z.string(), z.array(z.string())]).optional(),
+  ct: z.union([z.string(), z.array(z.string())]).optional(),
+  st: z.union([z.string(), z.array(z.string())]).optional(),
+  zp: z.union([z.string(), z.array(z.string())]).optional(),
+  country: z.union([z.string(), z.array(z.string())]).optional(),
+  db: z.union([z.string(), z.array(z.string())]).optional(),
+  fbp: z.string().optional(),
+  fbc: z.string().optional(),
   external_id: z.string().optional(),
 }).catchall(z.unknown());
 
 const TelemetrySchema = z.object({
-  dwell_time_ms:      z.number().nonnegative().optional(),
-  visible_time_ms:    z.number().nonnegative().optional(),
-  max_scroll_pct:     z.number().min(0).max(100).optional(),
-  clicks_total:       z.number().nonnegative().optional(),
-  clicks_cta:         z.number().nonnegative().optional(),
-  page_path:          z.string().optional(),
-  page_title:         z.string().optional(),
-  load_time_ms:       z.number().nonnegative().optional(),
-  screen_width:       z.number().optional(),
-  screen_height:      z.number().optional(),
-  pixel_ratio:        z.number().optional(),
-  timezone:           z.string().optional(),
-  language:           z.string().optional(),
-  platform:           z.string().optional(),
-  connection_type:    z.string().optional(),
+  dwell_time_ms: z.number().nonnegative().optional(),
+  visible_time_ms: z.number().nonnegative().optional(),
+  max_scroll_pct: z.number().min(0).max(100).optional(),
+  clicks_total: z.number().nonnegative().optional(),
+  clicks_cta: z.number().nonnegative().optional(),
+  page_path: z.string().optional(),
+  page_title: z.string().optional(),
+  load_time_ms: z.number().nonnegative().optional(),
+  screen_width: z.number().optional(),
+  screen_height: z.number().optional(),
+  pixel_ratio: z.number().optional(),
+  timezone: z.string().optional(),
+  language: z.string().optional(),
+  platform: z.string().optional(),
+  connection_type: z.string().optional(),
   device_fingerprint: z.string().optional(),
-  is_bot:             z.boolean().optional(),
+  is_bot: z.boolean().optional(),
 }).catchall(z.unknown());
 
 const IngestEventSchema = z.object({
-  event_id:         z.string().optional(),
-  event_name:       z.string().min(1).max(100),
-  event_time:       z.number().int().positive().optional(),
+  event_id: z.string().optional(),
+  event_name: z.string().min(1).max(100),
+  event_time: z.number().int().positive().optional(),
   event_source_url: z.string().url().optional().or(z.literal('')),
-  action_source:    z.string().optional().default('website'),
-  user_data:        UserDataSchema.optional(),
-  custom_data:      z.record(z.string(), z.unknown()).optional(),
-  telemetry:        TelemetrySchema.optional(),
+  action_source: z.string().optional().default('website'),
+  user_data: UserDataSchema.optional(),
+  custom_data: z.record(z.string(), z.unknown()).optional(),
+  telemetry: TelemetrySchema.optional(),
 });
 
 type IngestEvent = z.infer<typeof IngestEventSchema>;
@@ -80,15 +80,15 @@ function hashPii(value: string | undefined): string | undefined {
 }
 
 const normalizers: Record<string, (v: string) => string> = {
-  em:      (v) => v.trim().toLowerCase(),
-  ph:      (v) => v.replace(/[^0-9]/g, ''),   // apenas dígitos, E.164 sem +
-  fn:      (v) => v.trim().toLowerCase(),
-  ln:      (v) => v.trim().toLowerCase(),
-  ct:      (v) => v.trim().toLowerCase(),
-  st:      (v) => v.trim().toLowerCase(),
-  zp:      (v) => v.trim().toLowerCase().replace(/\s+/g, ''),
+  em: (v) => v.trim().toLowerCase(),
+  ph: (v) => v.replace(/[^0-9]/g, ''),   // apenas dígitos, E.164 sem +
+  fn: (v) => v.trim().toLowerCase(),
+  ln: (v) => v.trim().toLowerCase(),
+  ct: (v) => v.trim().toLowerCase(),
+  st: (v) => v.trim().toLowerCase(),
+  zp: (v) => v.trim().toLowerCase().replace(/\s+/g, ''),
   country: (v) => v.trim().toLowerCase(),
-  db:      (v) => v.replace(/[^0-9]/g, ''),   // YYYYMMDD
+  db: (v) => v.replace(/[^0-9]/g, ''),   // YYYYMMDD
 };
 
 function normalizeAndHash(field: string, value: string | string[] | undefined): string | undefined {
@@ -112,13 +112,13 @@ function computeEngagement(event: IngestEvent): { score: number; bucket: Engagem
   if (event.event_name !== 'PageEngagement' && event.event_name !== 'PageView') return null;
   if (event.telemetry.is_bot) return null;
 
-  const t           = event.telemetry;
-  const dwellMs     = toNumber(t.dwell_time_ms);
-  const visibleMs   = toNumber(t.visible_time_ms);
-  const scroll      = toNumber(t.max_scroll_pct);
-  const clicks      = toNumber(t.clicks_total);
-  const ctaClicks   = toNumber(t.clicks_cta);
-  const loadTimeMs  = toNumber(t.load_time_ms);
+  const t = event.telemetry;
+  const dwellMs = toNumber(t.dwell_time_ms);
+  const visibleMs = toNumber(t.visible_time_ms);
+  const scroll = toNumber(t.max_scroll_pct);
+  const clicks = toNumber(t.clicks_total);
+  const ctaClicks = toNumber(t.clicks_cta);
+  const loadTimeMs = toNumber(t.load_time_ms);
 
   let score = 0;
 
@@ -127,7 +127,7 @@ function computeEngagement(event: IngestEvent): { score: number; bucket: Engagem
   if (effectiveDwell >= 120_000) score += 40;
   else if (effectiveDwell >= 60_000) score += 35;
   else if (effectiveDwell >= 15_000) score += 25;
-  else if (effectiveDwell >= 5_000)  score += 12;
+  else if (effectiveDwell >= 5_000) score += 12;
 
   // Scroll depth
   if (scroll >= 90) score += 30;
@@ -152,10 +152,10 @@ function computeEngagement(event: IngestEvent): { score: number; bucket: Engagem
 
 function getTimeDimensions(eventTimeSec: number) {
   const d = new Date(eventTimeSec * 1000);
-  const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const months = [
-    'January','February','March','April','May','June',
-    'July','August','September','October','November','December'
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
   ];
 
   const hour = d.getHours();
@@ -172,7 +172,7 @@ function getTimeDimensions(eventTimeSec: number) {
 // ─── Deduplication (in-memory fallback + Postgres) ───────────────────────────
 // Para produção: troque pelo Redis com TTL de 24h
 const recentEventIds = new Map<string, number>();
-const DEDUP_TTL_MS   = 24 * 60 * 60 * 1000;
+const DEDUP_TTL_MS = 24 * 60 * 60 * 1000;
 
 function isDuplicate(siteKey: string, eventId: string): boolean {
   const key = `${siteKey}:${eventId}`;
@@ -216,32 +216,32 @@ function buildCapiUserData(
   userData: NonNullable<IngestEvent['user_data']>,
   siteKey: string
 ) {
-  const clientIp        = resolveClientIp(req, userData);
+  const clientIp = resolveClientIp(req, userData);
   const clientUserAgent = req.headers['user-agent'] || userData.client_user_agent || '';
-  const geo             = resolveGeo(clientIp);
+  const geo = resolveGeo(clientIp);
 
   // Monta campos com prioridade: payload hasheado > payload raw > geo
   const pick = (field: string) =>
     normalizeAndHash(field, (userData as Record<string, unknown>)[field] as string | string[] | undefined);
 
-  const ct      = pick('ct') ?? (geo.city    ? hashPii(normalizers.ct(geo.city))    : undefined);
-  const st      = pick('st') ?? (geo.region  ? hashPii(normalizers.st(geo.region))  : undefined);
+  const ct = pick('ct') ?? (geo.city ? hashPii(normalizers.ct(geo.city)) : undefined);
+  const st = pick('st') ?? (geo.region ? hashPii(normalizers.st(geo.region)) : undefined);
   const country = pick('country') ?? (geo.country ? hashPii(normalizers.country(geo.country)) : undefined);
 
   return {
     client_ip_address: clientIp,
     client_user_agent: clientUserAgent,
-    em:          pick('em'),
-    ph:          pick('ph'),
-    fn:          pick('fn'),
-    ln:          pick('ln'),
+    em: pick('em'),
+    ph: pick('ph'),
+    fn: pick('fn'),
+    ln: pick('ln'),
     ct,
     st,
     country,
-    zp:          pick('zp'),
-    db:          pick('db'),
-    fbp:         userData.fbp,
-    fbc:         userData.fbc,
+    zp: pick('zp'),
+    db: pick('db'),
+    fbp: userData.fbp,
+    fbc: userData.fbc,
     external_id: userData.external_id ? hashPii(userData.external_id) : undefined,
   };
 }
@@ -295,16 +295,16 @@ router.post('/events', async (req, res) => {
   if (engagement) {
     event.telemetry = {
       ...event.telemetry,
-      engagement_score:  engagement.score,
+      engagement_score: engagement.score,
       engagement_bucket: engagement.bucket,
     };
   }
 
   // Gera IDs estáveis
-  const eventTimeSec  = event.event_time ?? Math.floor(Date.now() / 1000);
-  const eventTimeMs   = eventTimeSec * 1000;
-  const eventId       = event.event_id   || `evt_${eventTimeSec}_${Math.random().toString(36).slice(2, 8)}`;
-  const eventName     = event.event_name;
+  const eventTimeSec = event.event_time ?? Math.floor(Date.now() / 1000);
+  const eventTimeMs = eventTimeSec * 1000;
+  const eventId = event.event_id || `evt_${eventTimeSec}_${Math.random().toString(36).slice(2, 8)}`;
+  const eventName = event.event_name;
   const eventSourceUrl = event.event_source_url || '';
   const timeDimensions = getTimeDimensions(eventTimeSec);
 
@@ -341,57 +341,54 @@ router.post('/events', async (req, res) => {
       eventName,
       new Date(eventTimeMs),
       eventSourceUrl,
-      event.user_data   ?? null,
+      event.user_data ?? null,
       event.custom_data ?? null,
-      event.telemetry   ?? null,
+      event.telemetry ?? null,
       event,
     ]);
 
     // ── 2. Envio CAPI (assíncrono com retry) ─────────────────────────────
     if ((result.rowCount ?? 0) > 0) {
-      const userData   = event.user_data ?? {};
-      const capiUser   = buildCapiUserData(req, userData, siteKey);
-      const geo        = resolveGeo(capiUser.client_ip_address || '');
+      const userData = event.user_data ?? {};
+      const capiUser = buildCapiUserData(req, userData, siteKey);
 
-      const capiPayload = {
-        event_name:       eventName,
-        event_time:       eventTimeSec,
-        event_id:         eventId,
+      // custom_data: somente campos válidos para Meta CAPI
+      // Ref: https://developers.facebook.com/docs/marketing-api/conversions-api/parameters/custom-data
+      const cd = event.custom_data ?? {};
+      const metaCustomData: Record<string, unknown> = {};
+      // Campos padrão do Meta custom_data
+      const metaCustomFields = [
+        'value', 'currency', 'content_name', 'content_category',
+        'content_ids', 'content_type', 'contents', 'num_items',
+        'order_id', 'predicted_ltv', 'search_string', 'status',
+        'delivery_category',
+      ];
+      for (const f of metaCustomFields) {
+        if (cd[f] !== undefined && cd[f] !== null && cd[f] !== '') {
+          metaCustomData[f] = cd[f];
+        }
+      }
+      // Fallbacks para campos comuns
+      if (!metaCustomData['content_name'] && cd['page_title']) {
+        metaCustomData['content_name'] = cd['page_title'];
+      }
+      if (!metaCustomData['content_type']) {
+        metaCustomData['content_type'] = 'product';
+      }
+
+      const capiPayload: CapiEvent = {
+        event_name: eventName,
+        event_time: eventTimeSec,
+        event_id: eventId,
         event_source_url: eventSourceUrl,
-        user_data:        capiUser,
-        custom_data: {
-          ...event.custom_data,
-          event_time:       eventTimeSec,
-          event_url:        eventSourceUrl,
-          event_day:        timeDimensions.event_day,
-          event_day_in_month: timeDimensions.event_day_in_month,
-          event_month:      timeDimensions.event_month,
-          event_time_interval: timeDimensions.event_time_interval,
-          event_hour:       timeDimensions.event_hour,
-          page_title:       event.custom_data?.['page_title'],
-          client_ip_address: capiUser.client_ip_address,
-          client_user_agent: capiUser.client_user_agent,
-          external_id:     userData.external_id,
-          fbp:             userData.fbp ?? capiUser.fbp,
-          fbc:             userData.fbc ?? capiUser.fbc,
-          country:         geo.country,
-          state:           geo.region,
-          city:            geo.city,
-          // Telemetria relevante para otimização do Meta
-          engagement_score:  engagement?.score,
-          engagement_bucket: engagement?.bucket,
-          dwell_time_ms:     event.telemetry?.dwell_time_ms,
-          visible_time_ms:   event.telemetry?.visible_time_ms,
-          max_scroll_pct:    event.telemetry?.max_scroll_pct,
-          clicks_cta:        event.telemetry?.clicks_cta,
-          // Campos padrão Meta
-          content_name:   event.custom_data?.['page_title'],
-          content_type:   event.custom_data?.['content_type'] ?? 'product',
-        },
+        user_data: capiUser,
+        ...(Object.keys(metaCustomData).length > 0
+          ? { custom_data: metaCustomData }
+          : {}),
       };
 
       // Fire-and-forget com retry — não bloqueia a resposta HTTP
-      sendCapiWithRetry(siteKey, capiPayload).catch(() => {});
+      sendCapiWithRetry(siteKey, capiPayload).catch(() => { });
     }
 
     return res.status(202).json({ status: 'received' });

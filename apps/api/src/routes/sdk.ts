@@ -133,7 +133,16 @@ router.get('/tracker.js', async (_req, res) => {
   }
 
   function getFbp() {
-    return getCookie('_fbp'); // setado pelo pixel Meta automaticamente
+    var fbp = getCookie('_fbp');
+    if (fbp) return fbp;
+    // Gera _fbp no formato Meta quando o Pixel não está carregado (ex: adblocker)
+    // Formato: fb.{subdomainIndex}.{creationTime}.{random}
+    try {
+      var generated = 'fb.1.' + Date.now() + '.' + Math.floor(Math.random() * 1e10);
+      setCookie('_fbp', generated, COOKIE_TTL_2Y);
+      return generated;
+    } catch(_e) {}
+    return undefined;
   }
 
   // ─── Device Fingerprint (para deduplicação no servidor) ───────────────────
@@ -781,6 +790,13 @@ router.get('/tracker.js', async (_req, res) => {
       try {
         applyIdentify(obj);
         window.__TA_IDENTIFY = Object.assign(window.__TA_IDENTIFY || {}, obj || {});
+        // Re-init fbq com advanced matching atualizado
+        if (window.fbq && window.TRACKING_CONFIG && window.TRACKING_CONFIG.metaPixelId) {
+          var am = getMetaUserDataFromCookies();
+          if (Object.keys(am).length > 0) {
+            window.fbq('init', window.TRACKING_CONFIG.metaPixelId, am);
+          }
+        }
       } catch(_e) {}
     };
 

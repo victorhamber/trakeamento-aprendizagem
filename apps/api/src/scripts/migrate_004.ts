@@ -22,6 +22,7 @@ const runMigration = async () => {
         account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
         name VARCHAR(120) NOT NULL,
         domain VARCHAR(255),
+        tracking_domain VARCHAR(255),
         site_key VARCHAR(80) NOT NULL UNIQUE,
         webhook_secret_enc TEXT NOT NULL,
         created_at TIMESTAMP DEFAULT NOW()
@@ -57,4 +58,3 @@ const runMigration = async () => {
 };
 
 runMigration();
-

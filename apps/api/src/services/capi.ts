@@ -12,17 +12,18 @@ export interface CapiEvent {
   user_data: {
     client_ip_address: string;
     client_user_agent: string;
-    em?: string; // hash
-    ph?: string; // hash
-    fn?: string; // hash
-    ln?: string; // hash
-    ct?: string; // hash
-    st?: string; // hash
-    zp?: string; // hash
-    db?: string; // hash
+    em?: string; // hash SHA-256
+    ph?: string; // hash SHA-256
+    fn?: string; // hash SHA-256
+    ln?: string; // hash SHA-256
+    ct?: string; // hash SHA-256
+    st?: string; // hash SHA-256
+    zp?: string; // hash SHA-256
+    db?: string; // hash SHA-256 (YYYYMMDD)
+    country?: string; // hash SHA-256 (ISO 2-letter lowercase)
     fbp?: string;
     fbc?: string;
-    external_id?: string; // hash
+    external_id?: string; // hash SHA-256
   };
   custom_data?: CapiCustomData;
 }
@@ -82,7 +83,21 @@ export class CapiService {
     }
   }
 
+  /** Remove chaves com valor undefined, null ou string vazia do objeto */
+  private static cleanObject<T extends Record<string, unknown>>(obj: T): Partial<T> {
+    const cleaned: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(obj)) {
+      if (v !== undefined && v !== null && v !== '') cleaned[k] = v;
+    }
+    return cleaned as Partial<T>;
+  }
+
   private buildPayload(cfg: { pixelId: string; capiToken: string; testEventCode?: string | null }, event: CapiEvent) {
+    // Limpa user_data — o Meta penaliza campos vazios/nulos
+    const cleanedUserData = CapiService.cleanObject(event.user_data);
+    // Limpa custom_data também
+    const cleanedCustomData = event.custom_data ? CapiService.cleanObject(event.custom_data) : undefined;
+
     return {
       data: [
         {
@@ -91,12 +106,10 @@ export class CapiService {
           event_id: event.event_id,
           event_source_url: event.event_source_url,
           action_source: 'website' as const,
-          user_data: {
-            ...event.user_data,
-            fbc: event.user_data.fbc || undefined,
-            fbp: event.user_data.fbp || undefined,
-          },
-          custom_data: event.custom_data,
+          user_data: cleanedUserData,
+          ...(cleanedCustomData && Object.keys(cleanedCustomData).length > 0
+            ? { custom_data: cleanedCustomData }
+            : {}),
         },
       ],
       access_token: cfg.capiToken,

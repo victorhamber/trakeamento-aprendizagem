@@ -38,7 +38,7 @@ const sanitizeMapping = (input: unknown) => {
 router.get('/', requireAuth, async (req, res) => {
   const auth = req.auth!;
   const result = await pool.query(
-    'SELECT id, name, domain, site_key, created_at FROM sites WHERE account_id = $1 ORDER BY id DESC',
+    'SELECT id, name, domain, tracking_domain, site_key, created_at FROM sites WHERE account_id = $1 ORDER BY id DESC',
     [auth.accountId]
   );
   return res.json({ sites: result.rows });
@@ -50,7 +50,7 @@ router.get('/:siteId', requireAuth, async (req, res) => {
   if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
 
   const result = await pool.query(
-    'SELECT id, name, domain, site_key, created_at FROM sites WHERE id = $1 AND account_id = $2',
+    'SELECT id, name, domain, tracking_domain, site_key, created_at FROM sites WHERE id = $1 AND account_id = $2',
     [siteId, auth.accountId]
   );
   if (!(result.rowCount || 0)) return res.status(404).json({ error: 'Site not found' });
@@ -136,13 +136,57 @@ router.post('/', requireAuth, async (req, res) => {
   const webhookSecretEnc = encryptString(webhookSecretPlain);
 
   const result = await pool.query(
-    `INSERT INTO sites (account_id, name, domain, site_key, webhook_secret_enc)
-     VALUES ($1, $2, $3, $4, $5)
-     RETURNING id, name, domain, site_key, created_at`,
-    [auth.accountId, name.trim(), typeof domain === 'string' ? domain.trim() : null, siteKey, webhookSecretEnc]
+    `INSERT INTO sites (account_id, name, domain, tracking_domain, site_key, webhook_secret_enc)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING id, name, domain, tracking_domain, site_key, created_at`,
+    [
+      auth.accountId,
+      name.trim(),
+      typeof domain === 'string' ? domain.trim() : null,
+      null,
+      siteKey,
+      webhookSecretEnc,
+    ]
   );
 
   return res.status(201).json({ site: result.rows[0], webhook_secret: webhookSecretPlain });
+});
+
+router.put('/:siteId', requireAuth, async (req, res) => {
+  const auth = req.auth!;
+  const siteId = Number(req.params.siteId);
+  if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
+
+  const { name, domain, tracking_domain } = req.body || {};
+  const cleanedName = typeof name === 'string' ? name.trim() : null;
+  const cleanedDomain = typeof domain === 'string' ? domain.trim() : null;
+  const cleanedTracking = typeof tracking_domain === 'string' ? tracking_domain.trim() : null;
+
+  if (!cleanedName && !cleanedDomain && !cleanedTracking) {
+    return res.status(400).json({ error: 'No fields to update' });
+  }
+
+  const existing = await pool.query(
+    'SELECT id, name, domain, tracking_domain, site_key, created_at FROM sites WHERE id = $1 AND account_id = $2',
+    [siteId, auth.accountId]
+  );
+  if (!existing.rowCount) return res.status(404).json({ error: 'Site not found' });
+
+  const next = {
+    name: cleanedName ?? existing.rows[0].name,
+    domain: cleanedDomain !== null ? cleanedDomain : existing.rows[0].domain,
+    tracking_domain: cleanedTracking !== null ? cleanedTracking : existing.rows[0].tracking_domain,
+  };
+
+  const result = await pool.query(
+    `UPDATE sites
+     SET name = $1, domain = $2, tracking_domain = $3
+     WHERE id = $4 AND account_id = $5
+     RETURNING id, name, domain, tracking_domain, site_key, created_at`,
+    [next.name, next.domain || null, next.tracking_domain || null, siteId, auth.accountId]
+  );
+
+  return res.json({ site: result.rows[0] });
 });
 
 router.get('/:siteId/identify-mapping', requireAuth, async (req, res) => {
@@ -182,16 +226,25 @@ router.get('/:siteId/snippet', requireAuth, async (req, res) => {
   const siteId = Number(req.params.siteId);
   if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
 
-  const site = await pool.query('SELECT id, site_key, domain FROM sites WHERE id = $1 AND account_id = $2', [
+  const site = await pool.query('SELECT id, site_key, domain, tracking_domain FROM sites WHERE id = $1 AND account_id = $2', [
     siteId,
     auth.accountId,
   ]);
   if (!site.rowCount) return res.status(404).json({ error: 'Site not found' });
 
+  const trackingDomainRaw = site.rows[0].tracking_domain as string | null;
+  const normalizedTrackingDomain = trackingDomainRaw
+    ? trackingDomainRaw.startsWith('http')
+      ? trackingDomainRaw
+      : `https://${trackingDomainRaw}`
+    : null;
   const apiBaseUrl =
+    normalizedTrackingDomain ||
     process.env.PUBLIC_API_BASE_URL ||
     `${req.headers['x-forwarded-proto'] || req.protocol}://${req.headers['x-forwarded-host'] || req.get('host')}`;
-  const sdkUrl = process.env.PUBLIC_SDK_URL || `${apiBaseUrl}/sdk/tracker.js`;
+  const sdkUrl = normalizedTrackingDomain
+    ? `${normalizedTrackingDomain.replace(/\/$/, '')}/sdk/tracker.js`
+    : process.env.PUBLIC_SDK_URL || `${apiBaseUrl}/sdk/tracker.js`;
   const siteKey = site.rows[0].site_key as string;
 
   const meta = await pool.query('SELECT enabled, pixel_id FROM integrations_meta WHERE site_id = $1', [siteId]);

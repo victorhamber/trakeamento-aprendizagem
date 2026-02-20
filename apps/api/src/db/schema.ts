@@ -30,6 +30,7 @@ const schemaSql = `
     account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
     name VARCHAR(120) NOT NULL,
     domain VARCHAR(255),
+    tracking_domain VARCHAR(255),
     site_key VARCHAR(80) NOT NULL UNIQUE,
     webhook_secret_enc TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT NOW()
@@ -192,6 +193,7 @@ export const ensureSchema = async (pool: Pool) => {
   await pool.query(schemaSql);
 
   try {
+    await pool.query('ALTER TABLE sites ADD COLUMN IF NOT EXISTS tracking_domain VARCHAR(255)');
     await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS enabled BOOLEAN DEFAULT TRUE');
     await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS capi_test_event_code VARCHAR(100)');
   await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS last_capi_status VARCHAR(20)');
