@@ -1710,6 +1710,20 @@ ${scriptContent}
                   <code className="block whitespace-pre-wrap break-all text-zinc-300 leading-relaxed">{snippet}</code>
                 </pre>
               </div>
+
+              {snippet && (
+                <div className="mt-4 rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-xs font-medium text-zinc-400">URL da API detectada:</span>
+                    <code className="text-[11px] text-zinc-300 bg-zinc-800 px-1.5 py-0.5 rounded">
+                      {snippet.match(/apiUrl:"([^"]+)"/)?.[1] || 'Não detectada'}
+                    </code>
+                  </div>
+                  <p className="text-[10px] text-zinc-500">
+                    Certifique-se de que esta URL é acessível publicamente (não localhost). Se estiver incorreta, configure a variável PUBLIC_API_BASE_URL no servidor.
+                  </p>
+                </div>
+              )}
             </div>
           )}
 

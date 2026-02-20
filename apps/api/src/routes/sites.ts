@@ -188,7 +188,9 @@ router.get('/:siteId/snippet', requireAuth, async (req, res) => {
   ]);
   if (!site.rowCount) return res.status(404).json({ error: 'Site not found' });
 
-  const apiBaseUrl = process.env.PUBLIC_API_BASE_URL || 'http://localhost:3000';
+  const apiBaseUrl =
+    process.env.PUBLIC_API_BASE_URL ||
+    `${req.headers['x-forwarded-proto'] || req.protocol}://${req.headers['x-forwarded-host'] || req.get('host')}`;
   const sdkUrl = process.env.PUBLIC_SDK_URL || `${apiBaseUrl}/sdk/tracker.js`;
   const siteKey = site.rows[0].site_key as string;
 
