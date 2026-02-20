@@ -47,8 +47,11 @@ router.put('/sites/:siteId/meta', requireAuth, async (req, res) => {
   const { pixel_id, capi_token, marketing_token, ad_account_id, enabled, capi_test_event_code } = req.body || {};
   const pixelId = typeof pixel_id === 'string' ? pixel_id.trim() : null;
   const adAccountId = typeof ad_account_id === 'string' ? ad_account_id.trim() : null;
-  const capiTokenEnc =
-    typeof capi_token === 'string' && capi_token.trim() ? encryptString(capi_token.trim().replace(/\s+/g, '')) : null;
+  const capiTokenSanitized =
+    typeof capi_token === 'string'
+      ? capi_token.trim().replace(/[^A-Za-z0-9._|-]/g, '')
+      : '';
+  const capiTokenEnc = capiTokenSanitized ? encryptString(capiTokenSanitized) : null;
   const hasTestEventCode = Object.prototype.hasOwnProperty.call(req.body || {}, 'capi_test_event_code');
   const capiTestEventCodeRaw =
     typeof capi_test_event_code === 'string' ? capi_test_event_code.trim().replace(/\s+/g, '') : '';

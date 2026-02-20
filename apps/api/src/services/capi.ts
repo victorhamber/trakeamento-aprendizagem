@@ -138,6 +138,11 @@ export class CapiService {
       await this.updateLastStatus(siteKey, result);
       return result;
     }
+    if (!this.isProbablyValidToken(cfg.capiToken)) {
+      const result = { ok: false, error: 'Token CAPI inválido (formato)' } as const;
+      await this.updateLastStatus(siteKey, result);
+      return result;
+    }
 
     const payload = this.buildPayload(cfg, event);
 
@@ -177,6 +182,11 @@ export class CapiService {
     const cfg = await this.getSiteMetaConfig(siteKey);
     if (!cfg) {
       console.warn(`CAPI not configured for siteKey=${siteKey}`);
+      return;
+    }
+    if (!this.isProbablyValidToken(cfg.capiToken)) {
+      await this.updateLastStatus(siteKey, { ok: false, error: 'Token CAPI inválido (formato)' });
+      console.error(`CAPI invalid token format for siteKey=${siteKey}`);
       return;
     }
 
