@@ -829,6 +829,23 @@ ${scriptContent}
     }
   };
 
+  const testCapi = async () => {
+    setLoading(true);
+    try {
+      const res = await api.post(`/integrations/sites/${id}/meta/test-capi`);
+      if (res.data?.ok) {
+        showFlash('Evento do servidor enviado com sucesso!');
+      } else {
+        showFlash(res.data?.error || 'Falha ao enviar evento do servidor.', 'error');
+      }
+    } catch (err) {
+      console.error(err);
+      showFlash('Erro ao testar evento do servidor.', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const connectFacebook = async () => {
     setLoading(true);
     try {
@@ -1927,7 +1944,7 @@ ${scriptContent}
                 </div>
               </div>
 
-              <div className="pt-2">
+              <div className="pt-2 flex flex-wrap items-center gap-2">
                 <button
                   disabled={loading}
                   className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white px-6 py-2.5 rounded-lg text-sm font-medium disabled:opacity-40 transition-all shadow-lg shadow-blue-900/20"
@@ -1943,6 +1960,14 @@ ${scriptContent}
                   ) : (
                     'Salvar configurações'
                   )}
+                </button>
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={testCapi}
+                  className="inline-flex items-center gap-2 border border-zinc-700 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 px-4 py-2.5 rounded-lg text-sm font-medium disabled:opacity-40 transition-all"
+                >
+                  Testar evento do servidor
                 </button>
               </div>
             </form>

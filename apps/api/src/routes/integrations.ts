@@ -4,6 +4,7 @@ import { pool } from '../db/pool';
 import { requireAuth } from '../middleware/auth';
 import { encryptString } from '../lib/crypto';
 import { decryptString } from '../lib/crypto';
+import { capiService } from '../services/capi';
 
 const router = Router();
 const fbApiVersion = 'v19.0';
@@ -70,6 +71,46 @@ router.put('/sites/:siteId/meta', requireAuth, async (req, res) => {
   );
 
   return res.json({ ok: true });
+});
+
+router.post('/sites/:siteId/meta/test-capi', requireAuth, async (req, res) => {
+  const auth = req.auth!;
+  const siteId = Number(req.params.siteId);
+  if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
+  if (!(await requireSiteOwnership(auth.accountId, siteId))) return res.status(404).json({ error: 'Site not found' });
+
+  const siteRow = await pool.query('SELECT site_key, domain FROM sites WHERE id = $1', [siteId]);
+  const site = siteRow.rows[0];
+  if (!site) return res.status(404).json({ error: 'Site not found' });
+
+  const domain = typeof site.domain === 'string' ? site.domain.trim() : '';
+  const eventSourceUrl = domain
+    ? (domain.startsWith('http://') || domain.startsWith('https://') ? domain : `https://${domain}`)
+    : ((req.headers.origin as string | undefined) || 'https://example.com');
+  const clientIp =
+    (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim()
+    || req.ip
+    || '127.0.0.1';
+  const clientUserAgent = (req.headers['user-agent'] as string | undefined) || 'server_test';
+  const eventId = `test_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const eventTime = Math.floor(Date.now() / 1000);
+
+  const result = await capiService.sendEventDetailed(site.site_key, {
+    event_name: 'PageView',
+    event_time: eventTime,
+    event_id: eventId,
+    event_source_url: eventSourceUrl,
+    user_data: {
+      client_ip_address: clientIp,
+      client_user_agent: clientUserAgent,
+    },
+  });
+
+  return res.json({
+    event_id: eventId,
+    event_source_url: eventSourceUrl,
+    ...result,
+  });
 });
 
 router.delete('/sites/:siteId/meta/facebook', requireAuth, async (req, res) => {

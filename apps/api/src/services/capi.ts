@@ -27,6 +27,10 @@ export interface CapiEvent {
   custom_data?: CapiCustomData;
 }
 
+type CapiSendResult =
+  | { ok: true; data: unknown }
+  | { ok: false; error: string; details?: unknown };
+
 export class CapiService {
   private static disabledUntil = new Map<string, number>();
 
@@ -79,6 +83,60 @@ export class CapiService {
     }
   }
 
+  private buildPayload(cfg: { pixelId: string; capiToken: string; testEventCode?: string | null }, event: CapiEvent) {
+    return {
+      data: [
+        {
+          event_name: event.event_name,
+          event_time: event.event_time,
+          event_id: event.event_id,
+          event_source_url: event.event_source_url,
+          action_source: 'website' as const,
+          user_data: {
+            ...event.user_data,
+            fbc: event.user_data.fbc || undefined,
+            fbp: event.user_data.fbp || undefined,
+          },
+          custom_data: event.custom_data,
+        },
+      ],
+      access_token: cfg.capiToken,
+      ...(cfg.testEventCode || process.env.META_TEST_EVENT_CODE
+        ? { test_event_code: (cfg.testEventCode || process.env.META_TEST_EVENT_CODE) as string }
+        : {}),
+    };
+  }
+
+  public async sendEventDetailed(siteKey: string, event: CapiEvent): Promise<CapiSendResult> {
+    const until = CapiService.disabledUntil.get(siteKey);
+    if (until && until > Date.now()) return { ok: false, error: 'CAPI desativado temporariamente (token inválido)' };
+    if (until && until <= Date.now()) CapiService.disabledUntil.delete(siteKey);
+
+    const cfg = await this.getSiteMetaConfig(siteKey);
+    if (!cfg) return { ok: false, error: 'CAPI não configurado para este site' };
+
+    const payload = this.buildPayload(cfg, event);
+
+    try {
+      const response = await axios.post(
+        `https://graph.facebook.com/v19.0/${cfg.pixelId}/events`,
+        payload
+      );
+      return { ok: true, data: response.data };
+    } catch (error: unknown) {
+      if (axios.isAxiosError(error)) {
+        const code = (error.response?.data as { error?: { code?: number } } | undefined)?.error?.code;
+        const message = (error.response?.data as { error?: { message?: string } } | undefined)?.error?.message;
+        if (code === 190) {
+          CapiService.disabledUntil.set(siteKey, Date.now() + 60 * 60 * 1000);
+          return { ok: false, error: `Token inválido no Meta. ${message || ''}`.trim(), details: error.response?.data };
+        }
+        return { ok: false, error: message || 'Erro ao enviar para o Meta', details: error.response?.data };
+      }
+      return { ok: false, error: error instanceof Error ? error.message : 'Erro desconhecido' };
+    }
+  }
+
   public async sendEvent(siteKey: string, event: CapiEvent) {
     const until = CapiService.disabledUntil.get(siteKey);
     if (until && until > Date.now()) return;
@@ -90,39 +148,7 @@ export class CapiService {
       return;
     }
 
-    const payload: {
-      data: Array<{
-        event_name: string;
-        event_time: number;
-        event_id: string;
-        event_source_url: string;
-        action_source: 'website';
-        user_data: CapiEvent['user_data'] & { fbc?: string; fbp?: string };
-        custom_data?: CapiCustomData;
-      }>;
-      access_token: string;
-      test_event_code?: string;
-    } = {
-      data: [
-        {
-          event_name: event.event_name,
-          event_time: event.event_time,
-          event_id: event.event_id,
-          event_source_url: event.event_source_url,
-          action_source: 'website',
-          user_data: {
-             ...event.user_data,
-             fbc: event.user_data.fbc || undefined,
-             fbp: event.user_data.fbp || undefined,
-          },
-          custom_data: event.custom_data,
-        },
-      ],
-      access_token: cfg.capiToken,
-      ...(cfg.testEventCode || process.env.META_TEST_EVENT_CODE
-        ? { test_event_code: (cfg.testEventCode || process.env.META_TEST_EVENT_CODE) as string }
-        : {}),
-    };
+    const payload = this.buildPayload(cfg, event);
 
     try {
       const response = await axios.post(
