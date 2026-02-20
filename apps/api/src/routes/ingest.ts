@@ -6,7 +6,7 @@ import { pool } from '../db/pool';
 import { capiService, CapiService, CapiEvent } from '../services/capi';
 import rateLimit from 'express-rate-limit'; // Added import for express-rate-limit
 import cors from 'cors'; // Added import for cors
-import { LRUCache } from 'lru-cache';
+import LRUCache from 'lru-cache';
 
 const ingestLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
@@ -182,7 +182,7 @@ function getTimeDimensions(eventTimeSec: number) {
 // Para produção: troque pelo Redis com TTL de 24h
 const recentEventIds = new LRUCache<string, true>({
   max: 50000,
-  ttl: 24 * 60 * 60 * 1000,
+  maxAge: 24 * 60 * 60 * 1000,
 });
 
 function isDuplicate(siteKey: string, eventId: string): boolean {
