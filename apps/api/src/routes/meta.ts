@@ -22,20 +22,6 @@ router.put('/', requireAuth, async (req, res) => {
     const capi_token = req.body.capi_token ? String(req.body.capi_token).replace(/\s+/g, '') : undefined;
     const marketing_token = req.body.marketing_token ? String(req.body.marketing_token).replace(/\s+/g, '') : undefined;
 
-    const existing = await pool.query('SELECT meta_config FROM sites WHERE id = $1', [siteId]);
-    const currentConfig = existing.rows[0]?.meta_config || {};
-
-    const newConfig = {
-      ...currentConfig,
-      ad_account_id: ad_account_id || currentConfig.ad_account_id,
-      pixel_id: pixel_id || currentConfig.pixel_id,
-      enabled: enabled !== undefined ? enabled : currentConfig.enabled,
-    };
-    if (capi_token) newConfig.capi_token = capi_token;
-    if (marketing_token) newConfig.marketing_token = marketing_token;
-
-    await pool.query('UPDATE sites SET meta_config = $1 WHERE id = $2', [newConfig, siteId]);
-
     const capiEnc = capi_token ? encryptString(capi_token) : undefined;
     const marketingEnc = marketing_token ? encryptString(marketing_token) : undefined;
 
@@ -52,7 +38,7 @@ router.put('/', requireAuth, async (req, res) => {
       [siteId, pixel_id, capiEnc, marketingEnc, ad_account_id, enabled]
     );
 
-    res.json({ success: true, meta: newConfig });
+    res.json({ success: true });
   } catch (err: any) {
     console.error('Update Meta config error:', err);
     res.status(500).json({ error: err.message });

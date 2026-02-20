@@ -82,20 +82,16 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
 
     // Trigger Webhook if configured
     if (config.webhook_url) {
-      try {
-        fetch(config.webhook_url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            form_id: form.public_id,
-            form_name: form.name,
-            submitted_at: new Date().toISOString(),
-            data: req.body
-          })
-        }).catch(err => console.error(`Webhook failed for form ${publicId}:`, err));
-      } catch (err) {
-        console.error(`Webhook setup failed for form ${publicId}:`, err);
-      }
+      fetch(config.webhook_url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          form_id: form.public_id,
+          form_name: form.name,
+          submitted_at: new Date().toISOString(),
+          data: req.body
+        })
+      }).catch(err => console.error(`Webhook failed for form ${publicId}:`, err));
     }
 
     return res.json({

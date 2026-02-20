@@ -4,6 +4,13 @@ import jwt from 'jsonwebtoken';
 import { pool } from '../db/pool';
 import { requireAuth } from '../middleware/auth';
 import { getJwtSecret } from '../lib/jwt';
+import rateLimit from 'express-rate-limit';
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // limit each IP to 10 requests per windowMs
+  message: { error: 'Too many requests from this IP, please try again after 15 minutes' },
+});
 
 const router = Router();
 
@@ -11,7 +18,7 @@ const signToken = (payload: { userId: number; accountId: number; email: string }
   return jwt.sign(payload, getJwtSecret(), { expiresIn: '7d' });
 };
 
-router.post('/register', async (req, res) => {
+router.post('/register', authLimiter, async (req, res) => {
   const { email, password, account_name } = req.body || {};
   if (!email || !password || !account_name) {
     return res.status(400).json({ error: 'Missing email, password or account_name' });
@@ -44,7 +51,7 @@ router.post('/register', async (req, res) => {
   }
 });
 
-router.post('/login', async (req, res) => {
+router.post('/login', authLimiter, async (req, res) => {
   const { email, password } = req.body || {};
   if (!email || !password) return res.status(400).json({ error: 'Missing email or password' });
   if (typeof email !== 'string' || typeof password !== 'string') return res.status(400).json({ error: 'Invalid payload' });

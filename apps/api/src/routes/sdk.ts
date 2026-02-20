@@ -28,6 +28,7 @@ router.get('/tracker.js', async (_req, res) => {
   var metaLoaded   = false;
   var gaLoaded     = false;
   var pendingQueue = []; // batch queue para beforeunload
+  var webVitals    = { lcp: 0, fid: 0, cls: 0, fcp: 0 };
 
   // ─── Cookie helpers ───────────────────────────────────────────────────────
   function getCookie(name) {
@@ -535,6 +536,10 @@ router.get('/tracker.js', async (_req, res) => {
       max_scroll_pct:  Math.round(maxScroll),
       clicks_total:    totalClicks,
       clicks_cta:      ctaClicks,
+      lcp:             Math.round(webVitals.lcp),
+      fid:             Math.round(webVitals.fid),
+      cls:             Math.round(webVitals.cls * 1000) / 1000,
+      fcp:             Math.round(webVitals.fcp),
       page_path:       location.pathname || '',
       page_title:      document.title   || '',
       is_bot:          isBot()
@@ -816,13 +821,33 @@ router.get('/tracker.js', async (_req, res) => {
     });
   }
 
+  // Iniciando captura de Web Vitals de forma assíncrona
+  try {
+    if (window.PerformanceObserver) {
+      new PerformanceObserver(function(l) {
+        l.getEntries().forEach(function(e) { if (!e.hadRecentInput) webVitals.cls += e.value; });
+      }).observe({ type: 'layout-shift', buffered: true });
+      new PerformanceObserver(function(l) {
+        var e = l.getEntries(); var last = e[e.length - 1];
+        if (last) webVitals.lcp = last.renderTime || last.loadTime;
+      }).observe({ type: 'largest-contentful-paint', buffered: true });
+      new PerformanceObserver(function(l) {
+        var first = l.getEntries()[0];
+        if (first) webVitals.fid = first.processingStart - first.startTime;
+      }).observe({ type: 'first-input', buffered: true });
+      new PerformanceObserver(function(l) {
+        l.getEntries().forEach(function(e) { if (e.name === 'first-contentful-paint') webVitals.fcp = e.startTime; });
+      }).observe({ type: 'paint', buffered: true });
+    }
+  } catch(_e) {}
+
   window.addEventListener('beforeunload', pageEngagement);
 
 })();
 `;
 
   res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
-  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Cache-Control', 'public, max-age=3600');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   return res.send(js);
 });

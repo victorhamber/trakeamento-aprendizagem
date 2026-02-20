@@ -47,7 +47,89 @@ router.post('/purchase', async (req, res) => {
   // Extração de dados (fbp/fbc vindos da URL do checkout)
   const fbp = payload.fbp || payload.custom_args?.fbp;
   const fbc = payload.fbc || payload.custom_args?.fbc;
-  const email = payload.email || payload.buyer_email;
+
+  // Multi-platform Parsers (Hotmart, Kiwify, Eduzz, Generic)
+  let platform = 'generic';
+  let email, firstName, lastName, phone, value, currency, status, orderId, city, state, zip, country, dob;
+
+  if (payload.hottok || payload.product?.id || payload.buyer?.email) {
+    platform = 'hotmart';
+    email = payload.buyer?.email || payload.email;
+    firstName = payload.buyer?.name?.split(' ')[0] || payload.first_name;
+    lastName = payload.buyer?.name?.split(' ').slice(1).join(' ') || payload.last_name;
+    phone = payload.buyer?.phone || payload.buyer?.checkout_phone || payload.phone;
+    value = payload.purchase?.full_price?.value || payload.amount || 0;
+    currency = payload.purchase?.full_price?.currency_value || payload.currency || 'BRL';
+    status = payload.purchase?.status || payload.status;
+    orderId = payload.purchase?.transaction || payload.transaction || payload.id;
+    city = payload.buyer?.address?.city;
+    state = payload.buyer?.address?.state;
+    zip = payload.buyer?.address?.zipCode || payload.buyer?.address?.zip_code;
+    country = payload.buyer?.address?.country || payload.buyer?.address?.country_iso;
+  } else if (payload.webhook_event_type || payload.Customer) {
+    platform = 'kiwify';
+    email = payload.Customer?.email || payload.email;
+    firstName = payload.Customer?.first_name || payload.first_name;
+    lastName = payload.Customer?.last_name || payload.last_name;
+    phone = payload.Customer?.mobile || payload.Customer?.phone || payload.phone;
+    value = payload.order?.payment?.total || payload.amount || 0;
+    // Kiwify total might be in cents
+    if (value > 1000 && payload.order?.payment?.total) value = value / 100;
+    currency = payload.order?.payment?.currency || payload.currency || 'BRL';
+    status = payload.order?.status || payload.status;
+    orderId = payload.order?.order_id || payload.order_id || payload.id;
+    city = payload.Customer?.city;
+    state = payload.Customer?.state;
+    zip = payload.Customer?.zipcode;
+    country = 'BR'; // Kiwify is mainly BR
+  } else if (payload.transacao_id || payload.cus_email || payload.eduzz_id) {
+    platform = 'eduzz';
+    email = payload.cus_email || payload.email;
+    firstName = payload.cus_name?.split(' ')[0] || payload.first_name;
+    lastName = payload.cus_name?.split(' ').slice(1).join(' ') || payload.last_name;
+    phone = payload.cus_cel || payload.phone;
+    value = payload.transacao_valor || payload.amount || 0;
+    currency = payload.transacao_moeda || payload.currency || 'BRL';
+    status = payload.transacao_status_id || payload.status;
+    orderId = payload.transacao_id || payload.id;
+    city = payload.cus_cidade;
+    state = payload.cus_estado;
+    zip = payload.cus_cep;
+    country = 'BR';
+  } else {
+    // Generic
+    const pickStr = (keys: string[]): string | undefined => {
+      for (const k of keys) {
+        const v = payload[k] || payload.custom_args?.[k];
+        if (typeof v === 'string' && v.trim()) return v.trim();
+      }
+      return undefined;
+    };
+    email = payload.email || payload.buyer_email;
+    firstName = pickStr(['first_name', 'firstname', 'nome', 'buyer_name']);
+    lastName = pickStr(['last_name', 'lastname', 'sobrenome']);
+    phone = pickStr(['phone', 'buyer_phone', 'telefone', 'cel']);
+    city = pickStr(['city', 'cidade', 'buyer_city']);
+    state = pickStr(['state', 'estado', 'buyer_state', 'uf']);
+    zip = pickStr(['zip', 'cep', 'zipcode', 'postal_code']);
+    country = pickStr(['country', 'pais', 'country_code']);
+    dob = pickStr(['dob', 'birth_date', 'birthday', 'data_nascimento']);
+    value = payload.amount || payload.value || 0;
+    currency = payload.currency || 'BRL';
+    status = payload.status;
+    orderId = payload.id || payload.order_id || payload.transaction_id || `webhook_${Date.now()}`;
+  }
+
+  // Normalizing status
+  let isApproved = false;
+  if (['APPROVED', 'COMPLETED', 'paid', 'PAID', 3, '3', 'approved'].includes(status)) {
+    isApproved = true;
+    status = 'approved';
+  } else if (['REFUNDED', 'refunded', 'CHARGEBACK', 4, '4'].includes(status)) {
+    status = 'refunded';
+  } else {
+    status = 'pending';
+  }
 
   try {
     // Gravar compra
@@ -59,11 +141,11 @@ router.post('/purchase', async (req, res) => {
       ON CONFLICT (site_key, order_id) DO UPDATE SET status = EXCLUDED.status
     `, [
       siteKey,
-      payload.id,
-      'generic',
-      payload.amount,
-      'BRL',
-      payload.status,
+      String(orderId),
+      platform,
+      value,
+      currency,
+      status,
       email ? CapiService.hash(email) : null,
       fbp,
       fbc,
@@ -71,40 +153,23 @@ router.post('/purchase', async (req, res) => {
     ]);
 
     // Disparar CAPI Purchase
-    if (payload.status === 'approved' || payload.status === 'paid') {
-      // Extrair e hashear todos os campos do buyer disponíveis
-      const pickStr = (keys: string[]): string | undefined => {
-        for (const k of keys) {
-          const v = payload[k] || payload.custom_args?.[k];
-          if (typeof v === 'string' && v.trim()) return v.trim();
-        }
-        return undefined;
-      };
-
-      const externalId = pickStr(['external_id', 'buyer_external_id', 'user_id']);
-      const firstName = pickStr(['first_name', 'firstname', 'nome', 'buyer_name']);
-      const lastName = pickStr(['last_name', 'lastname', 'sobrenome']);
-      const city = pickStr(['city', 'cidade', 'buyer_city']);
-      const state = pickStr(['state', 'estado', 'buyer_state', 'uf']);
-      const zip = pickStr(['zip', 'cep', 'zipcode', 'postal_code']);
-      const country = pickStr(['country', 'pais', 'country_code']);
-      const dob = pickStr(['dob', 'birth_date', 'birthday', 'data_nascimento']);
-      const buyerPhone = pickStr(['phone', 'buyer_phone', 'telefone', 'cel']);
+    if (isApproved) {
+      const externalId = payload.user_id || payload.buyer?.id || payload.Customer?.id;
 
       // IP e UA reais do auto-tagging (vem da URL do checkout se houver)
-      const clientIp = pickStr(['client_ip_address']) || req.ip || '0.0.0.0';
-      const clientUa = pickStr(['client_user_agent']) || 'Webhook/1.0';
+      const clientIp = payload.client_ip_address || payload.ip || req.ip || '0.0.0.0';
+      const clientUa = payload.client_user_agent || payload.user_agent || 'Webhook/1.0';
 
       const capiPayload = {
         event_name: 'Purchase',
         event_time: Math.floor(Date.now() / 1000),
-        event_id: `purchase_${payload.id}`,
+        event_id: `purchase_${orderId}`,
         event_source_url: payload.checkout_url || '',
         user_data: {
           client_ip_address: clientIp,
           client_user_agent: clientUa,
           em: email ? CapiService.hash(email) : undefined,
-          ph: buyerPhone ? CapiService.hash(buyerPhone.replace(/[^0-9]/g, '')) : undefined,
+          ph: phone ? CapiService.hash(phone.replace(/[^0-9]/g, '')) : undefined,
           fn: firstName ? CapiService.hash(firstName.toLowerCase()) : undefined,
           ln: lastName ? CapiService.hash(lastName.toLowerCase()) : undefined,
           ct: city ? CapiService.hash(city.toLowerCase()) : undefined,
@@ -114,19 +179,19 @@ router.post('/purchase', async (req, res) => {
           db: dob ? CapiService.hash(dob.replace(/[^0-9]/g, '')) : undefined,
           fbp: fbp,
           fbc: fbc,
-          external_id: externalId ? CapiService.hash(externalId) : undefined,
+          external_id: externalId ? CapiService.hash(String(externalId)) : undefined,
         },
         custom_data: {
-          currency: payload.currency || 'BRL',
-          value: payload.amount,
+          currency: currency,
+          value: value,
           content_type: 'product',
-          ...(payload.product_id ? { content_ids: [payload.product_id] } : {}),
-          ...(payload.order_id || payload.id ? { order_id: payload.order_id || payload.id } : {}),
+          ...(payload.product_id || payload.product?.id ? { content_ids: [String(payload.product_id || payload.product?.id)] } : {}),
+          order_id: String(orderId),
         },
       };
 
       capiService.sendEvent(siteKey, capiPayload).catch(console.error);
-      console.log('[CAPI] Purchase event sent:', capiPayload.event_id);
+      console.log(`[CAPI] Purchase event sent for ${platform}:`, capiPayload.event_id);
     }
 
     res.json({ received: true });

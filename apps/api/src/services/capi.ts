@@ -73,8 +73,8 @@ export class CapiService {
     try {
       const token = decryptString(cfg.capi_token_enc);
       if (!token) {
-         console.log(`[CAPI] Failed to decrypt token for siteKey=${siteKey}`);
-         return null;
+        console.log(`[CAPI] Failed to decrypt token for siteKey=${siteKey}`);
+        return null;
       }
       // Remove any whitespace from the token
       return { pixelId: cfg.pixel_id, capiToken: token.replace(/\s+/g, ''), testEventCode: cfg.capi_test_event_code as string | null };
@@ -136,6 +136,45 @@ export class CapiService {
     );
   }
 
+  private async saveToOutbox(siteKey: string, event: CapiEvent, errorStr: string) {
+    try {
+      await pool.query(
+        `INSERT INTO capi_outbox (site_key, payload, last_error, next_attempt_at)
+         VALUES ($1, $2, $3, NOW() + INTERVAL '5 minutes')`,
+        [siteKey, JSON.stringify(event), errorStr]
+      );
+    } catch (e) {
+      console.error('Failed to save to capi_outbox:', e);
+    }
+  }
+
+  public async processOutbox() {
+    try {
+      const { rows } = await pool.query(
+        `SELECT id, site_key, payload FROM capi_outbox 
+         WHERE next_attempt_at <= NOW() AND attempts < 5 
+         ORDER BY id ASC LIMIT 50`
+      );
+
+      for (const row of rows) {
+        const event = row.payload as CapiEvent;
+        const result = await this.sendEventDetailed(row.site_key, event);
+        if (result.ok) {
+          await pool.query('DELETE FROM capi_outbox WHERE id = $1', [row.id]);
+        } else {
+          await pool.query(
+            `UPDATE capi_outbox 
+             SET attempts = attempts + 1, last_error = $1, next_attempt_at = NOW() + (INTERVAL '1 minutes' * POWER(2, attempts))
+             WHERE id = $2`,
+            [result.error, row.id]
+          );
+        }
+      }
+    } catch (e) {
+      console.error('Error processing CAPI outbox', e);
+    }
+  }
+
   public async sendEventDetailed(siteKey: string, event: CapiEvent): Promise<CapiSendResult> {
     const until = CapiService.disabledUntil.get(siteKey);
     if (until && until > Date.now()) {
@@ -179,10 +218,12 @@ export class CapiService {
         }
         const result = { ok: false, error: message || 'Erro ao enviar para o Meta', details: error.response?.data } as const;
         await this.updateLastStatus(siteKey, result);
+        await this.saveToOutbox(siteKey, event, result.error);
         return result;
       }
       const result = { ok: false, error: error instanceof Error ? error.message : 'Erro desconhecido' } as const;
       await this.updateLastStatus(siteKey, result);
+      await this.saveToOutbox(siteKey, event, result.error);
       return result;
     }
   }
@@ -227,9 +268,11 @@ export class CapiService {
         }
         console.error('CAPI Error:', error.response?.data || error.message);
         await this.updateLastStatus(siteKey, { ok: false, error: message || 'Erro ao enviar para o Meta', details: error.response?.data });
+        await this.saveToOutbox(siteKey, event, message || 'Erro ao enviar para o Meta');
       } else {
         console.error('CAPI Error:', error instanceof Error ? error.message : 'unknown_error');
         await this.updateLastStatus(siteKey, { ok: false, error: error instanceof Error ? error.message : 'Erro desconhecido' });
+        await this.saveToOutbox(siteKey, event, error instanceof Error ? error.message : 'Erro desconhecido');
       }
     }
   }

@@ -4,6 +4,15 @@ import geoip from 'geoip-lite';
 import { z } from 'zod';
 import { pool } from '../db/pool';
 import { capiService, CapiService, CapiEvent } from '../services/capi';
+import rateLimit from 'express-rate-limit'; // Added import for express-rate-limit
+import cors from 'cors'; // Added import for cors
+import { LRUCache } from 'lru-cache';
+
+const ingestLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 300, // limit each IP to 300 requests per minute
+  message: { error: 'Too many requests' },
+});
 
 const router = Router();
 
@@ -54,7 +63,7 @@ const IngestEventSchema = z.object({
   event_id: z.string().optional(),
   event_name: z.string().min(1).max(100),
   event_time: z.number().int().positive().optional(),
-  event_source_url: z.string().url().optional().or(z.literal('')),
+  event_source_url: z.string().url().refine(val => val.startsWith('http://') || val.startsWith('https://')).optional().or(z.literal('')),
   action_source: z.string().optional().default('website'),
   user_data: UserDataSchema.optional(),
   custom_data: z.record(z.string(), z.unknown()).optional(),
@@ -164,29 +173,22 @@ function getTimeDimensions(eventTimeSec: number) {
     event_day: days[d.getDay()],
     event_day_in_month: d.getDate(),
     event_month: months[d.getMonth()],
-    event_time_interval: `${hour}-${hour + 1}`,
+    event_time_interval: `${hour} -${hour + 1} `,
     event_hour: hour,
   };
 }
 
 // ─── Deduplication (in-memory fallback + Postgres) ───────────────────────────
 // Para produção: troque pelo Redis com TTL de 24h
-const recentEventIds = new Map<string, number>();
-const DEDUP_TTL_MS = 24 * 60 * 60 * 1000;
+const recentEventIds = new LRUCache<string, true>({
+  max: 50000,
+  ttl: 24 * 60 * 60 * 1000,
+});
 
 function isDuplicate(siteKey: string, eventId: string): boolean {
   const key = `${siteKey}:${eventId}`;
-  const now = Date.now();
-
-  // Limpa entradas velhas (lazy cleanup)
-  if (recentEventIds.size > 10_000) {
-    for (const [k, ts] of recentEventIds) {
-      if (now - ts > DEDUP_TTL_MS) recentEventIds.delete(k);
-    }
-  }
-
   if (recentEventIds.has(key)) return true;
-  recentEventIds.set(key, now);
+  recentEventIds.set(key, true);
   return false;
 }
 
@@ -259,7 +261,7 @@ async function sendCapiWithRetry(
       return;
     } catch (err) {
       if (attempt === maxAttempts) {
-        console.error(`[CAPI] Falha após ${maxAttempts} tentativas para site=${siteKey}:`, err);
+        console.error(`[CAPI] Falha após ${maxAttempts} tentativas para site = ${siteKey}: `, err);
         return;
       }
       const delayMs = Math.min(1000 * 2 ** attempt, 10_000); // 2s, 4s, 8s (max 10s)
@@ -270,7 +272,8 @@ async function sendCapiWithRetry(
 
 // ─── Route ────────────────────────────────────────────────────────────────────
 
-router.post('/events', async (req, res) => {
+router.options('/events', cors()); // Added OPTIONS route for CORS preflight
+router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied cors() and ingestLimiter middleware
   const siteKey = (req.query['key'] as string | undefined) || req.headers['x-site-key'] as string | undefined;
 
   if (!siteKey) {
@@ -303,7 +306,7 @@ router.post('/events', async (req, res) => {
   // Gera IDs estáveis
   const eventTimeSec = event.event_time ?? Math.floor(Date.now() / 1000);
   const eventTimeMs = eventTimeSec * 1000;
-  const eventId = event.event_id || `evt_${eventTimeSec}_${Math.random().toString(36).slice(2, 8)}`;
+  const eventId = event.event_id || `evt_${eventTimeSec}_${Math.random().toString(36).slice(2, 8)} `;
   const eventName = event.event_name;
   const eventSourceUrl = event.event_source_url || '';
   const timeDimensions = getTimeDimensions(eventTimeSec);
@@ -311,9 +314,9 @@ router.post('/events', async (req, res) => {
   await pool.query(
     `UPDATE integrations_meta i
      SET last_ingest_at = NOW(),
-         last_ingest_event_name = $1,
-         last_ingest_event_id = $2,
-         last_ingest_event_source_url = $3
+  last_ingest_event_name = $1,
+  last_ingest_event_id = $2,
+  last_ingest_event_source_url = $3
      FROM sites s
      WHERE s.site_key = $4 AND i.site_id = s.id`,
     [eventName, eventId, eventSourceUrl, siteKey]
@@ -327,13 +330,13 @@ router.post('/events', async (req, res) => {
   try {
     // ── 1. Persistir no Postgres ──────────────────────────────────────────
     const query = `
-      INSERT INTO web_events (
-        site_key, event_id, event_name, event_time,
-        event_source_url, user_data, custom_data, telemetry, raw_payload
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-      ON CONFLICT (site_key, event_id) DO NOTHING
+      INSERT INTO web_events(
+    site_key, event_id, event_name, event_time,
+    event_source_url, user_data, custom_data, telemetry, raw_payload
+  ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      ON CONFLICT(site_key, event_id) DO NOTHING
       RETURNING id
-    `;
+  `;
 
     const result = await pool.query(query, [
       siteKey,
@@ -396,6 +399,129 @@ router.post('/events', async (req, res) => {
     console.error('[Ingest] Erro ao persistir evento:', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
+});
+
+router.options('/batch', cors());
+router.post('/batch', cors(), ingestLimiter, async (req, res) => {
+  const siteKey = (req.query['key'] as string | undefined) || req.headers['x-site-key'] as string | undefined;
+
+  if (!siteKey) {
+    return res.status(400).json({ error: 'Missing site key' });
+  }
+
+  if (!Array.isArray(req.body)) {
+    return res.status(400).json({ error: 'Expected an array of events' });
+  }
+
+  const results = [];
+  let successfulIngests = 0;
+
+  for (const rawEvent of req.body) {
+    const parsed = IngestEventSchema.safeParse(rawEvent);
+    if (!parsed.success) {
+      results.push({ status: 'error', details: parsed.error.flatten() });
+      continue;
+    }
+    const event = parsed.data;
+
+    if (event.telemetry?.is_bot === true) {
+      results.push({ status: 'ignored', reason: 'bot' });
+      continue;
+    }
+
+    const engagement = computeEngagement(event);
+    if (engagement) {
+      event.telemetry = {
+        ...event.telemetry,
+        engagement_score: engagement.score,
+        engagement_bucket: engagement.bucket,
+      };
+    }
+
+    const eventTimeSec = event.event_time ?? Math.floor(Date.now() / 1000);
+    const eventTimeMs = eventTimeSec * 1000;
+    const eventId = event.event_id || `evt_${eventTimeSec}_${Math.random().toString(36).slice(2, 8)}`;
+    const eventName = event.event_name;
+    const eventSourceUrl = event.event_source_url || '';
+
+    if (isDuplicate(siteKey, eventId)) {
+      results.push({ status: 'duplicate', event_id: eventId });
+      continue;
+    }
+
+    try {
+      const query = `
+        INSERT INTO web_events(
+          site_key, event_id, event_name, event_time,
+          event_source_url, user_data, custom_data, telemetry, raw_payload
+        ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        ON CONFLICT(site_key, event_id) DO NOTHING
+        RETURNING id
+      `;
+
+      const result = await pool.query(query, [
+        siteKey,
+        eventId,
+        eventName,
+        new Date(eventTimeMs),
+        eventSourceUrl,
+        event.user_data ?? null,
+        event.custom_data ?? null,
+        event.telemetry ?? null,
+        event,
+      ]);
+
+      if ((result.rowCount || 0) === 0) {
+        results.push({ status: 'duplicate', event_id: eventId });
+        continue;
+      }
+
+      successfulIngests++;
+
+      const capiUser = buildCapiUserData(req, event.user_data || {}, siteKey);
+
+      const metaCustomData: Record<string, unknown> = {};
+      if (event.custom_data) {
+        for (const [k, v] of Object.entries(event.custom_data)) {
+          if (k === 'value' && typeof v === 'number') metaCustomData.value = v;
+          else if (k === 'currency' && typeof v === 'string') metaCustomData.currency = v;
+          else if (k === 'content_name' && typeof v === 'string') metaCustomData.content_name = v;
+          else if (k === 'content_category' && typeof v === 'string') metaCustomData.content_category = v;
+          else if (k === 'content_ids') metaCustomData.content_ids = v;
+          else if (k === 'content_type' && typeof v === 'string') metaCustomData.content_type = v;
+          else if (k === 'order_id' && typeof v === 'string') metaCustomData.order_id = v;
+          else metaCustomData[k] = v;
+        }
+      }
+
+      const capiPayload: CapiEvent = {
+        event_name: eventName,
+        event_time: eventTimeSec,
+        event_id: eventId,
+        event_source_url: eventSourceUrl,
+        user_data: capiUser,
+        ...(Object.keys(metaCustomData).length > 0
+          ? { custom_data: metaCustomData }
+          : {}),
+      };
+
+      sendCapiWithRetry(siteKey, capiPayload).catch(() => { });
+      results.push({ status: 'processed', event_id: eventId });
+
+    } catch (e) {
+      console.error('Batch ingest error:', e);
+      results.push({ status: 'error', error: 'Internal server error' });
+    }
+  }
+
+  if (successfulIngests > 0) {
+    await pool.query(
+      `UPDATE integrations_meta i SET last_ingest_at = NOW() FROM sites s WHERE s.site_key = $1 AND i.site_id = s.id`,
+      [siteKey]
+    );
+  }
+
+  return res.status(202).json({ results });
 });
 
 export default router;

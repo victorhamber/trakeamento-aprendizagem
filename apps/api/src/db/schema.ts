@@ -125,6 +125,9 @@ const schemaSql = `
     initiates_checkout INTEGER,
     cost_per_lead NUMERIC,
     cost_per_purchase NUMERIC,
+    objective VARCHAR(100),
+    results INTEGER,
+    result_rate NUMERIC,
     custom_event_name VARCHAR(120),
     custom_event_count INTEGER,
     date_start DATE NOT NULL,
@@ -138,6 +141,16 @@ const schemaSql = `
     id SERIAL PRIMARY KEY,
     site_key VARCHAR(50) NOT NULL,
     analysis_text TEXT,
+    created_at TIMESTAMP DEFAULT NOW()
+  );
+
+  CREATE TABLE IF NOT EXISTS capi_outbox (
+    id SERIAL PRIMARY KEY,
+    site_key VARCHAR(50) NOT NULL,
+    payload JSONB NOT NULL,
+    attempts INTEGER DEFAULT 0,
+    last_error TEXT,
+    next_attempt_at TIMESTAMP DEFAULT NOW(),
     created_at TIMESTAMP DEFAULT NOW()
   );
 
@@ -196,14 +209,17 @@ export const ensureSchema = async (pool: Pool) => {
     await pool.query('ALTER TABLE sites ADD COLUMN IF NOT EXISTS tracking_domain VARCHAR(255)');
     await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS enabled BOOLEAN DEFAULT TRUE');
     await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS capi_test_event_code VARCHAR(100)');
-  await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS last_capi_status VARCHAR(20)');
-  await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS last_capi_error TEXT');
-  await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS last_capi_response JSONB');
-  await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS last_capi_attempt_at TIMESTAMP');
-  await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS last_ingest_at TIMESTAMP');
-  await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS last_ingest_event_name VARCHAR(120)');
-  await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS last_ingest_event_id VARCHAR(120)');
-  await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS last_ingest_event_source_url TEXT');
+    await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS last_capi_status VARCHAR(20)');
+    await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS last_capi_error TEXT');
+    await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS objective VARCHAR(100)');
+    await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS results INTEGER');
+    await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS result_rate NUMERIC');
+    await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS last_capi_response JSONB');
+    await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS last_capi_attempt_at TIMESTAMP');
+    await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS last_ingest_at TIMESTAMP');
+    await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS last_ingest_event_name VARCHAR(120)');
+    await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS last_ingest_event_id VARCHAR(120)');
+    await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS last_ingest_event_source_url TEXT');
     await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS fb_user_id VARCHAR(50)');
     await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS fb_user_token_enc TEXT');
     await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS fb_token_expires_at TIMESTAMP');
@@ -230,7 +246,7 @@ export const ensureSchema = async (pool: Pool) => {
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS cost_per_purchase NUMERIC');
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS custom_event_name VARCHAR(120)');
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS custom_event_count INTEGER');
-    
+
     // Migração para flexibilizar a constraint UNIQUE de meta_insights_daily
     try {
       // 1. Remover NOT NULL da coluna ad_id

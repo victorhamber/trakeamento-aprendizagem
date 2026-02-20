@@ -1,22 +1,26 @@
 import crypto from 'crypto';
 
-let cachedEphemeralKey: Buffer | null = null;
+let ephemeralKey: Buffer | null = null; // Changed from cachedEphemeralKey to ephemeralKey
 
 const getEncryptionKey = (): Buffer => {
-  const keyB64 = process.env.APP_ENCRYPTION_KEY;
-  if (!keyB64) {
-    if (process.env.NODE_ENV === 'production') {
-      throw new Error('APP_ENCRYPTION_KEY is required in production');
-    }
-    if (!cachedEphemeralKey) {
-      console.warn('WARNING: APP_ENCRYPTION_KEY is not set. Using ephemeral key. Data encrypted now will be unreadable after restart.');
-      cachedEphemeralKey = crypto.randomBytes(32);
-    }
-    return cachedEphemeralKey;
+  const envKey = process.env.APP_ENCRYPTION_KEY;
+  if (envKey) {
+    const key = Buffer.from(envKey, 'hex'); // Changed from base64 to hex
+    if (key.length !== 32) throw new Error('APP_ENCRYPTION_KEY must be 32 bytes (64 hex characters)'); // Added length check for hex
+    return key;
   }
-  const key = Buffer.from(keyB64, 'base64');
-  if (key.length !== 32) throw new Error('APP_ENCRYPTION_KEY must be 32 bytes (base64)');
-  return key;
+
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('FATAL: APP_ENCRYPTION_KEY environment variable is missing in production. Refusing to start with ephemeral key because encrypted data would be permanently lost on restart.');
+  }
+
+  if (!ephemeralKey) {
+    console.warn('\nWARNING: APP_ENCRYPTION_KEY is not set.');
+    console.warn('Using ephemeral key. Encrypted data WILL BE LOST on restart.');
+    console.warn('Set APP_ENCRYPTION_KEY in .env for persistence.\n');
+    ephemeralKey = crypto.randomBytes(32); // 256 bits
+  }
+  return ephemeralKey;
 };
 
 export const encryptString = (plaintext: string): string => {

@@ -67,7 +67,7 @@ router.get('/:siteId/secret', requireAuth, async (req, res) => {
     [siteId, auth.accountId]
   );
   if (!(result.rowCount || 0)) return res.status(404).json({ error: 'Site not found' });
-  
+
   let secret: string;
   try {
     secret = decryptString(result.rows[0].webhook_secret_enc as string);
@@ -96,16 +96,13 @@ router.delete('/:siteId', requireAuth, async (req, res) => {
 
     await pool.query('BEGIN');
 
-    // Delete related tables by site_id
-    await pool.query('DELETE FROM meta_insights_daily WHERE site_id = $1', [siteId]);
-    await pool.query('DELETE FROM integrations_meta WHERE site_id = $1', [siteId]);
-    await pool.query('DELETE FROM integrations_ga WHERE site_id = $1', [siteId]);
-    await pool.query('DELETE FROM site_identify_mappings WHERE site_id = $1', [siteId]);
-
-    // Delete related tables by site_key
-    await pool.query('DELETE FROM web_events WHERE site_key = $1', [siteKey]);
-    await pool.query('DELETE FROM purchases WHERE site_key = $1', [siteKey]);
-    await pool.query('DELETE FROM recommendation_reports WHERE site_key = $1', [siteKey]);
+    // Use ON DELETE CASCADE for tables mapped by site_id.
+    // For tables mapped by site_key (which might not have a foreign key to sites.id), delete them in parallel.
+    await Promise.all([
+      pool.query('DELETE FROM web_events WHERE site_key = $1', [siteKey]),
+      pool.query('DELETE FROM purchases WHERE site_key = $1', [siteKey]),
+      pool.query('DELETE FROM recommendation_reports WHERE site_key = $1', [siteKey])
+    ]);
 
     const result = await pool.query(
       'DELETE FROM sites WHERE id = $1 AND account_id = $2 RETURNING id',
@@ -123,6 +120,76 @@ router.delete('/:siteId', requireAuth, async (req, res) => {
     await pool.query('ROLLBACK');
     console.error('Delete site error:', err);
     return res.status(500).json({ error: 'Failed to delete site' });
+  }
+});
+
+router.post('/:siteId/webhooks/test', requireAuth, async (req, res) => {
+  const auth = req.auth!;
+  const siteId = Number(req.params.siteId);
+  const { platform, email } = req.body;
+  if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
+
+  const site = await pool.query('SELECT site_key FROM sites WHERE id = $1 AND account_id = $2', [siteId, auth.accountId]);
+  if (!site.rowCount) return res.status(404).json({ error: 'Site not found' });
+  const siteKey = site.rows[0].site_key;
+
+  let payload: any = {};
+  const orderId = `test_${crypto.randomBytes(4).toString('hex')}`;
+  const testEmail = email || 'test@example.com';
+
+  if (platform === 'hotmart') {
+    payload = {
+      hottok: 'test_token',
+      product: { id: 12345, name: 'Test Product' },
+      buyer: { email: testEmail, name: 'Test Buyer', phone: '5511999999999' },
+      purchase: { transaction: orderId, status: 'APPROVED', full_price: { value: 97.00, currency_value: 'BRL' } }
+    };
+  } else if (platform === 'kiwify') {
+    payload = {
+      webhook_event_type: 'order_approved',
+      order: { order_id: orderId, status: 'paid', payment: { total: 9700, currency: 'BRL' } },
+      Customer: { email: testEmail, first_name: 'Test', last_name: 'Buyer', mobile: '5511999999999' }
+    };
+  } else if (platform === 'eduzz') {
+    payload = {
+      eduzz_id: 123,
+      transacao_id: orderId,
+      transacao_status_id: 3,
+      transacao_valor: 97.00,
+      transacao_moeda: 'BRL',
+      cus_email: testEmail,
+      cus_name: 'Test Buyer',
+      cus_cel: '5511999999999'
+    };
+  } else {
+    payload = {
+      id: orderId,
+      status: 'approved',
+      amount: 97.00,
+      currency: 'BRL',
+      email: testEmail,
+      first_name: 'Test',
+      last_name: 'Buyer',
+      phone: '5511999999999'
+    };
+  }
+
+  // Enviar a requisição para o próprio servidor (simulando a chegada do webhook)
+  try {
+    const protocol = req.protocol || 'http';
+    const host = req.get('host') || 'localhost:3000';
+    const webhookUrl = `${protocol}://${host}/webhooks/purchase?key=${siteKey}`;
+
+    // Fire and forget
+    fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }).catch(console.error);
+
+    return res.json({ ok: true, message: 'Webhook event dispatched to ' + webhookUrl, payload });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to dispatch webhook' });
   }
 });
 
@@ -321,7 +388,7 @@ router.delete('/:siteId/event-rules/:id', requireAuth, async (req, res) => {
   const auth = req.auth!;
   const siteId = Number(req.params.siteId);
   const id = Number(req.params.id);
-  
+
   const site = await pool.query('SELECT id FROM sites WHERE id = $1 AND account_id = $2', [siteId, auth.accountId]);
   if (!site.rowCount) return res.status(404).json({ error: 'Site not found' });
 

@@ -37,9 +37,14 @@ if (databaseUrl) {
 console.log('---------------------------');
 
 export const pool: Pool = databaseUrl
-  ? new Pool({ connectionString: databaseUrl })
+  ? new Pool({
+    connectionString: databaseUrl,
+    max: 20,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 5000,
+  })
   : (() => {
-      const db = newDb();
-      const adapter = db.adapters.createPg();
-      return new adapter.Pool();
-    })();
+    const db = newDb();
+    const adapter = db.adapters.createPg();
+    return new adapter.Pool();
+  })();

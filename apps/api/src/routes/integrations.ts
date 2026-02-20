@@ -4,10 +4,30 @@ import { pool } from '../db/pool';
 import { requireAuth } from '../middleware/auth';
 import { encryptString } from '../lib/crypto';
 import { decryptString } from '../lib/crypto';
-import { capiService } from '../services/capi';
+import { CapiEvent, capiService } from '../services/capi';
 
 const router = Router();
 const fbApiVersion = 'v19.0';
+
+async function getMetaUserToken(siteId: number, res: any): Promise<string | null> {
+  const row = await pool.query('SELECT fb_user_token_enc, fb_token_expires_at FROM integrations_meta WHERE site_id = $1', [siteId]);
+  const meta = row.rows[0];
+  if (!meta?.fb_user_token_enc) {
+    res.status(400).json({ error: 'Facebook not connected' });
+    return null;
+  }
+  if (meta.fb_token_expires_at && new Date(meta.fb_token_expires_at) < new Date()) {
+    res.status(401).json({ error: 'Facebook token expired. Please reconnect in the Dashboard.' });
+    return null;
+  }
+  try {
+    return decryptString(meta.fb_user_token_enc);
+  } catch {
+    res.status(500).json({ error: 'Failed to decrypt Facebook token. Please reconnect.' });
+    return null;
+  }
+}
+
 
 const requireSiteOwnership = async (accountId: number, siteId: number) => {
   const result = await pool.query('SELECT id FROM sites WHERE id = $1 AND account_id = $2', [siteId, accountId]);
@@ -35,7 +55,8 @@ router.get('/sites/:siteId/meta', requireAuth, async (req, res) => {
             (capi_token_enc IS NOT NULL) as has_capi_token,
             (marketing_token_enc IS NOT NULL) as has_marketing_token,
             (fb_user_token_enc IS NOT NULL) as has_facebook_connection,
-            fb_user_id
+            fb_user_id,
+            fb_token_expires_at
      FROM integrations_meta WHERE site_id = $1`,
     [siteId]
   );
@@ -141,27 +162,54 @@ router.delete('/sites/:siteId/meta/facebook', requireAuth, async (req, res) => {
   return res.json({ ok: true });
 });
 
+router.get('/sites/:siteId/meta/health', requireAuth, async (req, res) => {
+  const auth = req.auth!;
+  const siteId = Number(req.params.siteId);
+  if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
+  if (!(await requireSiteOwnership(auth.accountId, siteId))) return res.status(404).json({ error: 'Site not found' });
+
+  const result = await pool.query(
+    'SELECT pixel_id, capi_token_enc FROM integrations_meta WHERE site_id = $1',
+    [siteId]
+  );
+  const meta = result.rows[0];
+  if (!meta || !meta.pixel_id || !meta.capi_token_enc) {
+    return res.status(400).json({ status: 'error', error: 'Integração ou Pixel não configurados.' });
+  }
+
+  try {
+    const token = decryptString(meta.capi_token_enc);
+    const response = await axios.get(`https://graph.facebook.com/${fbApiVersion}/${meta.pixel_id}`, {
+      params: { access_token: token, fields: 'id,name' },
+      timeout: 10000,
+    });
+    return res.json({ status: 'ok', pixel: response.data });
+  } catch (err: any) {
+    return res.status(500).json({
+      status: 'error',
+      error: err?.response?.data?.error?.message || 'CAPI Health Check falhou, token possivelmente inválido.',
+      details: err?.response?.data || undefined
+    });
+  }
+});
+
 router.get('/sites/:siteId/meta/adaccounts', requireAuth, async (req, res) => {
   const auth = req.auth!;
   const siteId = Number(req.params.siteId);
   if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
   if (!(await requireSiteOwnership(auth.accountId, siteId))) return res.status(404).json({ error: 'Site not found' });
 
-  const row = await pool.query('SELECT fb_user_token_enc FROM integrations_meta WHERE site_id = $1', [siteId]);
-  const tokenEnc = row.rows[0]?.fb_user_token_enc as string | undefined;
-  if (!tokenEnc) return res.status(400).json({ error: 'Facebook not connected' });
+  const token = await getMetaUserToken(siteId, res);
+  if (!token) return;
 
-  let token: string;
   try {
-    token = decryptString(tokenEnc);
-  } catch {
-    return res.status(500).json({ error: 'Failed to decrypt Facebook token. Please reconnect.' });
+    const response = await axios.get(`https://graph.facebook.com/${fbApiVersion}/me/adaccounts`, {
+      params: { fields: 'id,name,account_id,disable_reason,currency,timezone_name,business', access_token: token, limit: 200 },
+    });
+    return res.json({ ad_accounts: response.data.data || [] });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.response?.data?.error?.message || 'Failed to fetch ad accounts from Meta' });
   }
-
-  const response = await axios.get(`https://graph.facebook.com/${fbApiVersion}/me/adaccounts`, {
-    params: { fields: 'id,name,account_id,disable_reason,currency,timezone_name,business', access_token: token, limit: 200 },
-  });
-  return res.json({ ad_accounts: response.data.data || [] });
 });
 
 router.get('/sites/:siteId/meta/pixels', requireAuth, async (req, res) => {
@@ -172,23 +220,19 @@ router.get('/sites/:siteId/meta/pixels', requireAuth, async (req, res) => {
   if (!adAccountId) return res.status(400).json({ error: 'Missing ad_account_id' });
   if (!(await requireSiteOwnership(auth.accountId, siteId))) return res.status(404).json({ error: 'Site not found' });
 
-  const row = await pool.query('SELECT fb_user_token_enc FROM integrations_meta WHERE site_id = $1', [siteId]);
-  const tokenEnc = row.rows[0]?.fb_user_token_enc as string | undefined;
-  if (!tokenEnc) return res.status(400).json({ error: 'Facebook not connected' });
-
   const finalAdAccountId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
 
-  let token: string;
-  try {
-    token = decryptString(tokenEnc);
-  } catch {
-    return res.status(500).json({ error: 'Failed to decrypt Facebook token. Please reconnect.' });
-  }
+  const token = await getMetaUserToken(siteId, res);
+  if (!token) return;
 
-  const response = await axios.get(`https://graph.facebook.com/${fbApiVersion}/${encodeURIComponent(finalAdAccountId)}/adspixels`, {
-    params: { fields: 'id,name', access_token: token, limit: 200 },
-  });
-  return res.json({ pixels: response.data.data || [] });
+  try {
+    const response = await axios.get(`https://graph.facebook.com/${fbApiVersion}/${encodeURIComponent(finalAdAccountId)}/adspixels`, {
+      params: { fields: 'id,name', access_token: token, limit: 200 },
+    });
+    return res.json({ pixels: response.data.data || [] });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.response?.data?.error?.message || 'Failed to fetch pixels from Meta' });
+  }
 });
 
 router.get('/sites/:siteId/meta/campaigns', requireAuth, async (req, res) => {
@@ -197,22 +241,14 @@ router.get('/sites/:siteId/meta/campaigns', requireAuth, async (req, res) => {
   if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
   if (!(await requireSiteOwnership(auth.accountId, siteId))) return res.status(404).json({ error: 'Site not found' });
 
-  const metaRow = await pool.query('SELECT fb_user_token_enc, ad_account_id FROM integrations_meta WHERE site_id = $1', [
-    siteId,
-  ]);
-  const tokenEnc = metaRow.rows[0]?.fb_user_token_enc as string | undefined;
+  const metaRow = await pool.query('SELECT ad_account_id FROM integrations_meta WHERE site_id = $1', [siteId]);
   const adAccountId = String(req.query.ad_account_id || metaRow.rows[0]?.ad_account_id || '');
-  if (!tokenEnc) return res.status(400).json({ error: 'Facebook not connected' });
   if (!adAccountId) return res.status(400).json({ error: 'Missing ad_account_id' });
 
   const finalAdAccountId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
 
-  let token: string;
-  try {
-    token = decryptString(tokenEnc);
-  } catch {
-    return res.status(500).json({ error: 'Failed to decrypt Facebook token. Please reconnect.' });
-  }
+  const token = await getMetaUserToken(siteId, res);
+  if (!token) return;
 
   let response;
   try {
@@ -224,21 +260,30 @@ router.get('/sites/:siteId/meta/campaigns', requireAuth, async (req, res) => {
         effective_status: ['ACTIVE', 'PAUSED', 'IN_PROCESS', 'PENDING_REVIEW', 'WITH_ISSUES'],
       },
     });
-  } catch {
-    response = await axios.get(`https://graph.facebook.com/${fbApiVersion}/${encodeURIComponent(finalAdAccountId)}/campaigns`, {
-      params: { fields: 'id,name,status,effective_status,objective', access_token: token, limit: 200 },
-    });
+  } catch (err: any) {
+    try {
+      response = await axios.get(`https://graph.facebook.com/${fbApiVersion}/${encodeURIComponent(finalAdAccountId)}/campaigns`, {
+        params: { fields: 'id,name,status,effective_status,objective', access_token: token, limit: 200 },
+      });
+    } catch (fallbackErr: any) {
+      return res.status(500).json({ error: fallbackErr?.response?.data?.error?.message || 'Failed to fetch campaigns from Meta' });
+    }
   }
 
   const adsets: any[] = [];
   let nextUrl: string | null = `https://graph.facebook.com/${fbApiVersion}/${encodeURIComponent(finalAdAccountId)}/adsets`;
   let nextParams: any = { fields: 'campaign_id,optimization_goal,promoted_object', access_token: token, limit: 500 };
-  while (nextUrl) {
-    const adsetRes: any = await axios.get(nextUrl, nextParams ? { params: nextParams } : undefined);
-    const data = Array.isArray(adsetRes.data?.data) ? adsetRes.data.data : [];
-    adsets.push(...data);
-    nextUrl = adsetRes.data?.paging?.next || null;
-    nextParams = null;
+  try {
+    while (nextUrl) {
+      const adsetRes: any = await axios.get(nextUrl, nextParams ? { params: nextParams } : undefined);
+      const data = Array.isArray(adsetRes.data?.data) ? adsetRes.data.data : [];
+      adsets.push(...data);
+      nextUrl = adsetRes.data?.paging?.next || null;
+      nextParams = null;
+    }
+  } catch (err: any) {
+    console.warn('Failed to fetch some adsets during campaign load', err?.message);
+    // Ignore and proceed with what we have
   }
 
   const optByCampaign = new Map<
@@ -325,12 +370,16 @@ router.get('/sites/:siteId/meta/adsets', requireAuth, async (req, res) => {
     access_token: token,
     limit: 500,
   };
-  while (nextUrl) {
-    const adsetRes: any = await axios.get(nextUrl, nextParams ? { params: nextParams } : undefined);
-    const data = Array.isArray(adsetRes.data?.data) ? adsetRes.data.data : [];
-    adsets.push(...data);
-    nextUrl = adsetRes.data?.paging?.next || null;
-    nextParams = null;
+  try {
+    while (nextUrl) {
+      const adsetRes: any = await axios.get(nextUrl, nextParams ? { params: nextParams } : undefined);
+      const data = Array.isArray(adsetRes.data?.data) ? adsetRes.data.data : [];
+      adsets.push(...data);
+      nextUrl = adsetRes.data?.paging?.next || null;
+      nextParams = null;
+    }
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.response?.data?.error?.message || 'Failed to fetch adsets from Meta' });
   }
 
   return res.json({ adsets });
@@ -362,12 +411,16 @@ router.get('/sites/:siteId/meta/ads', requireAuth, async (req, res) => {
     access_token: token,
     limit: 500,
   };
-  while (nextUrl) {
-    const adsRes: any = await axios.get(nextUrl, nextParams ? { params: nextParams } : undefined);
-    const data = Array.isArray(adsRes.data?.data) ? adsRes.data.data : [];
-    ads.push(...data);
-    nextUrl = adsRes.data?.paging?.next || null;
-    nextParams = null;
+  try {
+    while (nextUrl) {
+      const adsRes: any = await axios.get(nextUrl, nextParams ? { params: nextParams } : undefined);
+      const data = Array.isArray(adsRes.data?.data) ? adsRes.data.data : [];
+      ads.push(...data);
+      nextUrl = adsRes.data?.paging?.next || null;
+      nextParams = null;
+    }
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.response?.data?.error?.message || 'Failed to fetch ads from Meta' });
   }
 
   return res.json({ ads });
@@ -383,22 +436,18 @@ router.patch('/sites/:siteId/meta/campaigns/:campaignId', requireAuth, async (re
   if (!(await requireSiteOwnership(auth.accountId, siteId))) return res.status(404).json({ error: 'Site not found' });
   if (status !== 'PAUSED' && status !== 'ACTIVE') return res.status(400).json({ error: 'Invalid status' });
 
-  const metaRow = await pool.query('SELECT fb_user_token_enc FROM integrations_meta WHERE site_id = $1', [siteId]);
-  const tokenEnc = metaRow.rows[0]?.fb_user_token_enc as string | undefined;
-  if (!tokenEnc) return res.status(400).json({ error: 'Facebook not connected' });
+  const token = await getMetaUserToken(siteId, res);
+  if (!token) return;
 
-  let token: string;
   try {
-    token = decryptString(tokenEnc);
-  } catch {
-    return res.status(500).json({ error: 'Failed to decrypt Facebook token. Please reconnect.' });
+    await axios.post(
+      `https://graph.facebook.com/${fbApiVersion}/${encodeURIComponent(campaignId)}`,
+      null,
+      { params: { status, access_token: token } }
+    );
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.response?.data?.error?.message || 'Failed to update campaign status on Meta' });
   }
-
-  await axios.post(
-    `https://graph.facebook.com/${fbApiVersion}/${encodeURIComponent(campaignId)}`,
-    null,
-    { params: { status, access_token: token } }
-  );
 
   return res.json({ ok: true });
 });
@@ -413,22 +462,18 @@ router.patch('/sites/:siteId/meta/adsets/:adsetId', requireAuth, async (req, res
   if (!(await requireSiteOwnership(auth.accountId, siteId))) return res.status(404).json({ error: 'Site not found' });
   if (status !== 'PAUSED' && status !== 'ACTIVE') return res.status(400).json({ error: 'Invalid status' });
 
-  const metaRow = await pool.query('SELECT fb_user_token_enc FROM integrations_meta WHERE site_id = $1', [siteId]);
-  const tokenEnc = metaRow.rows[0]?.fb_user_token_enc as string | undefined;
-  if (!tokenEnc) return res.status(400).json({ error: 'Facebook not connected' });
+  const token = await getMetaUserToken(siteId, res);
+  if (!token) return;
 
-  let token: string;
   try {
-    token = decryptString(tokenEnc);
-  } catch {
-    return res.status(500).json({ error: 'Failed to decrypt Facebook token. Please reconnect.' });
+    await axios.post(
+      `https://graph.facebook.com/${fbApiVersion}/${encodeURIComponent(adsetId)}`,
+      null,
+      { params: { status, access_token: token } }
+    );
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.response?.data?.error?.message || 'Failed to update adset status on Meta' });
   }
-
-  await axios.post(
-    `https://graph.facebook.com/${fbApiVersion}/${encodeURIComponent(adsetId)}`,
-    null,
-    { params: { status, access_token: token } }
-  );
 
   return res.json({ ok: true });
 });
@@ -443,22 +488,18 @@ router.patch('/sites/:siteId/meta/ads/:adId', requireAuth, async (req, res) => {
   if (!(await requireSiteOwnership(auth.accountId, siteId))) return res.status(404).json({ error: 'Site not found' });
   if (status !== 'PAUSED' && status !== 'ACTIVE') return res.status(400).json({ error: 'Invalid status' });
 
-  const metaRow = await pool.query('SELECT fb_user_token_enc FROM integrations_meta WHERE site_id = $1', [siteId]);
-  const tokenEnc = metaRow.rows[0]?.fb_user_token_enc as string | undefined;
-  if (!tokenEnc) return res.status(400).json({ error: 'Facebook not connected' });
+  const token = await getMetaUserToken(siteId, res);
+  if (!token) return;
 
-  let token: string;
   try {
-    token = decryptString(tokenEnc);
-  } catch {
-    return res.status(500).json({ error: 'Failed to decrypt Facebook token. Please reconnect.' });
+    await axios.post(
+      `https://graph.facebook.com/${fbApiVersion}/${encodeURIComponent(adId)}`,
+      null,
+      { params: { status, access_token: token } }
+    );
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.response?.data?.error?.message || 'Failed to update ad status on Meta' });
   }
-
-  await axios.post(
-    `https://graph.facebook.com/${fbApiVersion}/${encodeURIComponent(adId)}`,
-    null,
-    { params: { status, access_token: token } }
-  );
 
   return res.json({ ok: true });
 });

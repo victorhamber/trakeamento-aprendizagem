@@ -1,9 +1,11 @@
 import { Router } from 'express';
 import { diagnosisService } from '../services/diagnosis';
 
+import { requireAuth } from '../middleware/auth';
+
 const router = Router();
 
-router.post('/generate', async (req, res) => {
+router.post('/generate', requireAuth, async (req, res) => {
   const siteKey = req.query.key || req.headers['x-site-key'];
   if (!siteKey) return res.status(400).json({ error: 'Missing site key' });
   const campaignId =

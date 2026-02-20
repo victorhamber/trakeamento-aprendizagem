@@ -23,11 +23,19 @@ router.get('/meta/start', requireAuth, async (req, res) => {
 
   const redirectUri = process.env.META_OAUTH_REDIRECT_URI || 'http://localhost:3000/oauth/meta/callback';
 
+  const nonce = Math.random().toString(36).slice(2);
   const state = jwt.sign(
-    { siteId, accountId: auth.accountId, nonce: Math.random().toString(36).slice(2) },
+    { siteId, accountId: auth.accountId, nonce },
     getJwtSecret(),
     { expiresIn: '10m' }
   );
+
+  res.cookie('meta_oauth_nonce', nonce, {
+    maxAge: 10 * 60 * 1000,
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax'
+  });
 
   const scope = [
     'ads_read',
@@ -66,6 +74,12 @@ router.get('/meta/callback', async (req, res) => {
   } catch {
     return res.status(400).send('Invalid state');
   }
+
+  const cookieNonce = req.cookies?.meta_oauth_nonce;
+  if (!cookieNonce || cookieNonce !== payload.nonce) {
+    return res.status(400).send('CSRF validation failed: nonce mismatch');
+  }
+  res.clearCookie('meta_oauth_nonce');
 
   const siteId = Number(payload.siteId);
   if (!Number.isFinite(siteId)) return res.status(400).send('Invalid site');
