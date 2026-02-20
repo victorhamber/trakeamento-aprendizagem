@@ -41,9 +41,9 @@ export class CapiService {
   }
 
   private isProbablyValidToken(token: string): boolean {
+    if (!token || typeof token !== 'string') return false;
     const t = token.trim();
     if (t.length < 20) return false;
-    if (/\s/.test(t)) return false;
     return true;
   }
 
@@ -76,7 +76,8 @@ export class CapiService {
          console.log(`[CAPI] Failed to decrypt token for siteKey=${siteKey}`);
          return null;
       }
-      return { pixelId: cfg.pixel_id, capiToken: token, testEventCode: cfg.capi_test_event_code as string | null };
+      // Remove any whitespace from the token
+      return { pixelId: cfg.pixel_id, capiToken: token.replace(/\s+/g, ''), testEventCode: cfg.capi_test_event_code as string | null };
     } catch (e) {
       console.log(`[CAPI] Decrypt error for siteKey=${siteKey}`, e);
       return null;

@@ -18,7 +18,9 @@ router.put('/', requireAuth, async (req, res) => {
     );
     if (!owns.rowCount) return res.status(404).json({ error: 'Site not found' });
 
-    const { ad_account_id, pixel_id, capi_token, marketing_token, enabled } = req.body;
+    const { ad_account_id, pixel_id, enabled } = req.body;
+    const capi_token = req.body.capi_token ? String(req.body.capi_token).replace(/\s+/g, '') : undefined;
+    const marketing_token = req.body.marketing_token ? String(req.body.marketing_token).replace(/\s+/g, '') : undefined;
 
     const existing = await pool.query('SELECT meta_config FROM sites WHERE id = $1', [siteId]);
     const currentConfig = existing.rows[0]?.meta_config || {};
