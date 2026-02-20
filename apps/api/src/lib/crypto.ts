@@ -5,8 +5,12 @@ let ephemeralKey: Buffer | null = null; // Changed from cachedEphemeralKey to ep
 const getEncryptionKey = (): Buffer => {
   const envKey = process.env.APP_ENCRYPTION_KEY;
   if (envKey) {
-    const key = Buffer.from(envKey, 'hex'); // Changed from base64 to hex
-    if (key.length !== 32) throw new Error('APP_ENCRYPTION_KEY must be 32 bytes (64 hex characters)'); // Added length check for hex
+    // Tenta decodificar como base64 primeiro (geralmente termina com =), senão assume hex
+    const isBase64 = envKey.endsWith('=') || envKey.includes('+') || envKey.includes('/');
+    const key = Buffer.from(envKey, isBase64 ? 'base64' : 'hex');
+    if (key.length !== 32) {
+      throw new Error(`APP_ENCRYPTION_KEY must be exactly 32 bytes. Currently it decodes to ${key.length} bytes.`);
+    }
     return key;
   }
 
