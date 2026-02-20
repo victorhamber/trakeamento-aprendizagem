@@ -6,9 +6,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # Instala dependências (incluindo devDependencies para build)
-RUN npm install
-
-# Copia código fonte
+RUN npm install --include=dev
 COPY . .
 
 # Builda TypeScript
