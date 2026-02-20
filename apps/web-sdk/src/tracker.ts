@@ -198,6 +198,10 @@ export class Tracker {
       content_type: 'product',
       event_url: window.location.origin + window.location.pathname,
       event_source_url: window.location.href,
+      client_user_agent: userData.client_user_agent,
+      external_id: userData.external_id,
+      fbp: userData.fbp,
+      fbc: userData.fbc,
       ...this.getTimeFields(eventTime),
     };
 

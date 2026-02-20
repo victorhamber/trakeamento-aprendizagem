@@ -566,6 +566,7 @@ router.get('/tracker.js', async (_req, res) => {
     var eventId     = genEventId();
 
     var telemetry = buildTelemetry({ page_path: location.pathname, page_title: document.title });
+    var userData  = buildUserData();
     if (loadTimeMs) telemetry.load_time_ms = loadTimeMs;
 
     var payload = {
@@ -574,12 +575,16 @@ router.get('/tracker.js', async (_req, res) => {
       event_id:          eventId,
       event_source_url:  location.href,
       action_source:     'website',
-      user_data:         buildUserData(),
+      user_data:         userData,
       custom_data:       Object.assign({
         page_title:    document.title,
         content_type:  'product',
         referrer:      document.referrer,
-        page_path:     location.pathname
+        page_path:     location.pathname,
+        client_user_agent: userData.client_user_agent,
+        external_id:   userData.external_id,
+        fbp:           userData.fbp,
+        fbc:           userData.fbc
       }, attrs),
       telemetry: telemetry
     };
@@ -619,18 +624,23 @@ router.get('/tracker.js', async (_req, res) => {
       var attrs     = getAttributionParams();
       var telemetry = buildTelemetry();
 
+      var userData  = buildUserData();
       var payload = {
         event_name:       'PageEngagement',
         event_time:       eventTime,
         event_id:         eventId,
         event_source_url: location.href,
         action_source:    'website',
-        user_data:        buildUserData(),
+        user_data:        userData,
         telemetry:        telemetry,
         custom_data:      Object.assign({
           page_title:   document.title,
           page_path:    location.pathname,
-          event_url:    location.origin + location.pathname
+          event_url:    location.origin + location.pathname,
+          client_user_agent: userData.client_user_agent,
+          external_id:  userData.external_id,
+          fbp:          userData.fbp,
+          fbc:          userData.fbc
         }, attrs)
       };
 
@@ -673,11 +683,16 @@ router.get('/tracker.js', async (_req, res) => {
       var eventTime = Math.floor(Date.now() / 1000);
       var eventId   = genEventId();
       var attrs     = getAttributionParams();
+      var userData  = buildUserData();
       var baseCustom = {
         page_title:       document.title,
         page_path:        location.pathname,
         content_type:     'product',
-        event_url:        location.origin + location.pathname
+        event_url:        location.origin + location.pathname,
+        client_user_agent: userData.client_user_agent,
+        external_id:      userData.external_id,
+        fbp:              userData.fbp,
+        fbc:              userData.fbc
       };
       var telemetry = buildTelemetry({ page_path: location.pathname, page_title: document.title });
 
@@ -687,7 +702,7 @@ router.get('/tracker.js', async (_req, res) => {
         event_id:         eventId,
         event_source_url: location.href,
         action_source:    'website',
-        user_data:        buildUserData(),
+        user_data:        userData,
         custom_data:      Object.assign({}, baseCustom, attrs, customData || {}),
         telemetry:        telemetry
       };

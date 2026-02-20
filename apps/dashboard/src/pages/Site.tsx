@@ -816,7 +816,7 @@ ${scriptContent}
     const capi = formData.get('capi_token');
     if (capi) data.capi_token = capi;
     const testCode = formData.get('capi_test_event_code');
-    if (testCode) data.capi_test_event_code = testCode;
+    data.capi_test_event_code = testCode;
     try {
       await api.put(`/integrations/sites/${id}/meta`, data);
       showFlash('Configurações salvas com sucesso!');

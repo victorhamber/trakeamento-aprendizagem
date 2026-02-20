@@ -192,39 +192,41 @@ function isDuplicate(siteKey: string, eventId: string): boolean {
 
 // ─── CAPI payload builder ─────────────────────────────────────────────────────
 
+function resolveClientIp(req: Request, userData: NonNullable<IngestEvent['user_data']>) {
+  return (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim()
+    || req.ip
+    || userData.client_ip_address
+    || '';
+}
+
+function resolveGeo(clientIp: string) {
+  const cleanIp = clientIp.replace(/^::ffff:/, '');
+  if (!cleanIp || cleanIp.length <= 6) return {};
+  const geo = geoip.lookup(cleanIp);
+  if (!geo) return {};
+  return {
+    city: geo.city || undefined,
+    region: geo.region || undefined,
+    country: geo.country || undefined,
+  };
+}
+
 function buildCapiUserData(
   req: Request,
   userData: NonNullable<IngestEvent['user_data']>,
   siteKey: string
 ) {
-  const clientIp        = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim()
-                          || req.ip
-                          || userData.client_ip_address
-                          || '';
+  const clientIp        = resolveClientIp(req, userData);
   const clientUserAgent = req.headers['user-agent'] || userData.client_user_agent || '';
-
-  // Geolocalização via IP (fallback quando não vem no payload)
-  let geoCity:    string | undefined;
-  let geoRegion:  string | undefined;
-  let geoCountry: string | undefined;
-
-  const cleanIp = clientIp.replace(/^::ffff:/, ''); // IPv4-mapped IPv6
-  if (cleanIp && cleanIp.length > 6) {
-    const geo = geoip.lookup(cleanIp);
-    if (geo) {
-      geoCity    = geo.city    || undefined;
-      geoRegion  = geo.region  || undefined;
-      geoCountry = geo.country || undefined;
-    }
-  }
+  const geo             = resolveGeo(clientIp);
 
   // Monta campos com prioridade: payload hasheado > payload raw > geo
   const pick = (field: string) =>
     normalizeAndHash(field, (userData as Record<string, unknown>)[field] as string | string[] | undefined);
 
-  const ct      = pick('ct') ?? (geoCity    ? hashPii(normalizers.ct(geoCity))    : undefined);
-  const st      = pick('st') ?? (geoRegion  ? hashPii(normalizers.st(geoRegion))  : undefined);
-  const country = pick('country') ?? (geoCountry ? hashPii(normalizers.country(geoCountry)) : undefined);
+  const ct      = pick('ct') ?? (geo.city    ? hashPii(normalizers.ct(geo.city))    : undefined);
+  const st      = pick('st') ?? (geo.region  ? hashPii(normalizers.st(geo.region))  : undefined);
+  const country = pick('country') ?? (geo.country ? hashPii(normalizers.country(geo.country)) : undefined);
 
   return {
     client_ip_address: clientIp,
@@ -338,6 +340,7 @@ router.post('/events', async (req, res) => {
     if ((result.rowCount ?? 0) > 0) {
       const userData   = event.user_data ?? {};
       const capiUser   = buildCapiUserData(req, userData, siteKey);
+      const geo        = resolveGeo(capiUser.client_ip_address || '');
 
       const capiPayload = {
         event_name:       eventName,
@@ -355,6 +358,14 @@ router.post('/events', async (req, res) => {
           event_time_interval: timeDimensions.event_time_interval,
           event_hour:       timeDimensions.event_hour,
           page_title:       event.custom_data?.['page_title'],
+          client_ip_address: capiUser.client_ip_address,
+          client_user_agent: capiUser.client_user_agent,
+          external_id:     userData.external_id,
+          fbp:             userData.fbp ?? capiUser.fbp,
+          fbc:             userData.fbc ?? capiUser.fbc,
+          country:         geo.country,
+          state:           geo.region,
+          city:            geo.city,
           // Telemetria relevante para otimização do Meta
           engagement_score:  engagement?.score,
           engagement_bucket: engagement?.bucket,

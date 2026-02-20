@@ -45,10 +45,10 @@ router.put('/sites/:siteId/meta', requireAuth, async (req, res) => {
   const adAccountId = typeof ad_account_id === 'string' ? ad_account_id.trim() : null;
   const capiTokenEnc =
     typeof capi_token === 'string' && capi_token.trim() ? encryptString(capi_token.trim().replace(/\s+/g, '')) : null;
-  const capiTestEventCode =
-    typeof capi_test_event_code === 'string' && capi_test_event_code.trim()
-      ? capi_test_event_code.trim().replace(/\s+/g, '')
-      : null;
+  const hasTestEventCode = Object.prototype.hasOwnProperty.call(req.body || {}, 'capi_test_event_code');
+  const capiTestEventCodeRaw =
+    typeof capi_test_event_code === 'string' ? capi_test_event_code.trim().replace(/\s+/g, '') : '';
+  const capiTestEventCode = capiTestEventCodeRaw ? capiTestEventCodeRaw : null;
   const marketingTokenEnc =
     typeof marketing_token === 'string' && marketing_token.trim()
       ? encryptString(marketing_token.trim().replace(/\s+/g, ''))
@@ -61,12 +61,12 @@ router.put('/sites/:siteId/meta', requireAuth, async (req, res) => {
      ON CONFLICT (site_id) DO UPDATE SET
        pixel_id = COALESCE(EXCLUDED.pixel_id, integrations_meta.pixel_id),
        capi_token_enc = COALESCE(EXCLUDED.capi_token_enc, integrations_meta.capi_token_enc),
-       capi_test_event_code = COALESCE(EXCLUDED.capi_test_event_code, integrations_meta.capi_test_event_code),
+       capi_test_event_code = CASE WHEN $8 THEN EXCLUDED.capi_test_event_code ELSE integrations_meta.capi_test_event_code END,
        marketing_token_enc = COALESCE(EXCLUDED.marketing_token_enc, integrations_meta.marketing_token_enc),
        ad_account_id = COALESCE(EXCLUDED.ad_account_id, integrations_meta.ad_account_id),
        enabled = COALESCE(EXCLUDED.enabled, integrations_meta.enabled),
        updated_at = NOW()`,
-    [siteId, pixelId, capiTokenEnc, capiTestEventCode, marketingTokenEnc, adAccountId, enabledBool]
+    [siteId, pixelId, capiTokenEnc, capiTestEventCode, marketingTokenEnc, adAccountId, enabledBool, hasTestEventCode]
   );
 
   return res.json({ ok: true });
