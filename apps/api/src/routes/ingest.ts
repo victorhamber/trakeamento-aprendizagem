@@ -280,8 +280,14 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
     return res.status(400).json({ error: 'Missing site key' });
   }
 
+  // Handle text/plain body from sendBeacon fallback (JSON sent as text/plain to avoid CORS preflight)
+  let body = req.body;
+  if (typeof body === 'string') {
+    try { body = JSON.parse(body); } catch { return res.status(400).json({ error: 'Invalid JSON in text/plain body' }); }
+  }
+
   // Validação e sanitização com Zod
-  const parsed = IngestEventSchema.safeParse(req.body);
+  const parsed = IngestEventSchema.safeParse(body);
   if (!parsed.success) {
     return res.status(400).json({ error: 'Invalid event payload', details: parsed.error.flatten() });
   }

@@ -547,22 +547,23 @@ router.get('/tracker.js', async (_req, res) => {
     return Object.assign(base, extra || {});
   }
 
-  // ─── Send (beacon + fetch fallback) ──────────────────────────────────────
+  // ─── Send (fetch primary, beacon fallback) ─────────────────────────────
   function send(apiUrl, siteKey, payload) {
     try {
       var url  = apiUrl + '/ingest/events?key=' + encodeURIComponent(siteKey);
       var body = JSON.stringify(payload);
-      var sent = false;
-      if (navigator.sendBeacon) {
-        sent = navigator.sendBeacon(url, new Blob([body], { type: 'application/json' }));
-      }
-      if (!sent) {
-        fetch(apiUrl + '/ingest/events', {
+      // Primary: fetch with keepalive (handles CORS + JSON properly)
+      if (typeof fetch !== 'undefined') {
+        fetch(url, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Site-Key': siteKey },
+          headers: { 'Content-Type': 'application/json' },
           body: body,
-          keepalive: true
+          keepalive: true,
+          mode: 'cors'
         }).catch(function(){});
+      } else if (navigator.sendBeacon) {
+        // Fallback: sendBeacon with text/plain (avoids CORS preflight)
+        navigator.sendBeacon(url, new Blob([body], { type: 'text/plain' }));
       }
     } catch(_e) {}
   }

@@ -66,6 +66,8 @@ app.use((req, res, next) => {
   next();
 });
 app.use('/webhooks', bodyParser.raw({ type: 'application/json' }));
+// Parse text/plain as JSON for sendBeacon fallback (uses text/plain to avoid CORS preflight)
+app.use('/ingest', bodyParser.text({ type: 'text/plain' }));
 app.use(bodyParser.json());
 app.use(cookieParser());
 
