@@ -156,6 +156,7 @@ export class Tracker {
   }
 
   public track(eventName: string, customData?: Record<string, any>) {
+    const eventId = this.generateEventId();
     const attrs = this.getAttributionParams();
     let userData: any = {
       client_user_agent: navigator.userAgent,
@@ -172,7 +173,7 @@ export class Tracker {
     const payload: EventPayload = {
       event_name: eventName,
       event_time: Math.floor(Date.now() / 1000),
-      event_id: this.generateEventId(),
+      event_id: eventId,
       event_source_url: window.location.href,
       user_data: userData,
       custom_data: { ...attrs, ...(customData || {}) },
@@ -183,7 +184,26 @@ export class Tracker {
       }
     };
 
+    this.sendToClientPixels(eventName, eventId, payload.custom_data || {});
     this.send(payload);
+  }
+
+  private sendToClientPixels(eventName: string, eventId: string, customData: Record<string, any>) {
+    const w = window as any;
+
+    const hasFbq = typeof w.fbq === 'function';
+    if (hasFbq) {
+      try {
+        w.fbq('track', eventName, customData, { eventID: eventId });
+      } catch {}
+    }
+
+    const hasGtag = typeof w.gtag === 'function';
+    if (hasGtag) {
+      try {
+        w.gtag('event', eventName, { ...customData, event_id: eventId });
+      } catch {}
+    }
   }
 
   private send(payload: EventPayload) {

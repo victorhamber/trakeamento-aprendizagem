@@ -3,8 +3,8 @@ import crypto from 'crypto';
 import { pool } from '../db/pool';
 import { decryptString } from '../lib/crypto';
 
-type CapiCustomData = Record<string, unknown>;
-interface CapiEvent {
+export type CapiCustomData = Record<string, unknown>;
+export interface CapiEvent {
   event_name: string;
   event_time: number;
   event_id: string;
