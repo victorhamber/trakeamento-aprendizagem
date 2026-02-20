@@ -77,8 +77,12 @@ router.put('/sites/:siteId/meta', requireAuth, async (req, res) => {
     typeof capi_token === 'string'
       ? capi_token.trim().replace(/\s+/g, '')
       : '';
-  const capiTokenEnc = capiTokenSanitized ? encryptString(capiTokenSanitized) : null;
-  console.log('[PUT /meta] capiTokenEnc is null:', capiTokenEnc === null, 'pixelId:', pixelId);
+  // Tokens CAPI válidos do Meta começam com EAA e têm 100+ chars.
+  // Se < 20 chars, é lixo (autofill do browser) — ignorar para preservar o token existente via COALESCE.
+  const capiTokenEnc = (capiTokenSanitized && capiTokenSanitized.length >= 20) ? encryptString(capiTokenSanitized) : null;
+  if (capiTokenSanitized && capiTokenSanitized.length < 20) {
+    console.warn(`[PUT /meta] Ignoring short capi_token (${capiTokenSanitized.length} chars) — likely browser autofill`);
+  }
   const hasTestEventCode = Object.prototype.hasOwnProperty.call(req.body || {}, 'capi_test_event_code');
   const capiTestEventCodeRaw =
     typeof capi_test_event_code === 'string' ? capi_test_event_code.trim().replace(/\s+/g, '') : '';

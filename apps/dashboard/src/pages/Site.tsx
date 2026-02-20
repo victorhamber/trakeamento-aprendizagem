@@ -851,8 +851,8 @@ ${scriptContent}
       pixel_id: formData.get('pixel_id'),
       enabled: enabledInput ? enabledInput.checked : true,
     };
-    const capi = formData.get('capi_token');
-    if (capi) data.capi_token = capi;
+    const capi = formData.get('capi_token') as string | null;
+    if (capi && capi.trim().length >= 20) data.capi_token = capi;
     const testCode = formData.get('capi_test_event_code');
     data.capi_test_event_code = testCode;
     try {
@@ -2141,6 +2141,7 @@ ${scriptContent}
                     <input
                       name="capi_token"
                       type="password"
+                      autoComplete="off"
                       className={inputCls}
                       placeholder={meta?.has_capi_token ? '•••••••• (configurado)' : 'Token de Acesso (EAA...)'}
                     />

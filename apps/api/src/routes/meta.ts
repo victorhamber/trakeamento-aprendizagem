@@ -22,7 +22,8 @@ router.put('/', requireAuth, async (req, res) => {
     const capi_token = req.body.capi_token ? String(req.body.capi_token).replace(/\s+/g, '') : undefined;
     const marketing_token = req.body.marketing_token ? String(req.body.marketing_token).replace(/\s+/g, '') : undefined;
 
-    const capiEnc = capi_token ? encryptString(capi_token) : undefined;
+    // Tokens CAPI válidos do Meta começam com EAA e têm 100+ chars. Ignorar valores curtos (browser autofill).
+    const capiEnc = (capi_token && capi_token.length >= 20) ? encryptString(capi_token) : undefined;
     const marketingEnc = marketing_token ? encryptString(marketing_token) : undefined;
 
     await pool.query(
