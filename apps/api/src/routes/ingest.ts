@@ -308,6 +308,17 @@ router.post('/events', async (req, res) => {
   const eventSourceUrl = event.event_source_url || '';
   const timeDimensions = getTimeDimensions(eventTimeSec);
 
+  await pool.query(
+    `UPDATE integrations_meta i
+     SET last_ingest_at = NOW(),
+         last_ingest_event_name = $1,
+         last_ingest_event_id = $2,
+         last_ingest_event_source_url = $3
+     FROM sites s
+     WHERE s.site_key = $4 AND i.site_id = s.id`,
+    [eventName, eventId, eventSourceUrl, siteKey]
+  );
+
   // Deduplicação em memória (rápida) — o ON CONFLICT no Postgres é a garantia definitiva
   if (isDuplicate(siteKey, eventId)) {
     return res.status(202).json({ status: 'duplicate' });

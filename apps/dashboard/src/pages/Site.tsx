@@ -24,6 +24,10 @@ type MetaConfig = {
   last_capi_status?: string | null;
   last_capi_error?: string | null;
   last_capi_attempt_at?: string | null;
+  last_ingest_at?: string | null;
+  last_ingest_event_name?: string | null;
+  last_ingest_event_id?: string | null;
+  last_ingest_event_source_url?: string | null;
 };
 type GaConfig = {
   measurement_id?: string | null;
@@ -1894,6 +1898,31 @@ ${scriptContent}
                   )}
                   {meta?.last_capi_error && (
                     <div className="text-[11px] text-rose-300 break-words">{meta.last_capi_error}</div>
+                  )}
+                </div>
+                <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 flex flex-col gap-2">
+                  <div className="text-xs text-zinc-400">Último evento recebido do site</div>
+                  {meta?.last_ingest_at ? (
+                    <>
+                      <div className="text-[11px] text-zinc-500">
+                        {new Date(meta.last_ingest_at).toLocaleString()}
+                      </div>
+                      <div className="text-[11px] text-zinc-300">
+                        {meta.last_ingest_event_name || 'Evento'}
+                      </div>
+                      {meta.last_ingest_event_source_url && (
+                        <div className="text-[11px] text-zinc-500 break-words">
+                          {meta.last_ingest_event_source_url}
+                        </div>
+                      )}
+                      {meta.last_ingest_event_id && (
+                        <div className="text-[11px] text-zinc-500">
+                          ID: {meta.last_ingest_event_id}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="text-[11px] text-zinc-500">Nenhum evento recebido</div>
                   )}
                 </div>
                 <div className="flex items-center gap-3 py-4 border-y border-zinc-800/60">

@@ -198,6 +198,10 @@ export const ensureSchema = async (pool: Pool) => {
   await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS last_capi_error TEXT');
   await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS last_capi_response JSONB');
   await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS last_capi_attempt_at TIMESTAMP');
+  await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS last_ingest_at TIMESTAMP');
+  await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS last_ingest_event_name VARCHAR(120)');
+  await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS last_ingest_event_id VARCHAR(120)');
+  await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS last_ingest_event_source_url TEXT');
     await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS fb_user_id VARCHAR(50)');
     await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS fb_user_token_enc TEXT');
     await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS fb_token_expires_at TIMESTAMP');
