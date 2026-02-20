@@ -245,18 +245,36 @@ export class Tracker {
   }
 
   private send(payload: EventPayload) {
-    if (navigator.sendBeacon) {
-      const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
-      navigator.sendBeacon(`${this.apiUrl}/ingest/events?key=${this.siteKey}`, blob);
-    } else {
-      fetch(`${this.apiUrl}/ingest/events`, {
+    const url = `${this.apiUrl}/ingest/events?key=${this.siteKey}`;
+    const body = JSON.stringify(payload);
+    
+    // Debug log
+    if (window.location.search.includes('trk_debug=1')) {
+      console.log('[TRK] Sending event:', payload.event_name, payload);
+    }
+
+    // Try fetch with keepalive first (modern standard)
+    if (typeof window.fetch === 'function') {
+      fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'X-Site-Key': this.siteKey
         },
-        body: JSON.stringify(payload)
+        body: body,
+        keepalive: true
+      }).catch((err) => {
+        if (window.location.search.includes('trk_debug=1')) {
+          console.error('[TRK] Fetch error:', err);
+        }
       });
+      return;
+    }
+    
+    // Fallback to sendBeacon
+    if (navigator.sendBeacon) {
+      const blob = new Blob([body], { type: 'application/json' });
+      navigator.sendBeacon(url, blob);
     }
   }
 
