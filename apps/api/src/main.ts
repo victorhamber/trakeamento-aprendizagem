@@ -39,7 +39,9 @@ app.use((req, res, next) => {
 
   if (origin) {
     if (isPublicRoute) {
-      res.setHeader('Access-Control-Allow-Origin', '*');
+      // Para rotas públicas, permite qualquer origin
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Access-Control-Allow-Credentials', 'false'); // Não precisa de credenciais
     } else if (allowedOrigins.some(o => origin.startsWith(o))) {
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Access-Control-Allow-Credentials', 'true');
