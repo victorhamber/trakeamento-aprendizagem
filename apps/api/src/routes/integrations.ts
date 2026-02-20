@@ -70,6 +70,7 @@ router.put('/sites/:siteId/meta', requireAuth, async (req, res) => {
   if (!(await requireSiteOwnership(auth.accountId, siteId))) return res.status(404).json({ error: 'Site not found' });
 
   const { pixel_id, capi_token, marketing_token, ad_account_id, enabled, capi_test_event_code } = req.body || {};
+  console.log('[PUT /meta] Body keys:', Object.keys(req.body || {}), 'capi_token present:', 'capi_token' in (req.body || {}), 'capi_token type:', typeof capi_token, 'capi_token length:', typeof capi_token === 'string' ? capi_token.length : 'N/A');
   const pixelId = typeof pixel_id === 'string' ? pixel_id.trim() : null;
   const adAccountId = typeof ad_account_id === 'string' ? ad_account_id.trim() : null;
   const capiTokenSanitized =
@@ -77,6 +78,7 @@ router.put('/sites/:siteId/meta', requireAuth, async (req, res) => {
       ? capi_token.trim().replace(/\s+/g, '')
       : '';
   const capiTokenEnc = capiTokenSanitized ? encryptString(capiTokenSanitized) : null;
+  console.log('[PUT /meta] capiTokenEnc is null:', capiTokenEnc === null, 'pixelId:', pixelId);
   const hasTestEventCode = Object.prototype.hasOwnProperty.call(req.body || {}, 'capi_test_event_code');
   const capiTestEventCodeRaw =
     typeof capi_test_event_code === 'string' ? capi_test_event_code.trim().replace(/\s+/g, '') : '';
