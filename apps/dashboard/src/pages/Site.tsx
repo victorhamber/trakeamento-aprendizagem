@@ -14,13 +14,14 @@ type Site = {
 };
 
 type Tab = 'snippet' | 'meta' | 'utm' | 'campaigns' | 'ga' | 'matching' | 'webhooks' | 'reports';
-type MetaConfig = {
+interface MetaConfig {
   pixel_id?: string | null;
   ad_account_id?: string | null;
   enabled?: boolean | null;
   has_capi_token?: boolean;
   has_facebook_connection?: boolean;
   fb_user_id?: string | null;
+  fb_token_expires_at?: string | null;
   capi_test_event_code?: string | null;
   last_capi_status?: string | null;
   last_capi_error?: string | null;
@@ -162,6 +163,9 @@ export const SitePage = () => {
   const [pixels, setPixels] = useState<Array<{ id: string; name: string }>>([]);
   const [ga, setGa] = useState<GaConfig | null>(null);
   const [webhookSecret, setWebhookSecret] = useState<string | null>(null);
+  const [dataQuality, setDataQuality] = useState<any>(null);
+  const [webhookTestPlatform, setWebhookTestPlatform] = useState('hotmart');
+  const [webhookTestLoading, setWebhookTestLoading] = useState(false);
   const [report, setReport] = useState<DiagnosisReport | null>(null);
   const [reportLoadedFromStorage, setReportLoadedFromStorage] = useState(false);
   const [campaigns, setCampaigns] = useState<any[]>([]);
@@ -225,7 +229,7 @@ export const SitePage = () => {
   const [formEventType, setFormEventType] = useState('Lead');
   const [formCustomEventName, setFormCustomEventName] = useState('');
   const [formTheme, setFormTheme] = useState<'light' | 'dark'>('light');
-  
+
   // New Form Builder State
   const [savedForms, setSavedForms] = useState<any[]>([]);
   const [selectedFormId, setSelectedFormId] = useState<number | null>(null);
@@ -249,7 +253,7 @@ export const SitePage = () => {
       showFlash('Nome do formulário é obrigatório', 'error');
       return;
     }
-    
+
     const config = {
       fields: formFields,
       theme: formTheme,
@@ -596,32 +600,32 @@ export const SitePage = () => {
 
   const copyFormHtml = (form?: any) => {
     let currentConfig = {
-       fields: formFields,
-       theme: formTheme,
-       button_text: formButtonText,
-       event_type: formEventType,
-       custom_event_name: formCustomEventName,
-       post_submit_action: postSubmitAction,
-       post_submit_message: postSubmitMessage,
-       post_submit_redirect_url: postSubmitRedirectUrl,
-       webhook_url: formWebhookUrl
+      fields: formFields,
+      theme: formTheme,
+      button_text: formButtonText,
+      event_type: formEventType,
+      custom_event_name: formCustomEventName,
+      post_submit_action: postSubmitAction,
+      post_submit_message: postSubmitMessage,
+      post_submit_redirect_url: postSubmitRedirectUrl,
+      webhook_url: formWebhookUrl
     };
 
     let publicId = '';
 
     if (form) {
-       currentConfig = {
-          fields: form.config.fields || { name: true, email: true, phone: true },
-          theme: form.config.theme || 'light',
-          button_text: form.config.button_text || 'Quero me cadastrar',
-          event_type: form.config.event_type || 'Lead',
-          custom_event_name: form.config.custom_event_name || '',
-          post_submit_action: form.config.post_submit_action || 'message',
-          post_submit_message: form.config.post_submit_message || 'Obrigado! Seus dados foram enviados com sucesso.',
-          post_submit_redirect_url: form.config.post_submit_redirect_url || '',
-          webhook_url: form.config.webhook_url || ''
-       };
-       publicId = form.public_id;
+      currentConfig = {
+        fields: form.config.fields || { name: true, email: true, phone: true },
+        theme: form.config.theme || 'light',
+        button_text: form.config.button_text || 'Quero me cadastrar',
+        event_type: form.config.event_type || 'Lead',
+        custom_event_name: form.config.custom_event_name || '',
+        post_submit_action: form.config.post_submit_action || 'message',
+        post_submit_message: form.config.post_submit_message || 'Obrigado! Seus dados foram enviados com sucesso.',
+        post_submit_redirect_url: form.config.post_submit_redirect_url || '',
+        webhook_url: form.config.webhook_url || ''
+      };
+      publicId = form.public_id;
     } else if (selectedFormId) {
       const saved = savedForms.find((f) => f.id === selectedFormId);
       if (saved) publicId = saved.public_id;
@@ -636,10 +640,10 @@ export const SitePage = () => {
     }
 
     const needsBackend = !!webhook || action === 'redirect' || action === 'message';
-    
+
     if (needsBackend && !publicId) {
-       showFlash('Salve o formulário para ativar Webhook e Ações Pós-Cadastro!', 'error');
-       // Continue to copy basic HTML
+      showFlash('Salve o formulário para ativar Webhook e Ações Pós-Cadastro!', 'error');
+      // Continue to copy basic HTML
     }
 
     const isDark = theme === 'dark';
@@ -650,7 +654,7 @@ export const SitePage = () => {
     const phoneRowStyle = 'display:flex; gap:8px; margin-bottom:10px;';
     const ddiStyle = `width:90px; ${baseInputStyle}`;
     const phoneStyle = `flex:1; ${baseInputStyle}`;
-    
+
     const fieldsHtml = [];
     if (fields.name) fieldsHtml.push(`  <input type="text" name="fn" placeholder="Nome" required style="${inputStyle}" />`);
     if (fields.email) fieldsHtml.push(`  <input type="email" name="email" placeholder="E-mail" required style="${inputStyle}" />`);
@@ -668,14 +672,14 @@ export const SitePage = () => {
     let scriptContent = '';
 
     if (publicId) {
-       let baseUrl = apiBaseUrl;
-       if (!baseUrl) {
-         baseUrl = window.location.origin;
-       } else if (baseUrl.startsWith('/')) {
-         baseUrl = window.location.origin + baseUrl;
-       }
-       const endpoint = `${baseUrl}/public/forms/${publicId}/submit`;
-       scriptContent = `
+      let baseUrl = apiBaseUrl;
+      if (!baseUrl) {
+        baseUrl = window.location.origin;
+      } else if (baseUrl.startsWith('/')) {
+        baseUrl = window.location.origin + baseUrl;
+      }
+      const endpoint = `${baseUrl}/public/forms/${publicId}/submit`;
+      scriptContent = `
 <script>
 async function handleTrkSubmit(e) {
   e.preventDefault();
@@ -730,7 +734,7 @@ async function handleTrkSubmit(e) {
 </script>
 `;
     } else {
-       scriptContent = `
+      scriptContent = `
 <script>
 function handleTrkSubmit(e) {
   e.preventDefault();
@@ -1125,28 +1129,45 @@ ${scriptContent}
     }
   }, [id]);
 
+  const loadDataQuality = useCallback(async () => {
+    try {
+      const res = await api.get(`/stats/sites/${id}/quality`);
+      setDataQuality(res.data);
+    } catch { setDataQuality(null); }
+  }, [id]);
+
+  const fireWebhookTest = async () => {
+    setWebhookTestLoading(true);
+    try {
+      const res = await api.post(`/sites/${id}/webhooks/test`, { platform: webhookTestPlatform });
+      if (res.data?.ok) showFlash(`Webhook de teste (${webhookTestPlatform}) disparado com sucesso!`);
+      else showFlash(res.data?.error || 'Erro ao disparar teste', 'error');
+    } catch { showFlash('Erro ao disparar webhook de teste', 'error'); }
+    finally { setWebhookTestLoading(false); }
+  };
+
   useEffect(() => {
     if (!site) return;
-    if (tab === 'snippet') loadSnippet().catch(() => {});
-    if (tab === 'meta') loadMeta().catch(() => {});
-    if (tab === 'campaigns') loadMeta().catch(() => {});
-    if (tab === 'ga') loadGa().catch(() => {});
+    if (tab === 'snippet') { loadSnippet().catch(() => { }); loadDataQuality().catch(() => { }); }
+    if (tab === 'meta') loadMeta().catch(() => { });
+    if (tab === 'campaigns') loadMeta().catch(() => { });
+    if (tab === 'ga') loadGa().catch(() => { });
     if (tab === 'matching') {
-      loadMatching().catch(() => {});
-      loadEventRules().catch(() => {});
-      loadSavedForms().catch(() => {});
+      loadMatching().catch(() => { });
+      loadEventRules().catch(() => { });
+      loadSavedForms().catch(() => { });
     }
-    if (tab === 'webhooks') loadWebhookSecret().catch(() => {});
-    if (tab === 'utm') loadSavedUtms().catch(() => {});
+    if (tab === 'webhooks') loadWebhookSecret().catch(() => { });
+    if (tab === 'utm') loadSavedUtms().catch(() => { });
     if (tab === 'reports') {
-      loadUtmOptions().catch(() => {});
-      loadSavedUtms().catch(() => {});
+      loadUtmOptions().catch(() => { });
+      loadSavedUtms().catch(() => { });
       setMetaLevel('campaign');
       setMetaParentId(null);
       setMetaBreadcrumbs([{ id: null, name: 'Campanhas', level: 'campaign' }]);
-      loadMeta().catch(() => {});
+      loadMeta().catch(() => { });
     }
-  }, [tab, site, loadSnippet, loadMeta, loadGa, loadMatching, loadWebhookSecret, loadUtmOptions]);
+  }, [tab, site, loadSnippet, loadMeta, loadGa, loadMatching, loadWebhookSecret, loadUtmOptions, loadDataQuality]);
 
   const handleMetaDrillDown = (item: any) => {
     if (metaLevel === 'campaign') {
@@ -1195,7 +1216,7 @@ ${scriptContent}
     if (!site) return;
     if (tab !== 'campaigns' && tab !== 'reports') return;
     if (metricsPreset === 'custom' && (!metricsSince || !metricsUntil)) return;
-    loadCampaigns().catch(() => {});
+    loadCampaigns().catch(() => { });
   }, [site, tab, metricsPreset, metricsSince, metricsUntil, loadCampaigns]);
 
   useEffect(() => {
@@ -1204,13 +1225,13 @@ ${scriptContent}
       showFlash('Conexão atualizada com sucesso.');
       searchParams.delete('connected');
       setSearchParams(searchParams, { replace: true });
-      loadMeta().then(() => loadAdAccounts().catch(() => {}));
+      loadMeta().then(() => loadAdAccounts().catch(() => { }));
     }
   }, [loadAdAccounts, loadMeta, searchParams, setSearchParams]);
 
   useEffect(() => {
     if (tab === 'meta' && meta?.has_facebook_connection && adAccounts.length === 0) {
-      loadAdAccounts().catch(() => {});
+      loadAdAccounts().catch(() => { });
     }
   }, [tab, meta, adAccounts.length, loadAdAccounts]);
 
@@ -1233,7 +1254,7 @@ ${scriptContent}
     if (!selectedCampaignId) {
       showFlash('Selecione uma campanha para gerar o diagnóstico.', 'error');
       setTab('reports');
-      loadCampaigns({ force: true }).catch(() => {});
+      loadCampaigns({ force: true }).catch(() => { });
       return;
     }
     if (metricsPreset === 'custom' && (!metricsSince || !metricsUntil)) {
@@ -1412,10 +1433,10 @@ ${scriptContent}
   const getResultValue = (
     item:
       | {
-          objective?: string | null;
-          optimization_goal?: string | null;
-          promoted_object?: Record<string, unknown> | null;
-        }
+        objective?: string | null;
+        optimization_goal?: string | null;
+        promoted_object?: Record<string, unknown> | null;
+      }
       | null
       | undefined,
     metrics: CampaignMetrics | undefined
@@ -1476,9 +1497,9 @@ ${scriptContent}
   const getObjectiveMetricLabel = (
     item:
       | {
-          optimization_goal?: string | null;
-          promoted_object?: Record<string, unknown> | null;
-        }
+        optimization_goal?: string | null;
+        promoted_object?: Record<string, unknown> | null;
+      }
       | null
       | undefined,
     metrics?: CampaignMetrics
@@ -1623,11 +1644,10 @@ ${scriptContent}
       {/* ── Flash ── */}
       {flash && (
         <div
-          className={`mt-4 flex items-center gap-3 rounded-xl border px-4 py-3 text-sm transition-all ${
-            flashType === 'error'
+          className={`mt-4 flex items-center gap-3 rounded-xl border px-4 py-3 text-sm transition-all ${flashType === 'error'
               ? 'border-red-500/25 bg-red-500/10 text-red-300'
               : 'border-emerald-500/25 bg-emerald-500/10 text-emerald-300'
-          }`}
+            }`}
         >
           {flashType === 'error' ? (
             <svg
@@ -1679,11 +1699,10 @@ ${scriptContent}
                 searchParams.set('tab', t.key);
                 setSearchParams(searchParams, { replace: true });
               }}
-              className={`relative px-3.5 py-2 text-[13px] font-medium rounded-t-lg transition-all ${
-                tab === t.key
+              className={`relative px-3.5 py-2 text-[13px] font-medium rounded-t-lg transition-all ${tab === t.key
                   ? 'text-zinc-100 bg-zinc-900/80'
                   : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900/40'
-              }`}
+                }`}
             >
               {t.label}
               {tab === t.key && (
@@ -1778,12 +1797,83 @@ ${scriptContent}
                   </p>
                 </div>
               )}
+
+              {/* ── Data Quality Card ── */}
+              {dataQuality && dataQuality.total_events > 0 && (
+                <div className="mt-6 rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
+                  <h3 className="text-sm font-semibold text-zinc-100 mb-1">Qualidade dos Dados (últimos 7 dias)</h3>
+                  <p className="text-[11px] text-zinc-500 mb-4">{dataQuality.total_events.toLocaleString()} eventos rastreados</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    {[
+                      { label: 'FBP / FBC', value: dataQuality.metrics.fbp_fbc_match_rate, desc: 'Cookies Meta' },
+                      { label: 'Email / Tel', value: dataQuality.metrics.em_ph_match_rate, desc: 'PII Avançado' },
+                      { label: 'External ID', value: dataQuality.metrics.external_id_match_rate, desc: 'ID Externo' },
+                    ].map((m) => {
+                      const pct = Math.round(m.value * 100);
+                      const color = pct >= 80 ? 'text-emerald-400' : pct >= 50 ? 'text-amber-400' : 'text-red-400';
+                      const bg = pct >= 80 ? 'bg-emerald-400' : pct >= 50 ? 'bg-amber-400' : 'bg-red-400';
+                      return (
+                        <div key={m.label} className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
+                          <div className="text-[10px] text-zinc-500 uppercase tracking-wider">{m.label}</div>
+                          <div className={`text-xl font-bold ${color} mt-1`}>{pct}%</div>
+                          <div className="mt-2 h-1.5 rounded-full bg-zinc-800 overflow-hidden">
+                            <div className={`h-full rounded-full ${bg} transition-all`} style={{ width: `${pct}%` }} />
+                          </div>
+                          <div className="text-[9px] text-zinc-600 mt-1">{m.desc}</div>
+                        </div>
+                      );
+                    })}
+                    <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
+                      <div className="text-[10px] text-zinc-500 uppercase tracking-wider">Score Geral</div>
+                      {(() => {
+                        const avg = Math.round(((dataQuality.metrics.fbp_fbc_match_rate + dataQuality.metrics.em_ph_match_rate + dataQuality.metrics.external_id_match_rate) / 3) * 100);
+                        const color = avg >= 80 ? 'text-emerald-400' : avg >= 50 ? 'text-amber-400' : 'text-red-400';
+                        const emoji = avg >= 80 ? '🟢' : avg >= 50 ? '🟡' : '🔴';
+                        return <div className={`text-xl font-bold ${color} mt-1`}>{emoji} {avg}%</div>;
+                      })()}
+                      <div className="text-[9px] text-zinc-600 mt-3">Média dos indicadores</div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
           {/* ── Tab: Meta ── */}
           {tab === 'meta' && (
             <form onSubmit={saveMeta} className="max-w-2xl space-y-6">
+              {/* Token Expiration Alert */}
+              {meta?.fb_token_expires_at && (() => {
+                const expiresAt = new Date(meta.fb_token_expires_at);
+                const now = new Date();
+                const daysLeft = Math.ceil((expiresAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+                if (daysLeft > 14) return null;
+                const expired = daysLeft <= 0;
+                return (
+                  <div className={`rounded-xl border p-4 flex items-start gap-3 ${expired
+                      ? 'border-red-500/40 bg-red-500/10'
+                      : 'border-amber-500/30 bg-amber-500/8'
+                    }`}>
+                    <div className="text-2xl mt-0.5">{expired ? '🔴' : '⚠️'}</div>
+                    <div>
+                      <h4 className={`text-sm font-semibold ${expired ? 'text-red-300' : 'text-amber-300'}`}>
+                        {expired ? 'Token do Facebook Expirado!' : `Token expira em ${daysLeft} dia${daysLeft > 1 ? 's' : ''}`}
+                      </h4>
+                      <p className="text-xs text-zinc-400 mt-0.5">
+                        {expired
+                          ? 'A API do servidor (CAPI) não conseguirá mais enviar eventos para o Meta. Reconecte sua conta do Facebook imediatamente.'
+                          : 'Reconecte sua conta do Facebook em breve para evitar interrupção no envio de eventos CAPI.'}
+                      </p>
+                      {expired && (
+                        <button type="button" onClick={connectFacebook}
+                          className="mt-3 bg-[#1877F2] hover:bg-[#166fe5] text-white px-4 py-2 rounded-lg text-xs font-medium transition-colors">
+                          Reconectar Facebook
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
               <input type="hidden" name="enabled" value="false" />
 
               {/* Facebook Connection */}
@@ -1846,7 +1936,7 @@ ${scriptContent}
                         type="button"
                         onClick={() => {
                           setShowAdAccountSelector(true);
-                          loadAdAccounts().catch(() => {});
+                          loadAdAccounts().catch(() => { });
                         }}
                         className="text-[11px] text-zinc-500 hover:text-zinc-300 flex items-center gap-1 transition-colors"
                       >
@@ -1889,11 +1979,10 @@ ${scriptContent}
                           return (
                             <label
                               key={acc.id}
-                              className={`flex items-center justify-between p-3.5 rounded-xl border cursor-pointer transition-all ${
-                                isSelected
+                              className={`flex items-center justify-between p-3.5 rounded-xl border cursor-pointer transition-all ${isSelected
                                   ? 'bg-blue-500/10 border-blue-500/40'
                                   : 'bg-zinc-900/60 border-zinc-800 hover:border-zinc-700'
-                              }`}
+                                }`}
                               onClick={() => {
                                 if (isSelected) setShowAdAccountSelector(false);
                               }}
@@ -1918,14 +2007,13 @@ ${scriptContent}
                                   onChange={(e) => {
                                     const val = e.target.value;
                                     setMeta((prev) => ({ ...(prev || {}), ad_account_id: val }));
-                                    loadPixels(val).catch(() => {});
+                                    loadPixels(val).catch(() => { });
                                     setShowAdAccountSelector(false);
                                   }}
                                 />
                                 <div
-                                  className={`w-4 h-4 rounded-full border flex items-center justify-center ${
-                                    isSelected ? 'border-blue-500 bg-blue-500' : 'border-zinc-600'
-                                  }`}
+                                  className={`w-4 h-4 rounded-full border flex items-center justify-center ${isSelected ? 'border-blue-500 bg-blue-500' : 'border-zinc-600'
+                                    }`}
                                 >
                                   {isSelected && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
                                 </div>
@@ -1947,11 +2035,10 @@ ${scriptContent}
                     <span className="text-xs text-zinc-400">Status do CAPI</span>
                     {meta?.last_capi_status ? (
                       <span
-                        className={`inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full border ${
-                          meta.last_capi_status === 'ok'
+                        className={`inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full border ${meta.last_capi_status === 'ok'
                             ? 'bg-emerald-500/12 text-emerald-300 border-emerald-500/25'
                             : 'bg-rose-500/12 text-rose-300 border-rose-500/25'
-                        }`}
+                          }`}
                       >
                         {meta.last_capi_status === 'ok' ? 'OK' : 'ERRO'}
                       </span>
@@ -2182,120 +2269,120 @@ ${scriptContent}
                     URL final
                   </h4>
                   <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    disabled={!utmUrl}
-                    onClick={() => setShowSaveUtmModal(true)}
-                    className="text-[11px] border border-zinc-700 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-3 py-2 rounded-lg transition-colors disabled:opacity-40"
-                  >
-                    Salvar
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!utmUrl}
-                    onClick={() => {
-                      if (!utmUrl) return;
-                      navigator.clipboard.writeText(utmUrl);
-                      showFlash('URL copiada!');
-                    }}
-                    className="text-[11px] border border-zinc-800 bg-zinc-900/70 hover:bg-zinc-900 text-zinc-400 hover:text-zinc-200 px-3 py-2 rounded-lg transition-colors disabled:opacity-40"
-                  >
-                    Copiar URL
-                  </button>
+                    <button
+                      type="button"
+                      disabled={!utmUrl}
+                      onClick={() => setShowSaveUtmModal(true)}
+                      className="text-[11px] border border-zinc-700 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-3 py-2 rounded-lg transition-colors disabled:opacity-40"
+                    >
+                      Salvar
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!utmUrl}
+                      onClick={() => {
+                        if (!utmUrl) return;
+                        navigator.clipboard.writeText(utmUrl);
+                        showFlash('URL copiada!');
+                      }}
+                      className="text-[11px] border border-zinc-800 bg-zinc-900/70 hover:bg-zinc-900 text-zinc-400 hover:text-zinc-200 px-3 py-2 rounded-lg transition-colors disabled:opacity-40"
+                    >
+                      Copiar URL
+                    </button>
+                  </div>
                 </div>
-              </div>
-              <div className="text-xs text-zinc-300 break-all">
-                {utmUrl || 'Preencha a URL base e UTMs para gerar o link.'}
+                <div className="text-xs text-zinc-300 break-all">
+                  {utmUrl || 'Preencha a URL base e UTMs para gerar o link.'}
+                </div>
+
+                {showSaveUtmModal && (
+                  <div className="mt-4 pt-4 border-t border-zinc-700/50">
+                    <label className="block text-xs font-medium text-zinc-400 mb-2">Nome para salvar</label>
+                    <div className="flex gap-2">
+                      <input
+                        value={saveUtmName}
+                        onChange={(e) => setSaveUtmName(e.target.value)}
+                        placeholder="Ex: Campanha Black Friday"
+                        className="flex-1 rounded-lg bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-zinc-600"
+                      />
+                      <button
+                        type="button"
+                        onClick={saveCurrentUtm}
+                        className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-xs font-medium transition-colors"
+                      >
+                        Confirmar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowSaveUtmModal(false)}
+                        className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-4 py-2 rounded-lg text-xs font-medium transition-colors"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
-              {showSaveUtmModal && (
-                <div className="mt-4 pt-4 border-t border-zinc-700/50">
-                  <label className="block text-xs font-medium text-zinc-400 mb-2">Nome para salvar</label>
-                  <div className="flex gap-2">
-                    <input
-                      value={saveUtmName}
-                      onChange={(e) => setSaveUtmName(e.target.value)}
-                      placeholder="Ex: Campanha Black Friday"
-                      className="flex-1 rounded-lg bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-zinc-600"
-                    />
-                    <button
-                      type="button"
-                      onClick={saveCurrentUtm}
-                      className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-xs font-medium transition-colors"
-                    >
-                      Confirmar
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setShowSaveUtmModal(false)}
-                      className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-4 py-2 rounded-lg text-xs font-medium transition-colors"
-                    >
-                      Cancelar
-                    </button>
+              {savedUtms.length > 0 && (
+                <div className="space-y-3">
+                  <h3 className="text-sm font-semibold text-zinc-100">UTMs Salvas</h3>
+                  <div className="grid grid-cols-1 gap-3">
+                    {savedUtms.map((u) => (
+                      <div
+                        key={u.id}
+                        className="flex items-center justify-between gap-4 rounded-xl border border-zinc-800/60 bg-zinc-900/30 p-4 hover:border-zinc-700 transition-colors"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium text-zinc-200">{u.name}</span>
+                            <span className="text-[10px] text-zinc-500 font-mono">
+                              {new Date(u.created_at).toLocaleDateString('pt-BR')}
+                            </span>
+                          </div>
+                          <div className="mt-1 flex flex-wrap gap-2 text-[10px] text-zinc-500 font-mono">
+                            {u.utm_source && (
+                              <span className="px-1.5 py-0.5 rounded bg-zinc-800/50 border border-zinc-800">
+                                src: {u.utm_source}
+                              </span>
+                            )}
+                            {u.utm_campaign && (
+                              <span className="px-1.5 py-0.5 rounded bg-zinc-800/50 border border-zinc-800">
+                                cmp: {u.utm_campaign}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => {
+                              setUtmBaseUrl(u.url_base || '');
+                              setUtmSource(u.utm_source || '');
+                              setUtmMedium(u.utm_medium || '');
+                              setUtmCampaign(u.utm_campaign || '');
+                              setUtmContent(u.utm_content || '');
+                              setUtmTerm(u.utm_term || '');
+                              setUtmClickId(u.click_id || '');
+                              showFlash('Carregado no gerador!');
+                            }}
+                            className="text-xs text-blue-400 hover:text-blue-300"
+                          >
+                            Carregar
+                          </button>
+                          <button
+                            onClick={() => deleteSavedUtm(u.id)}
+                            className="text-xs text-red-400 hover:text-red-300"
+                          >
+                            Excluir
+                          </button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
             </div>
-
-            {savedUtms.length > 0 && (
-              <div className="space-y-3">
-                <h3 className="text-sm font-semibold text-zinc-100">UTMs Salvas</h3>
-                <div className="grid grid-cols-1 gap-3">
-                  {savedUtms.map((u) => (
-                    <div
-                      key={u.id}
-                      className="flex items-center justify-between gap-4 rounded-xl border border-zinc-800/60 bg-zinc-900/30 p-4 hover:border-zinc-700 transition-colors"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-zinc-200">{u.name}</span>
-                          <span className="text-[10px] text-zinc-500 font-mono">
-                            {new Date(u.created_at).toLocaleDateString('pt-BR')}
-                          </span>
-                        </div>
-                        <div className="mt-1 flex flex-wrap gap-2 text-[10px] text-zinc-500 font-mono">
-                          {u.utm_source && (
-                            <span className="px-1.5 py-0.5 rounded bg-zinc-800/50 border border-zinc-800">
-                              src: {u.utm_source}
-                            </span>
-                          )}
-                          {u.utm_campaign && (
-                            <span className="px-1.5 py-0.5 rounded bg-zinc-800/50 border border-zinc-800">
-                              cmp: {u.utm_campaign}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => {
-                            setUtmBaseUrl(u.url_base || '');
-                            setUtmSource(u.utm_source || '');
-                            setUtmMedium(u.utm_medium || '');
-                            setUtmCampaign(u.utm_campaign || '');
-                            setUtmContent(u.utm_content || '');
-                            setUtmTerm(u.utm_term || '');
-                            setUtmClickId(u.click_id || '');
-                            showFlash('Carregado no gerador!');
-                          }}
-                          className="text-xs text-blue-400 hover:text-blue-300"
-                        >
-                          Carregar
-                        </button>
-                        <button
-                          onClick={() => deleteSavedUtm(u.id)}
-                          className="text-xs text-red-400 hover:text-red-300"
-                        >
-                          Excluir
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
+          )}
 
           {/* ── Tab: Google Analytics ── */}
           {tab === 'ga' && (
@@ -2337,7 +2424,7 @@ ${scriptContent}
           {/* ── Tab: Eventos ── */}
           {tab === 'matching' && (
             <div className="space-y-10 max-w-5xl">
-              
+
               {/* Seção 1: Configuração de Eventos por URL */}
               <div className="space-y-5">
                 <div>
@@ -2446,45 +2533,45 @@ ${scriptContent}
                 {/* Saved Forms List */}
                 {savedForms.length > 0 && (
                   <div className="mb-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                     {savedForms.map(form => (
-                        <div key={form.id} className={`relative p-4 rounded-xl border transition-all ${selectedFormId === form.id ? 'bg-blue-500/10 border-blue-500/50' : 'bg-zinc-900/30 border-zinc-800/60 hover:border-zinc-700'}`}>
-                           <div className="flex justify-between items-start mb-2">
-                              <h4 className="font-medium text-zinc-200 truncate pr-6">{form.name}</h4>
-                              <button onClick={(e) => { e.stopPropagation(); deleteForm(form.id); }} className="text-zinc-500 hover:text-red-400 transition-colors">
-                                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-                              </button>
-                           </div>
-                           <div className="text-[10px] text-zinc-500 font-mono mb-3">ID: {form.public_id}</div>
-                           <div className="flex gap-2">
-                             <button onClick={() => loadFormToEditor(form)} className="flex-1 text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 py-1.5 rounded border border-zinc-700 transition-colors">
-                                {selectedFormId === form.id ? 'Editando...' : 'Editar'}
-                             </button>
-                             <button onClick={() => copyFormHtml(form)} className="flex-1 text-xs bg-blue-600 hover:bg-blue-500 text-white py-1.5 rounded border border-blue-500 transition-colors shadow-lg shadow-blue-900/20">
-                                Copiar HTML
-                             </button>
-                           </div>
+                    {savedForms.map(form => (
+                      <div key={form.id} className={`relative p-4 rounded-xl border transition-all ${selectedFormId === form.id ? 'bg-blue-500/10 border-blue-500/50' : 'bg-zinc-900/30 border-zinc-800/60 hover:border-zinc-700'}`}>
+                        <div className="flex justify-between items-start mb-2">
+                          <h4 className="font-medium text-zinc-200 truncate pr-6">{form.name}</h4>
+                          <button onClick={(e) => { e.stopPropagation(); deleteForm(form.id); }} className="text-zinc-500 hover:text-red-400 transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" /></svg>
+                          </button>
                         </div>
-                     ))}
+                        <div className="text-[10px] text-zinc-500 font-mono mb-3">ID: {form.public_id}</div>
+                        <div className="flex gap-2">
+                          <button onClick={() => loadFormToEditor(form)} className="flex-1 text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 py-1.5 rounded border border-zinc-700 transition-colors">
+                            {selectedFormId === form.id ? 'Editando...' : 'Editar'}
+                          </button>
+                          <button onClick={() => copyFormHtml(form)} className="flex-1 text-xs bg-blue-600 hover:bg-blue-500 text-white py-1.5 rounded border border-blue-500 transition-colors shadow-lg shadow-blue-900/20">
+                            Copiar HTML
+                          </button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                   <div className="space-y-4">
                     <div className="bg-zinc-900/30 p-5 rounded-xl border border-zinc-800/60 space-y-5">
-                      
+
                       {/* Form Name */}
                       <div>
                         <label className="block text-xs font-medium text-zinc-400 mb-2">Nome do Formulário (para salvar)</label>
                         <div className="flex gap-2">
-                           <input 
-                              value={formName} 
-                              onChange={e => setFormName(e.target.value)} 
-                              placeholder="Ex: Captura Ebook V1" 
-                              className={inputCls} 
-                           />
-                           <button onClick={saveForm} className="bg-zinc-100 hover:bg-white text-zinc-900 px-4 py-2 rounded-lg text-xs font-bold transition-colors">
-                              {selectedFormId ? 'Atualizar' : 'Salvar'}
-                           </button>
+                          <input
+                            value={formName}
+                            onChange={e => setFormName(e.target.value)}
+                            placeholder="Ex: Captura Ebook V1"
+                            className={inputCls}
+                          />
+                          <button onClick={saveForm} className="bg-zinc-100 hover:bg-white text-zinc-900 px-4 py-2 rounded-lg text-xs font-bold transition-colors">
+                            {selectedFormId ? 'Atualizar' : 'Salvar'}
+                          </button>
                         </div>
                       </div>
 
@@ -2596,19 +2683,19 @@ ${scriptContent}
                       <div>
                         <label className="block text-xs font-medium text-zinc-400 mb-3">Ação após o cadastro</label>
                         <div className="flex gap-4 mb-3">
-                           <label className="flex items-center gap-2 cursor-pointer">
-                              <input type="radio" name="postSubmitAction" value="message" checked={postSubmitAction === 'message'} onChange={() => setPostSubmitAction('message')} className="w-4 h-4 text-blue-500 bg-zinc-800 border-zinc-700" />
-                              <span className="text-sm text-zinc-300">Exibir Mensagem</span>
-                           </label>
-                           <label className="flex items-center gap-2 cursor-pointer">
-                              <input type="radio" name="postSubmitAction" value="redirect" checked={postSubmitAction === 'redirect'} onChange={() => setPostSubmitAction('redirect')} className="w-4 h-4 text-blue-500 bg-zinc-800 border-zinc-700" />
-                              <span className="text-sm text-zinc-300">Redirecionar</span>
-                           </label>
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input type="radio" name="postSubmitAction" value="message" checked={postSubmitAction === 'message'} onChange={() => setPostSubmitAction('message')} className="w-4 h-4 text-blue-500 bg-zinc-800 border-zinc-700" />
+                            <span className="text-sm text-zinc-300">Exibir Mensagem</span>
+                          </label>
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input type="radio" name="postSubmitAction" value="redirect" checked={postSubmitAction === 'redirect'} onChange={() => setPostSubmitAction('redirect')} className="w-4 h-4 text-blue-500 bg-zinc-800 border-zinc-700" />
+                            <span className="text-sm text-zinc-300">Redirecionar</span>
+                          </label>
                         </div>
                         {postSubmitAction === 'message' ? (
-                           <textarea value={postSubmitMessage} onChange={e => setPostSubmitMessage(e.target.value)} className={`${inputCls} min-h-[80px]`} placeholder="Digite a mensagem de agradecimento..." />
+                          <textarea value={postSubmitMessage} onChange={e => setPostSubmitMessage(e.target.value)} className={`${inputCls} min-h-[80px]`} placeholder="Digite a mensagem de agradecimento..." />
                         ) : (
-                           <input value={postSubmitRedirectUrl} onChange={e => setPostSubmitRedirectUrl(e.target.value)} className={inputCls} placeholder="https://..." />
+                          <input value={postSubmitRedirectUrl} onChange={e => setPostSubmitRedirectUrl(e.target.value)} className={inputCls} placeholder="https://..." />
                         )}
                       </div>
 
@@ -2639,7 +2726,7 @@ ${scriptContent}
                       </div>
                       {postSubmitAction === 'message' && (
                         <div className="mt-4 p-3 bg-green-500/10 text-green-500 text-xs border border-green-500/20 rounded">
-                           Simulação pós-envio: {postSubmitMessage}
+                          Simulação pós-envio: {postSubmitMessage}
                         </div>
                       )}
                     </div>
@@ -2693,11 +2780,10 @@ ${scriptContent}
                       <React.Fragment key={idx}>
                         <button
                           onClick={() => handleMetaBreadcrumbClick(idx)}
-                          className={`text-xs transition-colors ${
-                            idx === metaBreadcrumbs.length - 1
+                          className={`text-xs transition-colors ${idx === metaBreadcrumbs.length - 1
                               ? 'text-zinc-200 font-medium'
                               : 'text-zinc-500 hover:text-zinc-300'
-                          }`}
+                            }`}
                         >
                           {crumb.name}
                         </button>
@@ -2790,11 +2876,10 @@ ${scriptContent}
                           ].map((h, index) => (
                             <th
                               key={h}
-                              className={`text-left text-[10px] font-medium uppercase tracking-widest text-zinc-600 px-4 py-3 whitespace-nowrap ${
-                                index === 0
+                              className={`text-left text-[10px] font-medium uppercase tracking-widest text-zinc-600 px-4 py-3 whitespace-nowrap ${index === 0
                                   ? 'sticky left-0 z-10 bg-zinc-950/95 border-r border-zinc-800/60'
                                   : ''
-                              }`}
+                                }`}
                             >
                               {h}
                             </th>
@@ -2897,11 +2982,10 @@ ${scriptContent}
                                 <div className="flex items-center gap-1.5 justify-end">
                                   <button
                                     onClick={() => toggleMetaStatus(c)}
-                                    className={`text-[11px] px-2.5 py-1 rounded-md border transition-colors ${
-                                      resolveDisplayStatus(c) === 'ACTIVE'
+                                    className={`text-[11px] px-2.5 py-1 rounded-md border transition-colors ${resolveDisplayStatus(c) === 'ACTIVE'
                                         ? 'bg-zinc-900 border-zinc-700 text-zinc-400 hover:text-amber-300 hover:border-amber-500/40'
                                         : 'bg-zinc-900 border-zinc-700 text-zinc-400 hover:text-emerald-300 hover:border-emerald-500/40'
-                                    }`}
+                                      }`}
                                   >
                                     {resolveDisplayStatus(c) === 'ACTIVE' ? 'Pausar' : 'Ativar'}
                                   </button>
@@ -2980,9 +3064,8 @@ ${scriptContent}
                   ].map((ev) => (
                     <div key={ev.label} className="flex items-center gap-2 text-xs">
                       <div
-                        className={`w-1.5 h-1.5 rounded-full ${
-                          ev.available ? 'bg-emerald-400' : 'bg-zinc-700'
-                        }`}
+                        className={`w-1.5 h-1.5 rounded-full ${ev.available ? 'bg-emerald-400' : 'bg-zinc-700'
+                          }`}
                       />
                       <span className={ev.available ? 'text-zinc-300' : 'text-zinc-600'}>
                         {ev.label}
@@ -2993,6 +3076,43 @@ ${scriptContent}
                     </div>
                   ))}
                 </div>
+              </div>
+
+              {/* ── Webhook Test ── */}
+              <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5 space-y-4">
+                <div>
+                  <h3 className="text-sm font-semibold text-zinc-100">Testar Webhook</h3>
+                  <p className="mt-0.5 text-xs text-zinc-500">
+                    Dispare um evento de compra simulado para verificar se a integração está funcionando.
+                  </p>
+                </div>
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <select
+                    value={webhookTestPlatform}
+                    onChange={(e) => setWebhookTestPlatform(e.target.value)}
+                    className="rounded-lg bg-zinc-950/60 border border-zinc-800 px-3 py-2.5 text-xs text-zinc-300 outline-none focus:border-blue-500/60"
+                  >
+                    <option value="hotmart">Hotmart</option>
+                    <option value="kiwify">Kiwify</option>
+                    <option value="eduzz">Eduzz</option>
+                    <option value="generic">Genérico</option>
+                  </select>
+                  <button
+                    type="button"
+                    disabled={webhookTestLoading}
+                    onClick={fireWebhookTest}
+                    className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 flex items-center gap-2"
+                  >
+                    {webhookTestLoading ? (
+                      <><svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" /></svg> Enviando...</>
+                    ) : (
+                      <><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2L11 13" /><path d="M22 2L15 22L11 13L2 9L22 2Z" /></svg> Disparar Teste</>
+                    )}
+                  </button>
+                </div>
+                <p className="text-[10px] text-zinc-600">
+                  O teste simula uma compra com dados fictícios e envia pela rota de ingestão para validar todo o fluxo.
+                </p>
               </div>
             </div>
           )}
@@ -3039,7 +3159,7 @@ ${scriptContent}
                     <div className="flex items-center gap-2">
                       {periodSelector}
                       <button
-                        onClick={() => loadCampaigns({ force: true }).catch(() => {})}
+                        onClick={() => loadCampaigns({ force: true }).catch(() => { })}
                         className="bg-zinc-900/60 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 px-3.5 py-2.5 rounded-lg text-xs transition-colors"
                       >
                         Atualizar
@@ -3246,9 +3366,9 @@ ${scriptContent}
                         value={
                           campaignMetrics[selectedCampaignId].landing_page_views > 0
                             ? formatMoney(
-                                campaignMetrics[selectedCampaignId].spend /
-                                  campaignMetrics[selectedCampaignId].landing_page_views
-                              )
+                              campaignMetrics[selectedCampaignId].spend /
+                              campaignMetrics[selectedCampaignId].landing_page_views
+                            )
                             : '—'
                         }
                       />
