@@ -20,6 +20,7 @@ type MetaConfig = {
   has_capi_token?: boolean;
   has_facebook_connection?: boolean;
   fb_user_id?: string | null;
+  capi_test_event_code?: string | null;
 };
 type GaConfig = {
   measurement_id?: string | null;
@@ -814,6 +815,8 @@ ${scriptContent}
     };
     const capi = formData.get('capi_token');
     if (capi) data.capi_token = capi;
+    const testCode = formData.get('capi_test_event_code');
+    if (testCode) data.capi_test_event_code = testCode;
     try {
       await api.put(`/integrations/sites/${id}/meta`, data);
       showFlash('Configurações salvas com sucesso!');
@@ -1897,8 +1900,7 @@ ${scriptContent}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-medium text-zinc-400 mb-2">
-                      CAPI Token{' '}
-                      <span className="text-zinc-600 font-normal">(Opcional)</span>
+                      CAPI Token <span className="text-zinc-600 font-normal">(Opcional)</span>
                     </label>
                     <input
                       name="capi_token"
@@ -1906,8 +1908,20 @@ ${scriptContent}
                       className={inputCls}
                       placeholder={meta?.has_capi_token ? '•••••••• (configurado)' : 'Token de Acesso (EAA...)'}
                     />
+                    <p className="mt-1.5 text-[11px] text-zinc-600">Rastreamento server-side (anti-adblock)</p>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-400 mb-2">
+                      Código de teste do servidor <span className="text-zinc-600 font-normal">(Opcional)</span>
+                    </label>
+                    <input
+                      name="capi_test_event_code"
+                      defaultValue={meta?.capi_test_event_code || ''}
+                      placeholder="Ex: TEST123"
+                      className={inputCls}
+                    />
                     <p className="mt-1.5 text-[11px] text-zinc-600">
-                      Rastreamento server-side (anti-adblock)
+                      Use o código de teste do Event Manager para validar eventos server-side.
                     </p>
                   </div>
                 </div>

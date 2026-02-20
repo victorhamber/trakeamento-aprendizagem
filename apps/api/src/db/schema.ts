@@ -41,6 +41,7 @@ const schemaSql = `
     enabled BOOLEAN DEFAULT TRUE,
     pixel_id VARCHAR(50),
     capi_token_enc TEXT,
+    capi_test_event_code VARCHAR(100),
     marketing_token_enc TEXT,
     ad_account_id VARCHAR(50),
     fb_user_id VARCHAR(50),
@@ -192,6 +193,7 @@ export const ensureSchema = async (pool: Pool) => {
 
   try {
     await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS enabled BOOLEAN DEFAULT TRUE');
+    await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS capi_test_event_code VARCHAR(100)');
     await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS fb_user_id VARCHAR(50)');
     await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS fb_user_token_enc TEXT');
     await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS fb_token_expires_at TIMESTAMP');

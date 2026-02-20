@@ -45,7 +45,7 @@ export class CapiService {
 
   private async getSiteMetaConfig(siteKey: string) {
     const { rows } = await pool.query(
-      `SELECT i.pixel_id, i.capi_token_enc, i.enabled
+      `SELECT i.pixel_id, i.capi_token_enc, i.enabled, i.capi_test_event_code
        FROM sites s
        JOIN integrations_meta i ON i.site_id = s.id
        WHERE s.site_key = $1`,
@@ -72,7 +72,7 @@ export class CapiService {
          console.log(`[CAPI] Failed to decrypt token for siteKey=${siteKey}`);
          return null;
       }
-      return { pixelId: cfg.pixel_id, capiToken: token };
+      return { pixelId: cfg.pixel_id, capiToken: token, testEventCode: cfg.capi_test_event_code as string | null };
     } catch (e) {
       console.log(`[CAPI] Decrypt error for siteKey=${siteKey}`, e);
       return null;
@@ -119,7 +119,9 @@ export class CapiService {
         },
       ],
       access_token: cfg.capiToken,
-      ...(process.env.META_TEST_EVENT_CODE ? { test_event_code: process.env.META_TEST_EVENT_CODE } : {}),
+      ...(cfg.testEventCode || process.env.META_TEST_EVENT_CODE
+        ? { test_event_code: (cfg.testEventCode || process.env.META_TEST_EVENT_CODE) as string }
+        : {}),
     };
 
     try {

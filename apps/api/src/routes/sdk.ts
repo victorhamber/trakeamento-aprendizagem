@@ -627,7 +627,11 @@ router.get('/tracker.js', async (_req, res) => {
         action_source:    'website',
         user_data:        buildUserData(),
         telemetry:        telemetry,
-        custom_data:      attrs
+        custom_data:      Object.assign({
+          page_title:   document.title,
+          page_path:    location.pathname,
+          event_url:    location.origin + location.pathname
+        }, attrs)
       };
 
       getFingerprintHash(function(fp) {
@@ -638,11 +642,17 @@ router.get('/tracker.js', async (_req, res) => {
       if (cfg.metaPixelId) {
         loadMetaPixel(cfg.metaPixelId);
         trackMeta('PageEngagement', Object.assign(
-          { ta_source: 'tracking_suite', ta_event_id: eventId,
-            event_url: location.origin + location.pathname },
+          {
+            ta_source:       'tracking_suite',
+            ta_site_key:     cfg.siteKey,
+            ta_event_id:     eventId,
+            event_url:       location.origin + location.pathname,
+            event_source_url: location.href,
+            page_title:      document.title
+          },
           telemetry,
           getTimeFields(eventTime),
-          attrs
+          payload.custom_data
         ), eventId, true);
       }
 
@@ -663,13 +673,13 @@ router.get('/tracker.js', async (_req, res) => {
       var eventTime = Math.floor(Date.now() / 1000);
       var eventId   = genEventId();
       var attrs     = getAttributionParams();
-
       var baseCustom = {
         page_title:       document.title,
         page_path:        location.pathname,
         content_type:     'product',
         event_url:        location.origin + location.pathname
       };
+      var telemetry = buildTelemetry({ page_path: location.pathname, page_title: document.title });
 
       var payload = {
         event_name:       eventName,
@@ -679,7 +689,7 @@ router.get('/tracker.js', async (_req, res) => {
         action_source:    'website',
         user_data:        buildUserData(),
         custom_data:      Object.assign({}, baseCustom, attrs, customData || {}),
-        telemetry:        buildTelemetry({ page_path: location.pathname, page_title: document.title })
+        telemetry:        telemetry
       };
 
       getFingerprintHash(function(fp) {
@@ -699,8 +709,9 @@ router.get('/tracker.js', async (_req, res) => {
             event_source_url: location.href,
             page_title:  document.title
           },
-          payload.custom_data,
-          getTimeFields(eventTime)
+          telemetry,
+          getTimeFields(eventTime),
+          payload.custom_data
         );
         trackMeta(eventName, metaParams, eventId, isCustom);
       }

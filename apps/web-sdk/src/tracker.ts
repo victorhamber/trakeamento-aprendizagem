@@ -215,7 +215,10 @@ export class Tracker {
       }
     };
 
-    this.sendToClientPixels(eventName, eventId, payload.custom_data || {});
+    this.sendToClientPixels(eventName, eventId, {
+      ...(payload.custom_data || {}),
+      ...(payload.telemetry || {}),
+    });
     this.send(payload);
   }
 

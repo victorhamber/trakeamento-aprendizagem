@@ -20,8 +20,10 @@ router.get('/sites/:siteId/meta', requireAuth, async (req, res) => {
   if (!(await requireSiteOwnership(auth.accountId, siteId))) return res.status(404).json({ error: 'Site not found' });
 
   const result = await pool.query(
-    `SELECT pixel_id, ad_account_id,
+    `SELECT pixel_id,
+            ad_account_id,
             enabled,
+            capi_test_event_code,
             (capi_token_enc IS NOT NULL) as has_capi_token,
             (marketing_token_enc IS NOT NULL) as has_marketing_token,
             (fb_user_token_enc IS NOT NULL) as has_facebook_connection,
@@ -38,11 +40,15 @@ router.put('/sites/:siteId/meta', requireAuth, async (req, res) => {
   if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
   if (!(await requireSiteOwnership(auth.accountId, siteId))) return res.status(404).json({ error: 'Site not found' });
 
-  const { pixel_id, capi_token, marketing_token, ad_account_id, enabled } = req.body || {};
+  const { pixel_id, capi_token, marketing_token, ad_account_id, enabled, capi_test_event_code } = req.body || {};
   const pixelId = typeof pixel_id === 'string' ? pixel_id.trim() : null;
   const adAccountId = typeof ad_account_id === 'string' ? ad_account_id.trim() : null;
   const capiTokenEnc =
     typeof capi_token === 'string' && capi_token.trim() ? encryptString(capi_token.trim().replace(/\s+/g, '')) : null;
+  const capiTestEventCode =
+    typeof capi_test_event_code === 'string' && capi_test_event_code.trim()
+      ? capi_test_event_code.trim().replace(/\s+/g, '')
+      : null;
   const marketingTokenEnc =
     typeof marketing_token === 'string' && marketing_token.trim()
       ? encryptString(marketing_token.trim().replace(/\s+/g, ''))
@@ -50,16 +56,17 @@ router.put('/sites/:siteId/meta', requireAuth, async (req, res) => {
   const enabledBool = typeof enabled === 'string' ? enabled === 'true' : typeof enabled === 'boolean' ? enabled : null;
 
   await pool.query(
-    `INSERT INTO integrations_meta (site_id, pixel_id, capi_token_enc, marketing_token_enc, ad_account_id, enabled)
-     VALUES ($1, $2, $3, $4, $5, COALESCE($6, TRUE))
+    `INSERT INTO integrations_meta (site_id, pixel_id, capi_token_enc, capi_test_event_code, marketing_token_enc, ad_account_id, enabled)
+     VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, TRUE))
      ON CONFLICT (site_id) DO UPDATE SET
        pixel_id = COALESCE(EXCLUDED.pixel_id, integrations_meta.pixel_id),
        capi_token_enc = COALESCE(EXCLUDED.capi_token_enc, integrations_meta.capi_token_enc),
+       capi_test_event_code = COALESCE(EXCLUDED.capi_test_event_code, integrations_meta.capi_test_event_code),
        marketing_token_enc = COALESCE(EXCLUDED.marketing_token_enc, integrations_meta.marketing_token_enc),
        ad_account_id = COALESCE(EXCLUDED.ad_account_id, integrations_meta.ad_account_id),
        enabled = COALESCE(EXCLUDED.enabled, integrations_meta.enabled),
        updated_at = NOW()`,
-    [siteId, pixelId, capiTokenEnc, marketingTokenEnc, adAccountId, enabledBool]
+    [siteId, pixelId, capiTokenEnc, capiTestEventCode, marketingTokenEnc, adAccountId, enabledBool]
   );
 
   return res.json({ ok: true });
