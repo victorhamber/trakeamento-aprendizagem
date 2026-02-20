@@ -21,6 +21,9 @@ type MetaConfig = {
   has_facebook_connection?: boolean;
   fb_user_id?: string | null;
   capi_test_event_code?: string | null;
+  last_capi_status?: string | null;
+  last_capi_error?: string | null;
+  last_capi_attempt_at?: string | null;
 };
 type GaConfig = {
   measurement_id?: string | null;
@@ -1867,6 +1870,32 @@ ${scriptContent}
 
               {/* Pixel Settings */}
               <div className="space-y-5">
+                <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 flex flex-col gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-zinc-400">Status do CAPI</span>
+                    {meta?.last_capi_status ? (
+                      <span
+                        className={`inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full border ${
+                          meta.last_capi_status === 'ok'
+                            ? 'bg-emerald-500/12 text-emerald-300 border-emerald-500/25'
+                            : 'bg-rose-500/12 text-rose-300 border-rose-500/25'
+                        }`}
+                      >
+                        {meta.last_capi_status === 'ok' ? 'OK' : 'ERRO'}
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-zinc-500">Sem tentativas</span>
+                    )}
+                  </div>
+                  {meta?.last_capi_attempt_at && (
+                    <div className="text-[11px] text-zinc-500">
+                      Última tentativa: {new Date(meta.last_capi_attempt_at).toLocaleString()}
+                    </div>
+                  )}
+                  {meta?.last_capi_error && (
+                    <div className="text-[11px] text-rose-300 break-words">{meta.last_capi_error}</div>
+                  )}
+                </div>
                 <div className="flex items-center gap-3 py-4 border-y border-zinc-800/60">
                   <input
                     id="meta-enabled"

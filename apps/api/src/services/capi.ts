@@ -107,13 +107,37 @@ export class CapiService {
     };
   }
 
+  private async updateLastStatus(siteKey: string, result: CapiSendResult) {
+    const status = result.ok ? 'ok' : 'error';
+    const error = result.ok ? null : result.error;
+    const response = result.ok ? result.data : result.details || null;
+    await pool.query(
+      `UPDATE integrations_meta i
+       SET last_capi_status = $1,
+           last_capi_error = $2,
+           last_capi_response = $3,
+           last_capi_attempt_at = NOW()
+       FROM sites s
+       WHERE s.site_key = $4 AND i.site_id = s.id`,
+      [status, error, response, siteKey]
+    );
+  }
+
   public async sendEventDetailed(siteKey: string, event: CapiEvent): Promise<CapiSendResult> {
     const until = CapiService.disabledUntil.get(siteKey);
-    if (until && until > Date.now()) return { ok: false, error: 'CAPI desativado temporariamente (token inválido)' };
+    if (until && until > Date.now()) {
+      const result = { ok: false, error: 'CAPI desativado temporariamente (token inválido)' } as const;
+      await this.updateLastStatus(siteKey, result);
+      return result;
+    }
     if (until && until <= Date.now()) CapiService.disabledUntil.delete(siteKey);
 
     const cfg = await this.getSiteMetaConfig(siteKey);
-    if (!cfg) return { ok: false, error: 'CAPI não configurado para este site' };
+    if (!cfg) {
+      const result = { ok: false, error: 'CAPI não configurado para este site' } as const;
+      await this.updateLastStatus(siteKey, result);
+      return result;
+    }
 
     const payload = this.buildPayload(cfg, event);
 
@@ -122,18 +146,26 @@ export class CapiService {
         `https://graph.facebook.com/v19.0/${cfg.pixelId}/events`,
         payload
       );
-      return { ok: true, data: response.data };
+      const result = { ok: true, data: response.data } as const;
+      await this.updateLastStatus(siteKey, result);
+      return result;
     } catch (error: unknown) {
       if (axios.isAxiosError(error)) {
         const code = (error.response?.data as { error?: { code?: number } } | undefined)?.error?.code;
         const message = (error.response?.data as { error?: { message?: string } } | undefined)?.error?.message;
         if (code === 190) {
           CapiService.disabledUntil.set(siteKey, Date.now() + 60 * 60 * 1000);
-          return { ok: false, error: `Token inválido no Meta. ${message || ''}`.trim(), details: error.response?.data };
+          const result = { ok: false, error: `Token inválido no Meta. ${message || ''}`.trim(), details: error.response?.data } as const;
+          await this.updateLastStatus(siteKey, result);
+          return result;
         }
-        return { ok: false, error: message || 'Erro ao enviar para o Meta', details: error.response?.data };
+        const result = { ok: false, error: message || 'Erro ao enviar para o Meta', details: error.response?.data } as const;
+        await this.updateLastStatus(siteKey, result);
+        return result;
       }
-      return { ok: false, error: error instanceof Error ? error.message : 'Erro desconhecido' };
+      const result = { ok: false, error: error instanceof Error ? error.message : 'Erro desconhecido' } as const;
+      await this.updateLastStatus(siteKey, result);
+      return result;
     }
   }
 
@@ -156,6 +188,7 @@ export class CapiService {
         payload
       );
       console.log(`CAPI Event Sent: ${event.event_name} - ID: ${event.event_id}`, response.data);
+      await this.updateLastStatus(siteKey, { ok: true, data: response.data });
       return response.data;
     } catch (error: unknown) {
       if (axios.isAxiosError(error)) {
@@ -166,13 +199,15 @@ export class CapiService {
           console.error(
             `CAPI desativado temporariamente para siteKey=${siteKey} (token inválido). Atualize o CAPI Token no painel. ${message || ''}`.trim()
           );
+          await this.updateLastStatus(siteKey, { ok: false, error: `Token inválido no Meta. ${message || ''}`.trim(), details: error.response?.data });
           return;
         }
         console.error('CAPI Error:', error.response?.data || error.message);
+        await this.updateLastStatus(siteKey, { ok: false, error: message || 'Erro ao enviar para o Meta', details: error.response?.data });
       } else {
         console.error('CAPI Error:', error instanceof Error ? error.message : 'unknown_error');
+        await this.updateLastStatus(siteKey, { ok: false, error: error instanceof Error ? error.message : 'Erro desconhecido' });
       }
-      // Aqui entraria lógica de DLQ/Retry
     }
   }
 }
