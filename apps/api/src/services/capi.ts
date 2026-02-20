@@ -43,7 +43,6 @@ export class CapiService {
     const t = token.trim();
     if (t.length < 20) return false;
     if (/\s/.test(t)) return false;
-    if (!/^[A-Za-z0-9._|-]+$/.test(t)) return false;
     return true;
   }
 

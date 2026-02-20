@@ -49,7 +49,7 @@ router.put('/sites/:siteId/meta', requireAuth, async (req, res) => {
   const adAccountId = typeof ad_account_id === 'string' ? ad_account_id.trim() : null;
   const capiTokenSanitized =
     typeof capi_token === 'string'
-      ? capi_token.trim().replace(/[^A-Za-z0-9._|-]/g, '')
+      ? capi_token.trim().replace(/\s+/g, '')
       : '';
   const capiTokenEnc = capiTokenSanitized ? encryptString(capiTokenSanitized) : null;
   const hasTestEventCode = Object.prototype.hasOwnProperty.call(req.body || {}, 'capi_test_event_code');
