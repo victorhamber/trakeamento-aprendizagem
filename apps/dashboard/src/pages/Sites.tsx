@@ -26,7 +26,7 @@ export const SitesPage = () => {
   };
 
   useEffect(() => {
-    load().catch(() => {});
+    load().catch(() => { });
   }, []);
 
   const createSite = async (e: React.FormEvent) => {
@@ -61,80 +61,102 @@ export const SitesPage = () => {
   };
 
   return (
-    <Layout title="Sites" right={<button onClick={() => nav('/sites')} className="hidden" />}>
+    <Layout title="Sites">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-1 rounded-3xl border border-white/5 bg-zinc-950/50 p-6 shadow-[0_12px_30px_rgba(0,0,0,0.35)]">
+        {/* Create site form */}
+        <div className="lg:col-span-1 rounded-2xl border border-zinc-800/60 bg-zinc-950/60 p-5 sm:p-6">
           <div className="text-sm font-semibold text-white">Adicionar site</div>
           <div className="mt-1 text-xs text-zinc-500">Crie um site e depois conecte snippet, Meta/GA e webhook.</div>
           <form className="mt-4 space-y-3" onSubmit={createSite}>
             <div>
-              <label className="block text-xs text-zinc-400">Nome do site</label>
+              <label className="block text-xs text-zinc-400 mb-1">Nome do site</label>
               <input
-                className="mt-1 w-full rounded-xl bg-zinc-950/60 border border-white/10 px-3 py-2 text-sm outline-none focus:border-blue-500/60 transition-colors"
+                className="w-full rounded-xl bg-zinc-900/60 border border-zinc-800 px-3 py-2.5 text-sm outline-none focus:border-indigo-500/60 focus:ring-1 focus:ring-indigo-500/20 transition-all placeholder:text-zinc-600"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
+                placeholder="Minha Landing Page"
                 required
               />
             </div>
             <div>
-              <label className="block text-xs text-zinc-400">Domínio (opcional)</label>
+              <label className="block text-xs text-zinc-400 mb-1">Domínio (opcional)</label>
               <input
-                className="mt-1 w-full rounded-xl bg-zinc-950/60 border border-white/10 px-3 py-2 text-sm outline-none focus:border-blue-500/60 transition-colors"
+                className="w-full rounded-xl bg-zinc-900/60 border border-zinc-800 px-3 py-2.5 text-sm outline-none focus:border-indigo-500/60 focus:ring-1 focus:ring-indigo-500/20 transition-all placeholder:text-zinc-600"
                 value={domain}
                 onChange={(e) => setDomain(e.target.value)}
                 placeholder="ex: loja.com"
               />
             </div>
-            {error && <div className="text-sm text-red-400">{error}</div>}
+            {error && (
+              <div className="rounded-xl bg-red-500/10 border border-red-500/20 px-3 py-2 text-sm text-red-400">
+                {error}
+              </div>
+            )}
             <button
               disabled={loading}
-              className="w-full bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 hover:from-blue-500 hover:via-indigo-500 hover:to-violet-500 text-white px-4 py-2 rounded-xl disabled:opacity-50 text-sm shadow-[0_12px_30px_rgba(59,130,246,0.35)] transition-all"
+              className="w-full bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 hover:from-blue-500 hover:via-indigo-500 hover:to-violet-500 text-white px-4 py-2.5 rounded-xl disabled:opacity-50 text-sm font-semibold shadow-[0_8px_25px_rgba(59,130,246,0.25)] hover:shadow-[0_8px_35px_rgba(59,130,246,0.4)] transition-all"
             >
-              {loading ? 'Criando…' : 'Criar'}
+              {loading ? 'Criando…' : 'Criar site'}
             </button>
           </form>
           {createdSecret && (
-            <div className="mt-4 text-sm">
-              <div className="text-xs text-amber-200/80">Webhook secret (salve agora)</div>
-              <div className="mt-2 font-mono text-xs bg-zinc-950/60 border border-white/10 p-3 rounded-xl break-all">
+            <div className="mt-4 text-sm animate-in fade-in" style={{ animationDuration: '300ms' }}>
+              <div className="text-xs text-amber-300 font-medium">⚠ Webhook secret (salve agora)</div>
+              <div className="mt-2 font-mono text-xs bg-zinc-900/60 border border-amber-500/20 p-3 rounded-xl break-all text-zinc-300">
                 {createdSecret}
               </div>
             </div>
           )}
         </div>
 
-        <div className="lg:col-span-2 rounded-3xl border border-white/5 bg-zinc-950/50 p-6 shadow-[0_12px_30px_rgba(0,0,0,0.35)]">
-          <div className="flex items-center justify-between">
+        {/* Sites list */}
+        <div className="lg:col-span-2 rounded-2xl border border-zinc-800/60 bg-zinc-950/60 p-5 sm:p-6">
+          <div className="flex items-center justify-between mb-4">
             <div>
               <div className="text-sm font-semibold text-white">Seus sites</div>
               <div className="mt-1 text-xs text-zinc-500">Abra um site para configurar e acompanhar.</div>
             </div>
-            <Link to="/dashboard" className="text-sm text-blue-400 hover:text-blue-300">
-              Voltar ao dashboard
-            </Link>
           </div>
 
-          <div className="mt-4 space-y-3">
-            {sites.length === 0 && <div className="text-sm text-zinc-400">Nenhum site ainda.</div>}
-            {sites.map((s) => (
+          <div className="space-y-2.5">
+            {sites.length === 0 && (
+              <div className="rounded-2xl border border-dashed border-zinc-800 p-8 text-center animate-in fade-in" style={{ animationDuration: '400ms' }}>
+                <svg viewBox="0 0 24 24" fill="none" className="h-10 w-10 mx-auto mb-3 text-zinc-700" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10" />
+                  <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+                </svg>
+                <div className="text-sm text-zinc-400 font-medium">Nenhum site ainda</div>
+                <div className="text-xs text-zinc-600 mt-1">Crie seu primeiro site usando o formulário ao lado.</div>
+              </div>
+            )}
+            {sites.map((s, i) => (
               <Link
                 key={s.id}
                 to={`/sites/${s.id}`}
-                className="group block rounded-2xl border border-white/5 bg-zinc-950/50 hover:bg-white/5 p-4 transition-all"
+                className="group block rounded-2xl border border-zinc-800/60 bg-zinc-900/30 hover:bg-zinc-900/60 hover:border-zinc-700/60 p-4 transition-all duration-200 animate-in fade-in"
+                style={{ animationDelay: `${i * 60}ms`, animationDuration: '300ms' }}
               >
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <div className="font-semibold text-zinc-100">{s.name}</div>
-                    <div className="text-sm text-zinc-500">{s.domain || '—'}</div>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="shrink-0 h-9 w-9 rounded-xl bg-gradient-to-br from-blue-500/20 to-violet-500/20 border border-white/5 flex items-center justify-center text-blue-400 group-hover:scale-105 transition-transform">
+                      <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="12" cy="12" r="10" />
+                        <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+                      </svg>
+                    </div>
+                    <div className="min-w-0">
+                      <div className="font-semibold text-sm text-zinc-100 group-hover:text-white transition-colors truncate">{s.name}</div>
+                      <div className="text-xs text-zinc-500 truncate">{s.domain || '—'}</div>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-4">
-                    <div className="text-xs font-mono text-zinc-600 group-hover:text-zinc-500">{s.site_key}</div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <div className="hidden sm:block text-[10px] font-mono text-zinc-600 group-hover:text-zinc-500 transition-colors">{s.site_key}</div>
                     <button
                       onClick={(e) => deleteSite(e, s.id)}
                       className="p-2 rounded-lg hover:bg-red-500/10 text-zinc-600 hover:text-red-400 transition-colors"
                       title="Excluir site"
                     >
-                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
                     </button>
                   </div>
                 </div>

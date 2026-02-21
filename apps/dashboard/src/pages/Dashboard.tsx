@@ -77,26 +77,29 @@ type KpiProps = {
   value: number | string;
   hint: string;
   icon: React.ReactNode;
-  color: string; // tailwind text color class for the icon
-  glow: string;  // tailwind bg color for glow
+  color: string;
+  glow: string;
+  delay?: number;
 };
 
-const KpiCard = ({ label, value, hint, icon, color, glow }: KpiProps) => (
-  <div className="group relative rounded-2xl border border-zinc-800/60 bg-zinc-950/60 p-5 hover:border-zinc-700/60 transition-all duration-200 overflow-hidden">
-    {/* subtle glow on hover */}
+const KpiCard = ({ label, value, hint, icon, color, glow, delay = 0 }: KpiProps) => (
+  <div
+    className="group relative rounded-2xl border border-zinc-800/60 bg-zinc-950/60 p-4 sm:p-5 hover:border-zinc-700/60 transition-all duration-200 overflow-hidden animate-in fade-in"
+    style={{ animationDelay: `${delay}ms`, animationDuration: '400ms' }}
+  >
     <div className={`absolute -top-8 -right-8 w-24 h-24 rounded-full blur-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 ${glow}`} />
 
-    <div className="relative flex items-start justify-between gap-3">
+    <div className="relative flex items-start justify-between gap-2">
       <div className="min-w-0">
         <div className="text-[10px] font-medium uppercase tracking-widest text-zinc-600 mb-2">
           {label}
         </div>
-        <div className="text-2xl font-semibold text-zinc-100 tabular-nums leading-none">
+        <div className="text-xl sm:text-2xl font-semibold text-zinc-100 tabular-nums leading-none">
           {value ?? '—'}
         </div>
-        <div className="mt-1.5 text-[11px] text-zinc-600">{hint}</div>
+        <div className="mt-1.5 text-[11px] text-zinc-600 truncate">{hint}</div>
       </div>
-      <div className={`shrink-0 rounded-xl p-2.5 bg-zinc-900/80 border border-zinc-800/60 ${color}`}>
+      <div className={`shrink-0 rounded-xl p-2 sm:p-2.5 bg-zinc-900/80 border border-zinc-800/60 ${color}`}>
         {icon}
       </div>
     </div>
@@ -198,28 +201,7 @@ export const DashboardPage = () => {
   };
 
   return (
-    <Layout
-      title="Dashboard"
-      right={
-        <Link
-          to="/sites"
-          className="inline-flex items-center gap-2 bg-white hover:bg-zinc-100 text-zinc-900 text-xs font-semibold rounded-xl px-4 py-2.5 transition-colors shadow-lg shadow-black/20"
-        >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            className="w-3.5 h-3.5"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M12 5v14M5 12h14" />
-          </svg>
-          Novo site
-        </Link>
-      }
-    >
+    <Layout title="Dashboard">
       {/* ── Hero banner ── */}
       <div className="relative rounded-2xl border border-zinc-800/60 bg-zinc-950/60 overflow-hidden px-6 py-7 mb-6">
         {/* ambient glow */}
@@ -240,7 +222,7 @@ export const DashboardPage = () => {
             </p>
           </div>
 
-          <div className="shrink-0 flex items-center gap-3 self-start sm:self-auto">
+          <div className="shrink-0 flex flex-wrap items-center gap-2 self-start sm:self-auto">
             <select
               value={period}
               onChange={(e) => setPeriod(e.target.value)}
@@ -274,7 +256,7 @@ export const DashboardPage = () => {
       </div>
 
       {/* ── KPI grid ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-2 sm:gap-3 mb-6">
         <KpiCard
           label="Sites"
           value={data?.sites ?? 0}
@@ -282,6 +264,7 @@ export const DashboardPage = () => {
           icon={<IconSites />}
           color="text-violet-400"
           glow="bg-violet-500/20"
+          delay={0}
         />
         <KpiCard
           label="Tráfego"
@@ -290,6 +273,7 @@ export const DashboardPage = () => {
           icon={<IconEvents />}
           color="text-blue-400"
           glow="bg-blue-500/20"
+          delay={60}
         />
         <KpiCard
           label="Conversões"
@@ -298,6 +282,7 @@ export const DashboardPage = () => {
           icon={<IconMoney />}
           color="text-emerald-400"
           glow="bg-emerald-500/20"
+          delay={120}
         />
         <KpiCard
           label="Faturamento"
@@ -310,6 +295,7 @@ export const DashboardPage = () => {
           }
           color="text-amber-400"
           glow="bg-amber-500/20"
+          delay={180}
         />
         <KpiCard
           label="Insights IA"
@@ -318,6 +304,7 @@ export const DashboardPage = () => {
           icon={<IconBrain />}
           color="text-rose-400"
           glow="bg-rose-500/20"
+          delay={240}
         />
       </div>
 

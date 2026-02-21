@@ -2,6 +2,39 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ─── Theme Variables ────────────────────────────────────────────────────── */
+
+:root {
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+
+  /* Dark theme (default) */
+  --bg-app: #05070a;
+  --bg-sidebar: #080a0f;
+  --bg-card: rgba(9, 9, 11, 0.6);
+  --bg-input: rgba(9, 9, 11, 0.6);
+  --bg-header: rgba(5, 7, 10, 0.8);
+  --border-subtle: rgba(255, 255, 255, 0.05);
+  --border-card: rgba(39, 39, 42, 0.6);
+  --text-primary: #f4f4f5;
+  --text-secondary: #a1a1aa;
+  --text-muted: #71717a;
+  --text-dimmed: #52525b;
+}
+
+.light {
+  --bg-app: #f8fafc;
+  --bg-sidebar: #ffffff;
+  --bg-card: rgba(255, 255, 255, 0.9);
+  --bg-input: #ffffff;
+  --bg-header: rgba(248, 250, 252, 0.85);
+  --border-subtle: rgba(0, 0, 0, 0.06);
+  --border-card: rgba(0, 0, 0, 0.08);
+  --text-primary: #18181b;
+  --text-secondary: #52525b;
+  --text-muted: #71717a;
+  --text-dimmed: #a1a1aa;
+}
+
 /* ─── Base ────────────────────────────────────────────────────────────────── */
 
 html,
@@ -11,9 +44,15 @@ body,
 }
 
 body {
+  font-family: var(--font-sans);
   @apply bg-zinc-950 text-zinc-100;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+.light body,
+body.light {
+  @apply bg-slate-50 text-zinc-900;
 }
 
 /* ─── Text selection ──────────────────────────────────────────────────────── */
@@ -28,15 +67,17 @@ body {
   @apply outline-none ring-2 ring-blue-500/50 ring-offset-2 ring-offset-zinc-950;
 }
 
+.light :focus-visible {
+  @apply ring-offset-white;
+}
+
 /* ─── Scrollbar ───────────────────────────────────────────────────────────── */
 
-/* Firefox */
 * {
   scrollbar-width: thin;
   scrollbar-color: theme('colors.zinc.800') transparent;
 }
 
-/* Webkit — global (thin, unobtrusive) */
 ::-webkit-scrollbar {
   width: 4px;
   height: 4px;
@@ -58,7 +99,6 @@ body {
   background: transparent;
 }
 
-/* Named class — for components that need explicit scrollbar styling */
 .custom-scrollbar::-webkit-scrollbar {
   width: 4px;
   height: 4px;
@@ -78,7 +118,6 @@ body {
 
 /* ─── Inputs & selects ────────────────────────────────────────────────────── */
 
-/* Remove default date input calendar icon in webkit */
 input[type='date']::-webkit-calendar-picker-indicator {
   filter: invert(0.4);
   cursor: pointer;
@@ -88,7 +127,6 @@ input[type='date']::-webkit-calendar-picker-indicator:hover {
   filter: invert(0.7);
 }
 
-/* Remove number input arrows */
 input[type='number']::-webkit-inner-spin-button,
 input[type='number']::-webkit-outer-spin-button {
   -webkit-appearance: none;
@@ -111,6 +149,21 @@ input[type='number'] {
   to   { opacity: 1; transform: translateX(0); }
 }
 
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-8px); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+}
+
 .animate-in {
   animation-fill-mode: both;
   animation-duration: 180ms;
@@ -124,3 +177,23 @@ input[type='number'] {
 .slide-in-from-left {
   animation-name: slide-in-from-left;
 }
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+.animate-shimmer {
+  background-size: 200% 100%;
+  animation: shimmer 2s linear infinite;
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 3s ease-in-out infinite;
+}
+
+/* Staggered fade-in for KPI cards */
+.stagger-1 { animation-delay: 0ms; }
+.stagger-2 { animation-delay: 60ms; }
+.stagger-3 { animation-delay: 120ms; }
+.stagger-4 { animation-delay: 180ms; }
+.stagger-5 { animation-delay: 240ms; }

@@ -13,6 +13,7 @@ import statsRoutes from './routes/stats';
 import { pool } from './db/pool';
 import metaRoutes from './routes/meta';
 import recommendationRoutes from './routes/recommendations';
+import notificationRoutes from './routes/notifications';
 import { formsRouter } from './routes/forms';
 import { ensureSchema } from './db/schema';
 import { capiService } from './services/capi';
@@ -83,6 +84,7 @@ app.use('/ingest', ingestRoutes);
 app.use('/webhooks', webhookRoutes);
 app.use('/meta', metaRoutes);
 app.use('/recommendations', recommendationRoutes);
+app.use('/notifications', notificationRoutes);
 app.use('/', formsRouter);
 
 app.get('/', (req, res) => {

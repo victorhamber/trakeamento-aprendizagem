@@ -209,10 +209,20 @@ const schemaSql = `
     updated_at TIMESTAMP DEFAULT NOW()
   );
 
+  CREATE TABLE IF NOT EXISTS notifications (
+    id SERIAL PRIMARY KEY,
+    account_id INTEGER REFERENCES accounts(id) ON DELETE CASCADE,
+    title VARCHAR(255) NOT NULL,
+    message TEXT NOT NULL,
+    is_read BOOLEAN DEFAULT false,
+    created_at TIMESTAMP DEFAULT NOW()
+  );
+
   CREATE INDEX IF NOT EXISTS idx_sites_account ON sites(account_id);
   CREATE INDEX IF NOT EXISTS idx_web_events_time ON web_events(event_time);
   CREATE INDEX IF NOT EXISTS idx_web_events_name ON web_events(event_name);
   CREATE INDEX IF NOT EXISTS idx_purchases_site_time ON purchases(site_key, created_at);
+  CREATE INDEX IF NOT EXISTS idx_notifications_account ON notifications(account_id);
 `;
 
 export const ensureSchema = async (pool: Pool) => {
