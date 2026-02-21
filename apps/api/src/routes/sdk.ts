@@ -811,14 +811,96 @@ router.get('/tracker.js', async (_req, res) => {
     window.tracker = { identify: window.taIdentify, track: track };
   } catch(_e) {}
 
+  // ─── Auto-Tagging Checkout Links ──────────────────────────────────────────
+  // Injeta tracking params (EID, FBC, FBP) nos links de checkout (sck/src)
+  function decorateCheckoutLinks() {
+    var trackerState = getState();
+    var eid = trackerState.userData.external_id;
+    var fbc = getCookie('_fbc') || '';
+    var fbp = getCookie('_fbp') || '';
+    
+    // Se não temos EID, tentamos criar um
+    if (!eid) {
+      eid = 'eid_' + Math.random().toString(36).substring(2, 15);
+      setState({ userData: { external_id: eid } });
+    }
+
+    // trk_ + Base64(eid|fbc|fbp)
+    var trackValue = eid;
+    if (fbc || fbp) trackValue += '|' + (fbc || '') + '|' + (fbp || '');
+    var safeTrackValue = 'trk_' + btoa(trackValue).replace(/=+$/, '');
+
+    var checkoutDomains = [
+      'pay.hotmart.com', 'hotmart.com/product',
+      'pay.kiwify.com.br', 'kiwify.com.br',
+      'sun.eduzz.com', 'orbitpages.com',
+      'checkout.perfectpay.com.br', 'perfectpay.com.br',
+      'checkout.monetizze.com.br', 'monetizze.com.br',
+      'checkout.ticto.com.br', 'ticto.com.br',
+      'checkout.braip.com', 'braip.com'
+    ];
+
+    function processLink(link) {
+      if (!link.href) return;
+      try {
+        var url = new URL(link.href);
+        var isCheckout = false;
+        for (var d = 0; d < checkoutDomains.length; d++) {
+          if (url.hostname.indexOf(checkoutDomains[d]) > -1 || url.pathname.indexOf(checkoutDomains[d]) > -1) {
+            isCheckout = true; break;
+          }
+        }
+
+        if (isCheckout) {
+          var hasSck = url.searchParams.has('sck');
+          var hasSrc = url.searchParams.has('src');
+          
+          if (!hasSck && !hasSrc) {
+            var paramName = url.hostname.indexOf('hotmart') > -1 ? 'sck' : 'src';
+            url.searchParams.set(paramName, safeTrackValue);
+            link.href = url.toString();
+          } else {
+            var existingParam = hasSck ? 'sck' : 'src';
+            var existingVal = url.searchParams.get(existingParam);
+            if (existingVal && existingVal.indexOf('trk_') === -1) {
+              url.searchParams.set(existingParam, existingVal + '-' + safeTrackValue);
+              link.href = url.toString();
+            }
+          }
+        }
+      } catch (e) {}
+    }
+
+    var links = document.getElementsByTagName('a');
+    for (var i = 0; i < links.length; i++) processLink(links[i]);
+
+    if (window.MutationObserver) {
+      new MutationObserver(function(mutations) {
+        for (var m = 0; m < mutations.length; m++) {
+          if (!mutations[m].addedNodes) continue;
+          for (var n = 0; n < mutations[m].addedNodes.length; n++) {
+            var node = mutations[m].addedNodes[n];
+            if (node.nodeName === 'A') processLink(node);
+            else if (node.getElementsByTagName) {
+              var newLinks = node.getElementsByTagName('a');
+              for (var j = 0; j < newLinks.length; j++) processLink(newLinks[j]);
+            }
+          }
+        }
+      }).observe(document.body, { childList: true, subtree: true });
+    }
+  }
+
   // ─── Init ─────────────────────────────────────────────────────────────────
   if (document.readyState === 'complete' || document.readyState === 'interactive') {
     pageView();
     checkUrlRules();
+    decorateCheckoutLinks();
   } else {
     document.addEventListener('DOMContentLoaded', function() {
       pageView();
       checkUrlRules();
+      decorateCheckoutLinks();
     });
   }
 

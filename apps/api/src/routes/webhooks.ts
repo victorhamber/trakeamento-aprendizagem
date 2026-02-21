@@ -156,9 +156,38 @@ router.post('/purchase', async (req, res) => {
     if (isApproved) {
       const externalId = payload.user_id || payload.buyer?.id || payload.Customer?.id;
 
-      // IP e UA reais do auto-tagging (vem da URL do checkout se houver)
+      // ─── Extração do URL Decorator (sck/src) ──────────────────────────────
+      // O SDK injeta sck="trk_Base64(eid|fbc|fbp)" nos links de checkout.
+      // Aqui decodificamos para garantir a atribuição perfeita no CAPI.
+      let trkEid = '';
+      let trkFbc = '';
+      let trkFbp = '';
+      const sckRaw = payload.sck || payload.src || '';
+
+      if (typeof sckRaw === 'string' && sckRaw.includes('trk_')) {
+        try {
+          // Pode vir junto com outras tags, ex: "sck=afiliado123-trk_YmFzZTY0"
+          const parts = sckRaw.split('-');
+          const trkPart = parts.find(p => p.startsWith('trk_'));
+          if (trkPart) {
+            const b64 = trkPart.substring(4); // remove 'trk_'
+            const decoded = Buffer.from(b64, 'base64').toString('utf-8');
+            const ids = decoded.split('|');
+            if (ids[0]) trkEid = ids[0];
+            if (ids[1]) trkFbc = ids[1];
+            if (ids[2]) trkFbp = ids[2];
+          }
+        } catch (e) {
+          console.error('[Webhook] Failed to decode trk_ parameter:', e);
+        }
+      }
+
       const clientIp = payload.client_ip_address || payload.ip || req.ip || '0.0.0.0';
       const clientUa = payload.client_user_agent || payload.user_agent || 'Webhook/1.0';
+
+      const finalExternalId = trkEid || externalId;
+      const finalFbc = trkFbc || fbc;
+      const finalFbp = trkFbp || fbp;
 
       const capiPayload = {
         event_name: 'Purchase',
@@ -177,9 +206,9 @@ router.post('/purchase', async (req, res) => {
           zp: zip ? CapiService.hash(zip.replace(/\s+/g, '').toLowerCase()) : undefined,
           country: country ? CapiService.hash(country.toLowerCase()) : undefined,
           db: dob ? CapiService.hash(dob.replace(/[^0-9]/g, '')) : undefined,
-          fbp: fbp,
-          fbc: fbc,
-          external_id: externalId ? CapiService.hash(String(externalId)) : undefined,
+          fbp: finalFbp,
+          fbc: finalFbc,
+          external_id: finalExternalId ? CapiService.hash(String(finalExternalId)) : undefined,
         },
         custom_data: {
           currency: currency,
