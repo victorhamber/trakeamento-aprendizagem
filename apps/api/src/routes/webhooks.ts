@@ -93,7 +93,11 @@ async function processPurchaseWebhook({
       await pool.query(
         `INSERT INTO purchases (site_key, order_id, platform, amount, currency, status, buyer_email_hash, fbp, fbc, raw_payload)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-         ON CONFLICT (site_key, order_id) DO NOTHING`,
+         ON CONFLICT (site_key, order_id) DO UPDATE SET
+           amount = EXCLUDED.amount,
+           currency = EXCLUDED.currency,
+           status = EXCLUDED.status,
+           raw_payload = EXCLUDED.raw_payload`,
         [siteKey, orderId, platform, value, currency, status, dbEmailHash, finalFbp, finalFbc, JSON.stringify(payload)]
       );
 
@@ -111,7 +115,11 @@ async function processPurchaseWebhook({
       await pool.query(
         `INSERT INTO purchases (site_key, order_id, platform, amount, currency, status, buyer_email_hash, fbp, fbc, raw_payload)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-         ON CONFLICT (site_key, order_id) DO UPDATE SET status = EXCLUDED.status`,
+         ON CONFLICT (site_key, order_id) DO UPDATE SET
+           amount = EXCLUDED.amount,
+           currency = EXCLUDED.currency,
+           status = EXCLUDED.status,
+           raw_payload = EXCLUDED.raw_payload`,
         [siteKey, orderId, platform, value, currency, status, dbEmailHash, fbp, fbc, JSON.stringify(payload)]
       );
     } catch (e) {
