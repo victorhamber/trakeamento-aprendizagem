@@ -488,4 +488,78 @@ router.delete('/:siteId/saved-utms/:id', requireAuth, async (req, res) => {
   return res.json({ ok: true });
 });
 
+// ─── Custom Webhooks ───
+
+router.get('/:siteId/custom-webhooks', requireAuth, async (req, res) => {
+  const auth = req.auth!;
+  const siteId = Number(req.params.siteId);
+  if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
+
+  const site = await pool.query('SELECT site_key FROM sites WHERE id = $1 AND account_id = $2', [siteId, auth.accountId]);
+  if (!site.rowCount) return res.status(404).json({ error: 'Site not found' });
+
+  const result = await pool.query('SELECT * FROM custom_webhooks WHERE site_id = $1 ORDER BY created_at DESC', [siteId]);
+  return res.json({ webhooks: result.rows });
+});
+
+router.post('/:siteId/custom-webhooks', requireAuth, async (req, res) => {
+  const auth = req.auth!;
+  const siteId = Number(req.params.siteId);
+  if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
+
+  const site = await pool.query('SELECT site_key FROM sites WHERE id = $1 AND account_id = $2', [siteId, auth.accountId]);
+  if (!site.rowCount) return res.status(404).json({ error: 'Site not found' });
+  const siteKey = site.rows[0].site_key;
+
+  const { name } = req.body;
+  if (!name || typeof name !== 'string') return res.status(400).json({ error: 'Name is required' });
+
+  const secretKey = crypto.randomBytes(32).toString('hex');
+
+  const result = await pool.query(
+    'INSERT INTO custom_webhooks (site_id, site_key, name, secret_key) VALUES ($1, $2, $3, $4) RETURNING *',
+    [siteId, siteKey, name, secretKey]
+  );
+  return res.status(201).json({ webhook: result.rows[0] });
+});
+
+router.put('/:siteId/custom-webhooks/:hookId', requireAuth, async (req, res) => {
+  const auth = req.auth!;
+  const siteId = Number(req.params.siteId);
+  const hookId = req.params.hookId;
+  if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
+
+  const site = await pool.query('SELECT id FROM sites WHERE id = $1 AND account_id = $2', [siteId, auth.accountId]);
+  if (!site.rowCount) return res.status(404).json({ error: 'Site not found' });
+
+  const { name, is_active, mapping_config } = req.body;
+
+  const result = await pool.query(
+    `UPDATE custom_webhooks 
+     SET name = COALESCE($1, name), 
+         is_active = COALESCE($2, is_active), 
+         mapping_config = COALESCE($3, mapping_config),
+         updated_at = NOW()
+     WHERE id = $4 AND site_id = $5 
+     RETURNING *`,
+    [name, is_active !== undefined ? is_active : null, mapping_config ? JSON.stringify(mapping_config) : null, hookId, siteId]
+  );
+
+  if (!result.rowCount) return res.status(404).json({ error: 'Webhook not found' });
+  return res.json({ webhook: result.rows[0] });
+});
+
+router.delete('/:siteId/custom-webhooks/:hookId', requireAuth, async (req, res) => {
+  const auth = req.auth!;
+  const siteId = Number(req.params.siteId);
+  const hookId = req.params.hookId;
+  if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
+
+  const site = await pool.query('SELECT id FROM sites WHERE id = $1 AND account_id = $2', [siteId, auth.accountId]);
+  if (!site.rowCount) return res.status(404).json({ error: 'Site not found' });
+
+  await pool.query('DELETE FROM custom_webhooks WHERE id = $1 AND site_id = $2', [hookId, siteId]);
+  return res.json({ ok: true });
+});
+
 export default router;
