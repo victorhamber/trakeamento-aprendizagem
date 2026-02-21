@@ -1,4 +1,4 @@
-import { Router } from 'express';
+﻿import { Router } from 'express';
 import crypto from 'crypto';
 import { pool } from '../db/pool';
 import { capiService, CapiService } from '../services/capi';
@@ -6,7 +6,7 @@ import { decryptString } from '../lib/crypto';
 
 const router = Router();
 
-// ─── Core Ingestion Engine for all Webhooks ────────────────────────────
+// â”€â”€â”€ Core Ingestion Engine for all Webhooks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function processPurchaseWebhook({
   siteKey, payload, email, phone, firstName, lastName, city, state, zip, country, dob,
   fbp, fbc, externalId, clientIp, clientUa, value, currency, status, orderId, platform
@@ -94,7 +94,7 @@ async function processPurchaseWebhook({
         `INSERT INTO purchases (site_key, order_id, platform, amount, currency, status, buyer_email_hash, fbp, fbc, raw_payload)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
          ON CONFLICT (site_key, order_id) DO NOTHING`,
-        [siteKey, orderId, platform, value, currency, status, dbEmailHash, finalFbp, finalFbc, payload]
+        [siteKey, orderId, platform, value, currency, status, dbEmailHash, finalFbp, finalFbc, JSON.stringify(payload)]
       );
 
       if (metaEnabled && pixel_id && capi_token_enc) {
@@ -112,7 +112,7 @@ async function processPurchaseWebhook({
         `INSERT INTO purchases (site_key, order_id, platform, amount, currency, status, buyer_email_hash, fbp, fbc, raw_payload)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
          ON CONFLICT (site_key, order_id) DO UPDATE SET status = EXCLUDED.status`,
-        [siteKey, orderId, platform, value, currency, status, dbEmailHash, fbp, fbc, payload]
+        [siteKey, orderId, platform, value, currency, status, dbEmailHash, fbp, fbc, JSON.stringify(payload)]
       );
     } catch (e) {
       console.error('[Webhook] Refund DB DB Error:', e);
@@ -128,7 +128,7 @@ router.post('/purchase', async (req, res) => {
   const siteKey = (req.headers['x-site-key'] as string) || (req.query.key as string);
   if (!siteKey) return res.status(400).json({ error: 'Missing site key' });
 
-  // Autenticação Simplificada (Token na URL) - Para plataformas como Hotmart/Kiwify
+  // AutenticaÃ§Ã£o Simplificada (Token na URL) - Para plataformas como Hotmart/Kiwify
   const token = req.query.token as string | undefined;
   if (token) {
     const secretRow = await pool.query('SELECT webhook_secret_enc FROM sites WHERE site_key = $1', [siteKey]);
@@ -137,9 +137,9 @@ router.post('/purchase', async (req, res) => {
     const secret = decryptString(secretRow.rows[0].webhook_secret_enc as string);
     if (token !== secret) return res.status(401).json({ error: 'Invalid webhook token' });
 
-    // Se o token for válido, prossegue sem checar assinatura/timestamp
+    // Se o token for vÃ¡lido, prossegue sem checar assinatura/timestamp
   } else {
-    // Autenticação HMAC (Padrão seguro)
+    // AutenticaÃ§Ã£o HMAC (PadrÃ£o seguro)
     if (!signature || !timestamp) return res.status(401).json({ error: 'Missing webhook signature' });
     const toleranceSeconds = Number(process.env.WEBHOOK_TOLERANCE_SECONDS || 300);
     const ts = Number(timestamp);
@@ -159,7 +159,7 @@ router.post('/purchase', async (req, res) => {
 
   const payload = JSON.parse(rawBody.toString());
 
-  // Extração de dados (fbp/fbc vindos da URL do checkout)
+  // ExtraÃ§Ã£o de dados (fbp/fbc vindos da URL do checkout)
   const fbp = payload.fbp || payload.custom_args?.fbp;
   const fbc = payload.fbc || payload.custom_args?.fbc;
 
@@ -258,7 +258,7 @@ router.post('/purchase', async (req, res) => {
   return res.json({ received: true });
 });
 
-// ─── Native Hotmart Webhook ────────────────────────────────────────────────
+// â”€â”€â”€ Native Hotmart Webhook â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.post('/hotmart', async (req, res) => {
   const siteKey = req.query.key as string;
   const token = req.query.token as string;
@@ -311,7 +311,7 @@ router.post('/hotmart', async (req, res) => {
   return res.json({ received: true });
 });
 
-// ─── Native Kiwify Webhook ────────────────────────────────────────────────
+// â”€â”€â”€ Native Kiwify Webhook â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.post('/kiwify', async (req, res) => {
   const siteKey = req.query.key as string;
   const token = req.query.token as string;
@@ -381,7 +381,7 @@ router.post('/kiwify', async (req, res) => {
   return res.json({ received: true });
 });
 
-// ─── Custom Webhook (Mapped) ───────────────────────────────────────────────
+// â”€â”€â”€ Custom Webhook (Mapped) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.post('/custom/:id', async (req, res) => {
   const webhookId = req.params.id;
   const payload = req.body;
@@ -399,21 +399,21 @@ router.post('/custom/:id', async (req, res) => {
   if (!hookRow.rowCount) return res.status(404).json({ error: 'Webhook not found' });
   const hook = hookRow.rows[0];
 
-  // Sempre atualizar o last_payload para a UI do painel ter a versão mais recente
+  // Sempre atualizar o last_payload para a UI do painel ter a versÃ£o mais recente
   console.log(`[Webhook Custom] Updating last_payload for webhook ${webhookId}`);
   await pool.query('UPDATE custom_webhooks SET last_payload = $1, updated_at = NOW() WHERE id = $2', [JSON.stringify(payload), webhookId]);
 
-  // Se o webhook não estiver ativo, significa que estamos apenas em "modo de captura"
-  // O usuário disparou para pegar as chaves na UI.
+  // Se o webhook nÃ£o estiver ativo, significa que estamos apenas em "modo de captura"
+  // O usuÃ¡rio disparou para pegar as chaves na UI.
   if (!hook.is_active) {
     console.log(`[Webhook Custom] Webhook ${webhookId} is inactive, saved payload for UI mapping.`);
     return res.json({ received: true, mode: 'test_capture' });
   }
 
-  // Se estiver ativo, usamos o mapping_config para extrair as variáveis
+  // Se estiver ativo, usamos o mapping_config para extrair as variÃ¡veis
   const config = hook.mapping_config || {};
 
-  // Função helper para acessar propriedades aninhadas num JSON baseado no path tipo "customer.email"
+  // FunÃ§Ã£o helper para acessar propriedades aninhadas num JSON baseado no path tipo "customer.email"
   const getNested = (obj: any, path: string) => {
     if (!path) return undefined;
     return path.split('.').reduce((acc, part) => acc && acc[part], obj);
@@ -457,3 +457,4 @@ router.post('/custom/:id', async (req, res) => {
 });
 
 export default router;
+
