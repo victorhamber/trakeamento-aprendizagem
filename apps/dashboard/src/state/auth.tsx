@@ -15,7 +15,11 @@ const AuthContext = createContext<AuthState | null>(null);
 const STORAGE_KEY = 'ta_token';
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
-  const [token, setToken] = useState<string | null>(() => localStorage.getItem(STORAGE_KEY));
+  const [token, setToken] = useState<string | null>(() => {
+    const t = localStorage.getItem(STORAGE_KEY);
+    setAuthToken(t);
+    return t;
+  });
   const [user, setUser] = useState<AuthState['user']>(null);
   const [account, setAccount] = useState<AuthState['account']>(null);
 

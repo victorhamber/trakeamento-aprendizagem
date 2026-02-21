@@ -23,11 +23,9 @@ const IconSites = () => (
 );
 
 const IconEvents = () => (
-  <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.5">
-    <path
-      d="M4 13.5C4 12.12 4 11.43 4.35 10.9C4.56 10.59 4.84 10.34 5.17 10.19C5.74 9.93 6.51 10.07 8.06 10.34C9.87 10.66 10.77 10.82 11.47 10.6C11.83 10.48 12.17 10.29 12.46 10.03C13.03 9.5 13.23 8.64 13.62 6.93C14.01 5.25 14.2 4.41 14.78 3.96C15.08 3.73 15.44 3.58 15.82 3.54C16.54 3.45 17.17 3.98 18.43 5.05L19.04 5.57C20.14 6.49 20.69 6.95 20.92 7.55C21 7.75 21.04 7.97 21.04 8.19C21.04 8.85 20.67 9.41 19.93 10.53C19.05 11.88 18.61 12.55 18.34 13.27C18.22 13.59 18.15 13.93 18.12 14.27C18.06 15.01 18.19 15.77 18.45 17.29C18.82 19.46 19.01 20.55 18.43 21.22C18.15 21.55 17.79 21.79 17.38 21.92C16.54 22.2 15.58 21.62 13.67 20.44L12.99 20.02C11.92 19.37 11.39 19.04 10.81 18.91C10.51 18.84 10.2 18.82 9.9 18.85C9.31 18.91 8.76 19.17 7.66 19.68C6.2 20.36 5.48 20.7 4.95 20.43C4.65 20.28 4.41 20.02 4.26 19.72C4 19.2 4 18.42 4 16.86V13.5Z"
-      strokeLinejoin="round"
-    />
+  <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z" />
+    <path d="M13 13l6 6" />
   </svg>
 );
 
@@ -37,13 +35,24 @@ const IconMoney = () => (
   </svg>
 );
 
-const IconReport = () => (
-  <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.5">
-    <path
-      d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
+const IconBrain = () => (
+  <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z" />
+    <path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z" />
+    <path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4" />
+    <path d="M17.599 6.5a3 3 0 0 0 .399-1.375" />
+    <path d="M6.003 5.125A3 3 0 0 0 6.401 6.5" />
+    <path d="M3.477 10.896a4 4 0 0 1 .585-.396" />
+    <path d="M19.938 10.5a4 4 0 0 1 .585.396" />
+    <path d="M6 18a4 4 0 0 1-1.967-.516" />
+    <path d="M19.967 17.484A4 4 0 0 1 18 18" />
+  </svg>
+);
+
+const IconChart = () => (
+  <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 3v18h18" />
+    <path d="m19 9-5 5-4-4-3 3" />
   </svg>
 );
 
@@ -306,7 +315,7 @@ export const DashboardPage = () => {
           label="Insights IA"
           value={data?.reports_7d ?? 0}
           hint={`Diagnósticos gerados`}
-          icon={<IconReport />}
+          icon={<IconBrain />}
           color="text-rose-400"
           glow="bg-rose-500/20"
         />
@@ -330,7 +339,7 @@ export const DashboardPage = () => {
             />
             <ShortcutCard
               to="/ai"
-              icon={<IconReport />}
+              icon={<IconBrain />}
               iconColor="text-violet-400"
               iconBg="bg-violet-500/10"
               title="Inteligência Artificial"
@@ -338,7 +347,7 @@ export const DashboardPage = () => {
             />
             <ShortcutCard
               to="/sites"
-              icon={<IconEvents />}
+              icon={<IconChart />}
               iconColor="text-emerald-400"
               iconBg="bg-emerald-500/10"
               title="Ver Campanhas"
