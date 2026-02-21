@@ -7,6 +7,7 @@ type Overview = {
   sites: number;
   events_today: number;
   purchases_today: number;
+  total_revenue: number;
   reports_7d: number;
 };
 
@@ -140,13 +141,12 @@ const StatusRow = ({ label, status, badge }: StatusRowProps) => (
   <div className="flex items-center justify-between py-3 border-b border-zinc-800/40 last:border-0">
     <div className="flex items-center gap-2.5">
       <div
-        className={`w-1.5 h-1.5 rounded-full ${
-          status === 'ok'
-            ? 'bg-emerald-400'
-            : status === 'warn'
+        className={`w-1.5 h-1.5 rounded-full ${status === 'ok'
+          ? 'bg-emerald-400'
+          : status === 'warn'
             ? 'bg-amber-400'
             : 'bg-zinc-600'
-        } ${status === 'ok' ? 'shadow-[0_0_6px_1px_rgba(52,211,153,0.5)]' : ''}`}
+          } ${status === 'ok' ? 'shadow-[0_0_6px_1px_rgba(52,211,153,0.5)]' : ''}`}
       />
       <span className="text-xs text-zinc-400">{label}</span>
     </div>
@@ -159,13 +159,15 @@ const StatusRow = ({ label, status, badge }: StatusRowProps) => (
 export const DashboardPage = () => {
   const [data, setData] = useState<Overview | null>(null);
   const [hasOpenAiKey, setHasOpenAiKey] = useState<boolean | null>(null);
+  const [period, setPeriod] = useState('today');
+  const [currency, setCurrency] = useState('BRL');
 
   useEffect(() => {
     api
-      .get('/stats/overview')
+      .get('/stats/overview', { params: { period, currency } })
       .then((res) => setData(res.data))
       .catch(() => setData(null));
-  }, []);
+  }, [period, currency]);
 
   useEffect(() => {
     api
@@ -173,6 +175,18 @@ export const DashboardPage = () => {
       .then((res) => setHasOpenAiKey(!!res.data?.has_openai_key))
       .catch(() => setHasOpenAiKey(null));
   }, []);
+
+  const getPeriodLabel = (p: string) => {
+    switch (p) {
+      case 'today': return 'Hoje';
+      case 'yesterday': return 'Ontem';
+      case 'last_7d': return 'Últimos 7 dias';
+      case 'last_14d': return 'Últimos 14 dias';
+      case 'last_30d': return 'Últimos 30 dias';
+      case 'maximum': return 'Período Máximo';
+      default: return 'Hoje';
+    }
+  };
 
   return (
     <Layout
@@ -217,20 +231,43 @@ export const DashboardPage = () => {
             </p>
           </div>
 
-          <Link
-            to="/sites"
-            className="shrink-0 self-start sm:self-auto inline-flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-300 border border-zinc-800 hover:border-zinc-700 bg-zinc-900/60 rounded-lg px-3.5 py-2 transition-all"
-          >
-            Ver sites
-            <IconArrow />
-          </Link>
+          <div className="shrink-0 flex items-center gap-3 self-start sm:self-auto">
+            <select
+              value={period}
+              onChange={(e) => setPeriod(e.target.value)}
+              className="bg-zinc-900/60 border border-zinc-800 text-zinc-300 text-xs rounded-lg px-2.5 py-2 outline-none focus:border-zinc-700 cursor-pointer"
+            >
+              <option value="today">Hoje</option>
+              <option value="yesterday">Ontem</option>
+              <option value="last_7d">Últimos 7 dias</option>
+              <option value="last_14d">Últimos 14 dias</option>
+              <option value="last_30d">Últimos 30 dias</option>
+              <option value="maximum">Máximo</option>
+            </select>
+            <select
+              value={currency}
+              onChange={(e) => setCurrency(e.target.value)}
+              className="bg-zinc-900/60 border border-zinc-800 text-zinc-300 text-xs rounded-lg px-2.5 py-2 outline-none focus:border-zinc-700 cursor-pointer"
+            >
+              <option value="BRL">BRL (R$)</option>
+              <option value="USD">USD ($)</option>
+              <option value="EUR">EUR (€)</option>
+            </select>
+            <Link
+              to="/sites"
+              className="hidden sm:inline-flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-300 border border-zinc-800 hover:border-zinc-700 bg-zinc-900/60 rounded-lg px-3.5 py-2 transition-all"
+            >
+              Ver sites
+              <IconArrow />
+            </Link>
+          </div>
         </div>
       </div>
 
       {/* ── KPI grid ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
         <KpiCard
-          label="Sites monitorados"
+          label="Sites"
           value={data?.sites ?? 0}
           hint="Propriedades ativas"
           icon={<IconSites />}
@@ -238,28 +275,40 @@ export const DashboardPage = () => {
           glow="bg-violet-500/20"
         />
         <KpiCard
-          label="Tráfego hoje"
+          label="Tráfego"
           value={data?.events_today ?? 0}
-          hint="Eventos capturados"
+          hint={`Eventos - ${getPeriodLabel(period)}`}
           icon={<IconEvents />}
           color="text-blue-400"
           glow="bg-blue-500/20"
         />
         <KpiCard
-          label="Conversões hoje"
+          label="Conversões"
           value={data?.purchases_today ?? 0}
-          hint="Vendas confirmadas"
+          hint={`Vendas - ${getPeriodLabel(period)}`}
           icon={<IconMoney />}
           color="text-emerald-400"
           glow="bg-emerald-500/20"
         />
         <KpiCard
-          label="Insights IA"
-          value={data?.reports_7d ?? 0}
-          hint="Diagnósticos nos últimos 7 dias"
-          icon={<IconReport />}
+          label="Faturamento"
+          value={new Intl.NumberFormat(currency === 'BRL' ? 'pt-BR' : 'en-US', { style: 'currency', currency, maximumFractionDigits: 0 }).format(data?.total_revenue ?? 0)}
+          hint={`Receita - ${getPeriodLabel(period)}`}
+          icon={
+            <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.5">
+              <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" strokeLinecap="round" />
+            </svg>
+          }
           color="text-amber-400"
           glow="bg-amber-500/20"
+        />
+        <KpiCard
+          label="Insights IA"
+          value={data?.reports_7d ?? 0}
+          hint={`Diagnósticos gerados`}
+          icon={<IconReport />}
+          color="text-rose-400"
+          glow="bg-rose-500/20"
         />
       </div>
 

@@ -6,47 +6,82 @@ const router = Router();
 
 router.get('/overview', requireAuth, async (req, res) => {
   const auth = req.auth!;
+  const period = (req.query.period as string) || 'today';
+  const currency = (req.query.currency as string) || 'BRL';
+
   const now = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+  let start: Date;
+  let end: Date = now;
+
+  // Normaliza truncando horas para as opções baseadas em dias
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  switch (period) {
+    case 'today':
+      start = todayStart;
+      break;
+    case 'yesterday':
+      start = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000);
+      end = todayStart;
+      break;
+    case 'last_7d':
+      start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      break;
+    case 'last_14d':
+      start = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+      break;
+    case 'last_30d':
+      start = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      break;
+    case 'maximum':
+      start = new Date(0); // Epoch
+      break;
+    default: // custom range if sent as yyyy-mm-dd (fallback para simple today)
+      start = todayStart;
+  }
+
   const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
   const sites = await pool.query('SELECT COUNT(*)::int as c FROM sites WHERE account_id = $1', [auth.accountId]);
 
-  const eventsToday = await pool.query(
+  const eventsPeriod = await pool.query(
     `SELECT COUNT(*)::int as c
      FROM web_events e
      JOIN sites s ON s.site_key = e.site_key
      WHERE s.account_id = $1
        AND e.event_time >= $2
-       AND e.event_time < $3`,
+       AND e.event_time <= $3`,
     [auth.accountId, start, end]
   );
 
-  const purchasesToday = await pool.query(
-    `SELECT COUNT(*)::int as c
+  const purchasesPeriod = await pool.query(
+    `SELECT 
+       COUNT(*)::int as c, 
+       COALESCE(SUM(CASE WHEN p.status = 'approved' AND p.currency = $4 THEN p.amount ELSE 0 END), 0) as total_revenue
      FROM purchases p
      JOIN sites s ON s.site_key = p.site_key
      WHERE s.account_id = $1
        AND p.created_at >= $2
-       AND p.created_at < $3`,
-    [auth.accountId, start, end]
+       AND p.created_at <= $3`,
+    [auth.accountId, start, end, currency]
   );
 
-  const reports7d = await pool.query(
+  const reportsPeriod = await pool.query(
     `SELECT COUNT(*)::int as c
      FROM recommendation_reports r
      JOIN sites s ON s.site_key = r.site_key
      WHERE s.account_id = $1
-       AND r.created_at >= $2`,
-    [auth.accountId, weekAgo]
+       AND r.created_at >= $2
+       AND r.created_at <= $3`,
+    [auth.accountId, start, end]
   );
 
   return res.json({
     sites: sites.rows[0]?.c || 0,
-    events_today: eventsToday.rows[0]?.c || 0,
-    purchases_today: purchasesToday.rows[0]?.c || 0,
-    reports_7d: reports7d.rows[0]?.c || 0,
+    events_today: eventsPeriod.rows[0]?.c || 0,
+    purchases_today: purchasesPeriod.rows[0]?.c || 0,
+    total_revenue: purchasesPeriod.rows[0]?.total_revenue || 0,
+    reports_7d: reportsPeriod.rows[0]?.c || 0,
   });
 });
 
