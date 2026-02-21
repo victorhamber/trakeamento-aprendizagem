@@ -3121,20 +3121,44 @@ ${scriptContent}
                     </div>
                   </div>
 
-                  {/* Kiwify / Outros Card */}
-                  <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5 space-y-4 opacity-50 relative">
-                    <div className="absolute inset-0 bg-transparent flex flex-col items-center justify-center p-4 text-center">
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-blue-600 flex items-center justify-center">
-                        <span className="font-bold text-white text-xs">Kiwify</span>
+                  {/* Kiwify Card */}
+                  <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-lg bg-blue-600 flex items-center justify-center">
+                          <span className="font-bold text-white text-[10px]">Kiwify</span>
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-semibold text-zinc-100">Kiwify</h4>
+                          <p className="text-[10px] text-zinc-500">Mapeamento automático de PII e UTMs</p>
+                        </div>
                       </div>
-                      <div>
-                        <h4 className="text-sm font-semibold text-zinc-100">Kiwify</h4>
-                        <p className="text-[10px] text-zinc-500">Em desenvolvimento</p>
+                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-bold uppercase tracking-wider">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        Ativo
                       </div>
                     </div>
-                    <div className="h-10 rounded-lg bg-zinc-800/50 border border-zinc-800/50"></div>
+
+                    <div>
+                      <label className="block text-[10px] font-medium text-zinc-500 mb-1.5">URL do Webhook (Copie e cole na Kiwify)</label>
+                      <div className="flex gap-2">
+                        <input
+                          readOnly
+                          className="flex-1 rounded-lg bg-zinc-950 border border-zinc-800 px-3 py-2 text-[11px] font-mono text-zinc-400 outline-none"
+                          value={webhookSecret ? `${apiBaseUrl}/webhooks/kiwify?key=${site?.site_key}&token=${webhookSecret}` : 'Carregando…'}
+                        />
+                        <button
+                          onClick={() => {
+                            const url = `${apiBaseUrl}/webhooks/kiwify?key=${site?.site_key}&token=${webhookSecret}`;
+                            navigator.clipboard.writeText(url);
+                            showFlash('URL copiada!');
+                          }}
+                          className="flex items-center gap-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-3 py-2 rounded-lg text-xs transition-colors shrink-0"
+                        >
+                          Copiar
+                        </button>
+                      </div>
+                    </div>
                   </div>
 
                 </div>

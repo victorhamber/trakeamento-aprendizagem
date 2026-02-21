@@ -311,6 +311,76 @@ router.post('/hotmart', async (req, res) => {
   return res.json({ received: true });
 });
 
+// ─── Native Kiwify Webhook ────────────────────────────────────────────────
+router.post('/kiwify', async (req, res) => {
+  const siteKey = req.query.key as string;
+  const token = req.query.token as string;
+  if (!siteKey || !token) return res.status(400).json({ error: 'Missing key or token' });
+
+  const secretRow = await pool.query('SELECT webhook_secret_enc FROM sites WHERE site_key = $1', [siteKey]);
+  if (!secretRow.rowCount) return res.status(404).json({ error: 'Site not found' });
+
+  const secret = decryptString(secretRow.rows[0].webhook_secret_enc as string);
+  if (token !== secret) return res.status(401).json({ error: 'Invalid webhook token' });
+
+  const payload = req.body;
+  if (typeof payload !== 'object') return res.status(400).json({ error: 'Invalid payload' });
+
+  // Use tracking info if present
+  const fbp = payload.tracking?.fbp || payload.fbp;
+  const fbc = payload.tracking?.fbc || payload.fbc;
+  const platform = 'kiwify';
+
+  const email = payload.customer?.email;
+  const nameParts = (payload.customer?.name || '').split(' ');
+  const firstName = nameParts[0];
+  const lastName = nameParts.slice(1).join(' ');
+  const phone = payload.customer?.mobile || payload.customer?.phone;
+
+  // net_amount is 100000 -> 1000.00
+  let value = payload.net_amount || payload.amount || 0;
+  if (value > 0 && Number.isInteger(value)) {
+    value = value / 100; // Kiwify sends cents in net_amount
+  }
+  const currency = payload.currency || 'BRL';
+
+  let rawStatus = payload.status;
+  let status = 'other';
+  if (['paid', 'approved', 'COMPLETED', 'APPROVED'].includes(rawStatus)) {
+    status = 'approved';
+  } else if (['refunded', 'chargedback'].includes(rawStatus)) {
+    status = 'refunded';
+  }
+
+  const orderId = payload.id || `webhook_${Date.now()}`;
+  const city = payload.customer?.address?.city;
+  const state = payload.customer?.address?.state;
+  const zip = payload.customer?.address?.zipcode;
+  const country = payload.customer?.country || 'BR';
+  const dob = undefined;
+
+  // Add Kiwify Tracking data into payload temporarily so processPurchaseWebhook can pick it up
+  if (payload.tracking) {
+    if (payload.tracking.sck) payload.sck = payload.tracking.sck;
+    if (payload.tracking.utm_source) payload.utm_source = payload.tracking.utm_source;
+    if (payload.tracking.utm_medium) payload.utm_medium = payload.tracking.utm_medium;
+    if (payload.tracking.utm_campaign) payload.utm_campaign = payload.tracking.utm_campaign;
+    if (payload.tracking.utm_content) payload.utm_content = payload.tracking.utm_content;
+    if (payload.tracking.utm_term) payload.utm_term = payload.tracking.utm_term;
+  }
+
+  const result = await processPurchaseWebhook({
+    siteKey, payload, email, phone, firstName, lastName, city, state, zip, country, dob,
+    fbp, fbc, externalId: payload.customer?.email,
+    clientIp: payload.client_ip || req.ip || '0.0.0.0',
+    clientUa: payload.client_user_agent || 'Webhook/1.0',
+    value, currency, status, orderId, platform
+  });
+
+  if (!result.success) return res.status(result.status || 500).json({ error: result.error });
+  return res.json({ received: true });
+});
+
 // ─── Custom Webhook (Mapped) ───────────────────────────────────────────────
 router.post('/custom/:id', async (req, res) => {
   const webhookId = req.params.id;
