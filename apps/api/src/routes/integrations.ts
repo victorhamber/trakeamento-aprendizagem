@@ -70,7 +70,6 @@ router.put('/sites/:siteId/meta', requireAuth, async (req, res) => {
   if (!(await requireSiteOwnership(auth.accountId, siteId))) return res.status(404).json({ error: 'Site not found' });
 
   const { pixel_id, capi_token, marketing_token, ad_account_id, enabled, capi_test_event_code } = req.body || {};
-  console.log('[PUT /meta] Body keys:', Object.keys(req.body || {}), 'capi_token present:', 'capi_token' in (req.body || {}), 'capi_token type:', typeof capi_token, 'capi_token length:', typeof capi_token === 'string' ? capi_token.length : 'N/A');
   const pixelId = typeof pixel_id === 'string' ? pixel_id.trim() : null;
   const adAccountId = typeof ad_account_id === 'string' ? ad_account_id.trim() : null;
   const capiTokenSanitized =
@@ -80,9 +79,6 @@ router.put('/sites/:siteId/meta', requireAuth, async (req, res) => {
   // Tokens CAPI válidos do Meta começam com EAA e têm 100+ chars.
   // Se < 20 chars, é lixo (autofill do browser) — ignorar para preservar o token existente via COALESCE.
   const capiTokenEnc = (capiTokenSanitized && capiTokenSanitized.length >= 20) ? encryptString(capiTokenSanitized) : null;
-  if (capiTokenSanitized && capiTokenSanitized.length < 20) {
-    console.warn(`[PUT /meta] Ignoring short capi_token (${capiTokenSanitized.length} chars) — likely browser autofill`);
-  }
   const hasTestEventCode = Object.prototype.hasOwnProperty.call(req.body || {}, 'capi_test_event_code');
   const capiTestEventCodeRaw =
     typeof capi_test_event_code === 'string' ? capi_test_event_code.trim().replace(/\s+/g, '') : '';
@@ -132,35 +128,6 @@ router.post('/sites/:siteId/meta/test-capi', requireAuth, async (req, res) => {
   const eventId = `test_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const eventTime = Math.floor(Date.now() / 1000);
 
-  // Diagnóstico: verificar se o token descriptografa corretamente
-  const metaRow = await pool.query(
-    'SELECT pixel_id, capi_token_enc, enabled, capi_test_event_code FROM integrations_meta WHERE site_id = $1',
-    [siteId]
-  );
-  const metaCfg = metaRow.rows[0];
-  const diag: Record<string, unknown> = {
-    has_pixel_id: !!metaCfg?.pixel_id,
-    pixel_id: metaCfg?.pixel_id || null,
-    enabled: metaCfg?.enabled,
-    has_capi_token_enc: !!metaCfg?.capi_token_enc,
-    capi_token_enc_length: metaCfg?.capi_token_enc?.length || 0,
-    test_event_code: metaCfg?.capi_test_event_code || null,
-  };
-
-  if (metaCfg?.capi_token_enc) {
-    try {
-      const { decryptString: decrypt } = await import('../lib/crypto');
-      const decrypted = decrypt(metaCfg.capi_token_enc);
-      diag.decrypt_ok = true;
-      diag.decrypted_token_length = decrypted.length;
-      diag.token_starts_with = decrypted.substring(0, 4);
-      diag.token_passes_validation = decrypted.trim().length >= 20;
-    } catch (e: unknown) {
-      diag.decrypt_ok = false;
-      diag.decrypt_error = e instanceof Error ? e.message : 'unknown';
-    }
-  }
-
   const result = await capiService.sendEventDetailed(site.site_key, {
     event_name: 'PageView',
     event_time: eventTime,
@@ -175,7 +142,6 @@ router.post('/sites/:siteId/meta/test-capi', requireAuth, async (req, res) => {
   return res.json({
     event_id: eventId,
     event_source_url: eventSourceUrl,
-    diagnostic: diag,
     ...result,
   });
 });

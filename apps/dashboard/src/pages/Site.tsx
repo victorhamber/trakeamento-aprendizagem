@@ -871,15 +871,10 @@ ${scriptContent}
     setLoading(true);
     try {
       const res = await api.post(`/integrations/sites/${id}/meta/test-capi`);
-      console.log('[CAPI Test]', JSON.stringify(res.data, null, 2));
       if (res.data?.ok) {
         showFlash('Evento do servidor enviado com sucesso!');
       } else {
-        const diag = res.data?.diagnostic;
-        let msg = res.data?.error || 'Falha ao enviar evento do servidor.';
-        if (diag && !diag.decrypt_ok) msg += ` (Erro decrypt: ${diag.decrypt_error})`;
-        else if (diag && !diag.token_passes_validation) msg += ` (Token descriptografado: ${diag.decrypted_token_length} chars)`;
-        showFlash(msg, 'error');
+        showFlash(res.data?.error || 'Falha ao enviar evento do servidor.', 'error');
       }
       await loadMeta();
     } catch (err) {

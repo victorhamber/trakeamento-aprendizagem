@@ -358,7 +358,6 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
 
     // ── 2. Envio CAPI (assíncrono com retry) ─────────────────────────────
     if ((result.rowCount ?? 0) > 0) {
-      console.log(`[Ingest→CAPI] Firing CAPI for ${eventName} id=${eventId} siteKey=${siteKey}`);
       const userData = event.user_data ?? {};
       const capiUser = buildCapiUserData(req, userData, siteKey);
 
@@ -434,9 +433,7 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
       };
 
       // Fire-and-forget com retry — não bloqueia a resposta HTTP
-      sendCapiWithRetry(siteKey, capiPayload).catch((e) => { console.error('[Ingest→CAPI] Retry error:', e); });
-    } else {
-      console.log(`[Ingest] Skipped CAPI (duplicate/no-insert) for ${eventName} id=${eventId}`);
+      sendCapiWithRetry(siteKey, capiPayload).catch(() => { });
     }
 
     return res.status(202).json({ status: 'received' });

@@ -57,24 +57,13 @@ export class CapiService {
     );
 
     const cfg = rows[0];
-    if (!cfg) {
-      console.log(`[CAPI] Config not found for siteKey=${siteKey}`);
-      return null;
-    }
-    if (!cfg.enabled) {
-      console.log(`[CAPI] Meta integration disabled for siteKey=${siteKey}`);
-      return null;
-    }
-    if (!cfg.pixel_id || !cfg.capi_token_enc) {
-      console.log(`[CAPI] Missing pixel_id or capi_token for siteKey=${siteKey}`);
-      return null;
-    }
+    if (!cfg) return null;
+    if (!cfg.enabled) return null;
+    if (!cfg.pixel_id || !cfg.capi_token_enc) return null;
 
     try {
       const token = decryptString(cfg.capi_token_enc);
       if (!token) {
-        console.log(`[CAPI] Failed to decrypt token for siteKey=${siteKey}`);
-        // Atualiza status para o dashboard mostrar erro claro
         await pool.query(
           `UPDATE integrations_meta i SET last_capi_status = 'error', last_capi_error = 'Falha ao descriptografar token CAPI. Re-salve o token no painel.', last_capi_attempt_at = NOW() FROM sites s WHERE s.site_key = $1 AND i.site_id = s.id`,
           [siteKey]
@@ -84,8 +73,6 @@ export class CapiService {
       // Remove any whitespace from the token
       return { pixelId: cfg.pixel_id, capiToken: token.replace(/\s+/g, ''), testEventCode: cfg.capi_test_event_code as string | null };
     } catch (e) {
-      console.log(`[CAPI] Decrypt error for siteKey=${siteKey}`, e);
-      // Token foi criptografado com outra chave — instrução clara para o usuário
       await pool.query(
         `UPDATE integrations_meta i SET last_capi_status = 'error', last_capi_error = 'Token CAPI corrompido (chave de criptografia mudou). Cole o token novamente e clique Salvar.', last_capi_attempt_at = NOW() FROM sites s WHERE s.site_key = $1 AND i.site_id = s.id`,
         [siteKey]
@@ -245,7 +232,6 @@ export class CapiService {
 
     const cfg = await this.getSiteMetaConfig(siteKey);
     if (!cfg) {
-      console.warn(`CAPI not configured for siteKey=${siteKey}`);
       return;
     }
     if (!this.isProbablyValidToken(cfg.capiToken)) {
