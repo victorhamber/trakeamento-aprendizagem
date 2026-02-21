@@ -199,6 +199,7 @@ const schemaSql = `
   CREATE TABLE IF NOT EXISTS custom_webhooks (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+    site_key VARCHAR(100),
     name VARCHAR(150) NOT NULL,
     secret_key VARCHAR(100) NOT NULL UNIQUE,
     last_payload JSONB,
@@ -219,6 +220,7 @@ export const ensureSchema = async (pool: Pool) => {
 
   try {
     await pool.query('ALTER TABLE sites ADD COLUMN IF NOT EXISTS tracking_domain VARCHAR(255)');
+    await pool.query('ALTER TABLE custom_webhooks ADD COLUMN IF NOT EXISTS site_key VARCHAR(100)');
     await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS enabled BOOLEAN DEFAULT TRUE');
     await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS capi_test_event_code VARCHAR(100)');
     await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS last_capi_status VARCHAR(20)');
