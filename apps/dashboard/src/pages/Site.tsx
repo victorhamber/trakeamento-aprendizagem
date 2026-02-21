@@ -119,10 +119,10 @@ const Badge = ({
   variant?: 'default' | 'active' | 'paused' | 'archived';
 }) => {
   const styles = {
-    default: 'bg-zinc-200 dark:bg-zinc-800 text-zinc-400 border-zinc-700/60',
-    active: 'bg-emerald-500/12 text-emerald-300 border-emerald-500/25',
-    paused: 'bg-amber-500/12 text-amber-300 border-amber-500/25',
-    archived: 'bg-zinc-700/40 text-zinc-600 dark:text-zinc-500 border-zinc-700/40',
+    default: 'bg-zinc-200 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 border-zinc-300 dark:border-zinc-700/60',
+    active: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 dark:border-emerald-500/25',
+    paused: 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30 dark:border-amber-500/25',
+    archived: 'bg-zinc-200/60 dark:bg-zinc-700/40 text-zinc-500 dark:text-zinc-500 border-zinc-300 dark:border-zinc-700/40',
   };
   return (
     <span
@@ -135,7 +135,7 @@ const Badge = ({
 };
 
 const StatCard = ({ label, value }: { label: string; value: string }) => (
-  <div className="rounded-xl border border-zinc-200 dark:border-zinc-800/60 bg-zinc-50 dark:bg-zinc-900/40 p-3.5 hover:border-zinc-300 dark:hover:border-zinc-700/60 transition-colors">
+  <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/40 p-3.5 hover:border-zinc-300 dark:hover:border-zinc-700/60 transition-colors">
     <div className="text-[10px] font-medium uppercase tracking-widest text-zinc-600 dark:text-zinc-500 mb-1.5">{label}</div>
     <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 tabular-nums">{value}</div>
   </div>
@@ -1614,14 +1614,14 @@ ${scriptContent}
             type="date"
             value={metricsSince}
             onChange={(e) => setMetricsSince(e.target.value)}
-            className="rounded-lg bg-zinc-50 dark:bg-zinc-100 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 px-3 py-2 text-xs text-zinc-700 dark:text-zinc-700 dark:text-zinc-300 outline-none focus:border-zinc-600"
+            className="rounded-lg bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 px-3 py-2 text-xs text-zinc-700 dark:text-zinc-300 outline-none focus:border-zinc-600"
           />
-          <span className="text-zinc-600 dark:text-zinc-500 dark:text-zinc-600 text-xs">→</span>
+          <span className="text-zinc-600 dark:text-zinc-500 text-xs">→</span>
           <input
             type="date"
             value={metricsUntil}
             onChange={(e) => setMetricsUntil(e.target.value)}
-            className="rounded-lg bg-zinc-50 dark:bg-zinc-100 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 px-3 py-2 text-xs text-zinc-700 dark:text-zinc-700 dark:text-zinc-300 outline-none focus:border-zinc-600"
+            className="rounded-lg bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 px-3 py-2 text-xs text-zinc-700 dark:text-zinc-300 outline-none focus:border-zinc-600"
           />
         </div>
       )}
@@ -1671,7 +1671,7 @@ ${scriptContent}
         <div>
           <Link
             to="/sites"
-            className="inline-flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-500 hover:text-zinc-700 dark:text-zinc-700 dark:text-zinc-300 transition-colors"
+            className="inline-flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-500 hover:text-zinc-700 dark:text-zinc-300 transition-colors"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -1696,9 +1696,9 @@ ${scriptContent}
           )}
         </div>
         {site && (
-          <div className="hidden sm:flex items-center gap-1.5 rounded-lg border border-zinc-200 dark:border-zinc-800/60 bg-zinc-50 dark:bg-zinc-900/40 px-3 py-1.5">
-            <span className="text-[10px] text-zinc-600 dark:text-zinc-500 dark:text-zinc-600 uppercase tracking-widest">Key</span>
-            <code className="text-[11px] text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 font-mono">{site.site_key}</code>
+          <div className="hidden sm:flex items-center gap-1.5 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/40 px-3 py-1.5">
+            <span className="text-[10px] text-zinc-600 dark:text-zinc-500 uppercase tracking-widest">Key</span>
+            <code className="text-[11px] text-zinc-600 dark:text-zinc-400 font-mono">{site.site_key}</code>
           </div>
         )}
       </div>
@@ -1750,9 +1750,9 @@ ${scriptContent}
       )}
 
       {/* ── Tab Panel ── */}
-      <div className="mt-5 rounded-2xl border border-zinc-200 dark:border-zinc-800/60 bg-white dark:bg-white dark:bg-zinc-950/60 overflow-hidden">
+      <div className="mt-5 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-white dark:bg-zinc-950/60 overflow-hidden">
         {/* Tab bar */}
-        <div className="border-b border-zinc-200 dark:border-zinc-800/60 px-3 pt-3 pb-0 flex flex-wrap gap-1">
+        <div className="border-b border-zinc-200 dark:border-zinc-800 px-3 pt-3 pb-0 flex flex-wrap gap-1">
           {tabs.map((t) => (
             <button
               key={t.key}
@@ -1763,7 +1763,7 @@ ${scriptContent}
               }}
               className={`relative px-3.5 py-2 text-[13px] font-medium rounded-t-lg transition-all ${tab === t.key
                 ? 'text-zinc-900 dark:text-zinc-100 bg-zinc-100 dark:bg-zinc-900/80'
-                : 'text-zinc-600 dark:text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-900/40'
+                : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-900/40'
                 }`}
             >
               {t.label}
@@ -1778,15 +1778,15 @@ ${scriptContent}
         <div className="p-6">
           {tab === 'snippet' && (
             <div className="max-w-3xl">
-              <p className="text-sm text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 mb-4">
+              <p className="text-sm text-zinc-600 dark:text-zinc-400 mb-4">
                 Cole este snippet no seu site, antes do fechamento da tag{' '}
-                <code className="text-zinc-700 dark:text-zinc-700 dark:text-zinc-300 bg-zinc-200 dark:bg-zinc-800/60 px-1.5 py-0.5 rounded text-xs">&lt;/head&gt;</code>.
+                <code className="text-zinc-700 dark:text-zinc-300 bg-zinc-200 dark:bg-zinc-800/60 px-1.5 py-0.5 rounded text-xs">&lt;/head&gt;</code>.
               </p>
               <form
                 onSubmit={saveTrackingDomain}
                 className="mb-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/40 p-4"
               >
-                <div className="text-xs font-medium text-zinc-700 dark:text-zinc-700 dark:text-zinc-300">Domínio de rastreamento (CNAME)</div>
+                <div className="text-xs font-medium text-zinc-700 dark:text-zinc-300">Domínio de rastreamento (CNAME)</div>
                 <div className="mt-1 text-[11px] text-zinc-600 dark:text-zinc-500">
                   Use um subdomínio do cliente para enviar eventos como first-party.
                 </div>
@@ -1805,24 +1805,24 @@ ${scriptContent}
                   </button>
                 </div>
                 <div className="mt-3 text-[11px] text-zinc-600 dark:text-zinc-500">
-                  Aponte um CNAME de <span className="text-zinc-700 dark:text-zinc-700 dark:text-zinc-300">{trackingDomainInput || 'track.cliente.com'}</span> para{' '}
-                  <span className="text-zinc-700 dark:text-zinc-700 dark:text-zinc-300">{apiHost || 'seu-dominio-api.com'}</span>.
+                  Aponte um CNAME de <span className="text-zinc-700 dark:text-zinc-300">{trackingDomainInput || 'track.cliente.com'}</span> para{' '}
+                  <span className="text-zinc-700 dark:text-zinc-300">{apiHost || 'seu-dominio-api.com'}</span>.
                 </div>
               </form>
-              <div className="relative group rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-100 dark:bg-zinc-900/60 overflow-hidden">
-                <div className="flex items-center justify-between px-4 py-2.5 border-b border-zinc-200 dark:border-zinc-800/60 bg-zinc-50 dark:bg-zinc-900/80">
+              <div className="relative group rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-2.5 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/80">
                   <div className="flex items-center gap-1.5">
                     <span className="w-2.5 h-2.5 rounded-full bg-zinc-700" />
                     <span className="w-2.5 h-2.5 rounded-full bg-zinc-700" />
                     <span className="w-2.5 h-2.5 rounded-full bg-zinc-700" />
                   </div>
-                  <span className="text-[10px] text-zinc-600 dark:text-zinc-500 dark:text-zinc-600 font-mono">snippet.js</span>
+                  <span className="text-[10px] text-zinc-600 dark:text-zinc-500 font-mono">snippet.js</span>
                   <button
                     onClick={() => {
                       navigator.clipboard.writeText(snippet);
                       showFlash('Código copiado!');
                     }}
-                    className="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-500 hover:text-zinc-700 dark:text-zinc-700 dark:text-zinc-300 transition-colors"
+                    className="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-500 hover:text-zinc-700 dark:text-zinc-300 transition-colors"
                   >
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
@@ -1842,15 +1842,15 @@ ${scriptContent}
                   </button>
                 </div>
                 <pre className="text-xs p-5 max-h-72 overflow-y-auto overflow-x-hidden custom-scrollbar">
-                  <code className="block whitespace-pre-wrap break-all text-zinc-700 dark:text-zinc-700 dark:text-zinc-300 leading-relaxed">{snippet}</code>
+                  <code className="block whitespace-pre-wrap break-all text-zinc-700 dark:text-zinc-300 leading-relaxed">{snippet}</code>
                 </pre>
               </div>
 
               {snippet && (
                 <div className="mt-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/40 p-4">
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="text-xs font-medium text-zinc-600 dark:text-zinc-500 dark:text-zinc-400">URL da API detectada:</span>
-                    <code className="text-[11px] text-zinc-700 dark:text-zinc-700 dark:text-zinc-300 bg-zinc-200 dark:bg-zinc-800 px-1.5 py-0.5 rounded">
+                    <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">URL da API detectada:</span>
+                    <code className="text-[11px] text-zinc-700 dark:text-zinc-300 bg-zinc-200 dark:bg-zinc-800 px-1.5 py-0.5 rounded">
                       {snippet.match(/apiUrl:"([^"]+)"/)?.[1] || 'Não detectada'}
                     </code>
                   </div>
@@ -1881,7 +1881,7 @@ ${scriptContent}
                           <div className="mt-2 h-1.5 rounded-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden">
                             <div className={`h-full rounded-full ${bg} transition-all`} style={{ width: `${pct}%` }} />
                           </div>
-                          <div className="text-[9px] text-zinc-600 dark:text-zinc-500 dark:text-zinc-600 mt-1">{m.desc}</div>
+                          <div className="text-[9px] text-zinc-600 dark:text-zinc-500 mt-1">{m.desc}</div>
                         </div>
                       );
                     })}
@@ -1893,7 +1893,7 @@ ${scriptContent}
                         const emoji = avg >= 80 ? '🟢' : avg >= 50 ? '🟡' : '🔴';
                         return <div className={`text-xl font-bold ${color} mt-1`}>{emoji} {avg}%</div>;
                       })()}
-                      <div className="text-[9px] text-zinc-600 dark:text-zinc-500 dark:text-zinc-600 mt-3">Média dos indicadores</div>
+                      <div className="text-[9px] text-zinc-600 dark:text-zinc-500 mt-3">Média dos indicadores</div>
                     </div>
                   </div>
                 </div>
@@ -1921,7 +1921,7 @@ ${scriptContent}
                       <h4 className={`text-sm font-semibold ${expired ? 'text-red-300' : 'text-amber-300'}`}>
                         {expired ? 'Token do Facebook Expirado!' : `Token expira em ${daysLeft} dia${daysLeft > 1 ? 's' : ''}`}
                       </h4>
-                      <p className="text-xs text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 mt-0.5">
+                      <p className="text-xs text-zinc-600 dark:text-zinc-400 mt-0.5">
                         {expired
                           ? 'A API do servidor (CAPI) não conseguirá mais enviar eventos para o Meta. Reconecte sua conta do Facebook imediatamente.'
                           : 'Reconecte sua conta do Facebook em breve para evitar interrupção no envio de eventos CAPI.'}
@@ -1954,7 +1954,7 @@ ${scriptContent}
                       </svg>
                     </div>
                     <div>
-                      <h3 className="text-sm font-semibold text-zinc-100">Conexão com Facebook</h3>
+                      <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Conexão com Facebook</h3>
                       <p className="mt-0.5 text-xs text-zinc-600 dark:text-zinc-500">
                         Conecte para listar contas de anúncio e pixels automaticamente.
                       </p>
@@ -1962,7 +1962,7 @@ ${scriptContent}
                         <div
                           className={`w-1.5 h-1.5 rounded-full ${meta?.has_facebook_connection ? 'bg-emerald-400' : 'bg-zinc-600'}`}
                         />
-                        <span className="text-xs text-zinc-600 dark:text-zinc-500 dark:text-zinc-400">
+                        <span className="text-xs text-zinc-600 dark:text-zinc-400">
                           {meta?.has_facebook_connection ? 'Conectado' : 'Não conectado'}
                         </span>
                       </div>
@@ -1982,7 +1982,7 @@ ${scriptContent}
                         type="button"
                         disabled={loading}
                         onClick={disconnectFacebook}
-                        className="border border-zinc-700 bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-700 text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:text-zinc-200 px-4 py-2 rounded-lg text-xs transition-colors disabled:opacity-40"
+                        className="border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-zinc-100 px-4 py-2 rounded-lg text-xs transition-colors disabled:opacity-40"
                       >
                         Desconectar
                       </button>
@@ -1991,16 +1991,16 @@ ${scriptContent}
                 </div>
 
                 {meta?.has_facebook_connection && (
-                  <div className="mt-5 pt-5 border-t border-zinc-200 dark:border-zinc-800/60 space-y-3">
+                  <div className="mt-5 pt-5 border-t border-zinc-200 dark:border-zinc-800 space-y-3">
                     <div className="flex items-center justify-between">
-                      <label className="text-xs font-medium text-zinc-700 dark:text-zinc-700 dark:text-zinc-300">Conta de Anúncios</label>
+                      <label className="text-xs font-medium text-zinc-700 dark:text-zinc-300">Conta de Anúncios</label>
                       <button
                         type="button"
                         onClick={() => {
                           setShowAdAccountSelector(true);
                           loadAdAccounts().catch(() => { });
                         }}
-                        className="text-[11px] text-zinc-600 dark:text-zinc-500 hover:text-zinc-700 dark:text-zinc-700 dark:text-zinc-300 flex items-center gap-1 transition-colors"
+                        className="text-[11px] text-zinc-600 dark:text-zinc-500 hover:text-zinc-700 dark:text-zinc-300 flex items-center gap-1 transition-colors"
                       >
                         <svg
                           xmlns="http://www.w3.org/2000/svg"
@@ -2023,16 +2023,16 @@ ${scriptContent}
                     </div>
 
                     {meta?.ad_account_id && !showAdAccountSelector && (
-                      <div className="flex items-center gap-2 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-100 dark:bg-zinc-900/60 px-3 py-2.5">
+                      <div className="flex items-center gap-2 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 px-3 py-2.5">
                         <div className="w-1.5 h-1.5 rounded-full bg-blue-400" />
-                        <span className="text-xs text-zinc-700 dark:text-zinc-700 dark:text-zinc-300">{selectedAdAccountName || meta.ad_account_id}</span>
+                        <span className="text-xs text-zinc-700 dark:text-zinc-300">{selectedAdAccountName || meta.ad_account_id}</span>
                       </div>
                     )}
 
                     {showAdAccountSelector && (
                       <div className="space-y-1.5 max-h-60 overflow-y-auto custom-scrollbar">
                         {adAccounts.length === 0 && (
-                          <div className="text-xs text-zinc-600 dark:text-zinc-500 dark:text-zinc-600 italic py-3 text-center">
+                          <div className="text-xs text-zinc-600 dark:text-zinc-500 italic py-3 text-center">
                             Nenhuma conta carregada. Clique em atualizar.
                           </div>
                         )}
@@ -2055,7 +2055,7 @@ ${scriptContent}
                                 >
                                   {acc.business ? `${acc.name} (${acc.business.name})` : acc.name}
                                 </div>
-                                <div className="text-[10px] text-zinc-600 dark:text-zinc-500 dark:text-zinc-600 font-mono mt-0.5">
+                                <div className="text-[10px] text-zinc-600 dark:text-zinc-500 font-mono mt-0.5">
                                   {acc.account_id || acc.id}
                                 </div>
                               </div>
@@ -2094,7 +2094,7 @@ ${scriptContent}
               <div className="space-y-5">
                 <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/40 p-4 flex flex-col gap-2">
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-zinc-600 dark:text-zinc-500 dark:text-zinc-400">Status do CAPI</span>
+                    <span className="text-xs text-zinc-600 dark:text-zinc-400">Status do CAPI</span>
                     {meta?.last_capi_status ? (
                       <span
                         className={`inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full border ${meta.last_capi_status === 'ok'
@@ -2118,13 +2118,13 @@ ${scriptContent}
                   )}
                 </div>
                 <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/40 p-4 flex flex-col gap-2">
-                  <div className="text-xs text-zinc-600 dark:text-zinc-500 dark:text-zinc-400">Último evento recebido do site</div>
+                  <div className="text-xs text-zinc-600 dark:text-zinc-400">Último evento recebido do site</div>
                   {meta?.last_ingest_at ? (
                     <>
                       <div className="text-[11px] text-zinc-600 dark:text-zinc-500">
                         {new Date(meta.last_ingest_at).toLocaleString()}
                       </div>
-                      <div className="text-[11px] text-zinc-700 dark:text-zinc-700 dark:text-zinc-300">
+                      <div className="text-[11px] text-zinc-700 dark:text-zinc-300">
                         {meta.last_ingest_event_name || 'Evento'}
                       </div>
                       {meta.last_ingest_event_source_url && (
@@ -2142,7 +2142,7 @@ ${scriptContent}
                     <div className="text-[11px] text-zinc-600 dark:text-zinc-500">Nenhum evento recebido</div>
                   )}
                 </div>
-                <div className="flex items-center gap-3 py-4 border-y border-zinc-200 dark:border-zinc-800/60">
+                <div className="flex items-center gap-3 py-4 border-y border-zinc-200 dark:border-zinc-800">
                   <input
                     id="meta-enabled"
                     name="enabled"
@@ -2155,14 +2155,14 @@ ${scriptContent}
                     <label htmlFor="meta-enabled" className="text-sm font-medium text-zinc-800 dark:text-zinc-200 block cursor-pointer">
                       Rastreamento ativo
                     </label>
-                    <span className="text-xs text-zinc-600 dark:text-zinc-500 dark:text-zinc-600">
+                    <span className="text-xs text-zinc-600 dark:text-zinc-500">
                       Habilita o envio de eventos para o Pixel e API de Conversões
                     </span>
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 mb-2">Pixel ID</label>
+                  <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Pixel ID</label>
                   <input
                     name="pixel_id"
                     defaultValue={meta?.pixel_id || ''}
@@ -2171,7 +2171,7 @@ ${scriptContent}
                   />
                   {pixels.length > 0 && (
                     <div className="mt-2.5 flex flex-wrap gap-1.5 items-center">
-                      <span className="text-[10px] text-zinc-600 dark:text-zinc-500 dark:text-zinc-600 uppercase tracking-wider">Sugestões:</span>
+                      <span className="text-[10px] text-zinc-600 dark:text-zinc-500 uppercase tracking-wider">Sugestões:</span>
                       {pixels.map((p) => (
                         <button
                           type="button"
@@ -2180,7 +2180,7 @@ ${scriptContent}
                             const input = document.querySelector<HTMLInputElement>('input[name="pixel_id"]');
                             if (input) input.value = p.id;
                           }}
-                          className="text-[11px] bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-700 text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:text-zinc-200 px-2.5 py-1 rounded-md border border-zinc-700/60 transition-colors"
+                          className="text-[11px] bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-700 text-zinc-600 dark:text-zinc-400 hover:text-zinc-800 dark:text-zinc-200 px-2.5 py-1 rounded-md border border-zinc-700/60 transition-colors"
                         >
                           {p.name}
                         </button>
@@ -2191,8 +2191,8 @@ ${scriptContent}
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 mb-2">
-                      CAPI Token <span className="text-zinc-600 dark:text-zinc-500 dark:text-zinc-600 font-normal">(Opcional)</span>
+                    <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
+                      CAPI Token <span className="text-zinc-600 dark:text-zinc-500 font-normal">(Opcional)</span>
                     </label>
                     <input
                       name="capi_token"
@@ -2201,11 +2201,11 @@ ${scriptContent}
                       className={inputCls}
                       placeholder={meta?.has_capi_token ? '•••••••• (configurado)' : 'Token de Acesso (EAA...)'}
                     />
-                    <p className="mt-1.5 text-[11px] text-zinc-600 dark:text-zinc-500 dark:text-zinc-600">Rastreamento server-side (anti-adblock)</p>
+                    <p className="mt-1.5 text-[11px] text-zinc-600 dark:text-zinc-500">Rastreamento server-side (anti-adblock)</p>
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 mb-2">
-                      Código de teste do servidor <span className="text-zinc-600 dark:text-zinc-500 dark:text-zinc-600 font-normal">(Opcional)</span>
+                    <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
+                      Código de teste do servidor <span className="text-zinc-600 dark:text-zinc-500 font-normal">(Opcional)</span>
                     </label>
                     <input
                       name="capi_test_event_code"
@@ -2213,7 +2213,7 @@ ${scriptContent}
                       placeholder="Ex: TEST123"
                       className={inputCls}
                     />
-                    <p className="mt-1.5 text-[11px] text-zinc-600 dark:text-zinc-500 dark:text-zinc-600">
+                    <p className="mt-1.5 text-[11px] text-zinc-600 dark:text-zinc-500">
                       Use o código de teste do Event Manager para validar eventos server-side.
                     </p>
                   </div>
@@ -2241,7 +2241,7 @@ ${scriptContent}
                   type="button"
                   disabled={loading}
                   onClick={testCapi}
-                  className="inline-flex items-center gap-2 border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 hover:bg-zinc-100 dark:bg-zinc-200 dark:bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 dark:text-zinc-700 dark:text-zinc-300 px-4 py-2.5 rounded-lg text-sm font-medium disabled:opacity-40 transition-all"
+                  className="inline-flex items-center gap-2 border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300 px-4 py-2.5 rounded-lg text-sm font-medium disabled:opacity-40 transition-all"
                 >
                   Testar evento do servidor
                 </button>
@@ -2251,10 +2251,10 @@ ${scriptContent}
 
           {tab === 'utm' && (
             <div className="max-w-3xl space-y-5">
-              <div className="rounded-xl border border-zinc-200 dark:border-zinc-800/60 bg-zinc-50 dark:bg-zinc-900/30 p-5 space-y-4">
+              <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/30 p-5 space-y-4">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <h3 className="text-sm font-semibold text-zinc-100">Gerador de URL UTM</h3>
+                    <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Gerador de URL UTM</h3>
                     <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-500">
                       Gere a URL com UTMs para usar nos parâmetros do anúncio do Meta.
                     </p>
@@ -2270,7 +2270,7 @@ ${scriptContent}
                         setUtmTerm('{{adset.name}}');
                         setUtmClickId('{{ad.id}}');
                       }}
-                      className="text-[11px] border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/70 hover:bg-zinc-50 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 hover:text-zinc-200 px-3 py-2 rounded-lg transition-colors"
+                      className="text-[11px] border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/70 hover:bg-zinc-50 dark:hover:bg-zinc-900 text-zinc-600 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 px-3 py-2 rounded-lg transition-colors"
                     >
                       Usar placeholders Meta
                     </button>
@@ -2284,14 +2284,14 @@ ${scriptContent}
                         setUtmTerm('');
                         setUtmClickId('');
                       }}
-                      className="text-[11px] border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/70 hover:bg-zinc-50 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 hover:text-zinc-200 px-3 py-2 rounded-lg transition-colors"
+                      className="text-[11px] border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/70 hover:bg-zinc-50 dark:hover:bg-zinc-900 text-zinc-600 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 px-3 py-2 rounded-lg transition-colors"
                     >
                       Limpar
                     </button>
                   </div>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 mb-2">URL base</label>
+                  <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">URL base</label>
                   <input
                     value={utmBaseUrl}
                     onChange={(e) => setUtmBaseUrl(e.target.value)}
@@ -2301,32 +2301,32 @@ ${scriptContent}
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 mb-2">utm_source</label>
+                    <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">utm_source</label>
                     <input value={utmSource} onChange={(e) => setUtmSource(e.target.value)} className={inputCls} />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 mb-2">utm_medium</label>
+                    <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">utm_medium</label>
                     <input value={utmMedium} onChange={(e) => setUtmMedium(e.target.value)} className={inputCls} />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 mb-2">utm_campaign</label>
+                    <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">utm_campaign</label>
                     <input value={utmCampaign} onChange={(e) => setUtmCampaign(e.target.value)} className={inputCls} />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 mb-2">utm_content</label>
+                    <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">utm_content</label>
                     <input value={utmContent} onChange={(e) => setUtmContent(e.target.value)} className={inputCls} />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 mb-2">utm_term</label>
+                    <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">utm_term</label>
                     <input value={utmTerm} onChange={(e) => setUtmTerm(e.target.value)} className={inputCls} />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 mb-2">click_id</label>
+                    <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">click_id</label>
                     <input value={utmClickId} onChange={(e) => setUtmClickId(e.target.value)} className={inputCls} />
                   </div>
                 </div>
               </div>
-              <div className="rounded-xl border border-zinc-200 dark:border-zinc-800/60 bg-zinc-50 dark:bg-zinc-900/30 p-5">
+              <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/30 p-5">
                 <div className="flex items-center justify-between gap-3 mb-3">
                   <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-500">
                     URL final
@@ -2336,7 +2336,7 @@ ${scriptContent}
                       type="button"
                       disabled={!utmUrl}
                       onClick={() => setShowSaveUtmModal(true)}
-                      className="text-[11px] border border-zinc-700 bg-zinc-200 dark:bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-400 dark:text-zinc-700 dark:text-zinc-300 px-3 py-2 rounded-lg transition-colors disabled:opacity-40"
+                      className="text-[11px] border border-zinc-700 bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-400 dark:text-zinc-300 px-3 py-2 rounded-lg transition-colors disabled:opacity-40"
                     >
                       Salvar
                     </button>
@@ -2348,19 +2348,19 @@ ${scriptContent}
                         navigator.clipboard.writeText(utmUrl);
                         showFlash('URL copiada!');
                       }}
-                      className="text-[11px] border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/70 hover:bg-zinc-50 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 hover:text-zinc-200 px-3 py-2 rounded-lg transition-colors disabled:opacity-40"
+                      className="text-[11px] border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/70 hover:bg-zinc-50 dark:hover:bg-zinc-900 text-zinc-600 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 px-3 py-2 rounded-lg transition-colors disabled:opacity-40"
                     >
                       Copiar URL
                     </button>
                   </div>
                 </div>
-                <div className="text-xs text-zinc-700 dark:text-zinc-700 dark:text-zinc-300 break-all">
+                <div className="text-xs text-zinc-700 dark:text-zinc-300 break-all">
                   {utmUrl || 'Preencha a URL base e UTMs para gerar o link.'}
                 </div>
 
                 {showSaveUtmModal && (
                   <div className="mt-4 pt-4 border-t border-zinc-700/50">
-                    <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 mb-2">Nome para salvar</label>
+                    <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Nome para salvar</label>
                     <div className="flex gap-2">
                       <input
                         value={saveUtmName}
@@ -2378,7 +2378,7 @@ ${scriptContent}
                       <button
                         type="button"
                         onClick={() => setShowSaveUtmModal(false)}
-                        className="bg-zinc-200 dark:bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-400 dark:text-zinc-700 dark:text-zinc-300 px-4 py-2 rounded-lg text-xs font-medium transition-colors"
+                        className="bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-400 dark:text-zinc-300 px-4 py-2 rounded-lg text-xs font-medium transition-colors"
                       >
                         Cancelar
                       </button>
@@ -2389,12 +2389,12 @@ ${scriptContent}
 
               {savedUtms.length > 0 && (
                 <div className="space-y-3">
-                  <h3 className="text-sm font-semibold text-zinc-100">UTMs Salvas</h3>
+                  <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">UTMs Salvas</h3>
                   <div className="grid grid-cols-1 gap-3">
                     {savedUtms.map((u) => (
                       <div
                         key={u.id}
-                        className="flex items-center justify-between gap-4 rounded-xl border border-zinc-200 dark:border-zinc-800/60 bg-zinc-50 dark:bg-zinc-900/30 p-4 hover:border-zinc-300 dark:border-zinc-700 transition-colors"
+                        className="flex items-center justify-between gap-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/30 p-4 hover:border-zinc-300 dark:border-zinc-700 transition-colors"
                       >
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2">
@@ -2405,12 +2405,12 @@ ${scriptContent}
                           </div>
                           <div className="mt-1 flex flex-wrap gap-2 text-[10px] text-zinc-600 dark:text-zinc-500 font-mono">
                             {u.utm_source && (
-                              <span className="px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-200 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-800">
+                              <span className="px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-800">
                                 src: {u.utm_source}
                               </span>
                             )}
                             {u.utm_campaign && (
-                              <span className="px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-200 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-800">
+                              <span className="px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-800">
                                 cmp: {u.utm_campaign}
                               </span>
                             )}
@@ -2451,7 +2451,7 @@ ${scriptContent}
           {tab === 'ga' && (
             <form onSubmit={saveGa} className="max-w-sm space-y-5">
               <input type="hidden" name="enabled" value="false" />
-              <div className="flex items-center gap-3 py-3.5 border-y border-zinc-200 dark:border-zinc-800/60">
+              <div className="flex items-center gap-3 py-3.5 border-y border-zinc-200 dark:border-zinc-800">
                 <input
                   id="ga-enabled"
                   name="enabled"
@@ -2460,12 +2460,12 @@ ${scriptContent}
                   defaultChecked={ga?.enabled ?? true}
                   className="w-4 h-4 rounded border-zinc-700 bg-zinc-200 dark:bg-zinc-800 text-blue-500 focus:ring-blue-500/30"
                 />
-                <label htmlFor="ga-enabled" className="text-sm text-zinc-700 dark:text-zinc-700 dark:text-zinc-300 cursor-pointer">
+                <label htmlFor="ga-enabled" className="text-sm text-zinc-700 dark:text-zinc-300 cursor-pointer">
                   Integração GA ativa
                 </label>
               </div>
               <div>
-                <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 mb-2">
+                <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
                   Measurement ID
                 </label>
                 <input
@@ -2491,15 +2491,15 @@ ${scriptContent}
               {/* Seção 1: Configuração de Eventos por URL */}
               <div className="space-y-5">
                 <div>
-                  <h3 className="text-base font-semibold text-zinc-100">Configuração de Eventos por URL</h3>
+                  <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Configuração de Eventos por URL</h3>
                   <p className="text-sm text-zinc-600 dark:text-zinc-500">
                     Dispare eventos automaticamente quando a URL contiver um trecho específico (ex: "obrigado").
                   </p>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end bg-zinc-50 dark:bg-zinc-900/30 p-5 rounded-xl border border-zinc-200 dark:border-zinc-800/60">
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end bg-zinc-50 dark:bg-zinc-900/30 p-5 rounded-xl border border-zinc-200 dark:border-zinc-800">
                   <div className="md:col-span-4">
-                    <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 mb-2">Se a URL contém:</label>
+                    <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Se a URL contém:</label>
                     <input
                       value={urlRuleValue}
                       onChange={(e) => setUrlRuleValue(e.target.value)}
@@ -2508,7 +2508,7 @@ ${scriptContent}
                     />
                   </div>
                   <div className="md:col-span-3">
-                    <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 mb-2">Disparar Evento:</label>
+                    <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Disparar Evento:</label>
                     <select
                       value={urlRuleEventType}
                       onChange={(e) => setUrlRuleEventType(e.target.value)}
@@ -2526,7 +2526,7 @@ ${scriptContent}
                   </div>
                   {urlRuleEventType === 'Custom' && (
                     <div className="md:col-span-3">
-                      <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 mb-2">Nome do Evento:</label>
+                      <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Nome do Evento:</label>
                       <input
                         value={urlRuleCustomName}
                         onChange={(e) => setUrlRuleCustomName(e.target.value)}
@@ -2546,9 +2546,9 @@ ${scriptContent}
                 </div>
 
                 {eventRules.length > 0 && (
-                  <div className="border border-zinc-200 dark:border-zinc-800/60 rounded-xl overflow-hidden">
-                    <table className="w-full text-left text-sm text-zinc-600 dark:text-zinc-500 dark:text-zinc-400">
-                      <thead className="bg-zinc-50 dark:bg-zinc-100 dark:bg-zinc-900/60 text-xs uppercase font-medium text-zinc-600 dark:text-zinc-500 dark:text-zinc-600 dark:text-zinc-400">
+                  <div className="border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
+                    <table className="w-full text-left text-sm text-zinc-600 dark:text-zinc-400">
+                      <thead className="bg-zinc-50 dark:bg-zinc-900/60 text-xs uppercase font-medium text-zinc-600 dark:text-zinc-500 dark:text-zinc-400">
                         <tr>
                           <th className="px-4 py-3">Regra</th>
                           <th className="px-4 py-3">Valor</th>
@@ -2560,7 +2560,7 @@ ${scriptContent}
                         {eventRules.map((rule) => (
                           <tr key={rule.id} className="hover:bg-zinc-50 dark:bg-zinc-900/20">
                             <td className="px-4 py-3">URL Contém</td>
-                            <td className="px-4 py-3 font-mono text-zinc-700 dark:text-zinc-700 dark:text-zinc-300">{rule.match_value}</td>
+                            <td className="px-4 py-3 font-mono text-zinc-700 dark:text-zinc-300">{rule.match_value}</td>
                             <td className="px-4 py-3">
                               <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-500/10 text-blue-300 border border-blue-500/20">
                                 {rule.event_name}
@@ -2582,12 +2582,12 @@ ${scriptContent}
                 )}
               </div>
 
-              <hr className="border-zinc-200 dark:border-zinc-800/60" />
+              <hr className="border-zinc-200 dark:border-zinc-800" />
 
               {/* Seção 2: Gerador de Formulário */}
               <div className="space-y-5">
                 <div>
-                  <h3 className="text-base font-semibold text-zinc-100">Gerador de Formulário de Captura</h3>
+                  <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Gerador de Formulário de Captura</h3>
                   <p className="text-sm text-zinc-600 dark:text-zinc-500">
                     Crie um formulário HTML pronto para instalar no seu site. Ele captura os dados (nome, email, telefone) e dispara o evento escolhido no clique do botão.
                   </p>
@@ -2597,7 +2597,7 @@ ${scriptContent}
                 {savedForms.length > 0 && (
                   <div className="mb-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     {savedForms.map(form => (
-                      <div key={form.id} className={`relative p-4 rounded-xl border transition-all ${selectedFormId === form.id ? 'bg-blue-500/10 border-blue-500/50' : 'bg-zinc-900/30 border-zinc-200 dark:border-zinc-800/60 hover:border-zinc-700'}`}>
+                      <div key={form.id} className={`relative p-4 rounded-xl border transition-all ${selectedFormId === form.id ? 'bg-blue-500/10 border-blue-500/50' : 'bg-zinc-900/30 border-zinc-200 dark:border-zinc-800 hover:border-zinc-700'}`}>
                         <div className="flex justify-between items-start mb-2">
                           <h4 className="font-medium text-zinc-800 dark:text-zinc-200 truncate pr-6">{form.name}</h4>
                           <button onClick={(e) => { e.stopPropagation(); deleteForm(form.id); }} className="text-zinc-600 dark:text-zinc-500 hover:text-red-400 transition-colors">
@@ -2606,7 +2606,7 @@ ${scriptContent}
                         </div>
                         <div className="text-[10px] text-zinc-600 dark:text-zinc-500 font-mono mb-3">ID: {form.public_id}</div>
                         <div className="flex gap-2">
-                          <button onClick={() => loadFormToEditor(form)} className="flex-1 text-xs bg-zinc-200 dark:bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-400 dark:text-zinc-700 dark:text-zinc-300 py-1.5 rounded border border-zinc-700 transition-colors">
+                          <button onClick={() => loadFormToEditor(form)} className="flex-1 text-xs bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-400 dark:text-zinc-300 py-1.5 rounded border border-zinc-700 transition-colors">
                             {selectedFormId === form.id ? 'Editando...' : 'Editar'}
                           </button>
                           <button onClick={() => copyFormHtml(form)} className="flex-1 text-xs bg-blue-600 hover:bg-blue-500 text-white py-1.5 rounded border border-blue-500 transition-colors shadow-lg shadow-blue-900/20">
@@ -2620,11 +2620,11 @@ ${scriptContent}
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                   <div className="space-y-4">
-                    <div className="bg-zinc-50 dark:bg-zinc-900/30 p-5 rounded-xl border border-zinc-200 dark:border-zinc-800/60 space-y-5">
+                    <div className="bg-zinc-50 dark:bg-zinc-900/30 p-5 rounded-xl border border-zinc-200 dark:border-zinc-800 space-y-5">
 
                       {/* Form Name */}
                       <div>
-                        <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 mb-2">Nome do Formulário (para salvar)</label>
+                        <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Nome do Formulário (para salvar)</label>
                         <div className="flex gap-2">
                           <input
                             value={formName}
@@ -2638,11 +2638,11 @@ ${scriptContent}
                         </div>
                       </div>
 
-                      <hr className="border-zinc-200 dark:border-zinc-800/60" />
+                      <hr className="border-zinc-200 dark:border-zinc-800" />
 
                       {/* Fields */}
                       <div>
-                        <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 mb-3">Campos do Formulário</label>
+                        <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-3">Campos do Formulário</label>
                         <div className="space-y-2">
                           <label className="flex items-center gap-2 cursor-pointer">
                             <input
@@ -2651,7 +2651,7 @@ ${scriptContent}
                               onChange={(e) => setFormFields(prev => ({ ...prev, name: e.target.checked }))}
                               className="w-4 h-4 rounded border-zinc-700 bg-zinc-200 dark:bg-zinc-800 text-blue-500"
                             />
-                            <span className="text-sm text-zinc-700 dark:text-zinc-700 dark:text-zinc-300">Nome</span>
+                            <span className="text-sm text-zinc-700 dark:text-zinc-300">Nome</span>
                           </label>
                           <label className="flex items-center gap-2 cursor-pointer">
                             <input
@@ -2660,7 +2660,7 @@ ${scriptContent}
                               onChange={(e) => setFormFields(prev => ({ ...prev, email: e.target.checked }))}
                               className="w-4 h-4 rounded border-zinc-700 bg-zinc-200 dark:bg-zinc-800 text-blue-500"
                             />
-                            <span className="text-sm text-zinc-700 dark:text-zinc-700 dark:text-zinc-300">E-mail</span>
+                            <span className="text-sm text-zinc-700 dark:text-zinc-300">E-mail</span>
                           </label>
                           <label className="flex items-center gap-2 cursor-pointer">
                             <input
@@ -2669,14 +2669,14 @@ ${scriptContent}
                               onChange={(e) => setFormFields(prev => ({ ...prev, phone: e.target.checked }))}
                               className="w-4 h-4 rounded border-zinc-700 bg-zinc-200 dark:bg-zinc-800 text-blue-500"
                             />
-                            <span className="text-sm text-zinc-700 dark:text-zinc-700 dark:text-zinc-300">Telefone</span>
+                            <span className="text-sm text-zinc-700 dark:text-zinc-300">Telefone</span>
                           </label>
                         </div>
                       </div>
 
                       {/* Theme */}
                       <div>
-                        <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 mb-2">Tema do Formulário</label>
+                        <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Tema do Formulário</label>
                         <div className="flex gap-4">
                           <label className="flex items-center gap-2 cursor-pointer">
                             <input
@@ -2687,7 +2687,7 @@ ${scriptContent}
                               onChange={() => setFormTheme('light')}
                               className="w-4 h-4 text-blue-500 bg-zinc-200 dark:bg-zinc-800 border-zinc-700"
                             />
-                            <span className="text-sm text-zinc-700 dark:text-zinc-700 dark:text-zinc-300">Claro</span>
+                            <span className="text-sm text-zinc-700 dark:text-zinc-300">Claro</span>
                           </label>
                           <label className="flex items-center gap-2 cursor-pointer">
                             <input
@@ -2698,14 +2698,14 @@ ${scriptContent}
                               onChange={() => setFormTheme('dark')}
                               className="w-4 h-4 text-blue-500 bg-zinc-200 dark:bg-zinc-800 border-zinc-700"
                             />
-                            <span className="text-sm text-zinc-700 dark:text-zinc-700 dark:text-zinc-300">Escuro</span>
+                            <span className="text-sm text-zinc-700 dark:text-zinc-300">Escuro</span>
                           </label>
                         </div>
                       </div>
 
                       {/* Button Text */}
                       <div>
-                        <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 mb-2">Texto do Botão</label>
+                        <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Texto do Botão</label>
                         <input
                           value={formButtonText}
                           onChange={(e) => setFormButtonText(e.target.value)}
@@ -2715,7 +2715,7 @@ ${scriptContent}
 
                       {/* Event Type */}
                       <div>
-                        <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 mb-2">Evento ao Enviar</label>
+                        <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Evento ao Enviar</label>
                         <select
                           value={formEventType}
                           onChange={(e) => setFormEventType(e.target.value)}
@@ -2731,7 +2731,7 @@ ${scriptContent}
 
                       {formEventType === 'Custom' && (
                         <div>
-                          <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 mb-2">Nome do Evento</label>
+                          <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Nome do Evento</label>
                           <input
                             value={formCustomEventName}
                             onChange={(e) => setFormCustomEventName(e.target.value)}
@@ -2740,19 +2740,19 @@ ${scriptContent}
                         </div>
                       )}
 
-                      <hr className="border-zinc-200 dark:border-zinc-800/60" />
+                      <hr className="border-zinc-200 dark:border-zinc-800" />
 
                       {/* Post Submit Action */}
                       <div>
-                        <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 mb-3">Ação após o cadastro</label>
+                        <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-3">Ação após o cadastro</label>
                         <div className="flex gap-4 mb-3">
                           <label className="flex items-center gap-2 cursor-pointer">
                             <input type="radio" name="postSubmitAction" value="message" checked={postSubmitAction === 'message'} onChange={() => setPostSubmitAction('message')} className="w-4 h-4 text-blue-500 bg-zinc-200 dark:bg-zinc-800 border-zinc-700" />
-                            <span className="text-sm text-zinc-700 dark:text-zinc-700 dark:text-zinc-300">Exibir Mensagem</span>
+                            <span className="text-sm text-zinc-700 dark:text-zinc-300">Exibir Mensagem</span>
                           </label>
                           <label className="flex items-center gap-2 cursor-pointer">
                             <input type="radio" name="postSubmitAction" value="redirect" checked={postSubmitAction === 'redirect'} onChange={() => setPostSubmitAction('redirect')} className="w-4 h-4 text-blue-500 bg-zinc-200 dark:bg-zinc-800 border-zinc-700" />
-                            <span className="text-sm text-zinc-700 dark:text-zinc-700 dark:text-zinc-300">Redirecionar</span>
+                            <span className="text-sm text-zinc-700 dark:text-zinc-300">Redirecionar</span>
                           </label>
                         </div>
                         {postSubmitAction === 'message' ? (
@@ -2764,7 +2764,7 @@ ${scriptContent}
 
                       {/* Webhook */}
                       <div>
-                        <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 mb-2">Webhook URL (Opcional)</label>
+                        <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Webhook URL (Opcional)</label>
                         <input value={formWebhookUrl} onChange={e => setFormWebhookUrl(e.target.value)} className={inputCls} placeholder="https://seu-crm.com/webhook..." />
                         <p className="text-[10px] text-zinc-600 dark:text-zinc-500 mt-1">Enviaremos os dados do lead para esta URL via POST JSON.</p>
                       </div>
@@ -2803,17 +2803,17 @@ ${scriptContent}
           {tab === 'campaigns' && (
             <div className="space-y-4">
               <div>
-                <h2 className="text-sm font-semibold text-zinc-100">Campanhas Meta Ads</h2>
+                <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Campanhas Meta Ads</h2>
                 <p className="mt-0.5 text-xs text-zinc-600 dark:text-zinc-500">
                   Visualize métricas, ative ou pause campanhas. Use o Diagnóstico IA para recomendações detalhadas.
                 </p>
               </div>
 
               {!meta?.has_facebook_connection && (
-                <div className="rounded-xl border border-zinc-200 dark:border-zinc-800/60 bg-zinc-50 dark:bg-zinc-900/30 p-4 text-sm text-zinc-600 dark:text-zinc-500 dark:text-zinc-600 dark:text-zinc-400">
+                <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/30 p-4 text-sm text-zinc-600 dark:text-zinc-500 dark:text-zinc-400">
                   Conecte o Facebook na aba{' '}
                   <button
-                    className="text-zinc-700 dark:text-zinc-700 dark:text-zinc-300 underline underline-offset-2"
+                    className="text-zinc-700 dark:text-zinc-300 underline underline-offset-2"
                     onClick={() => setTab('meta')}
                   >
                     Meta Ads
@@ -2823,10 +2823,10 @@ ${scriptContent}
               )}
 
               {meta?.has_facebook_connection && !meta?.ad_account_id && (
-                <div className="rounded-xl border border-zinc-200 dark:border-zinc-800/60 bg-zinc-50 dark:bg-zinc-900/30 p-4 text-sm text-zinc-600 dark:text-zinc-500 dark:text-zinc-600 dark:text-zinc-400">
+                <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/30 p-4 text-sm text-zinc-600 dark:text-zinc-500 dark:text-zinc-400">
                   Defina a conta de anúncios na aba{' '}
                   <button
-                    className="text-zinc-700 dark:text-zinc-700 dark:text-zinc-300 underline underline-offset-2"
+                    className="text-zinc-700 dark:text-zinc-300 underline underline-offset-2"
                     onClick={() => setTab('meta')}
                   >
                     Meta Ads
@@ -2836,9 +2836,9 @@ ${scriptContent}
               )}
 
               {meta?.has_facebook_connection && meta?.ad_account_id && (
-                <div className="rounded-xl border border-zinc-200 dark:border-zinc-800/60 overflow-hidden">
+                <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 overflow-hidden">
                   {/* Breadcrumbs */}
-                  <div className="flex items-center gap-1.5 px-4 py-3 border-b border-zinc-200 dark:border-zinc-800/60 bg-zinc-50 dark:bg-zinc-100 dark:bg-zinc-900/60">
+                  <div className="flex items-center gap-1.5 px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60">
                     {metaBreadcrumbs.map((crumb, idx) => (
                       <React.Fragment key={idx}>
                         <button
@@ -2871,7 +2871,7 @@ ${scriptContent}
                   </div>
 
                   {/* Toolbar */}
-                  <div className="px-4 py-2.5 border-b border-zinc-200 dark:border-zinc-800/60 bg-white dark:bg-white dark:bg-zinc-950/60 flex flex-wrap items-center gap-2">
+                  <div className="px-4 py-2.5 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-white dark:bg-zinc-950/60 flex flex-wrap items-center gap-2">
                     {periodSelector}
                     <select
                       value={metaStatusFilter}
@@ -2884,7 +2884,7 @@ ${scriptContent}
                     <button
                       onClick={() => loadCampaigns({ force: true })}
                       disabled={loading}
-                      className="flex items-center gap-1.5 bg-zinc-50 dark:bg-zinc-100 dark:bg-zinc-900/60 hover:bg-zinc-100 dark:bg-zinc-200 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-700 dark:text-zinc-300 px-3.5 py-2 rounded-lg text-xs transition-colors disabled:opacity-40"
+                      className="flex items-center gap-1.5 bg-zinc-50 dark:bg-zinc-900/60 hover:bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 px-3.5 py-2 rounded-lg text-xs transition-colors disabled:opacity-40"
                     >
                       {loading ? (
                         <svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none">
@@ -2915,7 +2915,7 @@ ${scriptContent}
                   <div className="max-h-[60vh] overflow-x-auto overflow-y-auto custom-scrollbar">
                     <table className="w-full min-w-[1100px] text-xs">
                       <thead>
-                        <tr className="border-b border-zinc-200 dark:border-zinc-800/60 bg-white dark:bg-zinc-950/80">
+                        <tr className="border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/80">
                           {[
                             'Nome',
                             'Status',
@@ -2940,7 +2940,7 @@ ${scriptContent}
                             <th
                               key={h}
                               className={`text-left text-[10px] font-medium uppercase tracking-widest text-zinc-600 px-4 py-3 whitespace-nowrap ${index === 0
-                                ? 'sticky left-0 z-10 bg-white dark:bg-zinc-950/95 border-r border-zinc-200 dark:border-zinc-800/60'
+                                ? 'sticky left-0 z-10 bg-white dark:bg-zinc-950/95 border-r border-zinc-200 dark:border-zinc-800'
                                 : ''
                                 }`}
                             >
@@ -2954,7 +2954,7 @@ ${scriptContent}
                           <tr>
                             <td
                               colSpan={18}
-                              className="px-4 py-12 text-center text-sm text-zinc-600 dark:text-zinc-500 dark:text-zinc-600"
+                              className="px-4 py-12 text-center text-sm text-zinc-600 dark:text-zinc-500"
                             >
                               Nenhum item encontrado neste nível.
                             </td>
@@ -2973,7 +2973,7 @@ ${scriptContent}
                               key={c.id}
                               className="border-b border-zinc-200 dark:border-zinc-800/40 last:border-0 hover:bg-zinc-50 dark:bg-zinc-900/40 transition-colors"
                             >
-                              <td className="px-4 py-3 max-w-[220px] sticky left-0 z-10 bg-white dark:bg-zinc-950/95 border-r border-zinc-200 dark:border-zinc-800/60">
+                              <td className="px-4 py-3 max-w-[220px] sticky left-0 z-10 bg-white dark:bg-zinc-950/95 border-r border-zinc-200 dark:border-zinc-800">
                                 <button
                                   onClick={() => handleMetaDrillDown(c)}
                                   disabled={metaLevel === 'ad'}
@@ -2988,16 +2988,16 @@ ${scriptContent}
                               <td className="px-4 py-3">
                                 <Badge variant={statusVariant}>{getStatusLabel(c)}</Badge>
                               </td>
-                              <td className="px-4 py-3 text-zinc-700 dark:text-zinc-700 dark:text-zinc-300 tabular-nums">
+                              <td className="px-4 py-3 text-zinc-700 dark:text-zinc-300 tabular-nums">
                                 {metrics ? formatMoney(metrics.spend) : '—'}
                               </td>
                               <td className="px-4 py-3 text-zinc-800 dark:text-zinc-200 font-semibold tabular-nums">
                                 {metrics ? formatNumber(resultVal) : '—'}
-                                <div className="text-[10px] text-zinc-600 dark:text-zinc-500 dark:text-zinc-600 font-normal">
+                                <div className="text-[10px] text-zinc-600 dark:text-zinc-500 font-normal">
                                   {objectiveLabel}
                                 </div>
                               </td>
-                              <td className="px-4 py-3 text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 tabular-nums">
+                              <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400 tabular-nums">
                                 {metrics && resultVal > 0 ? formatMoney(cpr) : '—'}
                               </td>
                               <td className="px-4 py-3 text-zinc-600 dark:text-zinc-500 tabular-nums">
@@ -3006,39 +3006,39 @@ ${scriptContent}
                               <td className="px-4 py-3 text-zinc-600 dark:text-zinc-500 tabular-nums">
                                 {metrics ? formatNumber(metrics.impressions) : '—'}
                               </td>
-                              <td className="px-4 py-3 text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 tabular-nums">
+                              <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400 tabular-nums">
                                 {metrics ? formatNumber(metrics.clicks) : '—'}
                               </td>
-                              <td className="px-4 py-3 text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 tabular-nums">
+                              <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400 tabular-nums">
                                 {metrics ? `${formatPercent(metrics.ctr)}%` : '—'}
                               </td>
-                              <td className="px-4 py-3 text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 tabular-nums">
+                              <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400 tabular-nums">
                                 {metrics ? `${formatPercent(metrics.hook_rate || 0)}%` : '—'}
                               </td>
-                              <td className="px-4 py-3 text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 tabular-nums">
+                              <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400 tabular-nums">
                                 {metrics ? formatNumber(metrics.landing_page_views) : '—'}
                               </td>
-                              <td className="px-4 py-3 text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 tabular-nums">
+                              <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400 tabular-nums">
                                 {metrics ? `${formatPercent(getLpViewRate(metrics))}%` : '—'}
                               </td>
-                              <td className="px-4 py-3 text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 tabular-nums">
+                              <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400 tabular-nums">
                                 {metrics && metrics.landing_page_views > 0
                                   ? formatMoney(metrics.spend / metrics.landing_page_views)
                                   : '—'}
                               </td>
-                              <td className="px-4 py-3 text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 tabular-nums">
+                              <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400 tabular-nums">
                                 {metrics ? formatMoney(metrics.cpc) : '—'}
                               </td>
-                              <td className="px-4 py-3 text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 tabular-nums">
+                              <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400 tabular-nums">
                                 {metrics ? formatMoney(metrics.cpm) : '—'}
                               </td>
-                              <td className="px-4 py-3 text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 tabular-nums">
+                              <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400 tabular-nums">
                                 {metrics ? formatNumber(metrics.frequency || 0) : '—'}
                               </td>
-                              <td className="px-4 py-3 text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 tabular-nums">
+                              <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400 tabular-nums">
                                 {metrics ? formatNumber(metrics.initiates_checkout) : '—'}
                               </td>
-                              <td className="px-4 py-3 text-zinc-700 dark:text-zinc-700 dark:text-zinc-300 tabular-nums">
+                              <td className="px-4 py-3 text-zinc-700 dark:text-zinc-300 tabular-nums">
                                 {metrics ? formatNumber(metrics.purchases) : '—'}
                               </td>
                               <td className="px-4 py-3">
@@ -3069,7 +3069,7 @@ ${scriptContent}
           {tab === 'webhooks' && (
             <div className="max-w-4xl space-y-8">
               <div>
-                <h2 className="text-sm font-semibold text-zinc-100">Hub de Integrações (Webhooks)</h2>
+                <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Hub de Integrações (Webhooks)</h2>
                 <p className="mt-0.5 text-xs text-zinc-600 dark:text-zinc-500">
                   Conecte suas plataformas de vendas para enviar os eventos de compra (Purchase) direto para a API de Conversões do Meta.
                 </p>
@@ -3077,7 +3077,7 @@ ${scriptContent}
 
               {/* ── NATIVE INTEGRATIONS ── */}
               <div className="space-y-4">
-                <h3 className="text-xs font-semibold text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Integrações Nativas</h3>
+                <h3 className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 uppercase tracking-wider">Integrações Nativas</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
                   {/* Hotmart Card */}
@@ -3094,7 +3094,7 @@ ${scriptContent}
                         </svg>
                       </div>
                       <div>
-                        <h4 className="text-sm font-semibold text-zinc-100">Hotmart</h4>
+                        <h4 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Hotmart</h4>
                         <p className="text-[10px] text-zinc-600 dark:text-zinc-500">Mapeamento automático de PII e UTMs</p>
                       </div>
                     </div>
@@ -3113,7 +3113,7 @@ ${scriptContent}
                             navigator.clipboard.writeText(url);
                             showFlash('URL copiada!');
                           }}
-                          className="flex items-center gap-1.5 bg-zinc-200 dark:bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-400 dark:text-zinc-700 dark:text-zinc-300 px-3 py-2 rounded-lg text-xs transition-colors shrink-0"
+                          className="flex items-center gap-1.5 bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-400 dark:text-zinc-300 px-3 py-2 rounded-lg text-xs transition-colors shrink-0"
                         >
                           Copiar
                         </button>
@@ -3129,7 +3129,7 @@ ${scriptContent}
                           <span className="font-bold text-white text-[10px]">Kiwify</span>
                         </div>
                         <div>
-                          <h4 className="text-sm font-semibold text-zinc-100">Kiwify</h4>
+                          <h4 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Kiwify</h4>
                           <p className="text-[10px] text-zinc-600 dark:text-zinc-500">Mapeamento automático de PII e UTMs</p>
                         </div>
                       </div>
@@ -3153,7 +3153,7 @@ ${scriptContent}
                             navigator.clipboard.writeText(url);
                             showFlash('URL copiada!');
                           }}
-                          className="flex items-center gap-1.5 bg-zinc-200 dark:bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-400 dark:text-zinc-700 dark:text-zinc-300 px-3 py-2 rounded-lg text-xs transition-colors shrink-0"
+                          className="flex items-center gap-1.5 bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-400 dark:text-zinc-300 px-3 py-2 rounded-lg text-xs transition-colors shrink-0"
                         >
                           Copiar
                         </button>
@@ -3165,10 +3165,10 @@ ${scriptContent}
               </div>
 
               {/* ── CUSTOM INTEGRATIONS ── */}
-              <div className="space-y-4 border-t border-zinc-200 dark:border-zinc-800/60 pt-8">
+              <div className="space-y-4 border-t border-zinc-200 dark:border-zinc-800 pt-8">
                 <div className="flex items-center justify-between">
                   <div>
-                    <h3 className="text-xs font-semibold text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Integrações Personalizadas</h3>
+                    <h3 className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 uppercase tracking-wider">Integrações Personalizadas</h3>
                     <p className="text-xs text-zinc-600 dark:text-zinc-500 mt-1">Gere webhooks para plataformas não listadas (ex: Braip, Ticto) e mapeie os dados manualmente.</p>
                   </div>
                   <button
@@ -3239,7 +3239,7 @@ ${scriptContent}
                                     navigator.clipboard.writeText(`${apiBaseUrl}/webhooks/custom/${hook.id}`);
                                     showFlash('URL copiada!');
                                   }}
-                                  className="bg-zinc-200 dark:bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-400 dark:text-zinc-700 dark:text-zinc-300 px-3 py-1.5 rounded-md text-xs transition-colors shrink-0"
+                                  className="bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-400 dark:text-zinc-300 px-3 py-1.5 rounded-md text-xs transition-colors shrink-0"
                                 >
                                   Copiar URL
                                 </button>
@@ -3290,7 +3290,7 @@ ${scriptContent}
                                     </div>
                                     <button
                                       onClick={() => loadCustomWebhooks()}
-                                      className="text-[10px] flex items-center gap-1 text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:text-zinc-200"
+                                      className="text-[10px] flex items-center gap-1 text-zinc-600 dark:text-zinc-400 hover:text-zinc-800 dark:text-zinc-200"
                                       title="Atualiza as opções com o último payload recebido"
                                     >
                                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.92-10.44l5.58 5.58" /></svg>
@@ -3311,7 +3311,7 @@ ${scriptContent}
                                       { key: 'sck', label: 'Parâmetro SCK/SRC (UTMs)' },
                                     ].map(field => (
                                       <div key={field.key}>
-                                        <label className="block text-[11px] font-medium text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 mb-1.5">{field.label}</label>
+                                        <label className="block text-[11px] font-medium text-zinc-600 dark:text-zinc-400 mb-1.5">{field.label}</label>
                                         <select
                                           value={currentMap[field.key] || ''}
                                           onChange={(e) => setFieldMap(field.key, e.target.value)}
@@ -3327,7 +3327,7 @@ ${scriptContent}
 
                                     <div className="col-span-1 md:col-span-2 lg:col-span-3 grid grid-cols-2 gap-4 pt-2">
                                       <div>
-                                        <label className="block text-[11px] font-medium text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 mb-1.5">Qual valor representa status "Aprovado"?</label>
+                                        <label className="block text-[11px] font-medium text-zinc-600 dark:text-zinc-400 mb-1.5">Qual valor representa status "Aprovado"?</label>
                                         <input
                                           type="text"
                                           placeholder="Ex: APPROVED, approved, 3"
@@ -3337,7 +3337,7 @@ ${scriptContent}
                                         />
                                       </div>
                                       <div>
-                                        <label className="block text-[11px] font-medium text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 mb-1.5">Qual valor representa status "Reembolsado"?</label>
+                                        <label className="block text-[11px] font-medium text-zinc-600 dark:text-zinc-400 mb-1.5">Qual valor representa status "Reembolsado"?</label>
                                         <input
                                           type="text"
                                           placeholder="Ex: REFUNDED, refunded, 4"
@@ -3349,7 +3349,7 @@ ${scriptContent}
                                     </div>
                                   </div>
 
-                                  <div className="border-t border-zinc-200 dark:border-zinc-800/60 pt-4 flex justify-end">
+                                  <div className="border-t border-zinc-200 dark:border-zinc-800 pt-4 flex justify-end">
                                     <button
                                       onClick={() => handleSaveWebhookMapping(hook.id)}
                                       className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2 rounded-lg text-xs font-medium transition-colors"
@@ -3358,7 +3358,7 @@ ${scriptContent}
                                     </button>
                                   </div>
 
-                                  <div className="mt-4 text-[10px] text-zinc-600 dark:text-zinc-500 dark:text-zinc-600">
+                                  <div className="mt-4 text-[10px] text-zinc-600 dark:text-zinc-500">
                                     <p className="mb-1 font-medium">Último payload recebido (para conferência):</p>
                                     <pre className="max-h-48 overflow-y-auto bg-white dark:bg-zinc-950 p-2 rounded border border-zinc-200 dark:border-zinc-800/50">
                                       {JSON.stringify(hook.last_payload, null, 2)}
@@ -3385,9 +3385,9 @@ ${scriptContent}
           {tab === 'reports' && (
             <div className="max-w-none space-y-4">
               {campaigns.length > 0 && (
-                <div className="rounded-xl border border-zinc-200 dark:border-zinc-800/60 bg-zinc-50 dark:bg-zinc-900/30 p-5 space-y-4">
+                <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/30 p-5 space-y-4">
                   <div className="flex items-center gap-3">
-                    <h3 className="text-sm font-semibold text-zinc-100">Configurar diagnóstico</h3>
+                    <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Configurar diagnóstico</h3>
                     {selectedCampaign && (
                       <Badge variant={getStatusVariant(selectedCampaign)}>
                         {getStatusLabel(selectedCampaign)}
@@ -3424,14 +3424,14 @@ ${scriptContent}
                       {periodSelector}
                       <button
                         onClick={() => loadCampaigns({ force: true }).catch(() => { })}
-                        className="bg-zinc-50 dark:bg-zinc-100 dark:bg-zinc-900/60 hover:bg-zinc-100 dark:bg-zinc-200 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 px-3.5 py-2.5 rounded-lg text-xs transition-colors"
+                        className="bg-zinc-50 dark:bg-zinc-900/60 hover:bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 px-3.5 py-2.5 rounded-lg text-xs transition-colors"
                       >
                         Atualizar
                       </button>
                     </div>
                   </div>
 
-                  <div className="border-t border-zinc-200 dark:border-zinc-800/60 pt-4 space-y-3">
+                  <div className="border-t border-zinc-200 dark:border-zinc-800 pt-4 space-y-3">
                     <div className="flex items-center justify-between gap-3">
                       <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-500">
                         Filtros UTM (opcional)
@@ -3462,7 +3462,7 @@ ${scriptContent}
                               value={pastedUrl}
                               onChange={(e) => setPastedUrl(e.target.value)}
                               placeholder="https://..."
-                              className="w-64 rounded-lg bg-zinc-50 dark:bg-zinc-100 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 px-3 py-1.5 text-xs text-zinc-700 dark:text-zinc-700 dark:text-zinc-300 outline-none focus:border-blue-500/50 transition-colors placeholder:text-zinc-600"
+                              className="w-64 rounded-lg bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 px-3 py-1.5 text-xs text-zinc-700 dark:text-zinc-300 outline-none focus:border-blue-500/50 transition-colors placeholder:text-zinc-600"
                               autoFocus
                               onKeyDown={(e) => {
                                 if (e.key === 'Enter') {
@@ -3522,7 +3522,7 @@ ${scriptContent}
                                 setShowUrlPaster(false);
                                 setPastedUrl('');
                               }}
-                              className="p-1.5 rounded-md bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-700 text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:text-zinc-200 transition-colors"
+                              className="p-1.5 rounded-md bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-700 text-zinc-600 dark:text-zinc-400 hover:text-zinc-800 dark:text-zinc-200 transition-colors"
                               title="Cancelar"
                             >
                               <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
@@ -3538,7 +3538,7 @@ ${scriptContent}
                               setShowUrlPaster(true);
                               setPastedUrl('');
                             }}
-                            className="text-[11px] border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/70 hover:bg-zinc-50 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 hover:text-zinc-200 px-3 py-2 rounded-lg transition-colors"
+                            className="text-[11px] border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/70 hover:bg-zinc-50 dark:hover:bg-zinc-900 text-zinc-600 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 px-3 py-2 rounded-lg transition-colors"
                           >
                             Colar URL
                           </button>
@@ -3553,7 +3553,7 @@ ${scriptContent}
                             setDiagnosisUtmTerm('');
                             setDiagnosisClickId('');
                           }}
-                          className="text-[11px] border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/70 hover:bg-zinc-50 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 hover:text-zinc-200 px-3 py-2 rounded-lg transition-colors"
+                          className="text-[11px] border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/70 hover:bg-zinc-50 dark:hover:bg-zinc-900 text-zinc-600 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 px-3 py-2 rounded-lg transition-colors"
                         >
                           Limpar filtros
                         </button>
@@ -3675,10 +3675,10 @@ ${scriptContent}
               )}
 
               {report?.meta_breakdown && (
-                <div className="rounded-xl border border-zinc-200 dark:border-zinc-800/60 bg-zinc-50 dark:bg-zinc-900/30 p-5 space-y-4">
+                <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/30 p-5 space-y-4">
                   <div className="flex items-center gap-2">
-                    <h3 className="text-sm font-semibold text-zinc-100">Resumo por nível</h3>
-                    <span className="text-[11px] text-zinc-600 dark:text-zinc-500 dark:text-zinc-600">Campanha · Conjunto · Anúncio</span>
+                    <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Resumo por nível</h3>
+                    <span className="text-[11px] text-zinc-600 dark:text-zinc-500">Campanha · Conjunto · Anúncio</span>
                   </div>
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                     {([
@@ -3686,13 +3686,13 @@ ${scriptContent}
                       { label: 'Conjuntos', rows: report.meta_breakdown.adsets || [] },
                       { label: 'Anúncios', rows: report.meta_breakdown.ads || [] },
                     ] as Array<{ label: string; rows: MetaBreakdownItem[] }>).map((group) => (
-                      <div key={group.label} className="rounded-lg border border-zinc-200 dark:border-zinc-800/60 bg-white dark:bg-zinc-950/40">
-                        <div className="px-3.5 py-2.5 border-b border-zinc-200 dark:border-zinc-800/60 text-[11px] font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-500">
+                      <div key={group.label} className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/40">
+                        <div className="px-3.5 py-2.5 border-b border-zinc-200 dark:border-zinc-800 text-[11px] font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-500">
                           {group.label}
                         </div>
                         <div className="overflow-auto">
                           <table className="w-full text-[11px]">
-                            <thead className="bg-zinc-50 dark:bg-zinc-100 dark:bg-zinc-900/60">
+                            <thead className="bg-zinc-50 dark:bg-zinc-900/60">
                               <tr>
                                 <th className="text-left font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-500 px-3 py-2">
                                   Nome
@@ -3717,29 +3717,29 @@ ${scriptContent}
                             <tbody>
                               {group.rows.length === 0 && (
                                 <tr>
-                                  <td colSpan={6} className="px-3 py-3 text-center text-zinc-600 dark:text-zinc-500 dark:text-zinc-600">
+                                  <td colSpan={6} className="px-3 py-3 text-center text-zinc-600 dark:text-zinc-500">
                                     Sem dados neste nível.
                                   </td>
                                 </tr>
                               )}
                               {group.rows.slice(0, 5).map((row) => (
-                                <tr key={row.id} className="border-t border-zinc-200 dark:border-zinc-800/60">
-                                  <td className="px-3 py-2 text-zinc-700 dark:text-zinc-700 dark:text-zinc-300 max-w-[160px] truncate">
+                                <tr key={row.id} className="border-t border-zinc-200 dark:border-zinc-800">
+                                  <td className="px-3 py-2 text-zinc-700 dark:text-zinc-300 max-w-[160px] truncate">
                                     {row.name || '—'}
                                   </td>
-                                  <td className="px-3 py-2 text-right text-zinc-700 dark:text-zinc-700 dark:text-zinc-300 tabular-nums">
+                                  <td className="px-3 py-2 text-right text-zinc-700 dark:text-zinc-300 tabular-nums">
                                     {formatMoney(row.spend)}
                                   </td>
-                                  <td className="px-3 py-2 text-right text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 tabular-nums">
+                                  <td className="px-3 py-2 text-right text-zinc-600 dark:text-zinc-400 tabular-nums">
                                     {formatPercent(getBreakdownCtr(row))}%
                                   </td>
-                                  <td className="px-3 py-2 text-right text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 tabular-nums">
+                                  <td className="px-3 py-2 text-right text-zinc-600 dark:text-zinc-400 tabular-nums">
                                     {formatPercent(getBreakdownLpRate(row))}%
                                   </td>
-                                  <td className="px-3 py-2 text-right text-zinc-700 dark:text-zinc-700 dark:text-zinc-300 tabular-nums">
+                                  <td className="px-3 py-2 text-right text-zinc-700 dark:text-zinc-300 tabular-nums">
                                     {formatNumber(row.purchases || 0)}
                                   </td>
-                                  <td className="px-3 py-2 text-zinc-600 dark:text-zinc-500 dark:text-zinc-400">
+                                  <td className="px-3 py-2 text-zinc-600 dark:text-zinc-400">
                                     {getBreakdownBottleneck(row)}
                                   </td>
                                 </tr>
@@ -3766,15 +3766,15 @@ ${scriptContent}
                       strokeWidth="1.5"
                       strokeLinecap="round"
                       strokeLinejoin="round"
-                      className="text-zinc-600 dark:text-zinc-500 dark:text-zinc-600"
+                      className="text-zinc-600 dark:text-zinc-500"
                     >
                       <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z" />
                     </svg>
                   </div>
-                  <div className="text-sm font-medium text-zinc-600 dark:text-zinc-500 dark:text-zinc-400">Nenhum diagnóstico gerado</div>
-                  <div className="mt-1 text-xs text-zinc-600 dark:text-zinc-500 dark:text-zinc-600">
+                  <div className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Nenhum diagnóstico gerado</div>
+                  <div className="mt-1 text-xs text-zinc-600 dark:text-zinc-500">
                     Selecione uma campanha e clique em{' '}
-                    <span className="text-zinc-600 dark:text-zinc-500 dark:text-zinc-400">Gerar diagnóstico</span> no canto superior.
+                    <span className="text-zinc-600 dark:text-zinc-400">Gerar diagnóstico</span> no canto superior.
                   </div>
                 </div>
               )}
@@ -3784,45 +3784,45 @@ ${scriptContent}
                   {visibleReportSections.map((section, index) => (
                     <div
                       key={`${section.title}-${index}`}
-                      className="rounded-xl border border-zinc-200 dark:border-zinc-800/60 bg-white dark:bg-zinc-950/50 overflow-hidden"
+                      className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/50 overflow-hidden"
                     >
                       <div className="px-5 py-3.5 border-b border-zinc-200 dark:border-zinc-800/40 bg-zinc-50 dark:bg-zinc-900/40">
-                        <h3 className="text-sm font-semibold text-zinc-100">{section.title}</h3>
+                        <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{section.title}</h3>
                       </div>
                       {section.body && (
-                        <div className="px-5 py-4 prose prose-invert max-w-none text-sm prose-headings:tracking-tight prose-h1:text-xl prose-h2:text-lg prose-h3:text-sm prose-p:text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 prose-p:leading-relaxed prose-strong:text-zinc-800 dark:text-zinc-200 prose-a:text-blue-400 prose-a:no-underline hover:prose-a:text-blue-300">
+                        <div className="px-5 py-4 prose prose-invert max-w-none text-sm prose-headings:tracking-tight prose-h1:text-xl prose-h2:text-lg prose-h3:text-sm prose-p:text-zinc-600 dark:text-zinc-400 prose-p:leading-relaxed prose-strong:text-zinc-800 dark:text-zinc-200 prose-a:text-blue-400 prose-a:no-underline hover:prose-a:text-blue-300">
                           <ReactMarkdown
                             components={{
                               table: ({ children }) => (
-                                <div className="overflow-auto rounded-xl border border-zinc-200 dark:border-zinc-800/60 bg-white dark:bg-zinc-950/40 my-4">
+                                <div className="overflow-auto rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/40 my-4">
                                   <table className="w-full border-collapse">{children}</table>
                                 </div>
                               ),
                               thead: ({ children }) => (
-                                <thead className="bg-zinc-50 dark:bg-zinc-100 dark:bg-zinc-900/60">{children}</thead>
+                                <thead className="bg-zinc-50 dark:bg-zinc-900/60">{children}</thead>
                               ),
                               th: ({ children }) => (
-                                <th className="text-left text-[10px] font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 px-4 py-2.5 border-b border-zinc-200 dark:border-zinc-800/60">
+                                <th className="text-left text-[10px] font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-400 px-4 py-2.5 border-b border-zinc-200 dark:border-zinc-800">
                                   {children}
                                 </th>
                               ),
                               td: ({ children }) => (
-                                <td className="text-xs text-zinc-600 dark:text-zinc-500 dark:text-zinc-400 px-4 py-2.5 border-b border-zinc-900/60">
+                                <td className="text-xs text-zinc-600 dark:text-zinc-400 px-4 py-2.5 border-b border-zinc-900/60">
                                   {children}
                                 </td>
                               ),
                               blockquote: ({ children }) => (
-                                <blockquote className="border-l-2 border-blue-500/50 bg-blue-500/8 rounded-r-lg px-4 py-3 text-zinc-700 dark:text-zinc-700 dark:text-zinc-300 not-italic my-4">
+                                <blockquote className="border-l-2 border-blue-500/50 bg-blue-500/8 rounded-r-lg px-4 py-3 text-zinc-700 dark:text-zinc-300 not-italic my-4">
                                   {children}
                                 </blockquote>
                               ),
                               ul: ({ children }) => (
-                                <ul className="list-disc list-inside space-y-1 text-zinc-600 dark:text-zinc-500 dark:text-zinc-400">
+                                <ul className="list-disc list-inside space-y-1 text-zinc-600 dark:text-zinc-400">
                                   {children}
                                 </ul>
                               ),
                               ol: ({ children }) => (
-                                <ol className="list-decimal list-inside space-y-1 text-zinc-600 dark:text-zinc-500 dark:text-zinc-400">
+                                <ol className="list-decimal list-inside space-y-1 text-zinc-600 dark:text-zinc-400">
                                   {children}
                                 </ol>
                               ),
