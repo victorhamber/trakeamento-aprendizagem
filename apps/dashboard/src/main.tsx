@@ -5,7 +5,7 @@ import App from './App';
 import { AuthProvider } from './state/auth';
 import './index.css';
 
-console.log('API URL:', import.meta.env.VITE_API_URL || 'Using default /api');
+
 
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
