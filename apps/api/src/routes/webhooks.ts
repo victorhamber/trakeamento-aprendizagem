@@ -273,48 +273,52 @@ router.post('/hotmart', async (req, res) => {
   const payload = req.body;
   if (typeof payload !== 'object') return res.status(400).json({ error: 'Invalid payload' });
 
-  const fbp = payload.fbp || payload.custom_args?.fbp;
-  const fbc = payload.fbc || payload.custom_args?.fbc;
+  // Hotmart v2 nests everything under payload.data; v1 uses payload directly
+  const d = payload.data || payload;
+
+  const fbp = d.fbp || d.custom_args?.fbp || payload.fbp;
+  const fbc = d.fbc || d.custom_args?.fbc || payload.fbc;
   const platform = 'hotmart';
 
-  const email = payload.buyer?.email || payload.email;
-  const firstName = payload.buyer?.name?.split(' ')[0] || payload.first_name || payload.name?.split(' ')[0];
-  const lastName = payload.buyer?.name?.split(' ').slice(1).join(' ') || payload.last_name || payload.name?.split(' ').slice(1).join(' ');
-  const phone = payload.buyer?.phone || payload.buyer?.checkout_phone || payload.phone;
-  const rawValue =
-    payload.purchase?.full_price?.value ??
-    payload.purchase?.price?.value ??
-    payload.purchase?.amount ??
-    payload.purchase?.total ??
-    payload.amount ??
-    payload.price ??
-    payload.value ??
-    payload.full_price ??
-    0;
-  const value = parseFloat(String(rawValue)) || 0;
-  console.log(`[Hotmart] orderId=${payload.purchase?.transaction} status=${payload.purchase?.status} rawValue=${rawValue} parsedValue=${value}`);
-  const currency = payload.purchase?.full_price?.currency_value || payload.currency || 'BRL';
+  const buyer = d.buyer || payload.buyer || {};
+  const purchase = d.purchase || payload.purchase || {};
 
-  let rawStatus = payload.purchase?.status || payload.status;
+  const email = buyer.email || payload.email;
+  const firstName = buyer.first_name || buyer.name?.split(' ')[0] || payload.first_name;
+  const lastName = buyer.last_name || buyer.name?.split(' ').slice(1).join(' ') || payload.last_name;
+  const phone = buyer.checkout_phone || buyer.phone || payload.phone;
+
+  const rawValue =
+    purchase.full_price?.value ??
+    purchase.price?.value ??
+    purchase.amount ??
+    purchase.total ??
+    d.amount ?? d.price ?? d.value ?? d.full_price ?? 0;
+  const value = parseFloat(String(rawValue)) || 0;
+  const currency = purchase.full_price?.currency_value || purchase.price?.currency_value || d.currency || 'BRL';
+  console.log(`[Hotmart] orderId=${purchase.transaction} status=${purchase.status} rawValue=${rawValue} parsedValue=${value} currency=${currency}`);
+
+  let rawStatus = purchase.status || d.status || payload.event;
   let status = 'other';
-  if (['APPROVED', 'COMPLETED', 'paid', 'PAID', 3, '3', 'approved'].includes(rawStatus)) {
+  if (['APPROVED', 'COMPLETED', 'paid', 'PAID', 3, '3', 'approved', 'PURCHASE_APPROVED'].includes(rawStatus)) {
     status = 'approved';
-  } else if (['REFUNDED', 'refunded', 'CHARGEBACK', 4, '4'].includes(rawStatus)) {
+  } else if (['REFUNDED', 'refunded', 'CHARGEBACK', 4, '4', 'PURCHASE_REFUNDED'].includes(rawStatus)) {
     status = 'refunded';
   }
 
-  const orderId = payload.purchase?.transaction || payload.transaction || payload.transaction_id || payload.id || `webhook_${Date.now()}`;
-  const city = payload.buyer?.address?.city || payload.city;
-  const state = payload.buyer?.address?.state || payload.state;
-  const zip = payload.buyer?.address?.zipCode || payload.buyer?.address?.zip_code || payload.zip_code;
-  const country = payload.buyer?.address?.country || payload.buyer?.address?.country_iso || payload.country || 'BR';
+  const orderId = purchase.transaction || d.transaction || d.transaction_id || payload.id || `webhook_${Date.now()}`;
+  const buyerAddr = buyer.address || {};
+  const city = buyerAddr.city || d.city;
+  const state = buyerAddr.state || d.state;
+  const zip = buyerAddr.zipcode || buyerAddr.zip_code || d.zip_code;
+  const country = buyerAddr.country_iso || buyerAddr.country || d.country || 'BR';
   const dob = undefined;
 
   const result = await processPurchaseWebhook({
     siteKey, payload, email, phone, firstName, lastName, city, state, zip, country, dob,
-    fbp, fbc, externalId: payload.user_id || payload.buyer?.id,
-    clientIp: payload.client_ip_address || payload.ip || req.ip || '0.0.0.0',
-    clientUa: payload.client_user_agent || payload.user_agent || 'Webhook/1.0',
+    fbp, fbc, externalId: d.user_id || buyer.document || buyer.id,
+    clientIp: d.client_ip_address || payload.ip || req.ip || '0.0.0.0',
+    clientUa: d.client_user_agent || payload.user_agent || 'Webhook/1.0',
     value, currency, status, orderId, platform
   });
 
