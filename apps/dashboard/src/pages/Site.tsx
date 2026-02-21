@@ -239,6 +239,62 @@ export const SitePage = () => {
   const [postSubmitRedirectUrl, setPostSubmitRedirectUrl] = useState('');
   const [formWebhookUrl, setFormWebhookUrl] = useState('');
 
+  // ─── Custom Webhooks State ───
+  const [customWebhooks, setCustomWebhooks] = useState<any[]>([]);
+  const [editingWebhookId, setEditingWebhookId] = useState<string | null>(null);
+  const [mappingState, setMappingState] = useState<Record<string, string>>({});
+
+  const loadCustomWebhooks = useCallback(async () => {
+    try {
+      const res = await api.get(`/sites/${id}/custom-webhooks`);
+      setCustomWebhooks(res.data.webhooks || []);
+    } catch (err) {
+      console.error('Failed to load custom webhooks', err);
+    }
+  }, [id]);
+
+  const handleCreateCustomWebhook = async () => {
+    try {
+      const res = await api.post(`/sites/${id}/custom-webhooks`, { name: `Webhook Personalizado ${customWebhooks.length + 1}` });
+      setCustomWebhooks([res.data.webhook, ...customWebhooks]);
+      showFlash('Webhook criado. Envie um payload de teste para a URL acima!');
+    } catch (err) {
+      console.error(err);
+      showFlash('Erro ao criar webhook', 'error');
+    }
+  };
+
+  const handleSaveWebhookMapping = async (hookId: string) => {
+    try {
+      const targetHook = customWebhooks.find(h => h.id === hookId);
+      if (!targetHook) return;
+      await api.put(`/sites/${id}/custom-webhooks/${hookId}`, {
+        name: targetHook.name,
+        is_active: true,
+        mapping_config: mappingState[hookId] || targetHook.mapping_config
+      });
+      showFlash('Mapeamento salvo e ativado!');
+      loadCustomWebhooks();
+      setEditingWebhookId(null);
+    } catch (err) {
+      console.error(err);
+      showFlash('Erro ao salvar mapeamento', 'error');
+    }
+  };
+
+  const handleDeleteWebhook = async (hookId: string) => {
+    if (!window.confirm('Tem certeza que deseja excluir este webhook? Isso interromperá o envio de eventos.')) return;
+    try {
+      await api.delete(`/sites/${id}/custom-webhooks/${hookId}`);
+      showFlash('Webhook excluído com sucesso!');
+      loadCustomWebhooks();
+      if (editingWebhookId === hookId) setEditingWebhookId(null);
+    } catch (err) {
+      console.error(err);
+      showFlash('Erro ao excluir webhook', 'error');
+    }
+  };
+
   const loadSavedForms = useCallback(async () => {
     try {
       const res = await api.get(`/sites/${id}/forms`);
@@ -1172,7 +1228,10 @@ ${scriptContent}
       loadEventRules().catch(() => { });
       loadSavedForms().catch(() => { });
     }
-    if (tab === 'webhooks') loadWebhookSecret().catch(() => { });
+    if (tab === 'webhooks') {
+      loadWebhookSecret().catch(() => { });
+      loadCustomWebhooks().catch(() => { });
+    }
     if (tab === 'utm') loadSavedUtms().catch(() => { });
     if (tab === 'reports') {
       loadUtmOptions().catch(() => { });
@@ -3020,116 +3079,293 @@ ${scriptContent}
 
           {/* ── Tab: Webhooks ── */}
           {tab === 'webhooks' && (
-            <div className="max-w-2xl space-y-5">
+            <div className="max-w-4xl space-y-8">
               <div>
-                <h2 className="text-sm font-semibold text-zinc-100">Integração de Vendas</h2>
+                <h2 className="text-sm font-semibold text-zinc-100">Hub de Integrações (Webhooks)</h2>
                 <p className="mt-0.5 text-xs text-zinc-500">
-                  Configure este webhook na sua plataforma (Hotmart, Kiwify, Eduzz, etc.) para receber
-                  eventos de compra automaticamente.
+                  Conecte suas plataformas de vendas para enviar os eventos de compra (Purchase) direto para a API de Conversões do Meta.
                 </p>
               </div>
 
-              <div>
-                <label className="block text-xs font-medium text-zinc-400 mb-2">URL do Webhook</label>
-                <div className="flex gap-2">
-                  <input
-                    readOnly
-                    className="flex-1 rounded-lg bg-zinc-900/60 border border-zinc-800 px-3.5 py-2.5 text-xs font-mono text-zinc-400 outline-none"
-                    value={
-                      webhookSecret
-                        ? `${apiBaseUrl}/webhooks/purchase?key=${site?.site_key}&token=${webhookSecret}`
-                        : 'Carregando…'
-                    }
-                  />
-                  <button
-                    onClick={() => {
-                      const url = `${apiBaseUrl}/webhooks/purchase?key=${site?.site_key}&token=${webhookSecret}`;
-                      navigator.clipboard.writeText(url);
-                      showFlash('URL copiada!');
-                    }}
-                    className="flex items-center gap-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-300 px-4 py-2.5 rounded-lg text-xs transition-colors"
-                  >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="12"
-                      height="12"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                    </svg>
-                    Copiar
-                  </button>
-                </div>
-              </div>
+              {/* ── NATIVE INTEGRATIONS ── */}
+              <div className="space-y-4">
+                <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Integrações Nativas</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
-              <div className="rounded-xl border border-blue-500/20 bg-blue-500/8 p-4 space-y-2">
-                <div className="text-xs font-semibold text-blue-300 uppercase tracking-widest">
-                  Eventos suportados
-                </div>
-                <div className="space-y-1.5">
-                  {[
-                    { label: 'Compra Aprovada (Purchase)', available: true },
-                    { label: 'Reembolso (Refund)', available: false },
-                    { label: 'Carrinho Abandonado', available: false },
-                  ].map((ev) => (
-                    <div key={ev.label} className="flex items-center gap-2 text-xs">
-                      <div
-                        className={`w-1.5 h-1.5 rounded-full ${ev.available ? 'bg-emerald-400' : 'bg-zinc-700'
-                          }`}
-                      />
-                      <span className={ev.available ? 'text-zinc-300' : 'text-zinc-600'}>
-                        {ev.label}
-                        {!ev.available && (
-                          <span className="ml-1.5 text-[10px] text-zinc-600 italic">em breve</span>
-                        )}
+                  {/* Hotmart Card */}
+                  <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5 space-y-4 relative overflow-hidden">
+                    <div className="absolute top-0 right-0 p-4">
+                      <span className="inline-flex items-center gap-1.5 py-1 px-2.5 rounded-md text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Ativo
                       </span>
                     </div>
-                  ))}
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-lg bg-[#F04E23] flex items-center justify-center shadow-lg shadow-[#F04E23]/20">
+                        <svg className="w-6 h-6 text-white" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M11.96 2.44c-1.8 0-3.53.5-5.06 1.45l1.62 2.8c1.05-.65 2.23-1 3.44-1 3.53 0 6.4 2.87 6.4 6.4s-2.87 6.4-6.4 6.4c-1.58 0-3.08-.58-4.23-1.63L5.4 19.1c1.78 1.63 4.1 2.53 6.56 2.53 5.37 0 9.74-4.37 9.74-9.74S17.33 2.44 11.96 2.44zM3.86 12.06c0-1.8.5-3.53 1.45-5.06l2.8 1.62c-.65 1.05-1 2.23-1 3.44 0 1.58.58 3.08 1.63 4.23l-2.24 2.24c-1.64-1.78-2.55-4.1-2.55-6.57v.1z" />
+                        </svg>
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-semibold text-zinc-100">Hotmart</h4>
+                        <p className="text-[10px] text-zinc-500">Mapeamento automático de PII e UTMs</p>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-medium text-zinc-500 mb-1.5">URL do Webhook (Copie e cole na Hotmart)</label>
+                      <div className="flex gap-2">
+                        <input
+                          readOnly
+                          className="flex-1 rounded-lg bg-zinc-950 border border-zinc-800 px-3 py-2 text-[11px] font-mono text-zinc-400 outline-none"
+                          value={webhookSecret ? `${apiBaseUrl}/webhooks/hotmart?key=${site?.site_key}&token=${webhookSecret}` : 'Carregando…'}
+                        />
+                        <button
+                          onClick={() => {
+                            const url = `${apiBaseUrl}/webhooks/hotmart?key=${site?.site_key}&token=${webhookSecret}`;
+                            navigator.clipboard.writeText(url);
+                            showFlash('URL copiada!');
+                          }}
+                          className="flex items-center gap-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-3 py-2 rounded-lg text-xs transition-colors shrink-0"
+                        >
+                          Copiar
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Kiwify / Outros Card */}
+                  <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5 space-y-4 opacity-50 relative">
+                    <div className="absolute inset-0 bg-transparent flex flex-col items-center justify-center p-4 text-center">
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-lg bg-blue-600 flex items-center justify-center">
+                        <span className="font-bold text-white text-xs">Kiwify</span>
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-semibold text-zinc-100">Kiwify</h4>
+                        <p className="text-[10px] text-zinc-500">Em desenvolvimento</p>
+                      </div>
+                    </div>
+                    <div className="h-10 rounded-lg bg-zinc-800/50 border border-zinc-800/50"></div>
+                  </div>
+
                 </div>
               </div>
 
-              {/* ── Webhook Test ── */}
-              <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5 space-y-4">
-                <div>
-                  <h3 className="text-sm font-semibold text-zinc-100">Testar Webhook</h3>
-                  <p className="mt-0.5 text-xs text-zinc-500">
-                    Dispare um evento de compra simulado para verificar se a integração está funcionando.
-                  </p>
-                </div>
-                <div className="flex flex-col sm:flex-row gap-3">
-                  <select
-                    value={webhookTestPlatform}
-                    onChange={(e) => setWebhookTestPlatform(e.target.value)}
-                    className="rounded-lg bg-zinc-950/60 border border-zinc-800 px-3 py-2.5 text-xs text-zinc-300 outline-none focus:border-blue-500/60"
-                  >
-                    <option value="hotmart">Hotmart</option>
-                    <option value="kiwify">Kiwify</option>
-                    <option value="eduzz">Eduzz</option>
-                    <option value="generic">Genérico</option>
-                  </select>
+              {/* ── CUSTOM INTEGRATIONS ── */}
+              <div className="space-y-4 border-t border-zinc-800/60 pt-8">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Integrações Personalizadas</h3>
+                    <p className="text-xs text-zinc-500 mt-1">Gere webhooks para plataformas não listadas (ex: Braip, Ticto) e mapeie os dados manualmente.</p>
+                  </div>
                   <button
-                    type="button"
-                    disabled={webhookTestLoading}
-                    onClick={fireWebhookTest}
-                    className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 flex items-center gap-2"
+                    onClick={handleCreateCustomWebhook}
+                    className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-xs font-medium transition-colors"
                   >
-                    {webhookTestLoading ? (
-                      <><svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" /></svg> Enviando...</>
-                    ) : (
-                      <><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2L11 13" /><path d="M22 2L15 22L11 13L2 9L22 2Z" /></svg> Disparar Teste</>
-                    )}
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                    Criar Webhook
                   </button>
                 </div>
-                <p className="text-[10px] text-zinc-600">
-                  O teste simula uma compra com dados fictícios e envia pela rota de ingestão para validar todo o fluxo.
-                </p>
+
+                {customWebhooks.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-zinc-800 p-8 text-center text-zinc-500 text-xs">
+                    Nenhum webhook personalizado criado ainda.
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {customWebhooks.map(hook => {
+                      const isEditing = editingWebhookId === hook.id;
+                      const hasPayload = hook.last_payload && Object.keys(hook.last_payload).length > 0;
+
+                      // Funcao recursiva para varrer o JSON e gerar paths pontilhados -> { "buyer.email": "joao@...", "amount": 97 }
+                      const flattenObject = (obj: any, prefix = ''): Record<string, any> => {
+                        return Object.keys(obj || {}).reduce((acc: any, k: string) => {
+                          const pre = prefix.length ? prefix + '.' : '';
+                          if (typeof obj[k] === 'object' && obj[k] !== null && !Array.isArray(obj[k])) {
+                            Object.assign(acc, flattenObject(obj[k], pre + k));
+                          } else {
+                            acc[pre + k] = obj[k];
+                          }
+                          return acc;
+                        }, {});
+                      };
+
+                      const flatPayload = hasPayload ? flattenObject(hook.last_payload) : {};
+                      const availableKeys = Object.keys(flatPayload).sort();
+
+                      const currentMap = mappingState[hook.id] || hook.mapping_config || {};
+
+                      const setFieldMap = (field: string, val: string) => {
+                        setMappingState(prev => ({
+                          ...prev,
+                          [hook.id]: { ...(prev[hook.id] || hook.mapping_config || {}), [field]: val }
+                        }));
+                      };
+
+                      return (
+                        <div key={hook.id} className="rounded-xl border border-zinc-800 bg-zinc-900 overflow-hidden">
+                          {/* Header do Webhook */}
+                          <div className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-zinc-800/50 bg-zinc-900/50">
+                            <div className="flex items-center gap-3">
+                              <div className={`w-2 h-2 rounded-full ${hook.is_active ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                              <div>
+                                <h4 className="text-sm font-semibold text-zinc-200">{hook.name}</h4>
+                                <p className="text-[10px] text-zinc-500">{hook.is_active ? 'Ativo e processando' : 'Aguardando mapeamento / Teste'}</p>
+                              </div>
+                            </div>
+
+                            <div className="flex-1 max-w-lg">
+                              <div className="flex gap-2">
+                                <input
+                                  readOnly
+                                  className="flex-1 rounded-md bg-zinc-950 border border-zinc-800 px-3 py-1.5 text-[11px] font-mono text-zinc-400 outline-none"
+                                  value={`${apiBaseUrl}/webhooks/custom/${hook.id}`}
+                                />
+                                <button
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(`${apiBaseUrl}/webhooks/custom/${hook.id}`);
+                                    showFlash('URL copiada!');
+                                  }}
+                                  className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-3 py-1.5 rounded-md text-xs transition-colors shrink-0"
+                                >
+                                  Copiar URL
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-3">
+                              <button
+                                onClick={() => handleDeleteWebhook(hook.id)}
+                                className="text-zinc-500 hover:text-red-400 p-1"
+                                title="Excluir Webhook"
+                              >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6L17.14 19.89A2 2 0 0 1 15.15 21H8.85a2 2 0 0 1-1.99-1.11L5 6m4 0V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M10 11v6M14 11v6" /></svg>
+                              </button>
+                              <button
+                                onClick={() => setEditingWebhookId(isEditing ? null : hook.id)}
+                                className="text-xs text-blue-400 hover:text-blue-300 font-medium whitespace-nowrap"
+                              >
+                                {isEditing ? 'Fechar Mapeamento' : (hasPayload ? 'Editar Mapeamento' : 'Configurar')}
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Builder Area */}
+                          {isEditing && (
+                            <div className="p-5 space-y-5 bg-zinc-950/30">
+
+                              {!hasPayload ? (
+                                <div className="rounded-lg bg-blue-500/10 border border-blue-500/20 p-4 text-center">
+                                  <svg className="w-8 h-8 text-blue-400 mx-auto mb-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                                  <h5 className="text-sm font-medium text-blue-300">Aguardando Evento de Teste</h5>
+                                  <p className="text-xs text-blue-400/80 mt-1 max-w-md mx-auto">
+                                    Para criar o mapeamento, primeiro copie a URL do webhook acima, cole na sua plataforma e faça uma compra/boleto de teste. Depois clique no botão abaixo.
+                                  </p>
+                                  <button
+                                    onClick={() => loadCustomWebhooks()}
+                                    className="mt-4 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-xs font-medium transition-colors"
+                                  >
+                                    Verificar Recebimento
+                                  </button>
+                                </div>
+                              ) : (
+                                <>
+                                  <div className="flex items-center justify-between">
+                                    <div>
+                                      <h5 className="text-sm font-medium text-zinc-200">Mapeamento de Campos</h5>
+                                      <p className="text-xs text-zinc-500">Selecione de onde na requisição recebida devemos extrair os dados importantes.</p>
+                                    </div>
+                                    <button
+                                      onClick={() => loadCustomWebhooks()}
+                                      className="text-[10px] flex items-center gap-1 text-zinc-400 hover:text-zinc-200"
+                                      title="Atualiza as opções com o último payload recebido"
+                                    >
+                                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.92-10.44l5.58 5.58" /></svg>
+                                      Atualizar chaves
+                                    </button>
+                                  </div>
+
+                                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                    {[
+                                      { key: 'email', label: 'E-mail do Comprador *' },
+                                      { key: 'phone', label: 'Telefone / WhatsApp' },
+                                      { key: 'first_name', label: 'Primeiro Nome' },
+                                      { key: 'last_name', label: 'Sobrenome' },
+                                      { key: 'amount', label: 'Valor da Compra' },
+                                      { key: 'currency', label: 'Moeda (ex: BRL)' },
+                                      { key: 'order_id', label: 'ID Transação / Pedido' },
+                                      { key: 'status', label: 'Status da Venda' },
+                                      { key: 'sck', label: 'Parâmetro SCK/SRC (UTMs)' },
+                                    ].map(field => (
+                                      <div key={field.key}>
+                                        <label className="block text-[11px] font-medium text-zinc-400 mb-1.5">{field.label}</label>
+                                        <select
+                                          value={currentMap[field.key] || ''}
+                                          onChange={(e) => setFieldMap(field.key, e.target.value)}
+                                          className="w-full rounded-md bg-zinc-900 border border-zinc-700 px-2.5 py-2 text-xs text-zinc-200 outline-none focus:border-blue-500"
+                                        >
+                                          <option value="">Adivinhar automaticamente</option>
+                                          {availableKeys.map(k => (
+                                            <option key={k} value={k}>{k}</option>
+                                          ))}
+                                        </select>
+                                      </div>
+                                    ))}
+
+                                    <div className="col-span-1 md:col-span-2 lg:col-span-3 grid grid-cols-2 gap-4 pt-2">
+                                      <div>
+                                        <label className="block text-[11px] font-medium text-zinc-400 mb-1.5">Qual valor representa status "Aprovado"?</label>
+                                        <input
+                                          type="text"
+                                          placeholder="Ex: APPROVED, approved, 3"
+                                          value={currentMap['status_approved_value'] || ''}
+                                          onChange={(e) => setFieldMap('status_approved_value', e.target.value)}
+                                          className="w-full rounded-md bg-zinc-900 border border-zinc-700 px-2.5 py-2 text-xs text-zinc-200 outline-none focus:border-blue-500"
+                                        />
+                                      </div>
+                                      <div>
+                                        <label className="block text-[11px] font-medium text-zinc-400 mb-1.5">Qual valor representa status "Reembolsado"?</label>
+                                        <input
+                                          type="text"
+                                          placeholder="Ex: REFUNDED, refunded, 4"
+                                          value={currentMap['status_refunded_value'] || ''}
+                                          onChange={(e) => setFieldMap('status_refunded_value', e.target.value)}
+                                          className="w-full rounded-md bg-zinc-900 border border-zinc-700 px-2.5 py-2 text-xs text-zinc-200 outline-none focus:border-blue-500"
+                                        />
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div className="border-t border-zinc-800/60 pt-4 flex justify-end">
+                                    <button
+                                      onClick={() => handleSaveWebhookMapping(hook.id)}
+                                      className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2 rounded-lg text-xs font-medium transition-colors"
+                                    >
+                                      Salvar e Ativar Webhook
+                                    </button>
+                                  </div>
+
+                                  <div className="mt-4 text-[10px] text-zinc-600">
+                                    <p className="mb-1 font-medium">Último payload recebido (para conferência):</p>
+                                    <pre className="max-h-48 overflow-y-auto bg-zinc-950 p-2 rounded border border-zinc-800/50">
+                                      {JSON.stringify(hook.last_payload, null, 2)}
+                                    </pre>
+                                  </div>
+                                </>
+                              )}
+
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
+
+              {/* Spacer */}
+              <div className="h-8"></div>
             </div>
           )}
 
