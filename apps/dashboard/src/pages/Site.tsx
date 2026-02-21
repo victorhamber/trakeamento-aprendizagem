@@ -164,8 +164,6 @@ export const SitePage = () => {
   const [ga, setGa] = useState<GaConfig | null>(null);
   const [webhookSecret, setWebhookSecret] = useState<string | null>(null);
   const [dataQuality, setDataQuality] = useState<any>(null);
-  const [webhookTestPlatform, setWebhookTestPlatform] = useState('hotmart');
-  const [webhookTestLoading, setWebhookTestLoading] = useState(false);
   const [report, setReport] = useState<DiagnosisReport | null>(null);
   const [reportLoadedFromStorage, setReportLoadedFromStorage] = useState(false);
   const [campaigns, setCampaigns] = useState<any[]>([]);
@@ -1206,16 +1204,6 @@ ${scriptContent}
       setDataQuality(res.data);
     } catch { setDataQuality(null); }
   }, [id]);
-
-  const fireWebhookTest = async () => {
-    setWebhookTestLoading(true);
-    try {
-      const res = await api.post(`/sites/${id}/webhooks/test`, { platform: webhookTestPlatform });
-      if (res.data?.ok) showFlash(`Webhook de teste (${webhookTestPlatform}) disparado com sucesso!`);
-      else showFlash(res.data?.error || 'Erro ao disparar teste', 'error');
-    } catch { showFlash('Erro ao disparar webhook de teste', 'error'); }
-    finally { setWebhookTestLoading(false); }
-  };
 
   useEffect(() => {
     if (!site) return;
