@@ -281,7 +281,18 @@ router.post('/hotmart', async (req, res) => {
   const firstName = payload.buyer?.name?.split(' ')[0] || payload.first_name || payload.name?.split(' ')[0];
   const lastName = payload.buyer?.name?.split(' ').slice(1).join(' ') || payload.last_name || payload.name?.split(' ').slice(1).join(' ');
   const phone = payload.buyer?.phone || payload.buyer?.checkout_phone || payload.phone;
-  const value = payload.purchase?.full_price?.value || payload.amount || payload.price || payload.full_price || 0;
+  const rawValue =
+    payload.purchase?.full_price?.value ??
+    payload.purchase?.price?.value ??
+    payload.purchase?.amount ??
+    payload.purchase?.total ??
+    payload.amount ??
+    payload.price ??
+    payload.value ??
+    payload.full_price ??
+    0;
+  const value = parseFloat(String(rawValue)) || 0;
+  console.log(`[Hotmart] orderId=${payload.purchase?.transaction} status=${payload.purchase?.status} rawValue=${rawValue} parsedValue=${value}`);
   const currency = payload.purchase?.full_price?.currency_value || payload.currency || 'BRL';
 
   let rawStatus = payload.purchase?.status || payload.status;

@@ -151,16 +151,16 @@ router.get('/sales-daily', requireAuth, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT
-         DATE(p.created_at) as date,
+         TO_CHAR(p.created_at AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD') as date,
          COUNT(*)::int as count,
-         COALESCE(SUM(CASE WHEN p.status = 'approved' AND p.currency = $4 THEN p.amount ELSE 0 END), 0) as revenue
+         COALESCE(SUM(CASE WHEN p.status = 'approved' AND p.currency = $4 THEN p.amount ELSE 0 END), 0)::float as revenue
        FROM purchases p
        JOIN sites s ON s.site_key = p.site_key
        WHERE s.account_id = $1
          AND p.created_at >= $2
          AND p.created_at <= $3
-       GROUP BY DATE(p.created_at)
-       ORDER BY DATE(p.created_at) ASC`,
+       GROUP BY TO_CHAR(p.created_at AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD')
+       ORDER BY date ASC`,
       [auth.accountId, start, end, currency]
     );
 
