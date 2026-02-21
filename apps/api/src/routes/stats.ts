@@ -85,6 +85,21 @@ router.get('/overview', requireAuth, async (req, res) => {
   });
 });
 
+// ─── TEMPORARY DEBUG: remove after issue is resolved ────────────────────────
+router.get('/debug-purchases', requireAuth, async (req, res) => {
+  const auth = req.auth!;
+  const result = await pool.query(
+    `SELECT p.id, p.order_id, p.platform, p.amount, p.currency, p.status, p.created_at
+     FROM purchases p
+     JOIN sites s ON s.site_key = p.site_key
+     WHERE s.account_id = $1
+     ORDER BY p.created_at DESC
+     LIMIT 10`,
+    [auth.accountId]
+  );
+  return res.json({ purchases: result.rows });
+});
+
 router.get('/sites/:siteId/quality', requireAuth, async (req, res) => {
   const auth = req.auth!;
   const siteId = Number(req.params.siteId);

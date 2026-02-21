@@ -11,6 +11,7 @@ async function processPurchaseWebhook({
   siteKey, payload, email, phone, firstName, lastName, city, state, zip, country, dob,
   fbp, fbc, externalId, clientIp, clientUa, value, currency, status, orderId, platform
 }: any) {
+  console.log(`[Webhook] processPurchaseWebhook called: value=${value} currency=${currency} status=${status} orderId=${orderId} platform=${platform} siteKey=${siteKey}`);
   let isApproved = status === 'approved';
 
   const siteRow = await pool.query(`
