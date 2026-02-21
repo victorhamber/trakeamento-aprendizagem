@@ -659,8 +659,8 @@ export const SitePage = () => {
     if (fields.name) fieldsHtml.push(`  <input type="text" name="fn" placeholder="Nome" required style="${inputStyle}" />`);
     if (fields.email) fieldsHtml.push(`  <input type="email" name="email" placeholder="E-mail" required style="${inputStyle}" />`);
     if (fields.phone) {
-      const ddiOptions = DDI_LIST.map(d => `<option value="${d.code}">${d.country} (${d.code})</option>`).join('');
-      fieldsHtml.push(`  <div style="${phoneRowStyle}"><input type="tel" name="ddi" list="trk-ddi-list" value="+55" style="${ddiStyle}" placeholder="DDI" /><input type="tel" name="phone" placeholder="Telefone" required style="${phoneStyle}" /></div><datalist id="trk-ddi-list">${ddiOptions}</datalist>`);
+      const ddiOptions = DDI_LIST.map(d => `<option value="${d.code}"${d.code === '+55' ? ' selected' : ''}>${d.code} ${d.country}</option>`).join('');
+      fieldsHtml.push(`  <div style="${phoneRowStyle}"><select name="ddi" style="${ddiStyle}">${ddiOptions}</select><input type="tel" name="phone" placeholder="Telefone" required style="${phoneStyle}" /></div>`);
     }
 
     const buttonStyle = 'padding:10px 20px; cursor:pointer; border:none; border-radius:4px; font-weight:bold; width:100%;';
@@ -690,8 +690,15 @@ async function handleTrkSubmit(e) {
   btn.innerText = 'Enviando...';
 
   var data = {};
-  if (form.fn) data.fn = form.fn.value;
-  if (form.email) data.email = form.email.value;
+  // Meta CAPI requer: fn (first_name) e ln (last_name) em lowercase
+  if (form.fn && form.fn.value) {
+    var fullName = form.fn.value.trim().toLowerCase();
+    var parts = fullName.split(/\s+/);
+    data.fn = parts[0];
+    if (parts.length > 1) data.ln = parts.slice(1).join(' ');
+  }
+  // Meta CAPI requer: em (email) em lowercase
+  if (form.email && form.email.value) data.email = form.email.value.trim().toLowerCase();
   var ddi = form.ddi ? form.ddi.value : '+55';
   var ddiDigits = (ddi || '').toString().replace(/[^0-9]/g, '');
   if (!ddiDigits) ddiDigits = '55';
@@ -740,8 +747,15 @@ function handleTrkSubmit(e) {
   e.preventDefault();
   var form = e.target;
   var data = {};
-  if (form.fn) data.fn = form.fn.value;
-  if (form.email) data.email = form.email.value;
+  // Meta CAPI requer: fn (first_name) e ln (last_name) em lowercase
+  if (form.fn && form.fn.value) {
+    var fullName = form.fn.value.trim().toLowerCase();
+    var parts = fullName.split(/\s+/);
+    data.fn = parts[0];
+    if (parts.length > 1) data.ln = parts.slice(1).join(' ');
+  }
+  // Meta CAPI requer: em (email) em lowercase
+  if (form.email && form.email.value) data.email = form.email.value.trim().toLowerCase();
   var ddi = form.ddi ? form.ddi.value : '+55';
   var ddiDigits = (ddi || '').toString().replace(/[^0-9]/g, '');
   if (!ddiDigits) ddiDigits = '55';
