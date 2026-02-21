@@ -128,4 +128,47 @@ router.get('/sites/:siteId/quality', requireAuth, async (req, res) => {
   }
 });
 
+router.get('/sales-daily', requireAuth, async (req, res) => {
+  const auth = req.auth!;
+  const period = (req.query.period as string) || 'last_30d';
+  const currency = (req.query.currency as string) || 'BRL';
+
+  const now = new Date();
+  let start: Date;
+  const end: Date = now;
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  switch (period) {
+    case 'today': start = todayStart; break;
+    case 'yesterday': start = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000); break;
+    case 'last_7d': start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000); break;
+    case 'last_14d': start = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000); break;
+    case 'last_30d': start = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000); break;
+    case 'maximum': start = new Date(0); break;
+    default: start = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  }
+
+  try {
+    const result = await pool.query(
+      `SELECT
+         DATE(p.created_at) as date,
+         COUNT(*)::int as count,
+         COALESCE(SUM(CASE WHEN p.status = 'approved' AND p.currency = $4 THEN p.amount ELSE 0 END), 0) as revenue
+       FROM purchases p
+       JOIN sites s ON s.site_key = p.site_key
+       WHERE s.account_id = $1
+         AND p.created_at >= $2
+         AND p.created_at <= $3
+       GROUP BY DATE(p.created_at)
+       ORDER BY DATE(p.created_at) ASC`,
+      [auth.accountId, start, end, currency]
+    );
+
+    return res.json({ data: result.rows });
+  } catch (err) {
+    console.error('Failed to fetch sales-daily:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { Layout } from '../components/Layout';
@@ -9,6 +9,12 @@ type Overview = {
   purchases_today: number;
   total_revenue: number;
   reports_7d: number;
+};
+
+type DailyPoint = {
+  date: string;
+  count: number;
+  revenue: number;
 };
 
 // ─── Icons ───────────────────────────────────────────────────────────────────
@@ -57,15 +63,7 @@ const IconChart = () => (
 );
 
 const IconArrow = () => (
-  <svg
-    viewBox="0 0 24 24"
-    fill="none"
-    className="h-3.5 w-3.5"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
+  <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M5 12h14M12 5l7 7-7 7" />
   </svg>
 );
@@ -84,22 +82,22 @@ type KpiProps = {
 
 const KpiCard = ({ label, value, hint, icon, color, glow, delay = 0 }: KpiProps) => (
   <div
-    className="group relative rounded-2xl border border-zinc-200 dark:border-zinc-800/60 bg-white dark:bg-zinc-950/60 p-4 sm:p-5 hover:border-zinc-300 dark:hover:border-zinc-700/60 transition-all duration-200 overflow-hidden animate-in fade-in shadow-sm dark:shadow-none"
+    className="group relative rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 p-4 sm:p-5 hover:border-zinc-300 dark:hover:border-zinc-700 transition-all duration-200 overflow-hidden animate-in fade-in shadow-sm dark:shadow-none"
     style={{ animationDelay: `${delay}ms`, animationDuration: '400ms' }}
   >
     <div className={`absolute -top-8 -right-8 w-24 h-24 rounded-full blur-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 ${glow}`} />
 
     <div className="relative flex items-start justify-between gap-2">
       <div className="min-w-0">
-        <div className="text-[10px] font-medium uppercase tracking-widest text-zinc-600 mb-2">
+        <div className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500 dark:text-zinc-500 mb-2">
           {label}
         </div>
-        <div className="text-xl sm:text-2xl font-semibold text-zinc-900 dark:text-zinc-100 tabular-nums leading-none">
+        <div className="text-xl sm:text-2xl font-bold text-zinc-900 dark:text-zinc-100 tabular-nums leading-none">
           {value ?? '—'}
         </div>
         <div className="mt-1.5 text-[11px] text-zinc-500 dark:text-zinc-600 truncate">{hint}</div>
       </div>
-      <div className={`shrink-0 rounded-xl p-2 sm:p-2.5 bg-zinc-50 dark:bg-zinc-900/80 border border-zinc-200 dark:border-zinc-800/60 ${color}`}>
+      <div className={`shrink-0 rounded-xl p-2 sm:p-2.5 bg-zinc-50 dark:bg-zinc-900/80 border border-zinc-200 dark:border-zinc-800 ${color}`}>
         {icon}
       </div>
     </div>
@@ -120,10 +118,10 @@ type ShortcutProps = {
 const ShortcutCard = ({ to, icon, iconColor, iconBg, title, description }: ShortcutProps) => (
   <Link
     to={to}
-    className="group flex items-start gap-4 p-5 rounded-xl border border-zinc-200 dark:border-zinc-800/60 bg-zinc-50/50 dark:bg-zinc-900/30 hover:bg-zinc-100 dark:hover:bg-zinc-900/60 hover:border-zinc-300 dark:hover:border-zinc-700/60 transition-all duration-200"
+    className="group flex items-start gap-4 p-5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/30 hover:bg-zinc-100 dark:hover:bg-zinc-900/60 hover:border-zinc-300 dark:hover:border-zinc-700 transition-all duration-200"
   >
     <div
-      className={`shrink-0 rounded-xl p-2.5 border border-zinc-200 dark:border-zinc-800/60 ${iconBg} ${iconColor} group-hover:scale-105 transition-transform duration-200 bg-white/50 dark:bg-transparent`}
+      className={`shrink-0 rounded-xl p-2.5 border border-zinc-200 dark:border-zinc-800 ${iconBg} ${iconColor} group-hover:scale-105 transition-transform duration-200 bg-white/50 dark:bg-transparent`}
     >
       {icon}
     </div>
@@ -150,7 +148,7 @@ type StatusRowProps = {
 };
 
 const StatusRow = ({ label, status, badge }: StatusRowProps) => (
-  <div className="flex items-center justify-between py-3 border-b border-zinc-800/40 last:border-0">
+  <div className="flex items-center justify-between py-3 border-b border-zinc-200 dark:border-zinc-800/40 last:border-0">
     <div className="flex items-center gap-2.5">
       <div
         className={`w-1.5 h-1.5 rounded-full ${status === 'ok'
@@ -160,30 +158,230 @@ const StatusRow = ({ label, status, badge }: StatusRowProps) => (
             : 'bg-zinc-600'
           } ${status === 'ok' ? 'shadow-[0_0_6px_1px_rgba(52,211,153,0.5)]' : ''}`}
       />
-      <span className="text-xs text-zinc-400">{label}</span>
+      <span className="text-xs text-zinc-600 dark:text-zinc-400">{label}</span>
     </div>
     {badge}
   </div>
 );
 
+// ─── Sales Chart ─────────────────────────────────────────────────────────────
+
+type TooltipState = {
+  x: number;
+  y: number;
+  point: DailyPoint;
+  side: 'left' | 'right';
+} | null;
+
+const SalesChart = ({ data, currency, isDark }: { data: DailyPoint[]; currency: string; isDark: boolean }) => {
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [tooltip, setTooltip] = useState<TooltipState>(null);
+  const W = 800;
+  const H = 180;
+  const PAD = { top: 16, right: 16, bottom: 48, left: 56 };
+  const iW = W - PAD.left - PAD.right;
+  const iH = H - PAD.top - PAD.bottom;
+
+  if (!data || data.length === 0) return (
+    <div className="flex items-center justify-center h-[180px] text-xs text-zinc-400 dark:text-zinc-600">
+      Sem dados no período selecionado
+    </div>
+  );
+
+  const revenues = data.map(d => Number(d.revenue));
+  const maxRev = Math.max(...revenues, 1);
+
+  const xStep = iW / Math.max(data.length - 1, 1);
+  const pts = data.map((d, i) => ({
+    x: PAD.left + i * xStep,
+    y: PAD.top + iH - (Number(d.revenue) / maxRev) * iH,
+    d,
+  }));
+
+  const polyline = pts.map(p => `${p.x},${p.y}`).join(' ');
+
+  // Build fill area path
+  const fillPath = pts.length > 1
+    ? `M${pts[0].x},${PAD.top + iH} L${polyline.replace(/(\d+\.?\d*),(\d+\.?\d*)/g, '$1,$2')} L${pts[pts.length - 1].x},${PAD.top + iH} Z`
+    : '';
+
+  const fmtCurrency = (v: number) => new Intl.NumberFormat(
+    currency === 'BRL' ? 'pt-BR' : 'en-US',
+    { style: 'currency', currency, notation: 'compact', maximumFractionDigits: 1 }
+  ).format(v);
+
+  const fmtDate = (dateStr: string) => {
+    const d = new Date(dateStr + 'T12:00:00');
+    return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+  };
+
+  // Y-axis ticks
+  const yTicks = [0, 0.25, 0.5, 0.75, 1].map(pct => ({
+    val: maxRev * pct,
+    y: PAD.top + iH - pct * iH,
+  }));
+
+  // X-axis labels (max 7 evenly spaced)
+  const xLabelIdxs: number[] = [];
+  if (data.length <= 7) {
+    data.forEach((_, i) => xLabelIdxs.push(i));
+  } else {
+    const step = Math.floor((data.length - 1) / 6);
+    for (let i = 0; i <= 6; i++) xLabelIdxs.push(Math.min(i * step, data.length - 1));
+  }
+
+  const lineColor = isDark ? '#34d399' : '#059669';
+  const fillColor = isDark ? 'url(#gradDark)' : 'url(#gradLight)';
+  const gridColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
+  const textColor = isDark ? '#71717a' : '#6b7280';
+
+  const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    const svgEl = svgRef.current;
+    if (!svgEl) return;
+    const rect = svgEl.getBoundingClientRect();
+    const rawX = ((e.clientX - rect.left) / rect.width) * W;
+    const localX = rawX - PAD.left;
+    const idx = Math.round(localX / xStep);
+    const clampedIdx = Math.max(0, Math.min(data.length - 1, idx));
+    const pt = pts[clampedIdx];
+    const side = clampedIdx > data.length / 2 ? 'right' : 'left';
+    setTooltip({ x: pt.x, y: pt.y, point: pt.d, side });
+  };
+
+  return (
+    <div className="relative select-none">
+      <svg
+        ref={svgRef}
+        viewBox={`0 0 ${W} ${H}`}
+        className="w-full h-[180px]"
+        onMouseMove={handleMouseMove}
+        onMouseLeave={() => setTooltip(null)}
+      >
+        <defs>
+          <linearGradient id="gradDark" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#34d399" stopOpacity="0.25" />
+            <stop offset="100%" stopColor="#34d399" stopOpacity="0" />
+          </linearGradient>
+          <linearGradient id="gradLight" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#059669" stopOpacity="0.15" />
+            <stop offset="100%" stopColor="#059669" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+
+        {/* Grid lines */}
+        {yTicks.map((t, i) => (
+          <g key={i}>
+            <line x1={PAD.left} y1={t.y} x2={W - PAD.right} y2={t.y} stroke={gridColor} strokeWidth="1" />
+            <text x={PAD.left - 6} y={t.y + 4} textAnchor="end" fontSize="10" fill={textColor}>
+              {fmtCurrency(t.val)}
+            </text>
+          </g>
+        ))}
+
+        {/* Fill area */}
+        {fillPath && <path d={fillPath} fill={fillColor} />}
+
+        {/* Line */}
+        <polyline
+          points={polyline}
+          fill="none"
+          stroke={lineColor}
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+
+        {/* X-axis labels */}
+        {xLabelIdxs.map(i => (
+          <text key={i} x={pts[i].x} y={H - 8} textAnchor="middle" fontSize="10" fill={textColor}>
+            {fmtDate(data[i].date)}
+          </text>
+        ))}
+
+        {/* Hover dot */}
+        {tooltip && (
+          <>
+            <line
+              x1={tooltip.x} y1={PAD.top}
+              x2={tooltip.x} y2={PAD.top + iH}
+              stroke={lineColor} strokeWidth="1" strokeDasharray="4 3" strokeOpacity="0.5"
+            />
+            <circle cx={tooltip.x} cy={tooltip.y} r="5" fill={lineColor} />
+            <circle cx={tooltip.x} cy={tooltip.y} r="9" fill={lineColor} fillOpacity="0.2" />
+          </>
+        )}
+      </svg>
+
+      {/* Tooltip */}
+      {tooltip && (
+        <div
+          className="absolute pointer-events-none z-10"
+          style={{
+            top: `${(tooltip.y / H) * 100}%`,
+            left: tooltip.side === 'left' ? `calc(${(tooltip.x / W) * 100}% + 14px)` : undefined,
+            right: tooltip.side === 'right' ? `calc(${100 - (tooltip.x / W) * 100}% + 14px)` : undefined,
+            transform: 'translateY(-50%)',
+          }}
+        >
+          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl shadow-xl px-3.5 py-2.5 min-w-[140px]">
+            <div className="text-[11px] font-semibold text-zinc-800 dark:text-zinc-200 mb-1.5">
+              {new Date(tooltip.point.date + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })}
+            </div>
+            <div className="flex items-center gap-2 text-[11px]">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+              <span className="text-zinc-500 dark:text-zinc-400">Faturamento</span>
+              <span className="font-semibold text-zinc-900 dark:text-zinc-100 ml-auto tabular-nums">
+                {new Intl.NumberFormat(currency === 'BRL' ? 'pt-BR' : 'en-US', { style: 'currency', currency, maximumFractionDigits: 2 }).format(Number(tooltip.point.revenue))}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 text-[11px] mt-1">
+              <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
+              <span className="text-zinc-500 dark:text-zinc-400">Vendas</span>
+              <span className="font-semibold text-zinc-900 dark:text-zinc-100 ml-auto tabular-nums">
+                {tooltip.point.count}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ─── Select styles shared ─────────────────────────────────────────────────────
+
+const selectCls =
+  'bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 text-xs rounded-lg px-3 py-2 outline-none focus:ring-1 focus:ring-blue-500/40 dark:focus:ring-blue-400/30 cursor-pointer transition-colors appearance-none pr-7 bg-[url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'12\' height=\'12\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%236b7280\' stroke-width=\'2\'%3E%3Cpath d=\'M6 9l6 6 6-6\'/%3E%3C/svg%3E")] bg-no-repeat bg-[right_8px_center]';
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export const DashboardPage = () => {
   const [data, setData] = useState<Overview | null>(null);
+  const [salesData, setSalesData] = useState<DailyPoint[]>([]);
   const [hasOpenAiKey, setHasOpenAiKey] = useState<boolean | null>(null);
-  const [period, setPeriod] = useState('today');
+  const [period, setPeriod] = useState('last_7d');
   const [currency, setCurrency] = useState('BRL');
+  const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains('dark'));
 
   useEffect(() => {
-    api
-      .get('/stats/overview', { params: { period, currency } })
+    const obs = new MutationObserver(() => {
+      setIsDark(document.documentElement.classList.contains('dark'));
+    });
+    obs.observe(document.documentElement, { attributeFilter: ['class'] });
+    return () => obs.disconnect();
+  }, []);
+
+  useEffect(() => {
+    api.get('/stats/overview', { params: { period, currency } })
       .then((res) => setData(res.data))
       .catch(() => setData(null));
+    api.get('/stats/sales-daily', { params: { period, currency } })
+      .then((res) => setSalesData(res.data?.data || []))
+      .catch(() => setSalesData([]));
   }, [period, currency]);
 
   useEffect(() => {
-    api
-      .get('/ai/settings')
+    api.get('/ai/settings')
       .then((res) => setHasOpenAiKey(!!res.data?.has_openai_key))
       .catch(() => setHasOpenAiKey(null));
   }, []);
@@ -203,7 +401,7 @@ export const DashboardPage = () => {
   return (
     <Layout title="Dashboard">
       {/* ── Hero banner ── */}
-      <div className="relative rounded-2xl border border-zinc-200 dark:border-zinc-800/60 bg-white dark:bg-zinc-950/60 overflow-hidden px-6 py-7 mb-6 shadow-sm dark:shadow-none">
+      <div className="relative rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 overflow-hidden px-6 py-7 mb-6 shadow-sm dark:shadow-none">
         {/* ambient glow */}
         <div className="pointer-events-none absolute inset-0 hidden dark:block">
           <div className="absolute -top-16 -right-16 w-72 h-72 bg-blue-500/8 rounded-full blur-3xl" />
@@ -212,12 +410,12 @@ export const DashboardPage = () => {
 
         <div className="relative flex flex-col sm:flex-row sm:items-center gap-4 justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 tracking-tight">
+            <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100 tracking-tight">
               Bem-vindo de volta!
             </h2>
             <p className="mt-1 text-sm text-zinc-500 max-w-md leading-relaxed">
               Monitorando{' '}
-              <span className="text-zinc-900 dark:text-zinc-300 font-medium">{data?.sites ?? 0} sites</span>{' '}
+              <span className="text-zinc-900 dark:text-zinc-300 font-semibold">{data?.sites ?? 0} sites</span>{' '}
               ativamente. Explore os dados abaixo ou gere um diagnóstico nas campanhas.
             </p>
           </div>
@@ -226,7 +424,7 @@ export const DashboardPage = () => {
             <select
               value={period}
               onChange={(e) => setPeriod(e.target.value)}
-              className="bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 text-xs rounded-lg px-2.5 py-2 outline-none focus:border-zinc-300 dark:focus:border-zinc-700 cursor-pointer"
+              className={selectCls}
             >
               <option value="today">Hoje</option>
               <option value="yesterday">Ontem</option>
@@ -238,7 +436,7 @@ export const DashboardPage = () => {
             <select
               value={currency}
               onChange={(e) => setCurrency(e.target.value)}
-              className="bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 text-xs rounded-lg px-2.5 py-2 outline-none focus:border-zinc-300 dark:focus:border-zinc-700 cursor-pointer"
+              className={selectCls}
             >
               <option value="BRL">BRL (R$)</option>
               <option value="USD">USD ($)</option>
@@ -246,7 +444,7 @@ export const DashboardPage = () => {
             </select>
             <Link
               to="/sites"
-              className="hidden sm:inline-flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300 border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 bg-white dark:bg-zinc-900/60 rounded-lg px-3.5 py-2 transition-all shadow-sm dark:shadow-none"
+              className="hidden sm:inline-flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200 border border-zinc-200 dark:border-zinc-700 hover:border-zinc-300 dark:hover:border-zinc-600 bg-white dark:bg-zinc-900 rounded-lg px-3.5 py-2 transition-all shadow-sm dark:shadow-none"
             >
               Ver sites
               <IconArrow />
@@ -300,7 +498,7 @@ export const DashboardPage = () => {
         <KpiCard
           label="Insights IA"
           value={data?.reports_7d ?? 0}
-          hint={`Diagnósticos gerados`}
+          hint="Diagnósticos gerados"
           icon={<IconBrain />}
           color="text-rose-400"
           glow="bg-rose-500/20"
@@ -308,11 +506,32 @@ export const DashboardPage = () => {
         />
       </div>
 
+      {/* ── Sales Chart ── */}
+      <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 p-5 mb-6 shadow-sm dark:shadow-none">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100">Desempenho de Vendas</div>
+            <div className="text-[11px] text-zinc-500 mt-0.5">{getPeriodLabel(period)}</div>
+          </div>
+          <div className="flex items-center gap-4 text-[11px] text-zinc-500 dark:text-zinc-400">
+            <span className="flex items-center gap-1.5">
+              <span className="w-2.5 h-0.5 rounded-full bg-emerald-500 inline-block" />
+              Faturamento
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-blue-500 inline-block" />
+              Vendas
+            </span>
+          </div>
+        </div>
+        <SalesChart data={salesData} currency={currency} isDark={isDark} />
+      </div>
+
       {/* ── Bottom grid ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Shortcuts */}
-        <div className="lg:col-span-2 rounded-2xl border border-zinc-200 dark:border-zinc-800/60 bg-white dark:bg-zinc-950/60 p-5 shadow-sm dark:shadow-none">
-          <div className="text-xs font-medium uppercase tracking-widest text-zinc-500 dark:text-zinc-600 mb-4">
+        <div className="lg:col-span-2 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 p-5 shadow-sm dark:shadow-none">
+          <div className="text-xs font-semibold uppercase tracking-widest text-zinc-500 dark:text-zinc-500 mb-4">
             Atalhos
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
@@ -352,8 +571,8 @@ export const DashboardPage = () => {
         </div>
 
         {/* Status */}
-        <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800/60 bg-white dark:bg-zinc-950/60 p-5 shadow-sm dark:shadow-none">
-          <div className="text-xs font-medium uppercase tracking-widest text-zinc-500 dark:text-zinc-600 mb-4">
+        <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 p-5 shadow-sm dark:shadow-none">
+          <div className="text-xs font-semibold uppercase tracking-widest text-zinc-500 dark:text-zinc-500 mb-4">
             Status do sistema
           </div>
 
@@ -361,7 +580,7 @@ export const DashboardPage = () => {
             label="Motor de análise"
             status="ok"
             badge={
-              <span className="text-[10px] font-semibold uppercase tracking-widest text-emerald-400">
+              <span className="text-[10px] font-semibold uppercase tracking-widest text-emerald-500 dark:text-emerald-400">
                 Estável
               </span>
             }
@@ -370,7 +589,7 @@ export const DashboardPage = () => {
             label="Tracking Engine"
             status="ok"
             badge={
-              <span className="text-[10px] font-semibold uppercase tracking-widest text-emerald-400">
+              <span className="text-[10px] font-semibold uppercase tracking-widest text-emerald-500 dark:text-emerald-400">
                 Ativo
               </span>
             }
@@ -380,43 +599,43 @@ export const DashboardPage = () => {
             status={hasOpenAiKey === true ? 'ok' : 'action'}
             badge={
               hasOpenAiKey === true ? (
-                <span className="text-[10px] font-semibold uppercase tracking-widest text-blue-400">
+                <span className="text-[10px] font-semibold uppercase tracking-widest text-blue-500 dark:text-blue-400">
                   Pronto
                 </span>
               ) : hasOpenAiKey === false ? (
                 <Link
                   to="/ai"
-                  className="text-[10px] font-semibold uppercase tracking-widest text-amber-400 hover:text-amber-300 transition-colors"
+                  className="text-[10px] font-semibold uppercase tracking-widest text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 transition-colors"
                 >
                   Configurar →
                 </Link>
               ) : (
-                <span className="text-[10px] text-zinc-700">—</span>
+                <span className="text-[10px] text-zinc-400 dark:text-zinc-700">—</span>
               )
             }
           />
 
           {/* Separator */}
           <div className="mt-5 pt-5 border-t border-zinc-200 dark:border-zinc-800/40">
-            <div className="text-[10px] font-medium uppercase tracking-widest text-zinc-500 dark:text-zinc-700 mb-3">
+            <div className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500 dark:text-zinc-600 mb-3">
               Hoje
             </div>
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-xs text-zinc-600">Eventos</span>
-                <span className="text-xs font-medium text-zinc-700 dark:text-zinc-400 tabular-nums">
+                <span className="text-xs text-zinc-600 dark:text-zinc-500">Eventos</span>
+                <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-300 tabular-nums">
                   {data?.events_today ?? '—'}
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-xs text-zinc-600">Conversões</span>
-                <span className="text-xs font-medium text-zinc-700 dark:text-zinc-400 tabular-nums">
+                <span className="text-xs text-zinc-600 dark:text-zinc-500">Conversões</span>
+                <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-300 tabular-nums">
                   {data?.purchases_today ?? '—'}
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-xs text-zinc-600">Diagnósticos (7d)</span>
-                <span className="text-xs font-medium text-zinc-700 dark:text-zinc-400 tabular-nums">
+                <span className="text-xs text-zinc-600 dark:text-zinc-500">Diagnósticos (7d)</span>
+                <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-300 tabular-nums">
                   {data?.reports_7d ?? '—'}
                 </span>
               </div>

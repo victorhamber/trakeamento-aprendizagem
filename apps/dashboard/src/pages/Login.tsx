@@ -41,7 +41,7 @@ export const LoginPage = () => {
             <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/25 mb-4">
               <div className="h-3 w-3 rounded-full bg-white animate-pulse" />
             </div>
-            <h1 className="text-2xl font-bold tracking-tight text-white">Trakeamento</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-white">Trajettu</h1>
             <p className="text-[11px] uppercase tracking-[0.25em] text-indigo-400 font-bold mt-1">AI Analytics</p>
           </div>
 

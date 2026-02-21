@@ -128,7 +128,7 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
             <div className="h-2 w-2 rounded-full bg-white animate-pulse" />
           </div>
           <div className="leading-tight">
-            <div className="font-bold text-base tracking-tight text-zinc-900 dark:text-transparent dark:bg-clip-text dark:bg-gradient-to-r dark:from-white dark:to-zinc-400">Trakeamento</div>
+            <div className="font-bold text-base tracking-tight text-zinc-900 dark:text-transparent dark:bg-clip-text dark:bg-gradient-to-r dark:from-white dark:to-zinc-400">Trajettu</div>
             <div className="text-[9px] uppercase tracking-[0.2em] text-indigo-500 dark:text-indigo-400 font-bold">AI Analytics</div>
           </div>
         </Link>
@@ -284,7 +284,7 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
                 <div className="h-2 w-2 rounded-full bg-white animate-pulse" />
               </div>
               <div className="leading-tight">
-                <div className={`font-semibold tracking-tight ${isDark ? 'text-white' : 'text-zinc-900'}`}>Trakeamento</div>
+                <div className={`font-semibold tracking-tight ${isDark ? 'text-white' : 'text-zinc-900'}`}>Trajettu</div>
                 <div className="text-[10px] text-indigo-400 font-bold">AI Analytics</div>
               </div>
             </Link>
