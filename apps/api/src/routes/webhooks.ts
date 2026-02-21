@@ -280,6 +280,9 @@ router.post('/hotmart', async (req, res) => {
   if (token !== secret) return res.status(401).json({ error: 'Invalid webhook token' });
 
   const payload = req.body;
+  console.log(`[Hotmart] RAW PAYLOAD KEYS: ${JSON.stringify(Object.keys(payload))}`);
+  console.log(`[Hotmart] payload.data type: ${typeof payload.data}, keys: ${payload.data ? JSON.stringify(Object.keys(payload.data)) : 'N/A'}`);
+  console.log(`[Hotmart] payload.data?.purchase: ${JSON.stringify(payload.data?.purchase)?.slice(0, 300)}`);
   if (typeof payload !== 'object') return res.status(400).json({ error: 'Invalid payload' });
 
   // Hotmart v2 nests everything under payload.data; v1 uses payload directly
