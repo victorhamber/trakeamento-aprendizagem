@@ -84,7 +84,7 @@ type KpiProps = {
 
 const KpiCard = ({ label, value, hint, icon, color, glow, delay = 0 }: KpiProps) => (
   <div
-    className="group relative rounded-2xl border border-zinc-800/60 bg-zinc-950/60 p-4 sm:p-5 hover:border-zinc-700/60 transition-all duration-200 overflow-hidden animate-in fade-in"
+    className="group relative rounded-2xl border border-zinc-200 dark:border-zinc-800/60 bg-white dark:bg-zinc-950/60 p-4 sm:p-5 hover:border-zinc-300 dark:hover:border-zinc-700/60 transition-all duration-200 overflow-hidden animate-in fade-in shadow-sm dark:shadow-none"
     style={{ animationDelay: `${delay}ms`, animationDuration: '400ms' }}
   >
     <div className={`absolute -top-8 -right-8 w-24 h-24 rounded-full blur-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 ${glow}`} />
@@ -94,12 +94,12 @@ const KpiCard = ({ label, value, hint, icon, color, glow, delay = 0 }: KpiProps)
         <div className="text-[10px] font-medium uppercase tracking-widest text-zinc-600 mb-2">
           {label}
         </div>
-        <div className="text-xl sm:text-2xl font-semibold text-zinc-100 tabular-nums leading-none">
+        <div className="text-xl sm:text-2xl font-semibold text-zinc-900 dark:text-zinc-100 tabular-nums leading-none">
           {value ?? '—'}
         </div>
-        <div className="mt-1.5 text-[11px] text-zinc-600 truncate">{hint}</div>
+        <div className="mt-1.5 text-[11px] text-zinc-500 dark:text-zinc-600 truncate">{hint}</div>
       </div>
-      <div className={`shrink-0 rounded-xl p-2 sm:p-2.5 bg-zinc-900/80 border border-zinc-800/60 ${color}`}>
+      <div className={`shrink-0 rounded-xl p-2 sm:p-2.5 bg-zinc-50 dark:bg-zinc-900/80 border border-zinc-200 dark:border-zinc-800/60 ${color}`}>
         {icon}
       </div>
     </div>
@@ -120,22 +120,22 @@ type ShortcutProps = {
 const ShortcutCard = ({ to, icon, iconColor, iconBg, title, description }: ShortcutProps) => (
   <Link
     to={to}
-    className="group flex items-start gap-4 p-5 rounded-xl border border-zinc-800/60 bg-zinc-900/30 hover:bg-zinc-900/60 hover:border-zinc-700/60 transition-all duration-200"
+    className="group flex items-start gap-4 p-5 rounded-xl border border-zinc-200 dark:border-zinc-800/60 bg-zinc-50/50 dark:bg-zinc-900/30 hover:bg-zinc-100 dark:hover:bg-zinc-900/60 hover:border-zinc-300 dark:hover:border-zinc-700/60 transition-all duration-200"
   >
     <div
-      className={`shrink-0 rounded-xl p-2.5 border border-zinc-800/60 ${iconBg} ${iconColor} group-hover:scale-105 transition-transform duration-200`}
+      className={`shrink-0 rounded-xl p-2.5 border border-zinc-200 dark:border-zinc-800/60 ${iconBg} ${iconColor} group-hover:scale-105 transition-transform duration-200 bg-white/50 dark:bg-transparent`}
     >
       {icon}
     </div>
     <div className="min-w-0 flex-1">
-      <div className="text-sm font-semibold text-zinc-200 group-hover:text-white transition-colors">
+      <div className="text-sm font-semibold text-zinc-700 dark:text-zinc-200 group-hover:text-zinc-900 dark:group-hover:text-white transition-colors">
         {title}
       </div>
-      <div className="mt-0.5 text-xs text-zinc-600 group-hover:text-zinc-500 transition-colors">
+      <div className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-600 group-hover:text-zinc-600 dark:group-hover:text-zinc-500 transition-colors">
         {description}
       </div>
     </div>
-    <div className="shrink-0 text-zinc-700 group-hover:text-zinc-400 group-hover:translate-x-0.5 transition-all duration-200 mt-1">
+    <div className="shrink-0 text-zinc-400 dark:text-zinc-700 group-hover:text-zinc-600 dark:group-hover:text-zinc-400 group-hover:translate-x-0.5 transition-all duration-200 mt-1">
       <IconArrow />
     </div>
   </Link>
@@ -203,21 +203,21 @@ export const DashboardPage = () => {
   return (
     <Layout title="Dashboard">
       {/* ── Hero banner ── */}
-      <div className="relative rounded-2xl border border-zinc-800/60 bg-zinc-950/60 overflow-hidden px-6 py-7 mb-6">
+      <div className="relative rounded-2xl border border-zinc-200 dark:border-zinc-800/60 bg-white dark:bg-zinc-950/60 overflow-hidden px-6 py-7 mb-6 shadow-sm dark:shadow-none">
         {/* ambient glow */}
-        <div className="pointer-events-none absolute inset-0">
+        <div className="pointer-events-none absolute inset-0 hidden dark:block">
           <div className="absolute -top-16 -right-16 w-72 h-72 bg-blue-500/8 rounded-full blur-3xl" />
           <div className="absolute -bottom-10 -left-10 w-48 h-48 bg-violet-500/6 rounded-full blur-3xl" />
         </div>
 
         <div className="relative flex flex-col sm:flex-row sm:items-center gap-4 justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-zinc-100 tracking-tight">
+            <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 tracking-tight">
               Bem-vindo de volta!
             </h2>
             <p className="mt-1 text-sm text-zinc-500 max-w-md leading-relaxed">
               Monitorando{' '}
-              <span className="text-zinc-300 font-medium">{data?.sites ?? 0} sites</span>{' '}
+              <span className="text-zinc-900 dark:text-zinc-300 font-medium">{data?.sites ?? 0} sites</span>{' '}
               ativamente. Explore os dados abaixo ou gere um diagnóstico nas campanhas.
             </p>
           </div>
@@ -226,7 +226,7 @@ export const DashboardPage = () => {
             <select
               value={period}
               onChange={(e) => setPeriod(e.target.value)}
-              className="bg-zinc-900/60 border border-zinc-800 text-zinc-300 text-xs rounded-lg px-2.5 py-2 outline-none focus:border-zinc-700 cursor-pointer"
+              className="bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 text-xs rounded-lg px-2.5 py-2 outline-none focus:border-zinc-300 dark:focus:border-zinc-700 cursor-pointer"
             >
               <option value="today">Hoje</option>
               <option value="yesterday">Ontem</option>
@@ -238,7 +238,7 @@ export const DashboardPage = () => {
             <select
               value={currency}
               onChange={(e) => setCurrency(e.target.value)}
-              className="bg-zinc-900/60 border border-zinc-800 text-zinc-300 text-xs rounded-lg px-2.5 py-2 outline-none focus:border-zinc-700 cursor-pointer"
+              className="bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 text-xs rounded-lg px-2.5 py-2 outline-none focus:border-zinc-300 dark:focus:border-zinc-700 cursor-pointer"
             >
               <option value="BRL">BRL (R$)</option>
               <option value="USD">USD ($)</option>
@@ -246,7 +246,7 @@ export const DashboardPage = () => {
             </select>
             <Link
               to="/sites"
-              className="hidden sm:inline-flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-300 border border-zinc-800 hover:border-zinc-700 bg-zinc-900/60 rounded-lg px-3.5 py-2 transition-all"
+              className="hidden sm:inline-flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300 border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 bg-white dark:bg-zinc-900/60 rounded-lg px-3.5 py-2 transition-all shadow-sm dark:shadow-none"
             >
               Ver sites
               <IconArrow />
@@ -311,8 +311,8 @@ export const DashboardPage = () => {
       {/* ── Bottom grid ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Shortcuts */}
-        <div className="lg:col-span-2 rounded-2xl border border-zinc-800/60 bg-zinc-950/60 p-5">
-          <div className="text-xs font-medium uppercase tracking-widest text-zinc-600 mb-4">
+        <div className="lg:col-span-2 rounded-2xl border border-zinc-200 dark:border-zinc-800/60 bg-white dark:bg-zinc-950/60 p-5 shadow-sm dark:shadow-none">
+          <div className="text-xs font-medium uppercase tracking-widest text-zinc-500 dark:text-zinc-600 mb-4">
             Atalhos
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
@@ -352,8 +352,8 @@ export const DashboardPage = () => {
         </div>
 
         {/* Status */}
-        <div className="rounded-2xl border border-zinc-800/60 bg-zinc-950/60 p-5">
-          <div className="text-xs font-medium uppercase tracking-widest text-zinc-600 mb-4">
+        <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800/60 bg-white dark:bg-zinc-950/60 p-5 shadow-sm dark:shadow-none">
+          <div className="text-xs font-medium uppercase tracking-widest text-zinc-500 dark:text-zinc-600 mb-4">
             Status do sistema
           </div>
 
@@ -397,26 +397,26 @@ export const DashboardPage = () => {
           />
 
           {/* Separator */}
-          <div className="mt-5 pt-5 border-t border-zinc-800/40">
-            <div className="text-[10px] font-medium uppercase tracking-widest text-zinc-700 mb-3">
+          <div className="mt-5 pt-5 border-t border-zinc-200 dark:border-zinc-800/40">
+            <div className="text-[10px] font-medium uppercase tracking-widest text-zinc-500 dark:text-zinc-700 mb-3">
               Hoje
             </div>
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-xs text-zinc-600">Eventos</span>
-                <span className="text-xs font-medium text-zinc-400 tabular-nums">
+                <span className="text-xs font-medium text-zinc-700 dark:text-zinc-400 tabular-nums">
                   {data?.events_today ?? '—'}
                 </span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-xs text-zinc-600">Conversões</span>
-                <span className="text-xs font-medium text-zinc-400 tabular-nums">
+                <span className="text-xs font-medium text-zinc-700 dark:text-zinc-400 tabular-nums">
                   {data?.purchases_today ?? '—'}
                 </span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-xs text-zinc-600">Diagnósticos (7d)</span>
-                <span className="text-xs font-medium text-zinc-400 tabular-nums">
+                <span className="text-xs font-medium text-zinc-700 dark:text-zinc-400 tabular-nums">
                   {data?.reports_7d ?? '—'}
                 </span>
               </div>

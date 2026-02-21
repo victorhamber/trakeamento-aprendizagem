@@ -58,8 +58,8 @@ const NavItem = ({ to, label, icon: IconComp }: { to: string; label: string; ico
     to={to}
     className={({ isActive }) =>
       `group relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all duration-200 ${isActive
-        ? 'bg-white/10 dark:bg-white/10 text-white font-medium border border-white/10 shadow-[0_10px_30px_rgba(0,0,0,0.35)]'
-        : 'text-zinc-400 hover:text-white hover:bg-white/5 border border-transparent'
+        ? 'bg-zinc-100 dark:bg-white/10 text-zinc-900 dark:text-white font-medium border border-transparent dark:border-white/10 shadow-sm dark:shadow-[0_10px_30px_rgba(0,0,0,0.35)]'
+        : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-white/5 border border-transparent'
       }`
     }
   >
@@ -119,30 +119,30 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
   const isDark = theme === 'dark';
 
   return (
-    <div className={`min-h-screen transition-colors duration-300 ${isDark ? 'bg-[#05070a] text-zinc-100' : 'bg-slate-50 text-zinc-900'} grid grid-cols-1 lg:grid-cols-[260px_1fr]`}>
+    <div className="min-h-screen transition-colors duration-300 bg-slate-50 dark:bg-[#05070a] text-zinc-900 dark:text-zinc-100 grid grid-cols-1 lg:grid-cols-[260px_1fr]">
 
       {/* ── Desktop Sidebar ── */}
-      <aside className={`hidden lg:flex flex-col ${isDark ? 'bg-[#080a0f] border-r border-white/5' : 'bg-white border-r border-zinc-200/60'} p-5`}>
+      <aside className="hidden lg:flex flex-col bg-white dark:bg-[#080a0f] border-r border-zinc-200/60 dark:border-white/5 p-5 transition-colors duration-300">
         <Link to="/dashboard" className="flex items-center gap-3 px-2 mb-7">
           <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
             <div className="h-2 w-2 rounded-full bg-white animate-pulse" />
           </div>
           <div className="leading-tight">
-            <div className={`font-bold text-base tracking-tight ${isDark ? 'bg-clip-text text-transparent bg-gradient-to-r from-white to-zinc-400' : 'text-zinc-900'}`}>Trakeamento</div>
-            <div className="text-[9px] uppercase tracking-[0.2em] text-indigo-400 font-bold">AI Analytics</div>
+            <div className="font-bold text-base tracking-tight text-zinc-900 dark:text-transparent dark:bg-clip-text dark:bg-gradient-to-r dark:from-white dark:to-zinc-400">Trakeamento</div>
+            <div className="text-[9px] uppercase tracking-[0.2em] text-indigo-500 dark:text-indigo-400 font-bold">AI Analytics</div>
           </div>
         </Link>
 
         <nav className="space-y-1.5 flex-1">
-          <div className={`text-[9px] uppercase tracking-[0.2em] font-bold px-3 mb-2 ${isDark ? 'text-zinc-600' : 'text-zinc-400'}`}>Menu Principal</div>
+          <div className="text-[9px] uppercase tracking-[0.2em] font-bold px-3 mb-2 text-zinc-400 dark:text-zinc-600">Menu Principal</div>
           <NavItem to="/dashboard" label="Dashboard" icon={IconDashboard} />
           <NavItem to="/sites" label="Meus Sites" icon={IconSites} />
           <NavItem to="/ai" label="Inteligência IA" icon={IconBrain} />
 
           <div className="pt-5">
-            <div className={`text-[9px] uppercase tracking-[0.2em] font-bold px-3 mb-2 ${isDark ? 'text-zinc-600' : 'text-zinc-400'}`}>Recursos</div>
-            <div className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm cursor-not-allowed border border-transparent ${isDark ? 'text-zinc-600' : 'text-zinc-400'}`}>
-              <div className={`h-5 w-5 rounded-md flex items-center justify-center text-[8px] font-bold ${isDark ? 'bg-zinc-800/50' : 'bg-zinc-200'}`}>SOON</div>
+            <div className="text-[9px] uppercase tracking-[0.2em] font-bold px-3 mb-2 text-zinc-400 dark:text-zinc-600">Recursos</div>
+            <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm cursor-not-allowed border border-transparent text-zinc-400 dark:text-zinc-600">
+              <div className="h-5 w-5 rounded-md flex items-center justify-center text-[8px] font-bold bg-zinc-200 dark:bg-zinc-800/50">SOON</div>
               <span>Treinamentos</span>
             </div>
           </div>

@@ -6,7 +6,7 @@ import { pool } from '../db/pool';
 import { capiService, CapiService, CapiEvent } from '../services/capi';
 import rateLimit from 'express-rate-limit'; // Added import for express-rate-limit
 import cors from 'cors'; // Added import for cors
-import LRUCache from 'lru-cache';
+import LRUCache = require('lru-cache');
 
 const ingestLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute

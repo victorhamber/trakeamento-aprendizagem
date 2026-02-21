@@ -63,14 +63,14 @@ export const SitesPage = () => {
     <Layout title="Sites">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Create site form */}
-        <div className="lg:col-span-1 rounded-2xl border border-zinc-800/60 bg-zinc-950/60 p-5 sm:p-6">
-          <div className="text-sm font-semibold text-white">Adicionar site</div>
+        <div className="lg:col-span-1 rounded-2xl border border-zinc-200 dark:border-zinc-800/60 bg-white dark:bg-zinc-950/60 p-5 sm:p-6 shadow-sm dark:shadow-none">
+          <div className="text-sm font-semibold text-zinc-900 dark:text-white">Adicionar site</div>
           <div className="mt-1 text-xs text-zinc-500">Crie um site e depois conecte snippet, Meta/GA e webhook.</div>
           <form className="mt-4 space-y-3" onSubmit={createSite}>
             <div>
-              <label className="block text-xs text-zinc-400 mb-1">Nome do site</label>
+              <label className="block text-xs text-zinc-700 dark:text-zinc-400 mb-1">Nome do site</label>
               <input
-                className="w-full rounded-xl bg-zinc-900/60 border border-zinc-800 px-3 py-2.5 text-sm outline-none focus:border-indigo-500/60 focus:ring-1 focus:ring-indigo-500/20 transition-all placeholder:text-zinc-600"
+                className="w-full rounded-xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 px-3 py-2.5 text-sm text-zinc-900 dark:text-zinc-100 outline-none focus:border-indigo-500/60 focus:ring-1 focus:ring-indigo-500/20 transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Minha Landing Page"
@@ -78,9 +78,9 @@ export const SitesPage = () => {
               />
             </div>
             <div>
-              <label className="block text-xs text-zinc-400 mb-1">Domínio (opcional)</label>
+              <label className="block text-xs text-zinc-700 dark:text-zinc-400 mb-1">Domínio (opcional)</label>
               <input
-                className="w-full rounded-xl bg-zinc-900/60 border border-zinc-800 px-3 py-2.5 text-sm outline-none focus:border-indigo-500/60 focus:ring-1 focus:ring-indigo-500/20 transition-all placeholder:text-zinc-600"
+                className="w-full rounded-xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 px-3 py-2.5 text-sm text-zinc-900 dark:text-zinc-100 outline-none focus:border-indigo-500/60 focus:ring-1 focus:ring-indigo-500/20 transition-all placeholder:text-zinc-400 dark:placeholder:text-zinc-600"
                 value={domain}
                 onChange={(e) => setDomain(e.target.value)}
                 placeholder="ex: loja.com"
@@ -100,8 +100,8 @@ export const SitesPage = () => {
           </form>
           {createdSecret && (
             <div className="mt-4 text-sm animate-in fade-in" style={{ animationDuration: '300ms' }}>
-              <div className="text-xs text-amber-300 font-medium">⚠ Webhook secret (salve agora)</div>
-              <div className="mt-2 font-mono text-xs bg-zinc-900/60 border border-amber-500/20 p-3 rounded-xl break-all text-zinc-300">
+              <div className="text-xs text-amber-600 dark:text-amber-300 font-medium">⚠ Webhook secret (salve agora)</div>
+              <div className="mt-2 font-mono text-xs bg-amber-50 dark:bg-zinc-900/60 border border-amber-200 dark:border-amber-500/20 p-3 rounded-xl break-all text-zinc-700 dark:text-zinc-300">
                 {createdSecret}
               </div>
             </div>
@@ -109,50 +109,50 @@ export const SitesPage = () => {
         </div>
 
         {/* Sites list */}
-        <div className="lg:col-span-2 rounded-2xl border border-zinc-800/60 bg-zinc-950/60 p-5 sm:p-6">
+        <div className="lg:col-span-2 rounded-2xl border border-zinc-200 dark:border-zinc-800/60 bg-white dark:bg-zinc-950/60 p-5 sm:p-6 shadow-sm dark:shadow-none">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <div className="text-sm font-semibold text-white">Seus sites</div>
+              <div className="text-sm font-semibold text-zinc-900 dark:text-white">Seus sites</div>
               <div className="mt-1 text-xs text-zinc-500">Abra um site para configurar e acompanhar.</div>
             </div>
           </div>
 
           <div className="space-y-2.5">
             {sites.length === 0 && (
-              <div className="rounded-2xl border border-dashed border-zinc-800 p-8 text-center animate-in fade-in" style={{ animationDuration: '400ms' }}>
-                <svg viewBox="0 0 24 24" fill="none" className="h-10 w-10 mx-auto mb-3 text-zinc-700" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round">
+              <div className="rounded-2xl border border-dashed border-zinc-200 dark:border-zinc-800 p-8 text-center animate-in fade-in" style={{ animationDuration: '400ms' }}>
+                <svg viewBox="0 0 24 24" fill="none" className="h-10 w-10 mx-auto mb-3 text-zinc-400 dark:text-zinc-700" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="12" cy="12" r="10" />
                   <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
                 </svg>
-                <div className="text-sm text-zinc-400 font-medium">Nenhum site ainda</div>
-                <div className="text-xs text-zinc-600 mt-1">Crie seu primeiro site usando o formulário ao lado.</div>
+                <div className="text-sm text-zinc-500 dark:text-zinc-400 font-medium">Nenhum site ainda</div>
+                <div className="text-xs text-zinc-400 dark:text-zinc-600 mt-1">Crie seu primeiro site usando o formulário ao lado.</div>
               </div>
             )}
             {sites.map((s, i) => (
               <Link
                 key={s.id}
                 to={`/sites/${s.id}`}
-                className="group block rounded-2xl border border-zinc-800/60 bg-zinc-900/30 hover:bg-zinc-900/60 hover:border-zinc-700/60 p-4 transition-all duration-200 animate-in fade-in"
+                className="group block rounded-2xl border border-zinc-200 dark:border-zinc-800/60 bg-zinc-50/50 dark:bg-zinc-900/30 hover:bg-zinc-100 dark:hover:bg-zinc-900/60 hover:border-zinc-300 dark:hover:border-zinc-700/60 p-4 transition-all duration-200 animate-in fade-in"
                 style={{ animationDelay: `${i * 60}ms`, animationDuration: '300ms' }}
               >
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="shrink-0 h-9 w-9 rounded-xl bg-gradient-to-br from-blue-500/20 to-violet-500/20 border border-white/5 flex items-center justify-center text-blue-400 group-hover:scale-105 transition-transform">
+                    <div className="shrink-0 h-9 w-9 rounded-xl border border-indigo-100 dark:border-white/5 bg-indigo-50 dark:bg-gradient-to-br dark:from-blue-500/20 dark:to-violet-500/20 flex items-center justify-center text-indigo-500 dark:text-blue-400 group-hover:scale-105 transition-transform">
                       <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                         <circle cx="12" cy="12" r="10" />
                         <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
                       </svg>
                     </div>
                     <div className="min-w-0">
-                      <div className="font-semibold text-sm text-zinc-100 group-hover:text-white transition-colors truncate">{s.name}</div>
-                      <div className="text-xs text-zinc-500 truncate">{s.domain || '—'}</div>
+                      <div className="font-semibold text-sm text-zinc-900 dark:text-zinc-100 group-hover:text-black dark:group-hover:text-white transition-colors truncate">{s.name}</div>
+                      <div className="text-xs text-zinc-500 dark:text-zinc-500 truncate">{s.domain || '—'}</div>
                     </div>
                   </div>
                   <div className="flex items-center gap-3 shrink-0">
-                    <div className="hidden sm:block text-[10px] font-mono text-zinc-600 group-hover:text-zinc-500 transition-colors">{s.site_key}</div>
+                    <div className="hidden sm:block text-[10px] font-mono text-zinc-400 dark:text-zinc-600 group-hover:text-zinc-500 dark:group-hover:text-zinc-500 transition-colors">{s.site_key}</div>
                     <button
                       onClick={(e) => deleteSite(e, s.id)}
-                      className="p-2 rounded-lg hover:bg-red-500/10 text-zinc-600 hover:text-red-400 transition-colors"
+                      className="p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 text-zinc-400 dark:text-zinc-600 hover:text-red-500 dark:hover:text-red-400 transition-colors"
                       title="Excluir site"
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
