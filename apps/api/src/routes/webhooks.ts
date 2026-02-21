@@ -106,18 +106,18 @@ router.post('/purchase', async (req, res) => {
       return undefined;
     };
     email = payload.email || payload.buyer_email;
-    firstName = pickStr(['first_name', 'firstname', 'nome', 'buyer_name']);
-    lastName = pickStr(['last_name', 'lastname', 'sobrenome']);
+    firstName = pickStr(['first_name', 'firstname', 'nome', 'buyer_name', 'name']);
+    lastName = pickStr(['last_name', 'lastname', 'sobrenome']); // se 'name' tiver tudo, o CAPI hash lida com isso se fn/ln forem separados depois
     phone = pickStr(['phone', 'buyer_phone', 'telefone', 'cel']);
     city = pickStr(['city', 'cidade', 'buyer_city']);
     state = pickStr(['state', 'estado', 'buyer_state', 'uf']);
-    zip = pickStr(['zip', 'cep', 'zipcode', 'postal_code']);
+    zip = pickStr(['zip', 'cep', 'zipcode', 'postal_code', 'zip_code']);
     country = pickStr(['country', 'pais', 'country_code']);
     dob = pickStr(['dob', 'birth_date', 'birthday', 'data_nascimento']);
-    value = payload.amount || payload.value || 0;
+    value = payload.amount || payload.value || payload.price || payload.full_price || 0;
     currency = payload.currency || 'BRL';
     status = payload.status;
-    orderId = payload.id || payload.order_id || payload.transaction_id || `webhook_${Date.now()}`;
+    orderId = payload.id || payload.order_id || payload.transaction_id || payload.transaction || `webhook_${Date.now()}`;
   }
 
   // Normalizing status
