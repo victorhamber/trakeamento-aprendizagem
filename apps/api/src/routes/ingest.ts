@@ -362,9 +362,10 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
       const userData = event.user_data ?? {};
       const capiUser = buildCapiUserData(req, userData, siteKey);
 
-      // custom_data: somente campos válidos para Meta CAPI
+      // custom_data: campos padrão do Meta + dados de atribuição enriquecidos
       // Ref: https://developers.facebook.com/docs/marketing-api/conversions-api/parameters/custom-data
       const cd = event.custom_data ?? {};
+      const tl = event.telemetry ?? {} as Record<string, unknown>;
       const metaCustomData: Record<string, unknown> = {};
       // Campos padrão do Meta custom_data
       const metaCustomFields = [
@@ -384,6 +385,41 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
       }
       if (!metaCustomData['content_type']) {
         metaCustomData['content_type'] = 'product';
+      }
+
+      // ── Dados de atribuição (UTM, referrer, página) ──────────────────────
+      // Essenciais para match com compras e análises do agente IA
+      const attributionFields: [string, unknown][] = [
+        // UTM parameters
+        ['utm_source', cd['utm_source'] || tl['utm_source']],
+        ['utm_medium', cd['utm_medium'] || tl['utm_medium']],
+        ['utm_campaign', cd['utm_campaign'] || tl['utm_campaign']],
+        ['utm_term', cd['utm_term'] || tl['utm_term']],
+        ['utm_content', cd['utm_content'] || tl['utm_content']],
+        // Dados de página
+        ['page_path', cd['page_path'] || tl['page_path']],
+        ['page_title', cd['page_title'] || tl['page_title']],
+        ['referrer', cd['referrer'] || tl['referrer']],
+        // Fonte de tráfego
+        ['traffic_source', cd['traffic_source']],
+        // Dados de engajamento
+        ['dwell_time_ms', tl['dwell_time_ms']],
+        ['max_scroll_pct', tl['max_scroll_pct']],
+        ['visible_time_ms', tl['visible_time_ms']],
+        ['clicks_total', tl['clicks_total']],
+        ['clicks_cta', tl['clicks_cta']],
+        // Dados de dispositivo (útil quando pixel é bloqueado no iOS)
+        ['screen_width', tl['screen_width']],
+        ['screen_height', tl['screen_height']],
+        ['platform', tl['platform']],
+        ['connection_type', tl['connection_type']],
+        ['language', tl['language']],
+        ['timezone', tl['timezone']],
+      ];
+      for (const [key, val] of attributionFields) {
+        if (val !== undefined && val !== null && val !== '') {
+          metaCustomData[key] = val;
+        }
       }
 
       const capiPayload: CapiEvent = {
