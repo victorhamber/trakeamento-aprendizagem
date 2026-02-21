@@ -196,6 +196,18 @@ const schemaSql = `
     updated_at TIMESTAMP DEFAULT NOW()
   );
 
+  CREATE TABLE IF NOT EXISTS custom_webhooks (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+    name VARCHAR(150) NOT NULL,
+    secret_key VARCHAR(100) NOT NULL UNIQUE,
+    last_payload JSONB,
+    mapping_config JSONB NOT NULL DEFAULT '{}'::jsonb,
+    is_active BOOLEAN DEFAULT false,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+  );
+
   CREATE INDEX IF NOT EXISTS idx_sites_account ON sites(account_id);
   CREATE INDEX IF NOT EXISTS idx_web_events_time ON web_events(event_time);
   CREATE INDEX IF NOT EXISTS idx_web_events_name ON web_events(event_name);
@@ -246,6 +258,21 @@ export const ensureSchema = async (pool: Pool) => {
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS cost_per_purchase NUMERIC');
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS custom_event_name VARCHAR(120)');
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS custom_event_count INTEGER');
+
+    // Create custom webhooks table dynamically if it doesn't exist (for existing users)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS custom_webhooks (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+        name VARCHAR(150) NOT NULL,
+        secret_key VARCHAR(100) NOT NULL UNIQUE,
+        last_payload JSONB,
+        mapping_config JSONB NOT NULL DEFAULT '{}'::jsonb,
+        is_active BOOLEAN DEFAULT false,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      );
+    `);
 
     // Migração para flexibilizar a constraint UNIQUE de meta_insights_daily
     try {

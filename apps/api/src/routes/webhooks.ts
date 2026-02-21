@@ -6,6 +6,121 @@ import { decryptString } from '../lib/crypto';
 
 const router = Router();
 
+// ─── Core Ingestion Engine for all Webhooks ────────────────────────────
+async function processPurchaseWebhook({
+  siteKey, payload, email, phone, firstName, lastName, city, state, zip, country, dob,
+  fbp, fbc, externalId, clientIp, clientUa, value, currency, status, orderId, platform
+}: any) {
+  let isApproved = status === 'approved';
+
+  const siteRow = await pool.query(`
+    SELECT sites.id, m.capi_token_enc, m.pixel_id, m.capi_test_event_code, m.enabled
+    FROM sites
+    LEFT JOIN integrations_meta m ON m.site_id = sites.id
+    WHERE sites.site_key = $1
+  `, [siteKey]);
+
+  if (!siteRow.rowCount) return { success: false, status: 404, error: 'Site not found' };
+  const { id: siteId, capi_token_enc, pixel_id, capi_test_event_code, enabled: metaEnabled } = siteRow.rows[0];
+
+  const dbEmailHash = email ? CapiService.hash(email) : null;
+
+  if (isApproved) {
+    let trkEid = '';
+    let trkFbc = '';
+    let trkFbp = '';
+    const sckRaw = payload.sck || payload.src || '';
+    if (typeof sckRaw === 'string' && sckRaw.includes('trk_')) {
+      try {
+        const parts = sckRaw.split('-');
+        const trkPart = parts.find((p: string) => p.startsWith('trk_'));
+        if (trkPart) {
+          const b64 = trkPart.substring(4);
+          const decoded = Buffer.from(b64, 'base64').toString('utf-8');
+          const ids = decoded.split('|');
+          if (ids[0]) trkEid = ids[0];
+          if (ids[1]) trkFbc = ids[1];
+          if (ids[2]) trkFbp = ids[2];
+        }
+      } catch (e) {
+        console.error('[Webhook] Failed to decode trk_ parameter:', e);
+      }
+    }
+
+    const finalExternalId = trkEid || externalId;
+    const finalFbc = trkFbc || fbc;
+    const finalFbp = trkFbp || fbp;
+
+    const capiPayload: any = {
+      event_name: 'Purchase',
+      event_time: Math.floor(Date.now() / 1000),
+      event_id: `purchase_${orderId}`,
+      event_source_url: payload.checkout_url || '',
+      user_data: {
+        client_ip_address: clientIp,
+        client_user_agent: clientUa,
+        em: email ? CapiService.hash(email) : undefined,
+        ph: phone ? CapiService.hash(phone.replace(/[^0-9]/g, '')) : undefined,
+        fn: firstName ? CapiService.hash(firstName.toLowerCase()) : undefined,
+        ln: lastName ? CapiService.hash(lastName.toLowerCase()) : undefined,
+        ct: city ? CapiService.hash(city.toLowerCase()) : undefined,
+        st: state ? CapiService.hash(state.toLowerCase()) : undefined,
+        zp: zip ? CapiService.hash(zip.replace(/\s+/g, '').toLowerCase()) : undefined,
+        country: country ? CapiService.hash(country.toLowerCase()) : undefined,
+        db: dob ? CapiService.hash(dob.replace(/[^0-9]/g, '')) : undefined,
+        fbp: finalFbp,
+        fbc: finalFbc,
+        external_id: finalExternalId ? CapiService.hash(String(finalExternalId)) : undefined,
+      },
+      custom_data: {
+        currency: currency,
+        value: value,
+        content_type: 'product',
+        utm_source: payload.utm_source || payload.trackingParameters?.utm_source || payload.tracking_parameters?.utm_source || payload.sck || payload.src || undefined,
+        utm_medium: payload.utm_medium || payload.trackingParameters?.utm_medium || payload.tracking_parameters?.utm_medium || undefined,
+        utm_campaign: payload.utm_campaign || payload.trackingParameters?.utm_campaign || payload.tracking_parameters?.utm_campaign || undefined,
+        utm_term: payload.utm_term || payload.trackingParameters?.utm_term || payload.tracking_parameters?.utm_term || undefined,
+        utm_content: payload.utm_content || payload.trackingParameters?.utm_content || payload.tracking_parameters?.utm_content || undefined,
+      },
+      action_source: 'system_generated'
+    };
+
+    if (capi_test_event_code) {
+      capiPayload.test_event_code = capi_test_event_code;
+    }
+
+    try {
+      await pool.query(
+        `INSERT INTO purchases (site_key, order_id, platform, amount, currency, status, buyer_email_hash, fbp, fbc, raw_payload)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         ON CONFLICT (site_key, order_id) DO NOTHING`,
+        [siteKey, orderId, platform, value, currency, status, dbEmailHash, finalFbp, finalFbc, payload]
+      );
+
+      if (metaEnabled && pixel_id && capi_token_enc) {
+        await pool.query(
+          `INSERT INTO capi_outbox (site_key, payload) VALUES ($1, $2)`,
+          [siteKey, JSON.stringify(capiPayload)]
+        );
+      }
+    } catch (e) {
+      console.error('[Webhook] DB Error:', e);
+    }
+  } else {
+    try {
+      await pool.query(
+        `INSERT INTO purchases (site_key, order_id, platform, amount, currency, status, buyer_email_hash, fbp, fbc, raw_payload)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         ON CONFLICT (site_key, order_id) DO UPDATE SET status = EXCLUDED.status, updated_at = NOW()`,
+        [siteKey, orderId, platform, value, currency, status, dbEmailHash, fbp, fbc, payload]
+      );
+    } catch (e) {
+      console.error('[Webhook] Refund DB DB Error:', e);
+    }
+  }
+
+  return { success: true };
+}
 router.post('/purchase', async (req, res) => {
   const signature = req.headers['x-webhook-signature'] as string | undefined;
   const timestamp = req.headers['x-webhook-timestamp'] as string | undefined;
@@ -128,112 +243,147 @@ router.post('/purchase', async (req, res) => {
   } else if (['REFUNDED', 'refunded', 'CHARGEBACK', 4, '4'].includes(status)) {
     status = 'refunded';
   } else {
-    status = 'pending';
+    status = 'other';
   }
 
-  try {
-    // Gravar compra
-    await pool.query(`
-      INSERT INTO purchases (
-        site_key, order_id, platform, amount, currency, status, 
-        buyer_email_hash, fbp, fbc, raw_payload
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-      ON CONFLICT (site_key, order_id) DO UPDATE SET status = EXCLUDED.status
-    `, [
-      siteKey,
-      String(orderId),
-      platform,
-      value,
-      currency,
-      status,
-      email ? CapiService.hash(email) : null,
-      fbp,
-      fbc,
-      payload
-    ]);
+  const result = await processPurchaseWebhook({
+    siteKey, payload, email, phone, firstName, lastName, city, state, zip, country, dob,
+    fbp, fbc, externalId: payload.user_id || payload.buyer?.id || payload.Customer?.id,
+    clientIp: payload.client_ip_address || payload.ip || req.ip || '0.0.0.0',
+    clientUa: payload.client_user_agent || payload.user_agent || 'Webhook/1.0',
+    value, currency, status, orderId, platform
+  });
 
-    // Disparar CAPI Purchase
-    if (isApproved) {
-      const externalId = payload.user_id || payload.buyer?.id || payload.Customer?.id;
+  if (!result.success) return res.status(result.status || 500).json({ error: result.error });
+  return res.json({ received: true });
+});
 
-      // ─── Extração do URL Decorator (sck/src) ──────────────────────────────
-      // O SDK injeta sck="trk_Base64(eid|fbc|fbp)" nos links de checkout.
-      // Aqui decodificamos para garantir a atribuição perfeita no CAPI.
-      let trkEid = '';
-      let trkFbc = '';
-      let trkFbp = '';
-      const sckRaw = payload.sck || payload.src || '';
+// ─── Native Hotmart Webhook ────────────────────────────────────────────────
+router.post('/hotmart', async (req, res) => {
+  const siteKey = req.query.key as string;
+  const token = req.query.token as string;
+  if (!siteKey || !token) return res.status(400).json({ error: 'Missing key or token' });
 
-      if (typeof sckRaw === 'string' && sckRaw.includes('trk_')) {
-        try {
-          // Pode vir junto com outras tags, ex: "sck=afiliado123-trk_YmFzZTY0"
-          const parts = sckRaw.split('-');
-          const trkPart = parts.find(p => p.startsWith('trk_'));
-          if (trkPart) {
-            const b64 = trkPart.substring(4); // remove 'trk_'
-            const decoded = Buffer.from(b64, 'base64').toString('utf-8');
-            const ids = decoded.split('|');
-            if (ids[0]) trkEid = ids[0];
-            if (ids[1]) trkFbc = ids[1];
-            if (ids[2]) trkFbp = ids[2];
-          }
-        } catch (e) {
-          console.error('[Webhook] Failed to decode trk_ parameter:', e);
-        }
-      }
+  const secretRow = await pool.query('SELECT webhook_secret_enc FROM sites WHERE site_key = $1', [siteKey]);
+  if (!secretRow.rowCount) return res.status(404).json({ error: 'Site not found' });
 
-      const clientIp = payload.client_ip_address || payload.ip || req.ip || '0.0.0.0';
-      const clientUa = payload.client_user_agent || payload.user_agent || 'Webhook/1.0';
+  const secret = decryptString(secretRow.rows[0].webhook_secret_enc as string);
+  if (token !== secret) return res.status(401).json({ error: 'Invalid webhook token' });
 
-      const finalExternalId = trkEid || externalId;
-      const finalFbc = trkFbc || fbc;
-      const finalFbp = trkFbp || fbp;
+  const payload = req.body;
+  if (typeof payload !== 'object') return res.status(400).json({ error: 'Invalid payload' });
 
-      const capiPayload = {
-        event_name: 'Purchase',
-        event_time: Math.floor(Date.now() / 1000),
-        event_id: `purchase_${orderId}`,
-        event_source_url: payload.checkout_url || '',
-        user_data: {
-          client_ip_address: clientIp,
-          client_user_agent: clientUa,
-          em: email ? CapiService.hash(email) : undefined,
-          ph: phone ? CapiService.hash(phone.replace(/[^0-9]/g, '')) : undefined,
-          fn: firstName ? CapiService.hash(firstName.toLowerCase()) : undefined,
-          ln: lastName ? CapiService.hash(lastName.toLowerCase()) : undefined,
-          ct: city ? CapiService.hash(city.toLowerCase()) : undefined,
-          st: state ? CapiService.hash(state.toLowerCase()) : undefined,
-          zp: zip ? CapiService.hash(zip.replace(/\s+/g, '').toLowerCase()) : undefined,
-          country: country ? CapiService.hash(country.toLowerCase()) : undefined,
-          db: dob ? CapiService.hash(dob.replace(/[^0-9]/g, '')) : undefined,
-          fbp: finalFbp,
-          fbc: finalFbc,
-          external_id: finalExternalId ? CapiService.hash(String(finalExternalId)) : undefined,
-        },
-        custom_data: {
-          currency: currency,
-          value: value,
-          content_type: 'product',
-          ...(payload.product_id || payload.product?.id ? { content_ids: [String(payload.product_id || payload.product?.id)] } : {}),
-          order_id: String(orderId),
-          // ── Extracao de UTMs do webhook (ex: Hotmart, Kiwify) ──
-          utm_source: payload.utm_source || payload.trackingParameters?.utm_source || payload.tracking_parameters?.utm_source || payload.sck || payload.src || undefined,
-          utm_medium: payload.utm_medium || payload.trackingParameters?.utm_medium || payload.tracking_parameters?.utm_medium || undefined,
-          utm_campaign: payload.utm_campaign || payload.trackingParameters?.utm_campaign || payload.tracking_parameters?.utm_campaign || undefined,
-          utm_term: payload.utm_term || payload.trackingParameters?.utm_term || payload.tracking_parameters?.utm_term || undefined,
-          utm_content: payload.utm_content || payload.trackingParameters?.utm_content || payload.tracking_parameters?.utm_content || undefined,
-        },
-      };
+  const fbp = payload.fbp || payload.custom_args?.fbp;
+  const fbc = payload.fbc || payload.custom_args?.fbc;
+  const platform = 'hotmart';
 
-      capiService.sendEvent(siteKey, capiPayload).catch(console.error);
-      console.log(`[CAPI] Purchase event sent for ${platform}:`, capiPayload.event_id);
-    }
+  const email = payload.buyer?.email || payload.email;
+  const firstName = payload.buyer?.name?.split(' ')[0] || payload.first_name || payload.name?.split(' ')[0];
+  const lastName = payload.buyer?.name?.split(' ').slice(1).join(' ') || payload.last_name || payload.name?.split(' ').slice(1).join(' ');
+  const phone = payload.buyer?.phone || payload.buyer?.checkout_phone || payload.phone;
+  const value = payload.purchase?.full_price?.value || payload.amount || payload.price || payload.full_price || 0;
+  const currency = payload.purchase?.full_price?.currency_value || payload.currency || 'BRL';
 
-    res.json({ received: true });
-  } catch (err) {
-    console.error(err);
-    res.status(500).send('Error processing webhook');
+  let rawStatus = payload.purchase?.status || payload.status;
+  let status = 'other';
+  if (['APPROVED', 'COMPLETED', 'paid', 'PAID', 3, '3', 'approved'].includes(rawStatus)) {
+    status = 'approved';
+  } else if (['REFUNDED', 'refunded', 'CHARGEBACK', 4, '4'].includes(rawStatus)) {
+    status = 'refunded';
   }
+
+  const orderId = payload.purchase?.transaction || payload.transaction || payload.transaction_id || payload.id || `webhook_${Date.now()}`;
+  const city = payload.buyer?.address?.city || payload.city;
+  const state = payload.buyer?.address?.state || payload.state;
+  const zip = payload.buyer?.address?.zipCode || payload.buyer?.address?.zip_code || payload.zip_code;
+  const country = payload.buyer?.address?.country || payload.buyer?.address?.country_iso || payload.country || 'BR';
+  const dob = undefined;
+
+  const result = await processPurchaseWebhook({
+    siteKey, payload, email, phone, firstName, lastName, city, state, zip, country, dob,
+    fbp, fbc, externalId: payload.user_id || payload.buyer?.id,
+    clientIp: payload.client_ip_address || payload.ip || req.ip || '0.0.0.0',
+    clientUa: payload.client_user_agent || payload.user_agent || 'Webhook/1.0',
+    value, currency, status, orderId, platform
+  });
+
+  if (!result.success) return res.status(result.status || 500).json({ error: result.error });
+  return res.json({ received: true });
+});
+
+// ─── Custom Webhook (Mapped) ───────────────────────────────────────────────
+router.post('/custom/:id', async (req, res) => {
+  const webhookId = req.params.id;
+  const payload = req.body;
+  if (!webhookId) return res.status(400).json({ error: 'Missing webhook ID' });
+
+  // Pega o webhook e a site_key atrelada a ele
+  console.log(`[Webhook Custom] Received POST for webhook ${webhookId}`);
+  const hookRow = await pool.query(`
+    SELECT c.site_id, c.is_active, c.mapping_config, s.site_key
+    FROM custom_webhooks c
+    JOIN sites s ON s.id = c.site_id
+    WHERE c.id = $1
+  `, [webhookId]);
+
+  if (!hookRow.rowCount) return res.status(404).json({ error: 'Webhook not found' });
+  const hook = hookRow.rows[0];
+
+  // Sempre atualizar o last_payload para a UI do painel ter a versão mais recente
+  console.log(`[Webhook Custom] Updating last_payload for webhook ${webhookId}`);
+  await pool.query('UPDATE custom_webhooks SET last_payload = $1, updated_at = NOW() WHERE id = $2', [JSON.stringify(payload), webhookId]);
+
+  // Se o webhook não estiver ativo, significa que estamos apenas em "modo de captura"
+  // O usuário disparou para pegar as chaves na UI.
+  if (!hook.is_active) {
+    console.log(`[Webhook Custom] Webhook ${webhookId} is inactive, saved payload for UI mapping.`);
+    return res.json({ received: true, mode: 'test_capture' });
+  }
+
+  // Se estiver ativo, usamos o mapping_config para extrair as variáveis
+  const config = hook.mapping_config || {};
+
+  // Função helper para acessar propriedades aninhadas num JSON baseado no path tipo "customer.email"
+  const getNested = (obj: any, path: string) => {
+    if (!path) return undefined;
+    return path.split('.').reduce((acc, part) => acc && acc[part], obj);
+  };
+
+  const email = getNested(payload, config.email);
+  const phone = getNested(payload, config.phone);
+  const firstName = getNested(payload, config.first_name);
+  const lastName = getNested(payload, config.last_name);
+  const orderIdRaw = getNested(payload, config.order_id);
+  const orderId = orderIdRaw ? String(orderIdRaw) : `custom_${Date.now()}`;
+  const value = getNested(payload, config.amount) || getNested(payload, config.value) || 0;
+  const currency = getNested(payload, config.currency) || 'BRL';
+  const rawStatus = getNested(payload, config.status);
+
+  // Custom SRC ou SCK
+  if (config.sck) payload.sck = getNested(payload, config.sck);
+  if (config.src) payload.src = getNested(payload, config.src);
+
+  let status = 'other';
+  // Check common positive statuses
+  if (['APPROVED', 'COMPLETED', 'paid', 'PAID', 3, '3', 'approved'].includes(rawStatus) || rawStatus === config.status_approved_value) {
+    status = 'approved';
+  } else if (['REFUNDED', 'refunded', 'CHARGEBACK', 4, '4'].includes(rawStatus) || rawStatus === config.status_refunded_value) {
+    status = 'refunded';
+  }
+
+  const result = await processPurchaseWebhook({
+    siteKey: hook.site_key, payload, email, phone, firstName, lastName,
+    city: getNested(payload, config.city), state: getNested(payload, config.state),
+    zip: getNested(payload, config.zip), country: getNested(payload, config.country),
+    fbp: payload.fbp || payload.custom_args?.fbp, fbc: payload.fbc || payload.custom_args?.fbc,
+    externalId: getNested(payload, config.external_id),
+    clientIp: getNested(payload, config.client_ip) || req.ip || '0.0.0.0',
+    clientUa: getNested(payload, config.client_ua) || 'Webhook/1.0',
+    value, currency, status, orderId, platform: 'custom'
+  });
+
+  if (!result.success) return res.status(result.status || 500).json({ error: result.error });
+  return res.json({ received: true });
 });
 
 export default router;
