@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { Layout } from '../components/Layout';
 
@@ -12,7 +12,6 @@ type Site = {
 };
 
 export const SitesPage = () => {
-  const nav = useNavigate();
   const [sites, setSites] = useState<Site[]>([]);
   const [name, setName] = useState('');
   const [domain, setDomain] = useState('');
