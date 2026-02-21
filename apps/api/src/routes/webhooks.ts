@@ -187,6 +187,12 @@ router.post('/purchase', async (req, res) => {
           content_type: 'product',
           ...(payload.product_id || payload.product?.id ? { content_ids: [String(payload.product_id || payload.product?.id)] } : {}),
           order_id: String(orderId),
+          // ── Extracao de UTMs do webhook (ex: Hotmart, Kiwify) ──
+          utm_source: payload.utm_source || payload.trackingParameters?.utm_source || payload.tracking_parameters?.utm_source || payload.sck || payload.src || undefined,
+          utm_medium: payload.utm_medium || payload.trackingParameters?.utm_medium || payload.tracking_parameters?.utm_medium || undefined,
+          utm_campaign: payload.utm_campaign || payload.trackingParameters?.utm_campaign || payload.tracking_parameters?.utm_campaign || undefined,
+          utm_term: payload.utm_term || payload.trackingParameters?.utm_term || payload.tracking_parameters?.utm_term || undefined,
+          utm_content: payload.utm_content || payload.trackingParameters?.utm_content || payload.tracking_parameters?.utm_content || undefined,
         },
       };
 
