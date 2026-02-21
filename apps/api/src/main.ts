@@ -38,7 +38,7 @@ app.use((req, res, next) => {
     'http://127.0.0.1:5173'
   ].filter(Boolean) as string[];
 
-  // Rotas públicas que devem ser acessíveis de qualquer lugar (SDK, Ingest, Forms públicos)
+  // Rotas públicas que devem ser acessíveis de qualquer lugar
   const isPublicRoute =
     req.path.startsWith('/sdk') ||
     req.path.startsWith('/ingest') ||
@@ -50,12 +50,13 @@ app.use((req, res, next) => {
     } else if (allowedOrigins.some(o => origin.startsWith(o))) {
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Access-Control-Allow-Credentials', 'true');
+    } else {
+      // Fallback permissivo para evitar bloqueios de CORS enquanto debugamos
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
     }
-  } else {
-    // Se não tem origin (ex: curl ou server-to-server), permite se for rota pública
-    if (isPublicRoute) {
-      res.setHeader('Access-Control-Allow-Origin', '*');
-    }
+  } else if (isPublicRoute) {
+    res.setHeader('Access-Control-Allow-Origin', '*');
   }
 
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
