@@ -814,30 +814,25 @@ router.get('/tracker.js', async (_req, res) => {
   // ─── Auto-Tagging Checkout Links ──────────────────────────────────────────
   // Injeta tracking params (EID, FBC, FBP) nos links de checkout (sck/src)
   function decorateCheckoutLinks() {
-    var trackerState = getState();
-    var eid = trackerState.userData.external_id;
-    var fbc = getCookie('_fbc') || '';
-    var fbp = getCookie('_fbp') || '';
+    var eid = getOrCreateExternalId();
+    var fbc = getFbc() || '';
+    var fbp = getFbp() || '';
     
-    // Se não temos EID, tentamos criar um
-    if (!eid) {
-      eid = 'eid_' + Math.random().toString(36).substring(2, 15);
-      setState({ userData: { external_id: eid } });
-    }
-
     // trk_ + Base64(eid|fbc|fbp)
     var trackValue = eid;
     if (fbc || fbp) trackValue += '|' + (fbc || '') + '|' + (fbp || '');
     var safeTrackValue = 'trk_' + btoa(trackValue).replace(/=+$/, '');
 
     var checkoutDomains = [
-      'pay.hotmart.com', 'hotmart.com/product',
+      'pay.hotmart.com', 'hotmart.com/product', 'go.hotmart.com',
       'pay.kiwify.com.br', 'kiwify.com.br',
       'sun.eduzz.com', 'orbitpages.com',
       'checkout.perfectpay.com.br', 'perfectpay.com.br',
       'checkout.monetizze.com.br', 'monetizze.com.br',
       'checkout.ticto.com.br', 'ticto.com.br',
-      'checkout.braip.com', 'braip.com'
+      'checkout.braip.com', 'braip.com',
+      'pay.kirvano.com', 'kirvano.com',
+      'pay.yampi.com.br', 'seguro.yampi.com.br'
     ];
 
     function processLink(link) {
@@ -846,7 +841,7 @@ router.get('/tracker.js', async (_req, res) => {
         var url = new URL(link.href);
         var isCheckout = false;
         for (var d = 0; d < checkoutDomains.length; d++) {
-          if (url.hostname.indexOf(checkoutDomains[d]) > -1 || url.pathname.indexOf(checkoutDomains[d]) > -1) {
+          if (url.href.indexOf(checkoutDomains[d]) > -1) {
             isCheckout = true; break;
           }
         }
