@@ -9,7 +9,7 @@ COPY . .
 
 # Argumento para URL da API (necessário no build do Vite)
 ARG VITE_API_URL
-ENV VITE_API_URL=https://meta-ads-tracking-api.u0oe83.easypanel.host
+ENV VITE_API_URL=https://api.trajettu.com
 
 RUN npm run build
 
