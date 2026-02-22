@@ -510,7 +510,7 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
                     <span>Status: {log.status || '—'}</span>
                     <span>Valor: {log.amount ? `${log.amount} ${log.currency || ''}` : '—'}</span>
                   </div>
-                  <pre className="mt-2 text-[10px] leading-relaxed text-zinc-600 dark:text-zinc-400 whitespace-pre-wrap break-words">
+                  <pre className="mt-2 text-[10px] leading-relaxed text-zinc-600 dark:text-zinc-400 whitespace-pre-wrap break-words max-h-60 overflow-y-auto bg-zinc-50 dark:bg-zinc-900/50 p-2 rounded border border-zinc-100 dark:border-zinc-800/50">
                     {JSON.stringify(log.raw_payload || {}, null, 2)}
                   </pre>
                 </div>
@@ -569,6 +569,11 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
                   ...prev,
                   [hook.id]: { ...(prev[hook.id] || hook.mapping_config || {}), [field]: val }
                 }));
+              };
+
+              const safeStringify = (val: any): string => {
+                if (typeof val === 'object' && val !== null) return JSON.stringify(val);
+                return String(val);
               };
 
               return (
@@ -632,9 +637,16 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
                           ) : (
                             <div className="space-y-1 max-h-[300px] overflow-y-auto">
                               {availableKeys.map(key => (
-                                <div key={key} className="flex items-center justify-between text-[10px] p-1.5 hover:bg-zinc-50 dark:hover:bg-zinc-900 rounded border border-transparent hover:border-zinc-100 dark:hover:border-zinc-800">
-                                  <code className="text-zinc-600 dark:text-zinc-400">{key}</code>
-                                  <span className="text-zinc-400 truncate max-w-[120px]">{String(flatPayload[key])}</span>
+                                <div key={key} className="flex flex-col gap-1 text-[10px] p-2 hover:bg-zinc-50 dark:hover:bg-zinc-900 rounded border border-transparent hover:border-zinc-100 dark:hover:border-zinc-800 transition-colors">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <code className="text-zinc-700 dark:text-zinc-300 font-medium truncate shrink-0">{key}</code>
+                                    <span 
+                                      className="text-zinc-400 truncate max-w-[150px] font-mono" 
+                                      title={safeStringify(flatPayload[key])}
+                                    >
+                                      {safeStringify(flatPayload[key])}
+                                    </span>
+                                  </div>
                                 </div>
                               ))}
                             </div>
@@ -663,7 +675,9 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
                                 >
                                   <option value="">-- Selecione o campo --</option>
                                   {availableKeys.map(k => (
-                                    <option key={k} value={k}>{k} (Ex: {String(flatPayload[k]).slice(0, 15)})</option>
+                                    <option key={k} value={k}>
+                                      {k} (Ex: {safeStringify(flatPayload[k]).slice(0, 20)}...)
+                                    </option>
                                   ))}
                                 </select>
                               </div>
