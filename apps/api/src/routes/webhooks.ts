@@ -251,13 +251,17 @@ router.post('/purchase', async (req, res) => {
 
   // Normalizing status
   let isApproved = false;
-  if (['APPROVED', 'COMPLETED', 'paid', 'PAID', 3, '3', 'approved'].includes(status)) {
+  // Keep the original status for DB storage, but normalize for logic if needed
+  let finalStatus = String(status).toLowerCase();
+
+  if (['APPROVED', 'COMPLETED', 'paid', 'PAID', 3, '3', 'approved', 'PURCHASE_APPROVED'].includes(status)) {
     isApproved = true;
-    status = 'approved';
-  } else if (['REFUNDED', 'refunded', 'CHARGEBACK', 4, '4'].includes(status)) {
-    status = 'refunded';
+    finalStatus = 'approved';
+  } else if (['REFUNDED', 'refunded', 'CHARGEBACK', 4, '4', 'PURCHASE_REFUNDED'].includes(status)) {
+    finalStatus = 'refunded';
   } else {
-    status = 'other';
+    // For pending/other statuses (BILLET_PRINTED, PIX_GENERATED, WAITING_PAYMENT), keep them as is (but cleaned)
+    finalStatus = String(status).replace(/_/g, ' ').toLowerCase();
   }
 
   const result = await processPurchaseWebhook({
@@ -265,7 +269,7 @@ router.post('/purchase', async (req, res) => {
     fbp, fbc, externalId: payload.user_id || payload.buyer?.id || payload.Customer?.id,
     clientIp: payload.client_ip_address || payload.ip || req.ip || '0.0.0.0',
     clientUa: payload.client_user_agent || payload.user_agent || 'Webhook/1.0',
-    value, currency, status, orderId, platform
+    value, currency, status: finalStatus, orderId, platform
   });
 
   if (!result.success) return res.status(result.status || 500).json({ error: result.error });
@@ -329,13 +333,8 @@ router.post('/hotmart', async (req, res) => {
   console.log(`[Hotmart] orderId=${purchase.transaction} status=${purchase.status} rawValue=${rawValue} parsedValue=${value} currency=${currency}`);
 
   let rawStatus = purchase.status || d.status || payload.event;
-  let status = 'other';
-  if (['APPROVED', 'COMPLETED', 'paid', 'PAID', 3, '3', 'approved', 'PURCHASE_APPROVED'].includes(rawStatus)) {
-    status = 'approved';
-  } else if (['REFUNDED', 'refunded', 'CHARGEBACK', 4, '4', 'PURCHASE_REFUNDED'].includes(rawStatus)) {
-    status = 'refunded';
-  }
-
+  let status = rawStatus; // Pass raw status to main handler for normalization
+  
   const orderId = purchase.transaction || d.transaction || d.transaction_id || payload.id || `webhook_${Date.now()}`;
   const buyerAddr = buyer.address || {};
   const city = buyerAddr.city || d.city;
@@ -387,15 +386,9 @@ router.post('/kiwify', async (req, res) => {
   if (value > 0 && Number.isInteger(value)) {
     value = value / 100; // Kiwify sends cents in net_amount
   }
-  const currency = payload.currency || 'BRL';
-
-  let rawStatus = payload.status;
-  let status = 'other';
-  if (['paid', 'approved', 'COMPLETED', 'APPROVED'].includes(rawStatus)) {
-    status = 'approved';
-  } else if (['refunded', 'chargedback'].includes(rawStatus)) {
-    status = 'refunded';
-  }
+  const currency = payload.order?.payment?.currency || payload.currency || 'BRL';
+  
+  let status = payload.status; // Pass raw status to main handler
 
   const orderId = payload.id || `webhook_${Date.now()}`;
   const city = payload.customer?.address?.city;
@@ -478,13 +471,7 @@ router.post('/custom/:id', async (req, res) => {
   if (config.sck) payload.sck = getNested(payload, config.sck);
   if (config.src) payload.src = getNested(payload, config.src);
 
-  let status = 'other';
-  // Check common positive statuses
-  if (['APPROVED', 'COMPLETED', 'paid', 'PAID', 3, '3', 'approved'].includes(rawStatus) || rawStatus === config.status_approved_value) {
-    status = 'approved';
-  } else if (['REFUNDED', 'refunded', 'CHARGEBACK', 4, '4'].includes(rawStatus) || rawStatus === config.status_refunded_value) {
-    status = 'refunded';
-  }
+  let status = rawStatus; // Pass raw status to main handler
 
   const result = await processPurchaseWebhook({
     siteKey: hook.site_key, payload, email, phone, firstName, lastName,

@@ -556,6 +556,10 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
                         <span className="hidden sm:inline text-zinc-300 dark:text-zinc-700">|</span>
                         <span>Valor: <span className="font-medium text-zinc-700 dark:text-zinc-300">{log.amount ? `${log.amount} ${log.currency || ''}` : '—'}</span></span>
                         <span className="hidden sm:inline text-zinc-300 dark:text-zinc-700">|</span>
+                        <span className="text-zinc-500 uppercase text-[9px] font-bold border border-zinc-200 dark:border-zinc-800 px-1.5 py-0.5 rounded bg-zinc-50 dark:bg-zinc-900">
+                          {log.status === 'approved' ? 'Aprovado' : (log.status === 'refunded' ? 'Reembolso' : (log.status || 'Pendente'))}
+                        </span>
+                        <span className="hidden sm:inline text-zinc-300 dark:text-zinc-700">|</span>
                         <span className="text-zinc-400">{new Date(log.created_at).toLocaleString()}</span>
                       </div>
                       <svg className="h-4 w-4 text-zinc-400 transition-transform group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor">
