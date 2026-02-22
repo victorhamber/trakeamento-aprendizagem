@@ -1,0 +1,19 @@
+version: "3.8"
+
+services:
+  caddy:
+    image: caddy:2.8.4
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      CADDY_UPSTREAM: tracking-api:3000
+      CADDY_ASK_TOKEN: ""
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

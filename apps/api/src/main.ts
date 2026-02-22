@@ -15,6 +15,7 @@ import metaRoutes from './routes/meta';
 import recommendationRoutes from './routes/recommendations';
 import notificationRoutes from './routes/notifications';
 import { formsRouter } from './routes/forms';
+import publicRoutes from './routes/public';
 import { ensureSchema } from './db/schema';
 import { capiService } from './services/capi';
 
@@ -85,6 +86,7 @@ app.use('/webhooks', webhookRoutes);
 app.use('/meta', metaRoutes);
 app.use('/recommendations', recommendationRoutes);
 app.use('/notifications', notificationRoutes);
+app.use('/public', publicRoutes);
 app.use('/', formsRouter);
 
 app.get('/', (req, res) => {
