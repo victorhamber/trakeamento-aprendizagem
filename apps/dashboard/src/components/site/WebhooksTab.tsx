@@ -63,7 +63,7 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
   const loadCheckoutWebhookLogs = async () => {
     setCheckoutLogsBusy(true);
     try {
-      const res = await api.get(`/sites/${id}/checkout-simulator/webhooks`);
+      const res = await api.get(`/sites/${id}/checkout-simulator/webhooks`, { params: { limit: 5 } });
       setCheckoutWebhookLogs(res.data.logs || []);
     } catch (err) {
       console.error('Failed to load checkout simulator logs', err);
@@ -503,17 +503,30 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
           ) : (
             <div className="space-y-3">
               {checkoutWebhookLogs.map((log, index) => (
-                <div key={log.id || index} className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4">
-                  <div className="flex flex-wrap items-center gap-2 text-[10px] text-zinc-600 dark:text-zinc-400">
-                    <span className="font-medium text-zinc-800 dark:text-zinc-200">{log.platform || 'checkout'}</span>
-                    <span>Pedido: {log.order_id || '—'}</span>
-                    <span>Status: {log.status || '—'}</span>
-                    <span>Valor: {log.amount ? `${log.amount} ${log.currency || ''}` : '—'}</span>
+                <details key={log.id || index} className="group rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 overflow-hidden">
+                  <summary className="flex cursor-pointer items-center justify-between p-4 transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-900/50">
+                    <div className="flex flex-wrap items-center gap-3 text-[10px] text-zinc-600 dark:text-zinc-400">
+                      <div className="flex items-center gap-2">
+                        <span className={`w-1.5 h-1.5 rounded-full ${log.status === 'approved' || log.status === 'paid' ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                        <span className="font-semibold text-zinc-800 dark:text-zinc-200 uppercase tracking-wide">{log.platform || 'checkout'}</span>
+                      </div>
+                      <span className="hidden sm:inline text-zinc-300 dark:text-zinc-700">|</span>
+                      <span>Pedido: <span className="font-medium text-zinc-700 dark:text-zinc-300">{log.order_id || '—'}</span></span>
+                      <span className="hidden sm:inline text-zinc-300 dark:text-zinc-700">|</span>
+                      <span>Valor: <span className="font-medium text-zinc-700 dark:text-zinc-300">{log.amount ? `${log.amount} ${log.currency || ''}` : '—'}</span></span>
+                      <span className="hidden sm:inline text-zinc-300 dark:text-zinc-700">|</span>
+                      <span className="text-zinc-400">{new Date(log.created_at).toLocaleString()}</span>
+                    </div>
+                    <svg className="h-4 w-4 text-zinc-400 transition-transform group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </summary>
+                  <div className="border-t border-zinc-100 dark:border-zinc-800/50 bg-zinc-50 dark:bg-zinc-900/30 p-4">
+                    <pre className="text-[10px] leading-relaxed text-zinc-600 dark:text-zinc-400 whitespace-pre-wrap break-words font-mono">
+                      {JSON.stringify(log.raw_payload || {}, null, 2)}
+                    </pre>
                   </div>
-                  <pre className="mt-2 text-[10px] leading-relaxed text-zinc-600 dark:text-zinc-400 whitespace-pre-wrap break-words max-h-60 overflow-y-auto bg-zinc-50 dark:bg-zinc-900/50 p-2 rounded border border-zinc-100 dark:border-zinc-800/50">
-                    {JSON.stringify(log.raw_payload || {}, null, 2)}
-                  </pre>
-                </div>
+                </details>
               ))}
             </div>
           )}
