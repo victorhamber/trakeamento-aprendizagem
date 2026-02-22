@@ -1,16 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { api } from '../../lib/api';
-import { useFlash } from '../../contexts/FlashContext';
 
 interface WebhooksTabProps {
   site: any;
   id: string;
   apiBaseUrl: string;
   webhookSecret: string;
+  showFlash: (msg: string, type?: 'success' | 'error') => void;
 }
 
-const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhookSecret }) => {
-  const { showFlash } = useFlash();
+const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhookSecret, showFlash }) => {
 
   const [customWebhooks, setCustomWebhooks] = useState<any[]>([]);
   const [editingWebhookId, setEditingWebhookId] = useState<string | null>(null);

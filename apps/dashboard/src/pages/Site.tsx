@@ -2967,6 +2967,7 @@ ${scriptContent}
               id={String(id)}
               apiBaseUrl={apiBaseUrl}
               webhookSecret={webhookSecret || ''}
+              showFlash={showFlash}
             />
           )}
 
