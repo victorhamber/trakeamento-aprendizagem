@@ -61,8 +61,11 @@ O documento descreve como dor principal:
 - Disponibilizar webhook autenticado (assinatura/segredo) para a plataforma de vendas.
 - Receber payload de compra e:
   - Normalizar dados essenciais (email/telefone hash, valor, moeda, produtos).
-  - Disparar evento Purchase via CAPI.
-  - Registrar a compra no banco para correlação com sessões/campanhas.
+  - Extrair UTMs e tokens de rastreamento (`trk_`) mesmo de estruturas aninhadas (ex: `purchase.origin`).
+  - Disparar evento Purchase via CAPI **apenas para compras aprovadas** (status `approved`, `paid`, etc).
+  - Compras pendentes (ex: `BILLET_PRINTED`) são salvas no banco para histórico, mas não disparam Purchase.
+  - Exibir payload enriquecido com debug visual do CAPI no painel para auditoria.
+- Registrar a compra no banco para correlação com sessões/campanhas.
 
 ### 5.4 Coleta de Performance do Meta Ads
 - Conectar a conta Meta (token) e buscar métricas por:

@@ -6,7 +6,8 @@
 - [x] Web SDK MVP (PageView + telemetria + event_id)
 - [x] Endpoint de ingestão com validação e persistência
 - [ ] Integração Meta CAPI com deduplicação (event_id)
-- [x] Webhook de compra (assinatura, normalização, Purchase via CAPI)
+- [x] Webhook de compra (assinatura, normalização, Purchase via CAPI e Debug Visual)
+- [ ] Teste real de envio CAPI em produção
 - [ ] Sync de insights do Meta Ads (jobs agendados)
 - [ ] Dashboard MVP (funil, páginas, anúncios)
 - [x] Tabela de campanhas com drilldown e métricas de funil
