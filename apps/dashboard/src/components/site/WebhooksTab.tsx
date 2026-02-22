@@ -529,32 +529,47 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
             </div>
           ) : (
             <div className="space-y-3">
-              {checkoutWebhookLogs.map((log, index) => (
-                <details key={log.id || index} className="group rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 overflow-hidden" open>
-                  <summary className="flex cursor-pointer items-center justify-between p-4 transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-900/50">
-                    <div className="flex flex-wrap items-center gap-3 text-[10px] text-zinc-600 dark:text-zinc-400">
-                      <div className="flex items-center gap-2">
-                        <span className={`w-1.5 h-1.5 rounded-full ${log.status === 'approved' || log.status === 'paid' ? 'bg-emerald-500' : 'bg-amber-500'}`} />
-                        <span className="font-semibold text-zinc-800 dark:text-zinc-200 uppercase tracking-wide">{log.platform || 'checkout'}</span>
+              {checkoutWebhookLogs.map((log, index) => {
+                const hasUser = !!log.buyer_email_hash;
+                const hasPixel = !!(log.fbp || log.fbc);
+                let statusColor = 'bg-red-500';
+                let statusTitle = 'Dados insuficientes (Falta Email e FBP/FBC)';
+
+                if (hasUser && hasPixel) {
+                  statusColor = 'bg-emerald-500';
+                  statusTitle = 'Dados completos (Email + FBP/FBC)';
+                } else if (hasUser || hasPixel) {
+                  statusColor = 'bg-amber-500';
+                  statusTitle = 'Dados parciais (Falta Email ou FBP/FBC)';
+                }
+
+                return (
+                  <details key={log.id || index} className="group rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 overflow-hidden" open>
+                    <summary className="flex cursor-pointer items-center justify-between p-4 transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-900/50">
+                      <div className="flex flex-wrap items-center gap-3 text-[10px] text-zinc-600 dark:text-zinc-400">
+                        <div className="flex items-center gap-2" title={statusTitle}>
+                          <span className={`w-2 h-2 rounded-full ${statusColor}`} />
+                          <span className="font-semibold text-zinc-800 dark:text-zinc-200 uppercase tracking-wide">{log.platform || 'checkout'}</span>
+                        </div>
+                        <span className="hidden sm:inline text-zinc-300 dark:text-zinc-700">|</span>
+                        <span>Pedido: <span className="font-medium text-zinc-700 dark:text-zinc-300">{log.order_id || '—'}</span></span>
+                        <span className="hidden sm:inline text-zinc-300 dark:text-zinc-700">|</span>
+                        <span>Valor: <span className="font-medium text-zinc-700 dark:text-zinc-300">{log.amount ? `${log.amount} ${log.currency || ''}` : '—'}</span></span>
+                        <span className="hidden sm:inline text-zinc-300 dark:text-zinc-700">|</span>
+                        <span className="text-zinc-400">{new Date(log.created_at).toLocaleString()}</span>
                       </div>
-                      <span className="hidden sm:inline text-zinc-300 dark:text-zinc-700">|</span>
-                      <span>Pedido: <span className="font-medium text-zinc-700 dark:text-zinc-300">{log.order_id || '—'}</span></span>
-                      <span className="hidden sm:inline text-zinc-300 dark:text-zinc-700">|</span>
-                      <span>Valor: <span className="font-medium text-zinc-700 dark:text-zinc-300">{log.amount ? `${log.amount} ${log.currency || ''}` : '—'}</span></span>
-                      <span className="hidden sm:inline text-zinc-300 dark:text-zinc-700">|</span>
-                      <span className="text-zinc-400">{new Date(log.created_at).toLocaleString()}</span>
+                      <svg className="h-4 w-4 text-zinc-400 transition-transform group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </summary>
+                    <div className="border-t border-zinc-100 dark:border-zinc-800/50 bg-zinc-50 dark:bg-zinc-900/30 p-4">
+                      <pre className="text-[10px] leading-relaxed text-zinc-600 dark:text-zinc-400 whitespace-pre-wrap break-words font-mono">
+                        {JSON.stringify(log.raw_payload || {}, null, 2)}
+                      </pre>
                     </div>
-                    <svg className="h-4 w-4 text-zinc-400 transition-transform group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </summary>
-                  <div className="border-t border-zinc-100 dark:border-zinc-800/50 bg-zinc-50 dark:bg-zinc-900/30 p-4">
-                    <pre className="text-[10px] leading-relaxed text-zinc-600 dark:text-zinc-400 whitespace-pre-wrap break-words font-mono">
-                      {JSON.stringify(log.raw_payload || {}, null, 2)}
-                    </pre>
-                  </div>
-                </details>
-              ))}
+                  </details>
+                );
+              })}
             </div>
           )}
         </div>
