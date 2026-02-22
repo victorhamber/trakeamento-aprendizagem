@@ -543,6 +543,8 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
                   statusTitle = 'Dados parciais (Falta Email ou FBP/FBC)';
                 }
 
+                const capi = log.raw_payload?._capi_debug;
+
                 return (
                   <details key={log.id || index} className="group rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 overflow-hidden" open>
                     <summary className="flex cursor-pointer items-center justify-between p-4 transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-900/50">
@@ -567,7 +569,86 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
                       </svg>
                     </summary>
                     <div className="border-t border-zinc-100 dark:border-zinc-800/50 bg-zinc-50 dark:bg-zinc-900/30 p-4">
-                      <pre className="text-[10px] leading-relaxed text-zinc-600 dark:text-zinc-400 whitespace-pre-wrap break-words font-mono">
+                      
+                      {/* CAPI Debug Visualization */}
+                      {capi && (
+                        <div className="mb-4 rounded-lg border border-indigo-100 bg-indigo-50/50 p-4 dark:border-indigo-900/30 dark:bg-indigo-900/10">
+                          <div className="mb-3 flex items-center gap-2">
+                            <div className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-100 text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-400">
+                              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+                            </div>
+                            <h5 className="text-xs font-semibold text-indigo-900 dark:text-indigo-300">
+                              Dados Mapeados para Meta CAPI
+                            </h5>
+                          </div>
+                          
+                          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                            {/* User Data Section */}
+                            <div>
+                              <h6 className="mb-2 text-[10px] font-bold uppercase tracking-wider text-indigo-400 dark:text-indigo-500">Dados do Usuário (Advanced Matching)</h6>
+                              <div className="space-y-1.5">
+                                {[
+                                  { label: 'Email (Hash)', val: capi.user_data?.em },
+                                  { label: 'Telefone (Hash)', val: capi.user_data?.ph },
+                                  { label: 'External ID', val: capi.user_data?.external_id, isHash: true }, // Usually hashed too
+                                  { label: 'FBP (Browser ID)', val: capi.user_data?.fbp, raw: true },
+                                  { label: 'FBC (Click ID)', val: capi.user_data?.fbc, raw: true },
+                                  { label: 'IP do Cliente', val: capi.user_data?.client_ip_address, raw: true },
+                                  { label: 'User Agent', val: capi.user_data?.client_user_agent, raw: true, truncate: true },
+                                ].map((field, i) => (
+                                  <div key={i} className="flex items-center justify-between text-[10px]">
+                                    <span className="text-zinc-500 dark:text-zinc-400">{field.label}:</span>
+                                    <span className={`font-mono max-w-[150px] truncate ${field.val ? 'text-emerald-600 dark:text-emerald-400 font-medium' : 'text-zinc-300 dark:text-zinc-700'}`}>
+                                      {field.val ? (field.raw ? (field.truncate ? field.val.substring(0, 20) + '...' : field.val) : '✓ Mapeado') : '—'}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Event Data Section */}
+                            <div>
+                              <h6 className="mb-2 text-[10px] font-bold uppercase tracking-wider text-indigo-400 dark:text-indigo-500">Dados do Evento</h6>
+                              <div className="space-y-1.5">
+                                <div className="flex items-center justify-between text-[10px]">
+                                  <span className="text-zinc-500 dark:text-zinc-400">Evento:</span>
+                                  <span className="font-mono text-indigo-600 dark:text-indigo-400 font-medium">{capi.event_name}</span>
+                                </div>
+                                <div className="flex items-center justify-between text-[10px]">
+                                  <span className="text-zinc-500 dark:text-zinc-400">Valor:</span>
+                                  <span className="font-mono text-zinc-700 dark:text-zinc-300">{capi.custom_data?.value}</span>
+                                </div>
+                                <div className="flex items-center justify-between text-[10px]">
+                                  <span className="text-zinc-500 dark:text-zinc-400">Moeda:</span>
+                                  <span className="font-mono text-zinc-700 dark:text-zinc-300">{capi.custom_data?.currency}</span>
+                                </div>
+                                <div className="flex items-center justify-between text-[10px]">
+                                  <span className="text-zinc-500 dark:text-zinc-400">URL Origem:</span>
+                                  <span className="font-mono text-zinc-700 dark:text-zinc-300 truncate max-w-[150px]" title={capi.event_source_url}>{capi.event_source_url || '—'}</span>
+                                </div>
+                                <div className="pt-2 mt-2 border-t border-indigo-100 dark:border-indigo-900/30">
+                                  <span className="block text-[9px] font-medium text-indigo-400 mb-1">Parâmetros UTM:</span>
+                                  <div className="grid grid-cols-2 gap-x-2 gap-y-1">
+                                    {['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'].map(utm => (
+                                      <div key={utm} className="flex justify-between text-[9px]">
+                                        <span className="text-zinc-400">{utm.replace('utm_', '')}:</span>
+                                        <span className={`font-mono ${capi.custom_data?.[utm] ? 'text-zinc-600 dark:text-zinc-300' : 'text-zinc-300 dark:text-zinc-700'}`}>
+                                          {capi.custom_data?.[utm] || '-'}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="flex items-center justify-between mb-2">
+                         <span className="text-[10px] font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Payload Original (JSON)</span>
+                      </div>
+                      <pre className="text-[10px] leading-relaxed text-zinc-600 dark:text-zinc-400 whitespace-pre-wrap break-words font-mono bg-white dark:bg-zinc-950 p-3 rounded border border-zinc-200 dark:border-zinc-800">
                         {JSON.stringify(log.raw_payload || {}, null, 2)}
                       </pre>
                     </div>
