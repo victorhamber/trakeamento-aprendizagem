@@ -58,45 +58,49 @@ async function processPurchaseWebhook({
   if (finalExternalId) payload._extracted_external_id = finalExternalId;
   if (sckRaw) payload._source_token = sckRaw;
 
+  // Build CAPI Payload for Debug & Future Use (even if not approved yet)
+  const capiPayload: any = {
+    event_name: 'Purchase',
+    event_time: Math.floor(Date.now() / 1000),
+    event_id: `purchase_${orderId}`,
+    event_source_url: payload.checkout_url || '',
+    user_data: {
+      client_ip_address: clientIp,
+      client_user_agent: clientUa,
+      em: email ? CapiService.hash(email) : undefined,
+      ph: phone ? CapiService.hash(phone.replace(/[^0-9]/g, '')) : undefined,
+      fn: firstName ? CapiService.hash(firstName.toLowerCase()) : undefined,
+      ln: lastName ? CapiService.hash(lastName.toLowerCase()) : undefined,
+      ct: city ? CapiService.hash(city.toLowerCase()) : undefined,
+      st: state ? CapiService.hash(state.toLowerCase()) : undefined,
+      zp: zip ? CapiService.hash(zip.replace(/\s+/g, '').toLowerCase()) : undefined,
+      country: country ? CapiService.hash(country.toLowerCase()) : undefined,
+      db: dob ? CapiService.hash(dob.replace(/[^0-9]/g, '')) : undefined,
+      fbp: finalFbp,
+      fbc: finalFbc,
+      external_id: finalExternalId ? CapiService.hash(String(finalExternalId)) : undefined,
+    },
+    custom_data: {
+      currency: currency,
+      value: value,
+      content_type: 'product',
+      utm_source: payload.utm_source || payload.trackingParameters?.utm_source || payload.tracking_parameters?.utm_source || payload.sck || payload.src || undefined,
+      utm_medium: payload.utm_medium || payload.trackingParameters?.utm_medium || payload.tracking_parameters?.utm_medium || undefined,
+      utm_campaign: payload.utm_campaign || payload.trackingParameters?.utm_campaign || payload.tracking_parameters?.utm_campaign || undefined,
+      utm_term: payload.utm_term || payload.trackingParameters?.utm_term || payload.tracking_parameters?.utm_term || undefined,
+      utm_content: payload.utm_content || payload.trackingParameters?.utm_content || payload.tracking_parameters?.utm_content || undefined,
+    },
+    action_source: 'system_generated'
+  };
+
+  if (capi_test_event_code) {
+    capiPayload.test_event_code = capi_test_event_code;
+  }
+
+  // Inject Debug Info into Payload (saved to DB for UI inspection)
+  payload._capi_debug = capiPayload;
+
   if (isApproved) {
-    const capiPayload: any = {
-      event_name: 'Purchase',
-      event_time: Math.floor(Date.now() / 1000),
-      event_id: `purchase_${orderId}`,
-      event_source_url: payload.checkout_url || '',
-      user_data: {
-        client_ip_address: clientIp,
-        client_user_agent: clientUa,
-        em: email ? CapiService.hash(email) : undefined,
-        ph: phone ? CapiService.hash(phone.replace(/[^0-9]/g, '')) : undefined,
-        fn: firstName ? CapiService.hash(firstName.toLowerCase()) : undefined,
-        ln: lastName ? CapiService.hash(lastName.toLowerCase()) : undefined,
-        ct: city ? CapiService.hash(city.toLowerCase()) : undefined,
-        st: state ? CapiService.hash(state.toLowerCase()) : undefined,
-        zp: zip ? CapiService.hash(zip.replace(/\s+/g, '').toLowerCase()) : undefined,
-        country: country ? CapiService.hash(country.toLowerCase()) : undefined,
-        db: dob ? CapiService.hash(dob.replace(/[^0-9]/g, '')) : undefined,
-        fbp: finalFbp,
-        fbc: finalFbc,
-        external_id: finalExternalId ? CapiService.hash(String(finalExternalId)) : undefined,
-      },
-      custom_data: {
-        currency: currency,
-        value: value,
-        content_type: 'product',
-        utm_source: payload.utm_source || payload.trackingParameters?.utm_source || payload.tracking_parameters?.utm_source || payload.sck || payload.src || undefined,
-        utm_medium: payload.utm_medium || payload.trackingParameters?.utm_medium || payload.tracking_parameters?.utm_medium || undefined,
-        utm_campaign: payload.utm_campaign || payload.trackingParameters?.utm_campaign || payload.tracking_parameters?.utm_campaign || undefined,
-        utm_term: payload.utm_term || payload.trackingParameters?.utm_term || payload.tracking_parameters?.utm_term || undefined,
-        utm_content: payload.utm_content || payload.trackingParameters?.utm_content || payload.tracking_parameters?.utm_content || undefined,
-      },
-      action_source: 'system_generated'
-    };
-
-    if (capi_test_event_code) {
-      capiPayload.test_event_code = capi_test_event_code;
-    }
-
     try {
       await pool.query(
         `INSERT INTO purchases (site_key, order_id, platform, amount, currency, status, buyer_email_hash, fbp, fbc, raw_payload)
