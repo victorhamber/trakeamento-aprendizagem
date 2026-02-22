@@ -446,6 +446,8 @@ router.get('/tracker.js', async (_req, res) => {
       if (ln) setHashedCookie('_ta_ln', ln, normName);
 
       var auto = autoExtractIdentify(raw);
+      if (!fn && auto.fn) setHashedCookie('_ta_fn', auto.fn, normName);
+      if (!ln && auto.ln) setHashedCookie('_ta_ln', auto.ln, normName);
       if (auto.ct) setHashedCookie('_ta_ct', auto.ct, normCityState);
       if (auto.st) setHashedCookie('_ta_st', auto.st, normCityState);
       if (auto.zp) setHashedCookie('_ta_zp', auto.zp, normZip);
