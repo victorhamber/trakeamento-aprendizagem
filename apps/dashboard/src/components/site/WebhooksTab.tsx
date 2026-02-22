@@ -63,7 +63,7 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
   const loadCheckoutWebhookLogs = async () => {
     setCheckoutLogsBusy(true);
     try {
-      const res = await api.get(`/sites/${id}/checkout-simulator/webhooks`, { params: { limit: 5 } });
+      const res = await api.get(`/sites/${id}/checkout-simulator/webhooks`, { params: { limit: 1 } });
       setCheckoutWebhookLogs(res.data.logs || []);
     } catch (err) {
       console.error('Failed to load checkout simulator logs', err);
@@ -484,8 +484,8 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
         <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/40 p-5 space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <h4 className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 uppercase tracking-wider">Capturas do Webhook</h4>
-              <p className="text-xs text-zinc-600 dark:text-zinc-500 mt-1">Mostra os últimos eventos de compra registrados.</p>
+              <h4 className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 uppercase tracking-wider">Última Captura do Webhook</h4>
+              <p className="text-xs text-zinc-600 dark:text-zinc-500 mt-1">Mostra o último evento de compra registrado.</p>
             </div>
             <button
               onClick={loadCheckoutWebhookLogs}
@@ -503,7 +503,7 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
           ) : (
             <div className="space-y-3">
               {checkoutWebhookLogs.map((log, index) => (
-                <details key={log.id || index} className="group rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 overflow-hidden">
+                <details key={log.id || index} className="group rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 overflow-hidden" open>
                   <summary className="flex cursor-pointer items-center justify-between p-4 transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-900/50">
                     <div className="flex flex-wrap items-center gap-3 text-[10px] text-zinc-600 dark:text-zinc-400">
                       <div className="flex items-center gap-2">
