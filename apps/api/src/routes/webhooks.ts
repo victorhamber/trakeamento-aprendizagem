@@ -52,6 +52,12 @@ async function processPurchaseWebhook({
   const finalFbc = trkFbc || fbc;
   const finalFbp = trkFbp || fbp;
 
+  // Enrich payload for UI visibility (so user sees what we extracted)
+  if (finalFbp) payload._extracted_fbp = finalFbp;
+  if (finalFbc) payload._extracted_fbc = finalFbc;
+  if (finalExternalId) payload._extracted_external_id = finalExternalId;
+  if (sckRaw) payload._source_token = sckRaw;
+
   if (isApproved) {
     const capiPayload: any = {
       event_name: 'Purchase',
