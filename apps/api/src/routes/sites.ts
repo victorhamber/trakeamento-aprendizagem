@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { pool } from '../db/pool';
 import { requireAuth } from '../middleware/auth';
 import { encryptString, decryptString } from '../lib/crypto';
+import { capiService, CapiService } from '../services/capi';
 
 const router = Router();
 
@@ -33,6 +34,23 @@ const sanitizeMapping = (input: unknown) => {
     mapping[key] = cleaned;
   }
   return mapping;
+};
+
+const buildFbp = () => `fb.1.${Math.floor(Date.now() / 1000)}.${crypto.randomBytes(8).toString('hex')}`;
+const buildFbc = () => `fb.1.${Math.floor(Date.now() / 1000)}.${crypto.randomBytes(8).toString('hex')}`;
+const buildTrkToken = (externalId: string, fbc: string, fbp: string) =>
+  `trk_${Buffer.from(`${externalId}|${fbc}|${fbp}`).toString('base64')}`;
+
+const toNullableString = (value: unknown) =>
+  typeof value === 'string' && value.trim() ? value.trim() : null;
+
+const toNumberOrNull = (value: unknown) => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Number(value.replace(',', '.'));
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
 };
 
 router.get('/', requireAuth, async (req, res) => {
@@ -76,6 +94,202 @@ router.get('/:siteId/secret', requireAuth, async (req, res) => {
   }
 
   return res.json({ secret });
+});
+
+router.get('/:siteId/checkout-simulator', requireAuth, async (req, res) => {
+  const auth = req.auth!;
+  const siteId = Number(req.params.siteId);
+  if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
+
+  const site = await pool.query('SELECT id FROM sites WHERE id = $1 AND account_id = $2', [siteId, auth.accountId]);
+  if (!site.rowCount) return res.status(404).json({ error: 'Site not found' });
+
+  const result = await pool.query('SELECT checkout_url FROM checkout_simulators WHERE site_id = $1', [siteId]);
+  return res.json({ checkout_url: result.rows[0]?.checkout_url || null });
+});
+
+router.put('/:siteId/checkout-simulator', requireAuth, async (req, res) => {
+  const auth = req.auth!;
+  const siteId = Number(req.params.siteId);
+  const { checkout_url } = req.body || {};
+  if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
+
+  const site = await pool.query('SELECT id FROM sites WHERE id = $1 AND account_id = $2', [siteId, auth.accountId]);
+  if (!site.rowCount) return res.status(404).json({ error: 'Site not found' });
+
+  const cleaned = toNullableString(checkout_url);
+  if (cleaned) {
+    try {
+      new URL(cleaned);
+    } catch {
+      return res.status(400).json({ error: 'Invalid checkout_url' });
+    }
+  }
+
+  await pool.query(
+    `INSERT INTO checkout_simulators (site_id, checkout_url)
+     VALUES ($1, $2)
+     ON CONFLICT (site_id) DO UPDATE SET checkout_url = EXCLUDED.checkout_url, updated_at = NOW()`,
+    [siteId, cleaned]
+  );
+
+  return res.json({ ok: true, checkout_url: cleaned });
+});
+
+router.post('/:siteId/checkout-simulator/generate', requireAuth, async (req, res) => {
+  const auth = req.auth!;
+  const siteId = Number(req.params.siteId);
+  if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
+
+  const site = await pool.query('SELECT site_key FROM sites WHERE id = $1 AND account_id = $2', [siteId, auth.accountId]);
+  if (!site.rowCount) return res.status(404).json({ error: 'Site not found' });
+
+  const stored = await pool.query('SELECT checkout_url FROM checkout_simulators WHERE site_id = $1', [siteId]);
+  const body = req.body || {};
+  const checkoutUrl = toNullableString(body.checkout_url) || stored.rows[0]?.checkout_url;
+  if (!checkoutUrl) return res.status(400).json({ error: 'Missing checkout_url' });
+
+  let url: URL;
+  try {
+    url = new URL(checkoutUrl);
+  } catch {
+    return res.status(400).json({ error: 'Invalid checkout_url' });
+  }
+
+  const externalId = toNullableString(body.external_id) || `lead_${randomKey(8)}`;
+  const fbp = toNullableString(body.fbp) || buildFbp();
+  const fbc = toNullableString(body.fbc) || buildFbc();
+  const trkToken = buildTrkToken(externalId, fbc, fbp);
+
+  const params: Record<string, string | null> = {
+    utm_source: toNullableString(body.utm_source),
+    utm_medium: toNullableString(body.utm_medium),
+    utm_campaign: toNullableString(body.utm_campaign),
+    utm_content: toNullableString(body.utm_content),
+    utm_term: toNullableString(body.utm_term),
+    fbp,
+    fbc,
+    sck: trkToken,
+    src: trkToken,
+  };
+
+  for (const [k, v] of Object.entries(params)) {
+    if (v) url.searchParams.set(k, v);
+  }
+
+  return res.json({
+    generated_url: url.toString(),
+    fbp,
+    fbc,
+    external_id: externalId,
+    trk: trkToken,
+  });
+});
+
+router.post('/:siteId/checkout-simulator/lead', requireAuth, async (req, res) => {
+  const auth = req.auth!;
+  const siteId = Number(req.params.siteId);
+  if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
+
+  const site = await pool.query('SELECT site_key FROM sites WHERE id = $1 AND account_id = $2', [siteId, auth.accountId]);
+  if (!site.rowCount) return res.status(404).json({ error: 'Site not found' });
+  const siteKey = site.rows[0].site_key as string;
+
+  const body = req.body || {};
+  const email = toNullableString(body.email);
+  const phone = toNullableString(body.phone);
+  const firstName = toNullableString(body.first_name);
+  const lastName = toNullableString(body.last_name);
+  const fbp = toNullableString(body.fbp);
+  const fbc = toNullableString(body.fbc);
+  const externalId = toNullableString(body.external_id);
+  const eventSourceUrl = toNullableString(body.event_source_url) || '';
+  const value = toNumberOrNull(body.value);
+  const currency = toNullableString(body.currency) || 'BRL';
+
+  const eventTimeSec = Math.floor(Date.now() / 1000);
+  const eventId = `lead_${eventTimeSec}_${crypto.randomBytes(3).toString('hex')}`;
+
+  const userData = {
+    client_ip_address: (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip || '',
+    client_user_agent: (req.headers['user-agent'] as string) || '',
+    em: email ? CapiService.hash(email) : undefined,
+    ph: phone ? CapiService.hash(phone.replace(/[^0-9]/g, '')) : undefined,
+    fn: firstName ? CapiService.hash(firstName.toLowerCase()) : undefined,
+    ln: lastName ? CapiService.hash(lastName.toLowerCase()) : undefined,
+    fbp: fbp || undefined,
+    fbc: fbc || undefined,
+    external_id: externalId ? CapiService.hash(externalId) : undefined,
+  };
+
+  const customData: Record<string, unknown> = { content_type: 'product' };
+  if (value !== null) customData.value = value;
+  if (currency) customData.currency = currency;
+
+  await pool.query(
+    `INSERT INTO web_events(
+      site_key, event_id, event_name, event_time,
+      event_source_url, user_data, custom_data, telemetry, raw_payload
+    ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    ON CONFLICT(site_key, event_id) DO NOTHING`,
+    [
+      siteKey,
+      eventId,
+      'Lead',
+      new Date(eventTimeSec * 1000),
+      eventSourceUrl,
+      userData,
+      customData,
+      null,
+      { event_name: 'Lead', event_id: eventId, event_time: eventTimeSec, event_source_url: eventSourceUrl, user_data: userData, custom_data: customData },
+    ]
+  );
+
+  capiService.sendEvent(siteKey, {
+    event_name: 'Lead',
+    event_time: eventTimeSec,
+    event_id: eventId,
+    event_source_url: eventSourceUrl,
+    user_data: userData,
+    custom_data: customData,
+  }).catch(() => { });
+
+  await pool.query(
+    `UPDATE integrations_meta i
+     SET last_ingest_at = NOW(),
+         last_ingest_event_name = $1,
+         last_ingest_event_id = $2,
+         last_ingest_event_source_url = $3
+     FROM sites s
+     WHERE s.site_key = $4 AND i.site_id = s.id`,
+    ['Lead', eventId, eventSourceUrl, siteKey]
+  );
+
+  return res.json({ ok: true, event_id: eventId });
+});
+
+router.get('/:siteId/checkout-simulator/webhooks', requireAuth, async (req, res) => {
+  const auth = req.auth!;
+  const siteId = Number(req.params.siteId);
+  if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
+
+  const site = await pool.query('SELECT site_key FROM sites WHERE id = $1 AND account_id = $2', [siteId, auth.accountId]);
+  if (!site.rowCount) return res.status(404).json({ error: 'Site not found' });
+
+  const limitRaw = Number(req.query.limit || 10);
+  const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 50) : 10;
+
+  const result = await pool.query(
+    `SELECT p.id, p.order_id, p.platform, p.amount, p.currency, p.status, p.created_at, p.raw_payload
+     FROM purchases p
+     JOIN sites s ON s.site_key = p.site_key
+     WHERE s.id = $1 AND s.account_id = $2
+     ORDER BY p.created_at DESC
+     LIMIT $3`,
+    [siteId, auth.accountId, limit]
+  );
+
+  return res.json({ logs: result.rows });
 });
 
 router.delete('/:siteId', requireAuth, async (req, res) => {
