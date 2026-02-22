@@ -45,11 +45,31 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
     }
   }, [id]);
 
+  const fillDummyData = useCallback(() => {
+    const ts = Date.now();
+    const random = Math.floor(Math.random() * 1000);
+    setCheckoutEmail(`teste.${random}@exemplo.com`);
+    setCheckoutPhone('5511999999999');
+    setCheckoutFirstName('João');
+    setCheckoutLastName('Silva');
+    setCheckoutExternalId(`lead_${ts}`);
+    setCheckoutFbp(`fb.1.${Math.floor(ts / 1000)}.${random}`);
+    setCheckoutFbc(`fb.1.${Math.floor(ts / 1000)}.${random}`);
+    setCheckoutUtmSource('facebook');
+    setCheckoutUtmMedium('cpc');
+    setCheckoutUtmCampaign('verao_2024');
+    setCheckoutUtmContent('video_review');
+    setCheckoutUtmTerm('lookalike_1');
+    setCheckoutValue('97.00');
+    setCheckoutCurrency('BRL');
+  }, []);
+
   useEffect(() => {
     loadCustomWebhooks();
     loadCheckoutSimulator();
     loadCheckoutWebhookLogs();
-  }, [loadCustomWebhooks]);
+    fillDummyData();
+  }, [loadCustomWebhooks, fillDummyData]);
 
   const loadCheckoutSimulator = async () => {
     try {
@@ -308,6 +328,13 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
                 className="flex items-center gap-2 bg-zinc-900 hover:bg-zinc-800 text-white px-4 py-2 rounded-lg text-xs font-medium transition-colors disabled:opacity-60"
               >
                 Salvar URL
+              </button>
+              <button
+                onClick={fillDummyData}
+                disabled={checkoutBusy}
+                className="flex items-center gap-2 bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 px-4 py-2 rounded-lg text-xs font-medium transition-colors"
+              >
+                Preencher
               </button>
               <button
                 onClick={generateCheckoutUrl}
