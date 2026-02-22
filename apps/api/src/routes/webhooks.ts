@@ -1,4 +1,4 @@
-﻿import { Router } from 'express';
+import { Router } from 'express';
 import crypto from 'crypto';
 import { pool } from '../db/pool';
 import { capiService, CapiService } from '../services/capi';
@@ -26,32 +26,33 @@ async function processPurchaseWebhook({
 
   const dbEmailHash = email ? CapiService.hash(email) : null;
 
-  if (isApproved) {
-    let trkEid = '';
-    let trkFbc = '';
-    let trkFbp = '';
-    const sckRaw = payload.sck || payload.src || '';
-    if (typeof sckRaw === 'string' && sckRaw.includes('trk_')) {
-      try {
-        const parts = sckRaw.split('-');
-        const trkPart = parts.find((p: string) => p.startsWith('trk_'));
-        if (trkPart) {
-          const b64 = trkPart.substring(4);
-          const decoded = Buffer.from(b64, 'base64').toString('utf-8');
-          const ids = decoded.split('|');
-          if (ids[0]) trkEid = ids[0];
-          if (ids[1]) trkFbc = ids[1];
-          if (ids[2]) trkFbp = ids[2];
-        }
-      } catch (e) {
-        console.error('[Webhook] Failed to decode trk_ parameter:', e);
+  // Extract tracking token from payload if present (works for both approved and non-approved)
+  let trkEid = '';
+  let trkFbc = '';
+  let trkFbp = '';
+  const sckRaw = payload.sck || payload.src || '';
+  if (typeof sckRaw === 'string' && sckRaw.includes('trk_')) {
+    try {
+      const parts = sckRaw.split('-');
+      const trkPart = parts.find((p: string) => p.startsWith('trk_')) || (sckRaw.startsWith('trk_') ? sckRaw : undefined);
+      if (trkPart) {
+        const b64 = trkPart.substring(4);
+        const decoded = Buffer.from(b64, 'base64').toString('utf-8');
+        const ids = decoded.split('|');
+        if (ids[0]) trkEid = ids[0];
+        if (ids[1]) trkFbc = ids[1];
+        if (ids[2]) trkFbp = ids[2];
       }
+    } catch (e) {
+      console.error('[Webhook] Failed to decode trk_ parameter:', e);
     }
+  }
 
-    const finalExternalId = trkEid || externalId;
-    const finalFbc = trkFbc || fbc;
-    const finalFbp = trkFbp || fbp;
+  const finalExternalId = trkEid || externalId;
+  const finalFbc = trkFbc || fbc;
+  const finalFbp = trkFbp || fbp;
 
+  if (isApproved) {
     const capiPayload: any = {
       event_name: 'Purchase',
       event_time: Math.floor(Date.now() / 1000),
@@ -98,7 +99,9 @@ async function processPurchaseWebhook({
            amount = EXCLUDED.amount,
            currency = EXCLUDED.currency,
            status = EXCLUDED.status,
-           raw_payload = EXCLUDED.raw_payload`,
+           raw_payload = EXCLUDED.raw_payload,
+           fbp = EXCLUDED.fbp,
+           fbc = EXCLUDED.fbc`,
         [siteKey, orderId, platform, value, currency, status, dbEmailHash, finalFbp, finalFbc, JSON.stringify(payload)]
       );
 
@@ -120,8 +123,10 @@ async function processPurchaseWebhook({
            amount = EXCLUDED.amount,
            currency = EXCLUDED.currency,
            status = EXCLUDED.status,
-           raw_payload = EXCLUDED.raw_payload`,
-        [siteKey, orderId, platform, value, currency, status, dbEmailHash, fbp, fbc, JSON.stringify(payload)]
+           raw_payload = EXCLUDED.raw_payload,
+           fbp = EXCLUDED.fbp,
+           fbc = EXCLUDED.fbc`,
+        [siteKey, orderId, platform, value, currency, status, dbEmailHash, finalFbp, finalFbc, JSON.stringify(payload)]
       );
     } catch (e) {
       console.error('[Webhook] Refund DB DB Error:', e);
@@ -294,6 +299,19 @@ router.post('/hotmart', async (req, res) => {
 
   const buyer = d.buyer || payload.buyer || {};
   const purchase = d.purchase || payload.purchase || {};
+
+  // Extract Origin data from Hotmart (where UTMs and tracking tokens usually live)
+  const origin = purchase.origin || {};
+  if (origin.sck) payload.sck = origin.sck;
+  if (origin.src) payload.src = origin.src;
+  if (origin.xcod) payload.xcod = origin.xcod;
+  
+  // Extract UTMs if present in origin (Hotmart sometimes sends them here)
+  if (origin.utm_source) payload.utm_source = origin.utm_source;
+  if (origin.utm_medium) payload.utm_medium = origin.utm_medium;
+  if (origin.utm_campaign) payload.utm_campaign = origin.utm_campaign;
+  if (origin.utm_content) payload.utm_content = origin.utm_content;
+  if (origin.utm_term) payload.utm_term = origin.utm_term;
 
   const email = buyer.email || payload.email;
   const firstName = buyer.first_name || buyer.name?.split(' ')[0] || payload.first_name;
