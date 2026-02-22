@@ -1,0 +1,16 @@
+{
+  on_demand_tls {
+    ask http://{env.CADDY_UPSTREAM}/public/allow-domain?domain={host}&token={env.CADDY_ASK_TOKEN}
+  }
+}
+
+:80 {
+  redir https://{host}{uri}
+}
+
+:443 {
+  tls {
+    on_demand
+  }
+  reverse_proxy {env.CADDY_UPSTREAM}
+}
