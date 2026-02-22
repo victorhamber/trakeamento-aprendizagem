@@ -19,9 +19,11 @@ const findEnvFile = (): string | null => {
   return null;
 };
 
-const envPath = findEnvFile();
-if (envPath) dotenv.config({ path: envPath });
-else dotenv.config();
+if (process.env.NODE_ENV !== 'production') {
+  const envPath = findEnvFile();
+  if (envPath) dotenv.config({ path: envPath });
+  else dotenv.config();
+}
 
 const databaseUrl = process.env.DATABASE_URL;
 
