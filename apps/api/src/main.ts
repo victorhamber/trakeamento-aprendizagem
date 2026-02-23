@@ -103,6 +103,19 @@ app.get('/health', async (req, res) => {
   }
 });
 
+// ─── 30-Day Garbage Collector ────────────────────────────────────────────────
+// Deletes tracking events and logs older than 30 days. Leaves `purchases` intact.
+async function runDataRetentionCleanup() {
+  try {
+    console.log('[GarbageCollector] Started 30-day retention cleanup routine...');
+    const resultEvents = await pool.query(`DELETE FROM web_events WHERE event_time < NOW() - INTERVAL '30 days'`);
+    const resultOutbox = await pool.query(`DELETE FROM capi_outbox WHERE created_at < NOW() - INTERVAL '30 days'`);
+    console.log(`[GarbageCollector] Cleanup finished. Deleted ${resultEvents.rowCount} old web_events and ${resultOutbox.rowCount} old capi_outbox logs.`);
+  } catch (e) {
+    console.error('[GarbageCollector] Failed to execute cleanup query:', e);
+  }
+}
+
 (async () => {
   try {
     console.log('Initializing API...');
@@ -117,6 +130,12 @@ app.get('/health', async (req, res) => {
     setInterval(() => {
       capiService.processOutbox().catch((err) => console.error('Background CAPI worker error:', err));
     }, 60 * 1000); // Check outbox every minute
+
+    // Start 30-Day Garbage Collector
+    setTimeout(() => {
+      runDataRetentionCleanup();
+      setInterval(runDataRetentionCleanup, 24 * 60 * 60 * 1000); // Every 24 hours
+    }, 5 * 60 * 1000); // Delay first execution by 5 minutes after server start to not block boot
 
   } catch (err) {
     console.error('CRITICAL ERROR during startup:', err);

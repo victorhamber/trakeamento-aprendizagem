@@ -279,6 +279,26 @@ export const ensureSchema = async (pool: Pool) => {
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS custom_event_name VARCHAR(120)');
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS custom_event_count INTEGER');
 
+    // Add missing FK constraints for orphaned data prevention
+    try {
+      await pool.query(`
+        DO $$
+        BEGIN
+          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_web_events_site_key') THEN
+            ALTER TABLE web_events ADD CONSTRAINT fk_web_events_site_key FOREIGN KEY (site_key) REFERENCES sites(site_key) ON DELETE CASCADE;
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_purchases_site_key') THEN
+            ALTER TABLE purchases ADD CONSTRAINT fk_purchases_site_key FOREIGN KEY (site_key) REFERENCES sites(site_key) ON DELETE CASCADE;
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_capi_outbox_site_key') THEN
+            ALTER TABLE capi_outbox ADD CONSTRAINT fk_capi_outbox_site_key FOREIGN KEY (site_key) REFERENCES sites(site_key) ON DELETE CASCADE;
+          END IF;
+        END $$;
+      `);
+    } catch (fkErr) {
+      console.warn('Foreign key constraints update skipped:', fkErr);
+    }
+
     // Create custom webhooks table dynamically if it doesn't exist (for existing users)
     await pool.query(`
       CREATE TABLE IF NOT EXISTS custom_webhooks (

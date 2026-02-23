@@ -166,6 +166,8 @@ router.post('/purchase', async (req, res) => {
   const signature = req.headers['x-webhook-signature'] as string | undefined;
   const timestamp = req.headers['x-webhook-timestamp'] as string | undefined;
   const rawBody = req.body;
+  if (!rawBody) return res.status(400).json({ error: 'Empty payload' });
+
   const siteKey = (req.headers['x-site-key'] as string) || (req.query.key as string);
   if (!siteKey) return res.status(400).json({ error: 'Missing site key' });
 
@@ -198,7 +200,16 @@ router.post('/purchase', async (req, res) => {
     if (expected !== signature) return res.status(401).json({ error: 'Invalid webhook signature' });
   }
 
-  const payload = JSON.parse(rawBody.toString());
+  let payload;
+  try {
+    payload = typeof rawBody === 'string' ? JSON.parse(rawBody) : rawBody;
+  } catch (e) {
+    return res.status(400).json({ error: 'Invalid JSON payload' });
+  }
+
+  if (!payload || typeof payload !== 'object') {
+    return res.status(400).json({ error: 'Invalid payload structure' });
+  }
 
   // ExtraÃ§Ã£o de dados (fbp/fbc vindos da URL do checkout)
   const fbp = payload.fbp || payload.custom_args?.fbp;
@@ -303,10 +314,14 @@ router.post('/hotmart', async (req, res) => {
   if (token !== secret) return res.status(401).json({ error: 'Invalid webhook token' });
 
   const payload = req.body;
+
+  if (!payload || typeof payload !== 'object') {
+    return res.status(400).json({ error: 'Invalid payload' });
+  }
+
   console.log(`[Hotmart] RAW PAYLOAD KEYS: ${JSON.stringify(Object.keys(payload))}`);
   console.log(`[Hotmart] payload.data type: ${typeof payload.data}, keys: ${payload.data ? JSON.stringify(Object.keys(payload.data)) : 'N/A'}`);
   console.log(`[Hotmart] payload.data?.purchase: ${JSON.stringify(payload.data?.purchase)?.slice(0, 300)}`);
-  if (typeof payload !== 'object') return res.status(400).json({ error: 'Invalid payload' });
 
   // Hotmart v2 nests everything under payload.data; v1 uses payload directly
   const d = payload.data || payload;
@@ -385,7 +400,7 @@ router.post('/kiwify', async (req, res) => {
   if (token !== secret) return res.status(401).json({ error: 'Invalid webhook token' });
 
   const payload = req.body;
-  if (typeof payload !== 'object') return res.status(400).json({ error: 'Invalid payload' });
+  if (!payload || typeof payload !== 'object') return res.status(400).json({ error: 'Invalid payload' });
 
   // Use tracking info if present
   const fbp = payload.tracking?.fbp || payload.fbp;
@@ -440,6 +455,11 @@ router.post('/kiwify', async (req, res) => {
 router.post('/custom/:id', async (req, res) => {
   const webhookId = req.params.id;
   const payload = req.body;
+
+  if (!payload || typeof payload !== 'object') {
+    return res.status(400).json({ error: 'Invalid payload structure' });
+  }
+
   if (!webhookId) return res.status(400).json({ error: 'Missing webhook ID' });
 
   // Pega o webhook e a site_key atrelada a ele
