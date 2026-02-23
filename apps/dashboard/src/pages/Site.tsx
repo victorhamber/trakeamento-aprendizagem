@@ -2233,66 +2233,95 @@ ${scriptContent}
                   </div>
                 </div>
               </div>
-              <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/30 p-5">
-                <div className="flex items-center justify-between gap-3 mb-3">
-                  <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-500">
-                    URL final
-                  </h4>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      disabled={!utmUrl}
-                      onClick={() => setShowSaveUtmModal(true)}
-                      className="text-[11px] border border-zinc-700 bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-400 dark:text-zinc-300 px-3 py-2 rounded-lg transition-colors disabled:opacity-40"
-                    >
-                      Salvar
-                    </button>
-                    <button
-                      type="button"
-                      disabled={!utmUrl}
-                      onClick={() => {
-                        if (!utmUrl) return;
-                        navigator.clipboard.writeText(utmUrl);
-                        showFlash('URL copiada!');
-                      }}
-                      className="text-[11px] border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/70 hover:bg-zinc-50 dark:hover:bg-zinc-900 text-zinc-600 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 px-3 py-2 rounded-lg transition-colors disabled:opacity-40"
-                    >
-                      Copiar URL
-                    </button>
-                  </div>
-                </div>
-                <div className="text-xs text-zinc-700 dark:text-zinc-300 break-all">
-                  {utmUrl || 'Preencha a URL base e UTMs para gerar o link.'}
-                </div>
-
-                {showSaveUtmModal && (
-                  <div className="mt-4 pt-4 border-t border-zinc-700/50">
-                    <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Nome para salvar</label>
-                    <div className="flex gap-2">
-                      <input
-                        value={saveUtmName}
-                        onChange={(e) => setSaveUtmName(e.target.value)}
-                        placeholder="Ex: Campanha Black Friday"
-                        className="flex-1 rounded-lg bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-200 outline-none focus:border-zinc-600"
-                      />
+              <div className="space-y-4">
+                <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/30 p-5">
+                  <div className="flex items-center justify-between gap-3 mb-3">
+                    <h4 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-blue-600 dark:text-blue-400">
+                      Parâmetros da URL (Meta Ads)
+                      <span className="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 px-1.5 py-0.5 rounded text-[10px] font-bold">Use este no Meta</span>
+                    </h4>
+                    <div className="flex items-center gap-2">
                       <button
                         type="button"
-                        onClick={saveCurrentUtm}
-                        className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-xs font-medium transition-colors"
+                        disabled={!utmUrl || utmUrl.indexOf('?') === -1}
+                        onClick={() => {
+                          if (!utmUrl || utmUrl.indexOf('?') === -1) return;
+                          const queryOnly = utmUrl.substring(utmUrl.indexOf('?') + 1);
+                          navigator.clipboard.writeText(queryOnly);
+                          showFlash('Parâmetros copiados!');
+                        }}
+                        className="text-[11px] border border-blue-500/30 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/40 text-blue-700 dark:text-blue-300 px-3 py-2 rounded-lg transition-colors disabled:opacity-40"
                       >
-                        Confirmar
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setShowSaveUtmModal(false)}
-                        className="bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-400 dark:text-zinc-300 px-4 py-2 rounded-lg text-xs font-medium transition-colors"
-                      >
-                        Cancelar
+                        Copiar Parâmetros
                       </button>
                     </div>
                   </div>
-                )}
+                  <div className="text-xs text-zinc-800 dark:text-zinc-200 break-all font-mono bg-white dark:bg-black/20 p-3 rounded-lg border border-zinc-200 dark:border-zinc-800">
+                    {utmUrl && utmUrl.indexOf('?') !== -1 ? utmUrl.substring(utmUrl.indexOf('?') + 1) : 'Preencha as UTMs para gerar os parâmetros.'}
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/30 p-5 opacity-75 hover:opacity-100 transition-opacity">
+                  <div className="flex items-center justify-between gap-3 mb-3">
+                    <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-500">
+                      URL Final Completa
+                    </h4>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={!utmUrl}
+                        onClick={() => setShowSaveUtmModal(true)}
+                        className="text-[11px] border border-zinc-700 bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-400 dark:text-zinc-300 px-3 py-2 rounded-lg transition-colors disabled:opacity-40"
+                      >
+                        Salvar
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!utmUrl}
+                        onClick={() => {
+                          if (!utmUrl) return;
+                          navigator.clipboard.writeText(utmUrl);
+                          showFlash('URL copiada!');
+                        }}
+                        className="text-[11px] border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/70 hover:bg-zinc-50 dark:hover:bg-zinc-900 text-zinc-600 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 px-3 py-2 rounded-lg transition-colors disabled:opacity-40"
+                      >
+                        Copiar URL
+                      </button>
+                    </div>
+                  </div>
+                  <div className="text-[11px] text-zinc-500 dark:text-zinc-400 break-all bg-white dark:bg-black/20 p-2 rounded border border-zinc-200 dark:border-zinc-800/50">
+                    {utmUrl || 'Preencha a URL base e UTMs para gerar o link.'}
+                  </div>
+                </div>
               </div>
+
+              {showSaveUtmModal && (
+                <div className="mt-4 pt-4 border-t border-zinc-700/50">
+                  <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Nome para salvar</label>
+                  <div className="flex gap-2">
+                    <input
+                      value={saveUtmName}
+                      onChange={(e) => setSaveUtmName(e.target.value)}
+                      placeholder="Ex: Campanha Black Friday"
+                      className="flex-1 rounded-lg bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-200 outline-none focus:border-zinc-600"
+                    />
+                    <button
+                      type="button"
+                      onClick={saveCurrentUtm}
+                      className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-xs font-medium transition-colors"
+                    >
+                      Confirmar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowSaveUtmModal(false)}
+                      className="bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-400 dark:text-zinc-300 px-4 py-2 rounded-lg text-xs font-medium transition-colors"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {savedUtms.length > 0 && (
                 <div className="space-y-3">
@@ -3445,6 +3474,6 @@ ${scriptContent}
           )}
         </div>
       </div>
-    </Layout>
+    </Layout >
   );
 };
