@@ -197,21 +197,16 @@ const SalesChart = ({ data, currency, isDark }: { data: DailyPoint[]; currency: 
   const iW = W - PAD.left - PAD.right;
   const iH = H - PAD.top - PAD.bottom;
 
-  if (!data || data.length === 0) return (
-    <div className="flex items-center justify-center h-[180px] text-xs text-zinc-400 dark:text-zinc-600">
-      Sem dados no período selecionado
-    </div>
-  );
+  const hasData = data && data.length > 0;
+  const revenues = hasData ? data.map(d => Number(d.revenue)) : [];
+  const maxRev = hasData ? Math.max(...revenues, 1) : 1;
 
-  const revenues = data.map(d => Number(d.revenue));
-  const maxRev = Math.max(...revenues, 1);
-
-  const xStep = iW / Math.max(data.length - 1, 1);
-  const pts = data.map((d, i) => ({
+  const xStep = hasData ? iW / Math.max(data.length - 1, 1) : 0;
+  const pts = hasData ? data.map((d, i) => ({
     x: PAD.left + i * xStep,
     y: PAD.top + iH - (Number(d.revenue) / maxRev) * iH,
     d,
-  }));
+  })) : [];
 
   const polyline = pts.map(p => `${p.x},${p.y}`).join(' ');
 
@@ -238,11 +233,13 @@ const SalesChart = ({ data, currency, isDark }: { data: DailyPoint[]; currency: 
 
   // X-axis labels (max 7 evenly spaced)
   const xLabelIdxs: number[] = [];
-  if (data.length <= 7) {
-    data.forEach((_, i) => xLabelIdxs.push(i));
-  } else {
-    const step = Math.floor((data.length - 1) / 6);
-    for (let i = 0; i <= 6; i++) xLabelIdxs.push(Math.min(i * step, data.length - 1));
+  if (hasData) {
+    if (data.length <= 7) {
+      data.forEach((_, i) => xLabelIdxs.push(i));
+    } else {
+      const step = Math.floor((data.length - 1) / 6);
+      for (let i = 0; i <= 6; i++) xLabelIdxs.push(Math.min(i * step, data.length - 1));
+    }
   }
 
   const lineColor = isDark ? '#34d399' : '#059669';
@@ -251,6 +248,7 @@ const SalesChart = ({ data, currency, isDark }: { data: DailyPoint[]; currency: 
   const textColor = isDark ? '#71717a' : '#6b7280';
 
   const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (!hasData) return;
     const svgEl = svgRef.current;
     if (!svgEl) return;
     const rect = svgEl.getBoundingClientRect();
@@ -265,108 +263,117 @@ const SalesChart = ({ data, currency, isDark }: { data: DailyPoint[]; currency: 
 
   return (
     <div className="relative select-none w-full" ref={containerRef}>
-      <svg
-        ref={svgRef}
-        viewBox={`0 0 ${W} ${H}`}
-        className="w-full h-[180px] overflow-visible"
-        onMouseMove={handleMouseMove}
-        onMouseLeave={() => setTooltip(null)}
-      >
-        <defs>
-          <linearGradient id="gradDark" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#34d399" stopOpacity="0.25" />
-            <stop offset="100%" stopColor="#34d399" stopOpacity="0" />
-          </linearGradient>
-          <linearGradient id="gradLight" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#059669" stopOpacity="0.15" />
-            <stop offset="100%" stopColor="#059669" stopOpacity="0" />
-          </linearGradient>
-        </defs>
-
-        {/* Grid lines */}
-        {yTicks.map((t, i) => (
-          <g key={i}>
-            <line x1={PAD.left} y1={t.y} x2={W - PAD.right} y2={t.y} stroke={gridColor} strokeWidth="1" />
-            <text x={PAD.left - 6} y={t.y + 4} textAnchor="end" fontSize="10" fill={textColor}>
-              {fmtCurrency(t.val)}
-            </text>
-          </g>
-        ))}
-
-        {/* Fill area */}
-        {fillPath && <path d={fillPath} fill={fillColor} />}
-
-        {/* Line */}
-        <polyline
-          points={polyline}
-          fill="none"
-          stroke={lineColor}
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-
-        {/* Data points (dots) */}
-        {pts.map((p, i) => (
-          <circle key={i} cx={p.x} cy={p.y} r="3" fill={isDark ? '#18181b' : '#ffffff'} stroke={lineColor} strokeWidth="2" />
-        ))}
-
-        {/* X-axis labels */}
-        {xLabelIdxs.map(i => (
-          <text key={i} x={pts[i].x} y={H - 8} textAnchor="middle" fontSize="10" fill={textColor}>
-            {fmtDate(data[i].date)}
-          </text>
-        ))}
-
-        {/* Hover dot */}
-        {tooltip && (
-          <g className="pointer-events-none">
-            <line
-              x1={tooltip.x} y1={PAD.top}
-              x2={tooltip.x} y2={PAD.top + iH}
-              stroke={lineColor} strokeWidth="1" strokeDasharray="4 3" strokeOpacity="0.5"
-            />
-            <circle cx={tooltip.x} cy={tooltip.y} r="5" fill={lineColor} />
-            <circle cx={tooltip.x} cy={tooltip.y} r="10" fill={lineColor} fillOpacity="0.25" className="animate-pulse" />
-          </g>
-        )}
-      </svg>
-
-      {/* Tooltip */}
-      {tooltip && (
-        <div
-          className="absolute pointer-events-none z-10"
-          style={{
-            top: `${(tooltip.y / H) * 100}%`,
-            left: tooltip.side === 'left' ? `calc(${(tooltip.x / W) * 100}% + 14px)` : undefined,
-            right: tooltip.side === 'right' ? `calc(${100 - (tooltip.x / W) * 100}% + 14px)` : undefined,
-            transform: 'translateY(-50%)',
-          }}
-        >
-          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl shadow-xl px-3.5 py-2.5 min-w-[140px]">
-            <div className="text-[11px] font-semibold text-zinc-800 dark:text-zinc-200 mb-1.5">
-              {new Date(tooltip.point.date + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })}
-            </div>
-            <div className="flex items-center gap-2 text-[11px]">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
-              <span className="text-zinc-500 dark:text-zinc-400">Faturamento</span>
-              <span className="font-semibold text-zinc-900 dark:text-zinc-100 ml-auto tabular-nums">
-                {new Intl.NumberFormat(currency === 'BRL' ? 'pt-BR' : 'en-US', { style: 'currency', currency, maximumFractionDigits: 2 }).format(Number(tooltip.point.revenue))}
-              </span>
-            </div>
-            <div className="flex items-center gap-2 text-[11px] mt-1">
-              <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
-              <span className="text-zinc-500 dark:text-zinc-400">Vendas</span>
-              <span className="font-semibold text-zinc-900 dark:text-zinc-100 ml-auto tabular-nums">
-                {tooltip.point.count}
-              </span>
-            </div>
-          </div>
+      {!hasData ? (
+        <div className="flex items-center justify-center h-[180px] text-xs text-zinc-400 dark:text-zinc-600">
+          Sem dados no período selecionado
         </div>
+      ) : (
+        <>
+          <svg
+            ref={svgRef}
+            viewBox={`0 0 ${W} ${H}`}
+            className="w-full h-[180px] overflow-visible"
+            onMouseMove={handleMouseMove}
+            onMouseLeave={() => setTooltip(null)}
+          >
+            <defs>
+              <linearGradient id="gradDark" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#34d399" stopOpacity="0.25" />
+                <stop offset="100%" stopColor="#34d399" stopOpacity="0" />
+              </linearGradient>
+              <linearGradient id="gradLight" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#059669" stopOpacity="0.15" />
+                <stop offset="100%" stopColor="#059669" stopOpacity="0" />
+              </linearGradient>
+            </defs>
+
+            {/* Grid lines */}
+            {yTicks.map((t, i) => (
+              <g key={i}>
+                <line x1={PAD.left} y1={t.y} x2={W - PAD.right} y2={t.y} stroke={gridColor} strokeWidth="1" />
+                <text x={PAD.left - 6} y={t.y + 4} textAnchor="end" fontSize="10" fill={textColor}>
+                  {fmtCurrency(t.val)}
+                </text>
+              </g>
+            ))}
+
+            {/* Fill area */}
+            {fillPath && <path d={fillPath} fill={fillColor} />}
+
+            {/* Line */}
+            <polyline
+              points={polyline}
+              fill="none"
+              stroke={lineColor}
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+
+            {/* Data points (dots) */}
+            {pts.map((p, i) => (
+              <circle key={i} cx={p.x} cy={p.y} r="3" fill={isDark ? '#18181b' : '#ffffff'} stroke={lineColor} strokeWidth="2" />
+            ))}
+
+            {/* X-axis labels */}
+            {xLabelIdxs.map(i => (
+              <text key={i} x={pts[i].x} y={H - 8} textAnchor="middle" fontSize="10" fill={textColor}>
+                {fmtDate(data[i].date)}
+              </text>
+            ))}
+
+            {/* Hover dot */}
+            {tooltip && (
+              <g className="pointer-events-none">
+                <line
+                  x1={tooltip.x} y1={PAD.top}
+                  x2={tooltip.x} y2={PAD.top + iH}
+                  stroke={lineColor} strokeWidth="1" strokeDasharray="4 3" strokeOpacity="0.5"
+                />
+                <circle cx={tooltip.x} cy={tooltip.y} r="5" fill={lineColor} />
+                <circle cx={tooltip.x} cy={tooltip.y} r="10" fill={lineColor} fillOpacity="0.25" className="animate-pulse" />
+              </g>
+            )}
+          </svg>
+
+          {/* Tooltip */}
+          {tooltip && (
+            <div
+              className="absolute pointer-events-none z-10"
+              style={{
+                top: `${(tooltip.y / H) * 100}%`,
+                left: tooltip.side === 'left' ? `calc(${(tooltip.x / W) * 100}% + 14px)` : undefined,
+                right: tooltip.side === 'right' ? `calc(${100 - (tooltip.x / W) * 100}% + 14px)` : undefined,
+                transform: 'translateY(-50%)',
+              }}
+            >
+              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl shadow-xl px-3.5 py-2.5 min-w-[140px]">
+                <div className="text-[11px] font-semibold text-zinc-800 dark:text-zinc-200 mb-1.5">
+                  {new Date(tooltip.point.date + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })}
+                </div>
+                <div className="flex items-center gap-2 text-[11px]">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                  <span className="text-zinc-500 dark:text-zinc-400">Faturamento</span>
+                  <span className="font-semibold text-zinc-900 dark:text-zinc-100 ml-auto tabular-nums">
+                    {new Intl.NumberFormat(currency === 'BRL' ? 'pt-BR' : 'en-US', { style: 'currency', currency, maximumFractionDigits: 2 }).format(Number(tooltip.point.revenue))}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 text-[11px] mt-1">
+                  <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
+                  <span className="text-zinc-500 dark:text-zinc-400">Vendas</span>
+                  <span className="font-semibold text-zinc-900 dark:text-zinc-100 ml-auto tabular-nums">
+                    {tooltip.point.count}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
 };
+
 
 // ─── Select styles shared ─────────────────────────────────────────────────────
 
