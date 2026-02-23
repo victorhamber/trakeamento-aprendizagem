@@ -319,17 +319,20 @@ router.post('/hotmart', async (req, res) => {
   const purchase = d.purchase || payload.purchase || {};
 
   // Extract Origin data from Hotmart (where UTMs and tracking tokens usually live)
-  const origin = purchase.origin || {};
-  if (origin.sck) payload.sck = origin.sck;
+  const trackingObj = d.tracking || payload.tracking || {};
+  const origin = purchase.origin || trackingObj || {};
+
+  if (origin.sck || trackingObj.source) payload.sck = origin.sck || trackingObj.source;
   if (origin.src) payload.src = origin.src;
   if (origin.xcod) payload.xcod = origin.xcod;
+  if (d.sck && !payload.sck) payload.sck = d.sck; // Some versions put it at the root
 
   // Extract UTMs if present in origin (Hotmart sometimes sends them here)
-  if (origin.utm_source) payload.utm_source = origin.utm_source;
-  if (origin.utm_medium) payload.utm_medium = origin.utm_medium;
-  if (origin.utm_campaign) payload.utm_campaign = origin.utm_campaign;
-  if (origin.utm_content) payload.utm_content = origin.utm_content;
-  if (origin.utm_term) payload.utm_term = origin.utm_term;
+  if (origin.utm_source || trackingObj.utm_source) payload.utm_source = origin.utm_source || trackingObj.utm_source;
+  if (origin.utm_medium || trackingObj.utm_medium) payload.utm_medium = origin.utm_medium || trackingObj.utm_medium;
+  if (origin.utm_campaign || trackingObj.utm_campaign) payload.utm_campaign = origin.utm_campaign || trackingObj.utm_campaign;
+  if (origin.utm_content || trackingObj.utm_content) payload.utm_content = origin.utm_content || trackingObj.utm_content;
+  if (origin.utm_term || trackingObj.utm_term) payload.utm_term = origin.utm_term || trackingObj.utm_term;
 
   const email = buyer.email || payload.email;
   const firstName = buyer.first_name || buyer.name?.split(' ')[0] || payload.first_name;
@@ -350,7 +353,7 @@ router.post('/hotmart', async (req, res) => {
   let status = rawStatus; // Pass raw status to main handler for normalization
 
   const orderId = purchase.transaction || d.transaction || d.transaction_id || payload.id || `webhook_${Date.now()}`;
-  const buyerAddr = buyer.address || {};
+  const buyerAddr = buyer.address || d.address || {};
   const city = buyerAddr.city || d.city;
   const state = buyerAddr.state || d.state;
   const zip = buyerAddr.zipcode || buyerAddr.zip_code || d.zip_code;

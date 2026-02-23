@@ -213,10 +213,10 @@ router.post('/:siteId/checkout-simulator/lead', requireAuth, async (req, res) =>
   const userData = {
     client_ip_address: (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip || '',
     client_user_agent: (req.headers['user-agent'] as string) || '',
-    em: email ? CapiService.hash(email) : undefined,
+    em: email ? CapiService.hash(email.trim().toLowerCase()) : undefined,
     ph: phone ? CapiService.hash(phone.replace(/[^0-9]/g, '')) : undefined,
-    fn: firstName ? CapiService.hash(firstName.toLowerCase()) : undefined,
-    ln: lastName ? CapiService.hash(lastName.toLowerCase()) : undefined,
+    fn: firstName && firstName.trim() !== '' ? CapiService.hash(firstName.trim().toLowerCase()) : undefined,
+    ln: lastName && lastName.trim() !== '' ? CapiService.hash(lastName.trim().toLowerCase()) : undefined,
     fbp: fbp || undefined,
     fbc: fbc || undefined,
     external_id: externalId ? CapiService.hash(externalId) : undefined,

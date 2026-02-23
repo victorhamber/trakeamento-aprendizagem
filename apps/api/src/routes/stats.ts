@@ -100,6 +100,20 @@ router.get('/debug-purchases', requireAuth, async (req, res) => {
   return res.json({ purchases: result.rows });
 });
 
+router.get('/debug-events', requireAuth, async (req, res) => {
+  const auth = req.auth!;
+  const result = await pool.query(
+    `SELECT e.event_id, e.event_name, e.event_time, e.user_data, e.custom_data
+     FROM web_events e
+     JOIN sites s ON s.site_key = e.site_key
+     WHERE s.account_id = $1
+     ORDER BY e.event_time DESC
+     LIMIT 10`,
+    [auth.accountId]
+  );
+  return res.json({ events: result.rows });
+});
+
 router.get('/sites/:siteId/quality', requireAuth, async (req, res) => {
   const auth = req.auth!;
   const siteId = Number(req.params.siteId);
@@ -124,14 +138,36 @@ router.get('/sites/:siteId/quality', requireAuth, async (req, res) => {
 
   try {
     const query = `
+      WITH combined_events AS (
+        SELECT user_data
+        FROM web_events
+        WHERE site_key = $1 AND event_time >= $2 AND event_time <= $3
+          AND (
+            (user_data->>'em' IS NOT NULL AND user_data->>'em' != '[]' AND user_data->>'em' != '') OR 
+            (user_data->>'ph' IS NOT NULL AND user_data->>'ph' != '[]' AND user_data->>'ph' != '') OR 
+            (user_data->>'fn' IS NOT NULL AND user_data->>'fn' != '[]' AND user_data->>'fn' != '') OR 
+            (user_data->>'ln' IS NOT NULL AND user_data->>'ln' != '[]' AND user_data->>'ln' != '')
+          )
+          
+        UNION ALL
+        
+        SELECT raw_payload->'_capi_debug'->'user_data' as user_data
+        FROM purchases
+        WHERE site_key = $1 AND created_at >= $2 AND created_at <= $3
+      )
       SELECT 
         COUNT(*) as total_events,
         COUNT(*) FILTER (WHERE user_data->>'fbp' IS NOT NULL OR user_data->>'fbc' IS NOT NULL) as with_fbp_fbc,
-        COUNT(*) FILTER (WHERE user_data->>'em' IS NOT NULL OR user_data->>'ph' IS NOT NULL OR user_data->>'fn' IS NOT NULL OR user_data->>'ln' IS NOT NULL) as with_pii,
-        COUNT(*) FILTER (WHERE user_data->>'external_id' IS NOT NULL) as with_external_id,
+        COUNT(*) FILTER (
+          WHERE 
+            (user_data->>'em' IS NOT NULL AND user_data->>'em' != '[]' AND user_data->>'em' != '') OR 
+            (user_data->>'ph' IS NOT NULL AND user_data->>'ph' != '[]' AND user_data->>'ph' != '') OR 
+            (user_data->>'fn' IS NOT NULL AND user_data->>'fn' != '[]' AND user_data->>'fn' != '') OR 
+            (user_data->>'ln' IS NOT NULL AND user_data->>'ln' != '[]' AND user_data->>'ln' != '')
+        ) as with_pii,
+        COUNT(*) FILTER (WHERE user_data->>'external_id' IS NOT NULL AND user_data->>'external_id' != '') as with_external_id,
         COUNT(*) FILTER (WHERE user_data->>'client_ip_address' IS NOT NULL AND user_data->>'client_user_agent' IS NOT NULL) as with_ip_ua
-      FROM web_events
-      WHERE site_key = $1 AND event_time >= $2 AND event_time <= $3
+      FROM combined_events;
     `;
     const result = await pool.query(query, [siteKey, start, end]);
     const row = result.rows[0];
