@@ -161,6 +161,7 @@ export const SitePage = () => {
   const [ga, setGa] = useState<GaConfig | null>(null);
   const [webhookSecret, setWebhookSecret] = useState<string | null>(null);
   const [dataQuality, setDataQuality] = useState<any>(null);
+  const [qualityPeriod, setQualityPeriod] = useState('last_7d');
   const [report, setReport] = useState<DiagnosisReport | null>(null);
   const [reportLoadedFromStorage, setReportLoadedFromStorage] = useState(false);
   const [campaigns, setCampaigns] = useState<any[]>([]);
@@ -1137,10 +1138,10 @@ ${scriptContent}
 
   const loadDataQuality = useCallback(async () => {
     try {
-      const res = await api.get(`/stats/sites/${id}/quality`);
+      const res = await api.get(`/stats/sites/${id}/quality?period=${qualityPeriod}`);
       setDataQuality(res.data);
     } catch { setDataQuality(null); }
-  }, [id]);
+  }, [id, qualityPeriod]);
 
   useEffect(() => {
     if (!site) return;
@@ -1758,12 +1759,23 @@ ${scriptContent}
               {/* ── Data Quality Card ── */}
               {dataQuality && dataQuality.total_events > 0 && (
                 <div className="mt-6 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/40 p-5">
-                  <h3 className="text-sm font-semibold text-zinc-100 mb-1">Qualidade dos Dados (últimos 7 dias)</h3>
+                  <div className="flex items-center justify-between mb-1">
+                    <h3 className="text-sm font-semibold text-zinc-100">Qualidade dos Dados</h3>
+                    <select
+                      value={qualityPeriod}
+                      onChange={(e) => setQualityPeriod(e.target.value)}
+                      className="text-xs bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 rounded px-2 py-1 outline-none focus:border-emerald-500/50"
+                    >
+                      <option value="today">Hoje</option>
+                      <option value="last_7d">Últimos 7 dias</option>
+                      <option value="last_30d">Últimos 30 dias</option>
+                    </select>
+                  </div>
                   <p className="text-[11px] text-zinc-600 dark:text-zinc-500 mb-4">{dataQuality.total_events.toLocaleString()} eventos rastreados</p>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     {[
                       { label: 'FBP / FBC', value: dataQuality.metrics.fbp_fbc_match_rate, desc: 'Cookies Meta' },
-                      { label: 'Email / Tel', value: dataQuality.metrics.em_ph_match_rate, desc: 'PII Avançado' },
+                      { label: 'Nome / Email / Tel', value: dataQuality.metrics.pii_match_rate, desc: 'PII Avançado' },
                       { label: 'External ID', value: dataQuality.metrics.external_id_match_rate, desc: 'ID Externo' },
                     ].map((m) => {
                       const pct = Math.round(m.value * 100);
@@ -1783,7 +1795,7 @@ ${scriptContent}
                     <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/40 p-3">
                       <div className="text-[10px] text-zinc-600 dark:text-zinc-500 uppercase tracking-wider">Score Geral</div>
                       {(() => {
-                        const avg = Math.round(((dataQuality.metrics.fbp_fbc_match_rate + dataQuality.metrics.em_ph_match_rate + dataQuality.metrics.external_id_match_rate) / 3) * 100);
+                        const avg = Math.round(((dataQuality.metrics.fbp_fbc_match_rate + dataQuality.metrics.pii_match_rate + dataQuality.metrics.external_id_match_rate) / 3) * 100);
                         const color = avg >= 80 ? 'text-emerald-400' : avg >= 50 ? 'text-amber-400' : 'text-red-400';
                         const emoji = avg >= 80 ? '🟢' : avg >= 50 ? '🟡' : '🔴';
                         return <div className={`text-xl font-bold ${color} mt-1`}>{emoji} {avg}%</div>;

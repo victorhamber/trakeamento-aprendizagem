@@ -72,7 +72,13 @@ async function processPurchaseWebhook({
       client_ip_address: clientIp,
       client_user_agent: clientUa,
       em: email ? CapiService.hash(email) : undefined,
-      ph: phone ? CapiService.hash(phone.replace(/[^0-9]/g, '')) : undefined,
+      ph: phone ? CapiService.hash((() => {
+        let p = phone.replace(/[^0-9]/g, '');
+        if (p && p.length <= 11 && (!country || country.toUpperCase() === 'BR' || country.toUpperCase() === 'BRASIL')) {
+          p = '55' + p;
+        }
+        return p;
+      })()) : undefined,
       fn: firstName ? CapiService.hash(firstName.toLowerCase()) : undefined,
       ln: lastName ? CapiService.hash(lastName.toLowerCase()) : undefined,
       ct: city ? CapiService.hash(city.toLowerCase()) : undefined,
@@ -82,19 +88,24 @@ async function processPurchaseWebhook({
       db: dob ? CapiService.hash(dob.replace(/[^0-9]/g, '')) : undefined,
       fbp: finalFbp,
       fbc: finalFbc,
-      external_id: finalExternalId ? CapiService.hash(String(finalExternalId)) : undefined,
+      external_id: (() => {
+        const ids = [];
+        if (finalExternalId) ids.push(CapiService.hash(String(finalExternalId)));
+        if (externalId && String(externalId) !== String(finalExternalId)) ids.push(CapiService.hash(String(externalId)));
+        return ids.length > 0 ? ids : undefined;
+      })(),
     },
+    action_source: 'system_generated',
     custom_data: {
       currency: currency,
       value: value,
       content_type: 'product',
-      utm_source: payload.utm_source || payload.trackingParameters?.utm_source || payload.tracking_parameters?.utm_source || payload.sck || payload.src || undefined,
+      utm_source: payload.utm_source || payload.trackingParameters?.utm_source || payload.tracking_parameters?.utm_source || (payload.sck && !String(payload.sck).startsWith('trk_') ? payload.sck : undefined) || (payload.src && !String(payload.src).startsWith('trk_') ? payload.src : undefined) || undefined,
       utm_medium: payload.utm_medium || payload.trackingParameters?.utm_medium || payload.tracking_parameters?.utm_medium || undefined,
       utm_campaign: payload.utm_campaign || payload.trackingParameters?.utm_campaign || payload.tracking_parameters?.utm_campaign || undefined,
       utm_term: payload.utm_term || payload.trackingParameters?.utm_term || payload.tracking_parameters?.utm_term || undefined,
       utm_content: payload.utm_content || payload.trackingParameters?.utm_content || payload.tracking_parameters?.utm_content || undefined,
-    },
-    action_source: 'system_generated'
+    }
   };
 
   if (capi_test_event_code) {
@@ -270,8 +281,8 @@ router.post('/purchase', async (req, res) => {
   const result = await processPurchaseWebhook({
     siteKey, payload, email, phone, firstName, lastName, city, state, zip, country, dob,
     fbp, fbc, externalId: payload.user_id || payload.buyer?.id || payload.Customer?.id,
-    clientIp: payload.client_ip_address || payload.ip || req.ip || '0.0.0.0',
-    clientUa: payload.client_user_agent || payload.user_agent || 'Webhook/1.0',
+    clientIp: payload.client_ip_address || payload.ip || undefined,
+    clientUa: payload.client_user_agent || payload.user_agent || undefined,
     value, currency, status: finalStatus, orderId, platform
   });
 
@@ -312,7 +323,7 @@ router.post('/hotmart', async (req, res) => {
   if (origin.sck) payload.sck = origin.sck;
   if (origin.src) payload.src = origin.src;
   if (origin.xcod) payload.xcod = origin.xcod;
-  
+
   // Extract UTMs if present in origin (Hotmart sometimes sends them here)
   if (origin.utm_source) payload.utm_source = origin.utm_source;
   if (origin.utm_medium) payload.utm_medium = origin.utm_medium;
@@ -337,7 +348,7 @@ router.post('/hotmart', async (req, res) => {
 
   let rawStatus = purchase.status || d.status || payload.event;
   let status = rawStatus; // Pass raw status to main handler for normalization
-  
+
   const orderId = purchase.transaction || d.transaction || d.transaction_id || payload.id || `webhook_${Date.now()}`;
   const buyerAddr = buyer.address || {};
   const city = buyerAddr.city || d.city;
@@ -349,8 +360,8 @@ router.post('/hotmart', async (req, res) => {
   const result = await processPurchaseWebhook({
     siteKey, payload, email, phone, firstName, lastName, city, state, zip, country, dob,
     fbp, fbc, externalId: d.user_id || buyer.document || buyer.id,
-    clientIp: d.client_ip_address || payload.ip || req.ip || '0.0.0.0',
-    clientUa: d.client_user_agent || payload.user_agent || 'Webhook/1.0',
+    clientIp: d.client_ip_address || payload.ip || undefined,
+    clientUa: d.client_user_agent || payload.user_agent || undefined,
     value, currency, status, orderId, platform
   });
 
@@ -390,7 +401,7 @@ router.post('/kiwify', async (req, res) => {
     value = value / 100; // Kiwify sends cents in net_amount
   }
   const currency = payload.order?.payment?.currency || payload.currency || 'BRL';
-  
+
   let status = payload.status; // Pass raw status to main handler
 
   const orderId = payload.id || `webhook_${Date.now()}`;
@@ -413,8 +424,8 @@ router.post('/kiwify', async (req, res) => {
   const result = await processPurchaseWebhook({
     siteKey, payload, email, phone, firstName, lastName, city, state, zip, country, dob,
     fbp, fbc, externalId: payload.customer?.email,
-    clientIp: payload.client_ip || req.ip || '0.0.0.0',
-    clientUa: payload.client_user_agent || 'Webhook/1.0',
+    clientIp: payload.client_ip || undefined,
+    clientUa: payload.client_user_agent || undefined,
     value, currency, status, orderId, platform
   });
 
@@ -482,8 +493,8 @@ router.post('/custom/:id', async (req, res) => {
     zip: getNested(payload, config.zip), country: getNested(payload, config.country),
     fbp: payload.fbp || payload.custom_args?.fbp, fbc: payload.fbc || payload.custom_args?.fbc,
     externalId: getNested(payload, config.external_id),
-    clientIp: getNested(payload, config.client_ip) || req.ip || '0.0.0.0',
-    clientUa: getNested(payload, config.client_ua) || 'Webhook/1.0',
+    clientIp: getNested(payload, config.client_ip) || undefined,
+    clientUa: getNested(payload, config.client_ua) || undefined,
     value, currency, status, orderId, platform: 'custom'
   });
 

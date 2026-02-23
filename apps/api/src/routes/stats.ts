@@ -103,24 +103,37 @@ router.get('/debug-purchases', requireAuth, async (req, res) => {
 router.get('/sites/:siteId/quality', requireAuth, async (req, res) => {
   const auth = req.auth!;
   const siteId = Number(req.params.siteId);
+  const period = (req.query.period as string) || 'last_7d';
   if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
 
   const site = await pool.query('SELECT site_key FROM sites WHERE id = $1 AND account_id = $2', [siteId, auth.accountId]);
   if (!site.rowCount) return res.status(404).json({ error: 'Site not found' });
   const siteKey = site.rows[0].site_key;
 
+  const now = new Date();
+  let start: Date;
+  let end: Date = now;
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  switch (period) {
+    case 'today': start = todayStart; break;
+    case 'last_7d': start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000); break;
+    case 'last_30d': start = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000); break;
+    default: start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  }
+
   try {
     const query = `
       SELECT 
         COUNT(*) as total_events,
         COUNT(*) FILTER (WHERE user_data->>'fbp' IS NOT NULL OR user_data->>'fbc' IS NOT NULL) as with_fbp_fbc,
-        COUNT(*) FILTER (WHERE user_data->>'em' IS NOT NULL OR user_data->>'ph' IS NOT NULL) as with_em_ph,
+        COUNT(*) FILTER (WHERE user_data->>'em' IS NOT NULL OR user_data->>'ph' IS NOT NULL OR user_data->>'fn' IS NOT NULL OR user_data->>'ln' IS NOT NULL) as with_pii,
         COUNT(*) FILTER (WHERE user_data->>'external_id' IS NOT NULL) as with_external_id,
         COUNT(*) FILTER (WHERE user_data->>'client_ip_address' IS NOT NULL AND user_data->>'client_user_agent' IS NOT NULL) as with_ip_ua
       FROM web_events
-      WHERE site_key = $1 AND event_time >= NOW() - INTERVAL '7 days'
+      WHERE site_key = $1 AND event_time >= $2 AND event_time <= $3
     `;
-    const result = await pool.query(query, [siteKey]);
+    const result = await pool.query(query, [siteKey, start, end]);
     const row = result.rows[0];
 
     const total = parseInt(row.total_events) || 0;
@@ -128,12 +141,12 @@ router.get('/sites/:siteId/quality', requireAuth, async (req, res) => {
     return res.json({
       total_events: total,
       with_fbp_fbc: parseInt(row.with_fbp_fbc) || 0,
-      with_em_ph: parseInt(row.with_em_ph) || 0,
+      with_pii: parseInt(row.with_pii) || 0,
       with_external_id: parseInt(row.with_external_id) || 0,
       with_ip_ua: parseInt(row.with_ip_ua) || 0,
       metrics: {
         fbp_fbc_match_rate: total > 0 ? (parseInt(row.with_fbp_fbc) / total) : 0,
-        em_ph_match_rate: total > 0 ? (parseInt(row.with_em_ph) / total) : 0,
+        pii_match_rate: total > 0 ? (parseInt(row.with_pii) / total) : 0,
         external_id_match_rate: total > 0 ? (parseInt(row.with_external_id) / total) : 0,
       }
     });

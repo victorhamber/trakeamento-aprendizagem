@@ -174,11 +174,26 @@ type TooltipState = {
 } | null;
 
 const SalesChart = ({ data, currency, isDark }: { data: DailyPoint[]; currency: string; isDark: boolean }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [tooltip, setTooltip] = useState<TooltipState>(null);
-  const W = 800;
+  const [W, setW] = useState(800);
   const H = 180;
   const PAD = { top: 16, right: 16, bottom: 48, left: 56 };
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const observer = new ResizeObserver((entries) => {
+      for (let entry of entries) {
+        setW(Math.max(300, entry.contentRect.width));
+      }
+    });
+    observer.observe(containerRef.current);
+    // Initial width
+    setW(Math.max(300, containerRef.current.clientWidth));
+    return () => observer.disconnect();
+  }, []);
+
   const iW = W - PAD.left - PAD.right;
   const iH = H - PAD.top - PAD.bottom;
 
@@ -249,11 +264,11 @@ const SalesChart = ({ data, currency, isDark }: { data: DailyPoint[]; currency: 
   };
 
   return (
-    <div className="relative select-none">
+    <div className="relative select-none w-full" ref={containerRef}>
       <svg
         ref={svgRef}
         viewBox={`0 0 ${W} ${H}`}
-        className="w-full h-[180px]"
+        className="w-full h-[180px] overflow-visible"
         onMouseMove={handleMouseMove}
         onMouseLeave={() => setTooltip(null)}
       >
@@ -291,6 +306,11 @@ const SalesChart = ({ data, currency, isDark }: { data: DailyPoint[]; currency: 
           strokeLinejoin="round"
         />
 
+        {/* Data points (dots) */}
+        {pts.map((p, i) => (
+          <circle key={i} cx={p.x} cy={p.y} r="3" fill={isDark ? '#18181b' : '#ffffff'} stroke={lineColor} strokeWidth="2" />
+        ))}
+
         {/* X-axis labels */}
         {xLabelIdxs.map(i => (
           <text key={i} x={pts[i].x} y={H - 8} textAnchor="middle" fontSize="10" fill={textColor}>
@@ -300,15 +320,15 @@ const SalesChart = ({ data, currency, isDark }: { data: DailyPoint[]; currency: 
 
         {/* Hover dot */}
         {tooltip && (
-          <>
+          <g className="pointer-events-none">
             <line
               x1={tooltip.x} y1={PAD.top}
               x2={tooltip.x} y2={PAD.top + iH}
               stroke={lineColor} strokeWidth="1" strokeDasharray="4 3" strokeOpacity="0.5"
             />
             <circle cx={tooltip.x} cy={tooltip.y} r="5" fill={lineColor} />
-            <circle cx={tooltip.x} cy={tooltip.y} r="9" fill={lineColor} fillOpacity="0.2" />
-          </>
+            <circle cx={tooltip.x} cy={tooltip.y} r="10" fill={lineColor} fillOpacity="0.25" className="animate-pulse" />
+          </g>
         )}
       </svg>
 

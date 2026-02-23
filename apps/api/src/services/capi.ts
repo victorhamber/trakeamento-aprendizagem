@@ -10,8 +10,8 @@ export interface CapiEvent {
   event_id: string;
   event_source_url: string;
   user_data: {
-    client_ip_address: string;
-    client_user_agent: string;
+    client_ip_address?: string;
+    client_user_agent?: string;
     em?: string; // hash SHA-256
     ph?: string; // hash SHA-256
     fn?: string; // hash SHA-256
@@ -23,9 +23,10 @@ export interface CapiEvent {
     country?: string; // hash SHA-256 (ISO 2-letter lowercase)
     fbp?: string;
     fbc?: string;
-    external_id?: string; // hash SHA-256
+    external_id?: string | string[]; // hash SHA-256
   };
   custom_data?: CapiCustomData;
+  action_source?: 'email' | 'website' | 'app' | 'phone_call' | 'chat' | 'physical_store' | 'system_generated' | 'other';
 }
 
 type CapiSendResult =
@@ -103,7 +104,7 @@ export class CapiService {
           event_time: event.event_time,
           event_id: event.event_id,
           event_source_url: event.event_source_url,
-          action_source: 'website' as const,
+          action_source: event.action_source || 'website',
           user_data: cleanedUserData,
           ...(cleanedCustomData && Object.keys(cleanedCustomData).length > 0
             ? { custom_data: cleanedCustomData }

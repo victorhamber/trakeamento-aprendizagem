@@ -569,7 +569,7 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
                       </svg>
                     </summary>
                     <div className="border-t border-zinc-100 dark:border-zinc-800/50 bg-zinc-50 dark:bg-zinc-900/30 p-4">
-                      
+
                       {/* CAPI Debug Visualization */}
                       {capi && (
                         <div className="mb-4 rounded-lg border border-indigo-100 bg-indigo-50/50 p-4 dark:border-indigo-900/30 dark:bg-indigo-900/10">
@@ -581,7 +581,7 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
                               Dados Mapeados para Meta CAPI
                             </h5>
                           </div>
-                          
+
                           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
                             {/* User Data Section */}
                             <div>
@@ -590,6 +590,8 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
                                 {[
                                   { label: 'Email (Hash)', val: capi.user_data?.em },
                                   { label: 'Telefone (Hash)', val: capi.user_data?.ph },
+                                  { label: 'Nome (Hash)', val: capi.user_data?.fn },
+                                  { label: 'Sobrenome (Hash)', val: capi.user_data?.ln },
                                   { label: 'External ID', val: capi.user_data?.external_id, isHash: true }, // Usually hashed too
                                   { label: 'FBP (Browser ID)', val: capi.user_data?.fbp, raw: true },
                                   { label: 'FBC (Click ID)', val: capi.user_data?.fbc, raw: true },
@@ -631,8 +633,11 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
                                   <div className="grid grid-cols-2 gap-x-2 gap-y-1">
                                     {['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'].map(utm => (
                                       <div key={utm} className="flex justify-between text-[9px]">
-                                        <span className="text-zinc-400">{utm.replace('utm_', '')}:</span>
-                                        <span className={`font-mono ${capi.custom_data?.[utm] ? 'text-zinc-600 dark:text-zinc-300' : 'text-zinc-300 dark:text-zinc-700'}`}>
+                                        <span className="text-zinc-400 shrink-0 mr-2">{utm.replace('utm_', '')}:</span>
+                                        <span
+                                          className={`font-mono truncate ${capi.custom_data?.[utm] ? 'text-zinc-600 dark:text-zinc-300' : 'text-zinc-300 dark:text-zinc-700'}`}
+                                          title={String(capi.custom_data?.[utm] || '')}
+                                        >
                                           {capi.custom_data?.[utm] || '-'}
                                         </span>
                                       </div>
@@ -646,7 +651,7 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
                       )}
 
                       <div className="flex items-center justify-between mb-2">
-                         <span className="text-[10px] font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Payload Original (JSON)</span>
+                        <span className="text-[10px] font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Payload Original (JSON)</span>
                       </div>
                       <pre className="text-[10px] leading-relaxed text-zinc-600 dark:text-zinc-400 whitespace-pre-wrap break-words font-mono bg-white dark:bg-zinc-950 p-3 rounded border border-zinc-200 dark:border-zinc-800">
                         {JSON.stringify(log.raw_payload || {}, null, 2)}
@@ -780,8 +785,8 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
                                 <div key={key} className="flex flex-col gap-1 text-[10px] p-2 hover:bg-zinc-50 dark:hover:bg-zinc-900 rounded border border-transparent hover:border-zinc-100 dark:hover:border-zinc-800 transition-colors">
                                   <div className="flex items-center justify-between gap-2">
                                     <code className="text-zinc-700 dark:text-zinc-300 font-medium truncate shrink-0">{key}</code>
-                                    <span 
-                                      className="text-zinc-400 truncate max-w-[150px] font-mono" 
+                                    <span
+                                      className="text-zinc-400 truncate max-w-[150px] font-mono"
                                       title={safeStringify(flatPayload[key])}
                                     >
                                       {safeStringify(flatPayload[key])}
