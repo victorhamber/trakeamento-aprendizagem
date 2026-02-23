@@ -6,13 +6,27 @@ import { decryptString } from '../lib/crypto';
 
 const router = Router();
 
+const normalizeStatus = (status: unknown) => {
+  const statusStr = typeof status === 'string' || typeof status === 'number' ? String(status) : '';
+  const statusUpper = statusStr.toUpperCase();
+
+  if (['APPROVED', 'COMPLETED', 'PAID', 'PURCHASE_APPROVED', '3'].includes(statusUpper)) {
+    return { finalStatus: 'approved', isApproved: true };
+  }
+  if (['REFUNDED', 'CHARGEBACK', 'PURCHASE_REFUNDED', '4'].includes(statusUpper)) {
+    return { finalStatus: 'refunded', isApproved: false };
+  }
+  const cleaned = statusStr ? statusStr.replace(/_/g, ' ').toLowerCase() : 'unknown';
+  return { finalStatus: cleaned, isApproved: false };
+};
+
 // â”€â”€â”€ Core Ingestion Engine for all Webhooks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function processPurchaseWebhook({
   siteKey, payload, email, phone, firstName, lastName, city, state, zip, country, dob,
   fbp, fbc, externalId, clientIp, clientUa, value, currency, status, orderId, platform
 }: any) {
-  console.log(`[Webhook] processPurchaseWebhook called: value=${value} currency=${currency} status=${status} orderId=${orderId} platform=${platform} siteKey=${siteKey}`);
-  let isApproved = status === 'approved';
+  const { finalStatus, isApproved } = normalizeStatus(status);
+  console.log(`[Webhook] processPurchaseWebhook called: value=${value} currency=${currency} status=${finalStatus} orderId=${orderId} platform=${platform} siteKey=${siteKey}`);
 
   const siteRow = await pool.query(`
     SELECT sites.id, m.capi_token_enc, m.pixel_id, m.capi_test_event_code, m.enabled
@@ -112,7 +126,7 @@ async function processPurchaseWebhook({
            raw_payload = EXCLUDED.raw_payload,
            fbp = EXCLUDED.fbp,
            fbc = EXCLUDED.fbc`,
-        [siteKey, orderId, platform, value, currency, status, dbEmailHash, finalFbp, finalFbc, JSON.stringify(payload)]
+        [siteKey, orderId, platform, value, currency, finalStatus, dbEmailHash, finalFbp, finalFbc, JSON.stringify(payload)]
       );
 
       if (metaEnabled && pixel_id && capi_token_enc) {
@@ -123,6 +137,7 @@ async function processPurchaseWebhook({
       }
     } catch (e) {
       console.error('[Webhook] DB Error:', e);
+      return { success: false, status: 500, error: 'DB insert failed' };
     }
   } else {
     try {
@@ -136,10 +151,11 @@ async function processPurchaseWebhook({
            raw_payload = EXCLUDED.raw_payload,
            fbp = EXCLUDED.fbp,
            fbc = EXCLUDED.fbc`,
-        [siteKey, orderId, platform, value, currency, status, dbEmailHash, finalFbp, finalFbc, JSON.stringify(payload)]
+        [siteKey, orderId, platform, value, currency, finalStatus, dbEmailHash, finalFbp, finalFbc, JSON.stringify(payload)]
       );
     } catch (e) {
       console.error('[Webhook] Refund DB DB Error:', e);
+      return { success: false, status: 500, error: 'DB insert failed' };
     }
   }
 
@@ -259,20 +275,7 @@ router.post('/purchase', async (req, res) => {
     orderId = payload.id || payload.order_id || payload.transaction_id || payload.transaction || `webhook_${Date.now()}`;
   }
 
-  // Normalizing status
-  let isApproved = false;
-  // Keep the original status for DB storage, but normalize for logic if needed
-  let finalStatus = String(status).toLowerCase();
-
-  if (['APPROVED', 'COMPLETED', 'paid', 'PAID', 3, '3', 'approved', 'PURCHASE_APPROVED'].includes(status)) {
-    isApproved = true;
-    finalStatus = 'approved';
-  } else if (['REFUNDED', 'refunded', 'CHARGEBACK', 4, '4', 'PURCHASE_REFUNDED'].includes(status)) {
-    finalStatus = 'refunded';
-  } else {
-    // For pending/other statuses (BILLET_PRINTED, PIX_GENERATED, WAITING_PAYMENT), keep them as is (but cleaned)
-    finalStatus = String(status).replace(/_/g, ' ').toLowerCase();
-  }
+  const { finalStatus } = normalizeStatus(status);
 
   const result = await processPurchaseWebhook({
     siteKey, payload, email, phone, firstName, lastName, city, state, zip, country, dob,
@@ -499,4 +502,3 @@ router.post('/custom/:id', async (req, res) => {
 });
 
 export default router;
-
