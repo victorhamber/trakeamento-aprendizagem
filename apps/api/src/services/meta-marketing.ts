@@ -96,7 +96,7 @@ export class MetaMarketingService {
    */
   private normalizeResults(v: unknown): number | null {
     if (v === null || v === undefined) return null;
-    
+
     // Direct number/string
     const simple = this.asInt(v);
     if (simple !== null) return simple;
@@ -112,7 +112,7 @@ export class MetaMarketingService {
         }
       }
     }
-    
+
     return null;
   }
 
@@ -177,17 +177,25 @@ export class MetaMarketingService {
 
   private getCustomEvent(actions: unknown): { name: string | null; count: number | null } {
     const list = MetaMarketingService.asArray(actions);
-    const prefix = 'offsite_conversion.custom.';
+    const prefixOffsite = 'offsite_conversion.custom.';
+    const prefixOmni = 'omni_custom.';
     let bestName: string | null = null;
     let bestCount: number | null = null;
     for (const item of list) {
       const actionType = MetaMarketingService.getActionType(item);
       if (!actionType) continue;
-      const isCustom = actionType.startsWith(prefix) || actionType === 'offsite_conversion.fb_pixel_custom';
-      if (!isCustom) continue;
+
+      const isCustomOffsite = actionType.startsWith(prefixOffsite) || actionType === 'offsite_conversion.fb_pixel_custom';
+      const isCustomOmni = actionType.startsWith(prefixOmni);
+      if (!isCustomOffsite && !isCustomOmni) continue;
+
       const count = this.asInt(MetaMarketingService.getValueField(item));
       if (count === null) continue;
-      const name = actionType.startsWith(prefix) ? actionType.slice(prefix.length) : 'fb_pixel_custom';
+
+      let name = 'fb_pixel_custom';
+      if (actionType.startsWith(prefixOffsite)) name = actionType.slice(prefixOffsite.length);
+      else if (actionType.startsWith(prefixOmni)) name = actionType.slice(prefixOmni.length);
+
       if (bestCount === null || count > bestCount) {
         bestCount = count;
         bestName = name || null;
@@ -382,9 +390,9 @@ export class MetaMarketingService {
       const uniqueLinkClicks =
         uniqueLinkClicksArr.length > 0
           ? uniqueLinkClicksArr.reduce(
-              (sum, item) => sum + (this.asInt(MetaMarketingService.getValueField(item)) ?? 0),
-              0
-            )
+            (sum, item) => sum + (this.asInt(MetaMarketingService.getValueField(item)) ?? 0),
+            0
+          )
           : linkClicks > 0
             ? linkClicks
             : uniqueClicks;
@@ -398,8 +406,7 @@ export class MetaMarketingService {
       const video3sViews = this.getVideo3sViews(actions, row);
 
       // unique_link_clicks is also an array field from Meta
-
-      const landingPageViews = this.getActionCount(actions, 'landing_page_view') ?? 0;
+      const landingPageViews = this.getActionCount(actions, 'landing_page_view', 'omni_landing_page_view') ?? 0;
 
       // Contacts: try multiple action_type aliases in priority order
       const contacts =
@@ -499,9 +506,9 @@ export class MetaMarketingService {
     const uniqueLinkClicks =
       uniqueLinkClicksArr.length > 0
         ? uniqueLinkClicksArr.reduce(
-            (sum, item) => sum + (this.asInt(MetaMarketingService.getValueField(item)) ?? 0),
-            0
-          )
+          (sum, item) => sum + (this.asInt(MetaMarketingService.getValueField(item)) ?? 0),
+          0
+        )
         : linkClicks; // fallback to link_clicks if not present
 
     // outbound_clicks: Meta returns this as an array [{action_type: "outbound_click", value}]
@@ -510,7 +517,7 @@ export class MetaMarketingService {
     const video3sViews = this.getVideo3sViews(actions, row);
 
     // landing_page_view: from actions array
-    const landingPageViews = this.getActionCount(actions, 'landing_page_view');
+    const landingPageViews = this.getActionCount(actions, 'landing_page_view', 'omni_landing_page_view');
 
     // --- Conversion actions (multiple aliases per type) ---
     const leads = this.getActionCount(actions, 'lead', 'omni_lead');
