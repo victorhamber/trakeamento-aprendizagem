@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import { newDb } from 'pg-mem';
+require('dotenv').config({ path: '../../.env' });
 import { Pool } from 'pg';
 import fs from 'fs';
 import path from 'path';

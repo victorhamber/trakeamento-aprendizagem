@@ -24,7 +24,7 @@
     "express-rate-limit": "^8.2.1",
     "geoip-lite": "^1.4.10",
     "jsonwebtoken": "^9.0.2",
-    "lru-cache": "^6.0.0",
+    "lru-cache": "^7.18.3",
     "pg": "^8.11.0",
     "pg-mem": "^3.0.5",
     "zod": "^4.3.6"

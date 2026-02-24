@@ -4,6 +4,17 @@ import { pool } from '../db/pool';
 
 const router = Router();
 
+router.get('/debug', async (req, res) => {
+  try {
+    const evts = await pool.query('SELECT site_key, event_name, event_time, raw_payload->>$$user_data$$ AS ud FROM web_events ORDER BY created_at DESC LIMIT 5');
+    const errs = await pool.query('SELECT * FROM capi_outbox ORDER BY created_at DESC LIMIT 5');
+    const meta = await pool.query('SELECT site_id, last_capi_status, last_capi_error FROM integrations_meta LIMIT 5');
+    res.json({ events: evts.rows, errors: errs.rows, meta: meta.rows });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 router.get('/overview', requireAuth, async (req, res) => {
   const auth = req.auth!;
   const period = (req.query.period as string) || 'today';
