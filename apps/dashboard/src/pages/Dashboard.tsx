@@ -386,6 +386,8 @@ export const DashboardPage = () => {
   const [data, setData] = useState<Overview | null>(null);
   const [salesData, setSalesData] = useState<DailyPoint[]>([]);
   const [hasOpenAiKey, setHasOpenAiKey] = useState<boolean | null>(null);
+  const [sites, setSites] = useState<Array<{ id: number; name: string }>>([]);
+  const [selectedSiteId, setSelectedSiteId] = useState('');
   const [period, setPeriod] = useState('last_7d');
   const [currency, setCurrency] = useState('BRL');
   const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains('dark'));
@@ -399,13 +401,22 @@ export const DashboardPage = () => {
   }, []);
 
   useEffect(() => {
-    api.get('/stats/overview', { params: { period, currency } })
+    api.get('/sites')
+      .then((res) => setSites(res.data?.sites || []))
+      .catch(() => setSites([]));
+  }, []);
+
+  useEffect(() => {
+    const params: any = { period, currency };
+    if (selectedSiteId) params.siteId = selectedSiteId;
+
+    api.get('/stats/overview', { params })
       .then((res) => setData(res.data))
       .catch(() => setData(null));
-    api.get('/stats/sales-daily', { params: { period, currency } })
+    api.get('/stats/sales-daily', { params })
       .then((res) => setSalesData(res.data?.data || []))
       .catch(() => setSalesData([]));
-  }, [period, currency]);
+  }, [period, currency, selectedSiteId]);
 
   useEffect(() => {
     api.get('/ai/settings')
@@ -448,6 +459,18 @@ export const DashboardPage = () => {
           </div>
 
           <div className="shrink-0 flex flex-wrap items-center gap-2 self-start sm:self-auto">
+            <select
+              value={selectedSiteId}
+              onChange={(e) => setSelectedSiteId(e.target.value)}
+              className={selectCls}
+            >
+              <option value="">Todos os sites</option>
+              {sites.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
             <select
               value={period}
               onChange={(e) => setPeriod(e.target.value)}

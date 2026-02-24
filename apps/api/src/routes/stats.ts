@@ -19,6 +19,7 @@ router.get('/overview', requireAuth, async (req, res) => {
   const auth = req.auth!;
   const period = (req.query.period as string) || 'today';
   const currency = (req.query.currency as string) || 'BRL';
+  const siteId = req.query.siteId ? Number(req.query.siteId) : null;
 
   const now = new Date();
   let start: Date;
@@ -60,21 +61,23 @@ router.get('/overview', requireAuth, async (req, res) => {
      FROM web_events e
      JOIN sites s ON s.site_key = e.site_key
      WHERE s.account_id = $1
+       AND ($4::int IS NULL OR s.id = $4::int)
        AND e.event_time >= $2
        AND e.event_time <= $3`,
-    [auth.accountId, start, end]
+    [auth.accountId, start, end, siteId]
   );
 
   const purchasesPeriod = await pool.query(
     `SELECT 
        COUNT(*)::int as c, 
-       COALESCE(SUM(CASE WHEN p.status = 'approved' AND p.currency = $4 THEN p.amount ELSE 0 END), 0) as total_revenue
+       COALESCE(SUM(CASE WHEN p.status = 'approved' AND p.currency = $5 THEN p.amount ELSE 0 END), 0) as total_revenue
      FROM purchases p
      JOIN sites s ON s.site_key = p.site_key
      WHERE s.account_id = $1
+       AND ($4::int IS NULL OR s.id = $4::int)
        AND p.created_at >= $2
        AND p.created_at <= $3`,
-    [auth.accountId, start, end, currency]
+    [auth.accountId, start, end, siteId, currency]
   );
 
   const reportsPeriod = await pool.query(
@@ -82,9 +85,10 @@ router.get('/overview', requireAuth, async (req, res) => {
      FROM recommendation_reports r
      JOIN sites s ON s.site_key = r.site_key
      WHERE s.account_id = $1
+       AND ($4::int IS NULL OR s.id = $4::int)
        AND r.created_at >= $2
        AND r.created_at <= $3`,
-    [auth.accountId, start, end]
+    [auth.accountId, start, end, siteId]
   );
 
   return res.json({
@@ -207,6 +211,7 @@ router.get('/sales-daily', requireAuth, async (req, res) => {
   const auth = req.auth!;
   const period = (req.query.period as string) || 'last_30d';
   const currency = (req.query.currency as string) || 'BRL';
+  const siteId = req.query.siteId ? Number(req.query.siteId) : null;
 
   const now = new Date();
   let start: Date;
@@ -228,15 +233,16 @@ router.get('/sales-daily', requireAuth, async (req, res) => {
       `SELECT
          TO_CHAR(p.created_at AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD') as date,
          COUNT(*)::int as count,
-         COALESCE(SUM(CASE WHEN p.status = 'approved' AND p.currency = $4 THEN p.amount ELSE 0 END), 0)::float as revenue
+         COALESCE(SUM(CASE WHEN p.status = 'approved' AND p.currency = $5 THEN p.amount ELSE 0 END), 0)::float as revenue
        FROM purchases p
        JOIN sites s ON s.site_key = p.site_key
        WHERE s.account_id = $1
+         AND ($4::int IS NULL OR s.id = $4::int)
          AND p.created_at >= $2
          AND p.created_at <= $3
        GROUP BY TO_CHAR(p.created_at AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD')
        ORDER BY date ASC`,
-      [auth.accountId, start, end, currency]
+      [auth.accountId, start, end, siteId, currency]
     );
 
     return res.json({ data: result.rows });
