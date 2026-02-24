@@ -538,7 +538,7 @@ router.get('/:siteId/snippet', requireAuth, async (req, res) => {
 
   const snippet = [
     `<script>window.TRACKING_CONFIG={apiUrl:${JSON.stringify(apiBaseUrl)},siteKey:${JSON.stringify(siteKey)},metaPixelId:${JSON.stringify(metaPixelId)},gaMeasurementId:${JSON.stringify(gaMeasurementId)},eventRules:${JSON.stringify(eventRules)}};</script>`,
-    `<script async src=${JSON.stringify(sdkUrl)}></script>`,
+    `<script defer src=${JSON.stringify(sdkUrl)}></script>`,
   ].join('\n');
 
   return res.json({
