@@ -1786,8 +1786,8 @@ ${scriptContent}
                     Copiar
                   </button>
                 </div>
-                <pre className="text-xs p-5 max-h-72 overflow-y-auto overflow-x-hidden custom-scrollbar">
-                  <code className="block whitespace-pre-wrap break-all text-zinc-700 dark:text-zinc-300 leading-relaxed">{snippet}</code>
+                <pre className="text-xs p-5">
+                  <code className="block break-all text-zinc-700 dark:text-zinc-300 leading-relaxed">{snippet}</code>
                 </pre>
               </div>
 
@@ -2494,11 +2494,22 @@ ${scriptContent}
                       >
                         <option value="Purchase">Purchase (Compra)</option>
                         <option value="Lead">Lead (Cadastro)</option>
-                        <option value="CompleteRegistration">CompleteRegistration</option>
+                        <option value="AddPaymentInfo">AddPaymentInfo</option>
                         <option value="AddToCart">AddToCart</option>
-                        <option value="InitiateCheckout">InitiateCheckout</option>
-                        <option value="ViewContent">ViewContent</option>
+                        <option value="AddToWishlist">AddToWishlist</option>
+                        <option value="CompleteRegistration">CompleteRegistration</option>
                         <option value="Contact">Contact</option>
+                        <option value="CustomizeProduct">CustomizeProduct</option>
+                        <option value="Donate">Donate</option>
+                        <option value="FindLocation">FindLocation</option>
+                        <option value="InitiateCheckout">InitiateCheckout</option>
+                        <option value="PageView">PageView</option>
+                        <option value="Schedule">Schedule</option>
+                        <option value="Search">Search</option>
+                        <option value="StartTrial">StartTrial</option>
+                        <option value="SubmitApplication">SubmitApplication</option>
+                        <option value="Subscribe">Subscribe</option>
+                        <option value="ViewContent">ViewContent</option>
                         <option value="Custom">Personalizado...</option>
                       </select>
                     </div>
@@ -2600,8 +2611,22 @@ ${scriptContent}
                       >
                         <option value="Purchase">Purchase (Compra)</option>
                         <option value="Lead">Lead (Cadastro)</option>
-                        <option value="Contact">Contact</option>
+                        <option value="AddPaymentInfo">AddPaymentInfo</option>
                         <option value="AddToCart">AddToCart</option>
+                        <option value="AddToWishlist">AddToWishlist</option>
+                        <option value="CompleteRegistration">CompleteRegistration</option>
+                        <option value="Contact">Contact</option>
+                        <option value="CustomizeProduct">CustomizeProduct</option>
+                        <option value="Donate">Donate</option>
+                        <option value="FindLocation">FindLocation</option>
+                        <option value="InitiateCheckout">InitiateCheckout</option>
+                        <option value="PageView">PageView</option>
+                        <option value="Schedule">Schedule</option>
+                        <option value="Search">Search</option>
+                        <option value="StartTrial">StartTrial</option>
+                        <option value="SubmitApplication">SubmitApplication</option>
+                        <option value="Subscribe">Subscribe</option>
+                        <option value="ViewContent">ViewContent</option>
                         <option value="Custom">Personalizado...</option>
                       </select>
                     </div>
@@ -2802,10 +2827,24 @@ ${scriptContent}
                             onChange={(e) => setFormEventType(e.target.value)}
                             className={selectCls}
                           >
-                            <option value="Lead">Lead</option>
-                            <option value="Contact">Contact</option>
-                            <option value="Purchase">Purchase</option>
+                            <option value="Purchase">Purchase (Compra)</option>
+                            <option value="Lead">Lead (Cadastro)</option>
+                            <option value="AddPaymentInfo">AddPaymentInfo</option>
+                            <option value="AddToCart">AddToCart</option>
+                            <option value="AddToWishlist">AddToWishlist</option>
                             <option value="CompleteRegistration">CompleteRegistration</option>
+                            <option value="Contact">Contact</option>
+                            <option value="CustomizeProduct">CustomizeProduct</option>
+                            <option value="Donate">Donate</option>
+                            <option value="FindLocation">FindLocation</option>
+                            <option value="InitiateCheckout">InitiateCheckout</option>
+                            <option value="PageView">PageView</option>
+                            <option value="Schedule">Schedule</option>
+                            <option value="Search">Search</option>
+                            <option value="StartTrial">StartTrial</option>
+                            <option value="SubmitApplication">SubmitApplication</option>
+                            <option value="Subscribe">Subscribe</option>
+                            <option value="ViewContent">ViewContent</option>
                             <option value="Custom">Personalizado...</option>
                           </select>
                         </div>
@@ -2879,371 +2918,402 @@ ${scriptContent}
                 </div>
               )}
             </div>
-          )}
+          )
+          }
 
           {/* ── Tab: Campanhas ── */}
-          {tab === 'campaigns' && (
-            <div className="space-y-4">
-              <div>
-                <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Campanhas Meta Ads</h2>
-                <p className="mt-0.5 text-xs text-zinc-600 dark:text-zinc-500">
-                  Visualize métricas, ative ou pause campanhas. Use o Diagnóstico IA para recomendações detalhadas.
-                </p>
-              </div>
-
-              {!meta?.has_facebook_connection && (
-                <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/30 p-4 text-sm text-zinc-600 dark:text-zinc-500 dark:text-zinc-400">
-                  Conecte o Facebook na aba{' '}
-                  <button
-                    className="text-zinc-700 dark:text-zinc-300 underline underline-offset-2"
-                    onClick={() => setTab('meta')}
-                  >
-                    Meta Ads
-                  </button>{' '}
-                  para listar campanhas.
+          {
+            tab === 'campaigns' && (
+              <div className="space-y-4">
+                <div>
+                  <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Campanhas Meta Ads</h2>
+                  <p className="mt-0.5 text-xs text-zinc-600 dark:text-zinc-500">
+                    Visualize métricas, ative ou pause campanhas. Use o Diagnóstico IA para recomendações detalhadas.
+                  </p>
                 </div>
-              )}
 
-              {meta?.has_facebook_connection && !meta?.ad_account_id && (
-                <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/30 p-4 text-sm text-zinc-600 dark:text-zinc-500 dark:text-zinc-400">
-                  Defina a conta de anúncios na aba{' '}
-                  <button
-                    className="text-zinc-700 dark:text-zinc-300 underline underline-offset-2"
-                    onClick={() => setTab('meta')}
-                  >
-                    Meta Ads
-                  </button>{' '}
-                  para listar campanhas.
-                </div>
-              )}
+                {!meta?.has_facebook_connection && (
+                  <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/30 p-4 text-sm text-zinc-600 dark:text-zinc-500 dark:text-zinc-400">
+                    Conecte o Facebook na aba{' '}
+                    <button
+                      className="text-zinc-700 dark:text-zinc-300 underline underline-offset-2"
+                      onClick={() => setTab('meta')}
+                    >
+                      Meta Ads
+                    </button>{' '}
+                    para listar campanhas.
+                  </div>
+                )}
 
-              {meta?.has_facebook_connection && meta?.ad_account_id && (
-                <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 overflow-hidden">
-                  {/* Breadcrumbs */}
-                  <div className="flex items-center gap-1.5 px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60">
-                    {metaBreadcrumbs.map((crumb, idx) => (
-                      <React.Fragment key={idx}>
-                        <button
-                          onClick={() => handleMetaBreadcrumbClick(idx)}
-                          className={`text-xs transition-colors ${idx === metaBreadcrumbs.length - 1
-                            ? 'text-zinc-200 font-medium'
-                            : 'text-zinc-600 dark:text-zinc-500 hover:text-zinc-700 dark:text-zinc-300'
-                            }`}
-                        >
-                          {crumb.name}
-                        </button>
-                        {idx < metaBreadcrumbs.length - 1 && (
+                {meta?.has_facebook_connection && !meta?.ad_account_id && (
+                  <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/30 p-4 text-sm text-zinc-600 dark:text-zinc-500 dark:text-zinc-400">
+                    Defina a conta de anúncios na aba{' '}
+                    <button
+                      className="text-zinc-700 dark:text-zinc-300 underline underline-offset-2"
+                      onClick={() => setTab('meta')}
+                    >
+                      Meta Ads
+                    </button>{' '}
+                    para listar campanhas.
+                  </div>
+                )}
+
+                {meta?.has_facebook_connection && meta?.ad_account_id && (
+                  <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 overflow-hidden">
+                    {/* Breadcrumbs */}
+                    <div className="flex items-center gap-1.5 px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60">
+                      {metaBreadcrumbs.map((crumb, idx) => (
+                        <React.Fragment key={idx}>
+                          <button
+                            onClick={() => handleMetaBreadcrumbClick(idx)}
+                            className={`text-xs transition-colors ${idx === metaBreadcrumbs.length - 1
+                              ? 'text-zinc-200 font-medium'
+                              : 'text-zinc-600 dark:text-zinc-500 hover:text-zinc-700 dark:text-zinc-300'
+                              }`}
+                          >
+                            {crumb.name}
+                          </button>
+                          {idx < metaBreadcrumbs.length - 1 && (
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              width="10"
+                              height="10"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              className="text-zinc-700"
+                            >
+                              <path d="m9 18 6-6-6-6" />
+                            </svg>
+                          )}
+                        </React.Fragment>
+                      ))}
+                    </div>
+
+                    {/* Toolbar */}
+                    <div className="px-4 py-2.5 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-white dark:bg-zinc-950/60 flex flex-wrap items-center gap-2">
+                      {periodSelector}
+                      <select
+                        value={metaStatusFilter}
+                        onChange={(e) => setMetaStatusFilter(e.target.value as 'active' | 'all')}
+                        className={selectClsCompact}
+                      >
+                        <option value="active">Somente ativos</option>
+                        <option value="all">Todos</option>
+                      </select>
+                      <button
+                        onClick={() => loadCampaigns({ force: true })}
+                        disabled={loading}
+                        className="flex items-center gap-1.5 bg-zinc-50 dark:bg-zinc-900/60 hover:bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 px-3.5 py-2 rounded-lg text-xs transition-colors disabled:opacity-40"
+                      >
+                        {loading ? (
+                          <svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                          </svg>
+                        ) : (
                           <svg
                             xmlns="http://www.w3.org/2000/svg"
-                            width="10"
-                            height="10"
+                            width="12"
+                            height="12"
                             viewBox="0 0 24 24"
                             fill="none"
                             stroke="currentColor"
-                            strokeWidth="2"
+                            strokeWidth="2.5"
                             strokeLinecap="round"
                             strokeLinejoin="round"
-                            className="text-zinc-700"
                           >
-                            <path d="m9 18 6-6-6-6" />
+                            <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                            <path d="M3 3v5h5" />
                           </svg>
                         )}
-                      </React.Fragment>
-                    ))}
-                  </div>
-
-                  {/* Toolbar */}
-                  <div className="px-4 py-2.5 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-white dark:bg-zinc-950/60 flex flex-wrap items-center gap-2">
-                    {periodSelector}
-                    <select
-                      value={metaStatusFilter}
-                      onChange={(e) => setMetaStatusFilter(e.target.value as 'active' | 'all')}
-                      className={selectClsCompact}
-                    >
-                      <option value="active">Somente ativos</option>
-                      <option value="all">Todos</option>
-                    </select>
-                    <button
-                      onClick={() => loadCampaigns({ force: true })}
-                      disabled={loading}
-                      className="flex items-center gap-1.5 bg-zinc-50 dark:bg-zinc-900/60 hover:bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 px-3.5 py-2 rounded-lg text-xs transition-colors disabled:opacity-40"
-                    >
-                      {loading ? (
-                        <svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                        </svg>
-                      ) : (
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          width="12"
-                          height="12"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2.5"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        >
-                          <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                          <path d="M3 3v5h5" />
-                        </svg>
-                      )}
-                      Atualizar
-                    </button>
-                  </div>
-
-                  {/* Table */}
-                  <div className="max-h-[60vh] overflow-x-auto overflow-y-auto custom-scrollbar">
-                    <table className="w-full min-w-[1100px] text-xs">
-                      <thead>
-                        <tr className="border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/80">
-                          {[
-                            'Nome',
-                            'Status',
-                            'Investido',
-                            'Objetivo',
-                            'Custo/res.',
-                            'Alcance',
-                            'Impressões',
-                            'Cliques',
-                            'CTR',
-                            'Hook Rate',
-                            'LP Views',
-                            'Taxa LP View',
-                            'Custo LP View',
-                            'CPC',
-                            'CPM',
-                            'Frequência',
-                            'Finalização',
-                            'Compras',
-                            '',
-                          ].map((h, index) => (
-                            <th
-                              key={h}
-                              className={`text-left text-[10px] font-medium uppercase tracking-widest text-zinc-600 px-4 py-3 whitespace-nowrap ${index === 0
-                                ? 'sticky left-0 z-10 bg-white dark:bg-zinc-950/95 border-r border-zinc-200 dark:border-zinc-800'
-                                : ''
-                                }`}
-                            >
-                              {h}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {campaigns.length === 0 && (
-                          <tr>
-                            <td
-                              colSpan={18}
-                              className="px-4 py-12 text-center text-sm text-zinc-600 dark:text-zinc-500"
-                            >
-                              Nenhum item encontrado neste nível.
-                            </td>
-                          </tr>
-                        )}
-                        {campaigns.map((c) => {
-                          const metrics = campaignMetrics[c.id];
-                          const resultVal = metrics ? getResultValue(c, metrics) : 0;
-                          const objectiveLabel = getObjectiveMetricLabel(c, metrics);
-                          const cpr =
-                            resultVal > 0 && metrics?.spend ? metrics.spend / resultVal : 0;
-                          const statusVariant = getStatusVariant(c);
-
-                          return (
-                            <tr
-                              key={c.id}
-                              className="border-b border-zinc-200 dark:border-zinc-800/40 last:border-0 hover:bg-zinc-50 dark:bg-zinc-900/40 transition-colors"
-                            >
-                              <td className="px-4 py-3 max-w-[220px] sticky left-0 z-10 bg-white dark:bg-zinc-950/95 border-r border-zinc-200 dark:border-zinc-800">
-                                <button
-                                  onClick={() => handleMetaDrillDown(c)}
-                                  disabled={metaLevel === 'ad'}
-                                  className="text-left hover:text-blue-400 transition-colors truncate w-full block font-medium text-zinc-800 dark:text-zinc-200 text-xs"
-                                >
-                                  {c.name}
-                                </button>
-                                <div className="text-[10px] text-zinc-700 font-mono truncate mt-0.5">
-                                  {c.id}
-                                </div>
-                              </td>
-                              <td className="px-4 py-3">
-                                <Badge variant={statusVariant}>{getStatusLabel(c)}</Badge>
-                              </td>
-                              <td className="px-4 py-3 text-zinc-700 dark:text-zinc-300 tabular-nums">
-                                {metrics ? formatMoney(metrics.spend) : '—'}
-                              </td>
-                              <td className="px-4 py-3 text-zinc-800 dark:text-zinc-200 font-semibold tabular-nums">
-                                {metrics ? formatNumber(resultVal) : '—'}
-                                <div className="text-[10px] text-zinc-600 dark:text-zinc-500 font-normal">
-                                  {objectiveLabel}
-                                </div>
-                              </td>
-                              <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400 tabular-nums">
-                                {metrics && resultVal > 0 ? formatMoney(cpr) : '—'}
-                              </td>
-                              <td className="px-4 py-3 text-zinc-600 dark:text-zinc-500 tabular-nums">
-                                {metrics ? formatNumber(metrics.reach || 0) : '—'}
-                              </td>
-                              <td className="px-4 py-3 text-zinc-600 dark:text-zinc-500 tabular-nums">
-                                {metrics ? formatNumber(metrics.impressions) : '—'}
-                              </td>
-                              <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400 tabular-nums">
-                                {metrics ? formatNumber(metrics.clicks) : '—'}
-                              </td>
-                              <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400 tabular-nums">
-                                {metrics ? `${formatPercent(metrics.ctr)}%` : '—'}
-                              </td>
-                              <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400 tabular-nums">
-                                {metrics ? `${formatPercent(metrics.hook_rate || 0)}%` : '—'}
-                              </td>
-                              <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400 tabular-nums">
-                                {metrics ? formatNumber(metrics.landing_page_views) : '—'}
-                              </td>
-                              <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400 tabular-nums">
-                                {metrics ? `${formatPercent(getLpViewRate(metrics))}%` : '—'}
-                              </td>
-                              <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400 tabular-nums">
-                                {metrics && metrics.landing_page_views > 0
-                                  ? formatMoney(metrics.spend / metrics.landing_page_views)
-                                  : '—'}
-                              </td>
-                              <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400 tabular-nums">
-                                {metrics ? formatMoney(metrics.cpc) : '—'}
-                              </td>
-                              <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400 tabular-nums">
-                                {metrics ? formatMoney(metrics.cpm) : '—'}
-                              </td>
-                              <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400 tabular-nums">
-                                {metrics ? formatNumber(metrics.frequency || 0) : '—'}
-                              </td>
-                              <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400 tabular-nums">
-                                {metrics ? formatNumber(metrics.initiates_checkout) : '—'}
-                              </td>
-                              <td className="px-4 py-3 text-zinc-700 dark:text-zinc-300 tabular-nums">
-                                {metrics ? formatNumber(metrics.purchases) : '—'}
-                              </td>
-                              <td className="px-4 py-3">
-                                <div className="flex items-center gap-1.5 justify-end">
-                                  <button
-                                    onClick={() => toggleMetaStatus(c)}
-                                    className={`text-[11px] px-2.5 py-1 rounded-md border transition-colors ${resolveDisplayStatus(c) === 'ACTIVE'
-                                      ? 'bg-zinc-900 border-zinc-700 text-zinc-400 hover:text-amber-300 hover:border-amber-500/40'
-                                      : 'bg-zinc-900 border-zinc-700 text-zinc-400 hover:text-emerald-300 hover:border-emerald-500/40'
-                                      }`}
-                                  >
-                                    {resolveDisplayStatus(c) === 'ACTIVE' ? 'Pausar' : 'Ativar'}
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ── Tab: Webhooks ── */}
-          {tab === 'webhooks' && (
-            <WebhooksTab
-              site={site}
-              id={String(id)}
-              apiBaseUrl={apiBaseUrl}
-              webhookSecret={webhookSecret || ''}
-              showFlash={showFlash}
-            />
-          )}
-
-          {/* ── Tab: Diagnóstico ── */}
-          {tab === 'reports' && (
-            <div className="max-w-none space-y-4">
-              {campaigns.length > 0 && (
-                <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/30 p-5 space-y-4">
-                  <div className="flex items-center gap-3">
-                    <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Configurar diagnóstico</h3>
-                    {selectedCampaign && (
-                      <Badge variant={getStatusVariant(selectedCampaign)}>
-                        {getStatusLabel(selectedCampaign)}
-                      </Badge>
-                    )}
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 items-end">
-                    <div>
-                      <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-500 mb-1.5">
-                        Campanha
-                      </label>
-                      <select
-                        value={selectedCampaignId}
-                        onChange={(e) => setSelectedCampaignId(e.target.value)}
-                        className={selectCls}
-                      >
-                        <option value="">Selecione uma campanha…</option>
-                        {[...campaigns]
-                          .sort((a, b) => {
-                            const aA = a.status === 'ACTIVE' ? 0 : 1;
-                            const bA = b.status === 'ACTIVE' ? 0 : 1;
-                            if (aA !== bA) return aA - bA;
-                            return a.name.localeCompare(b.name);
-                          })
-                          .map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.name} {c.status === 'ACTIVE' ? '(Ativa)' : '(Pausada)'}
-                            </option>
-                          ))}
-                      </select>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {periodSelector}
-                      <button
-                        onClick={() => loadCampaigns({ force: true }).catch(() => { })}
-                        className="bg-zinc-50 dark:bg-zinc-900/60 hover:bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 px-3.5 py-2.5 rounded-lg text-xs transition-colors"
-                      >
                         Atualizar
                       </button>
                     </div>
-                  </div>
 
-                  <div className="border-t border-zinc-200 dark:border-zinc-800 pt-4 space-y-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-500">
-                        Filtros UTM (opcional)
-                      </h4>
-                      <div className="flex items-center gap-2">
-                        {savedUtms.length > 0 && (
-                          <select
-                            className="rounded-lg bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 px-2 py-1.5 text-xs text-zinc-900 dark:text-zinc-200 outline-none focus:border-zinc-600 max-w-[240px] truncate"
-                            onChange={(e) => {
-                              const utm = savedUtms.find((u) => u.id === Number(e.target.value));
-                              if (utm) selectSavedUtm(utm);
-                            }}
-                            value=""
-                          >
-                            <option value="" disabled>
-                              Carregar UTM salva...
-                            </option>
-                            {savedUtms.map((u) => (
-                              <option key={u.id} value={u.id} title={u.name}>
-                                {u.name}
+                    {/* Table */}
+                    <div className="max-h-[60vh] overflow-x-auto overflow-y-auto custom-scrollbar">
+                      <table className="w-full min-w-[1100px] text-xs">
+                        <thead>
+                          <tr className="border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/80">
+                            {[
+                              'Nome',
+                              'Status',
+                              'Investido',
+                              'Objetivo',
+                              'Custo/res.',
+                              'Alcance',
+                              'Impressões',
+                              'Cliques',
+                              'CTR',
+                              'Hook Rate',
+                              'LP Views',
+                              'Taxa LP View',
+                              'Custo LP View',
+                              'CPC',
+                              'CPM',
+                              'Frequência',
+                              'Finalização',
+                              'Compras',
+                              '',
+                            ].map((h, index) => (
+                              <th
+                                key={h}
+                                className={`text-left text-[10px] font-medium uppercase tracking-widest text-zinc-600 px-4 py-3 whitespace-nowrap ${index === 0
+                                  ? 'sticky left-0 z-10 bg-white dark:bg-zinc-950/95 border-r border-zinc-200 dark:border-zinc-800'
+                                  : ''
+                                  }`}
+                              >
+                                {h}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {campaigns.length === 0 && (
+                            <tr>
+                              <td
+                                colSpan={18}
+                                className="px-4 py-12 text-center text-sm text-zinc-600 dark:text-zinc-500"
+                              >
+                                Nenhum item encontrado neste nível.
+                              </td>
+                            </tr>
+                          )}
+                          {campaigns.map((c) => {
+                            const metrics = campaignMetrics[c.id];
+                            const resultVal = metrics ? getResultValue(c, metrics) : 0;
+                            const objectiveLabel = getObjectiveMetricLabel(c, metrics);
+                            const cpr =
+                              resultVal > 0 && metrics?.spend ? metrics.spend / resultVal : 0;
+                            const statusVariant = getStatusVariant(c);
+
+                            return (
+                              <tr
+                                key={c.id}
+                                className="border-b border-zinc-200 dark:border-zinc-800/40 last:border-0 hover:bg-zinc-50 dark:bg-zinc-900/40 transition-colors"
+                              >
+                                <td className="px-4 py-3 max-w-[220px] sticky left-0 z-10 bg-white dark:bg-zinc-950/95 border-r border-zinc-200 dark:border-zinc-800">
+                                  <button
+                                    onClick={() => handleMetaDrillDown(c)}
+                                    disabled={metaLevel === 'ad'}
+                                    className="text-left hover:text-blue-400 transition-colors truncate w-full block font-medium text-zinc-800 dark:text-zinc-200 text-xs"
+                                  >
+                                    {c.name}
+                                  </button>
+                                  <div className="text-[10px] text-zinc-700 font-mono truncate mt-0.5">
+                                    {c.id}
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <Badge variant={statusVariant}>{getStatusLabel(c)}</Badge>
+                                </td>
+                                <td className="px-4 py-3 text-zinc-700 dark:text-zinc-300 tabular-nums">
+                                  {metrics ? formatMoney(metrics.spend) : '—'}
+                                </td>
+                                <td className="px-4 py-3 text-zinc-800 dark:text-zinc-200 font-semibold tabular-nums">
+                                  {metrics ? formatNumber(resultVal) : '—'}
+                                  <div className="text-[10px] text-zinc-600 dark:text-zinc-500 font-normal">
+                                    {objectiveLabel}
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400 tabular-nums">
+                                  {metrics && resultVal > 0 ? formatMoney(cpr) : '—'}
+                                </td>
+                                <td className="px-4 py-3 text-zinc-600 dark:text-zinc-500 tabular-nums">
+                                  {metrics ? formatNumber(metrics.reach || 0) : '—'}
+                                </td>
+                                <td className="px-4 py-3 text-zinc-600 dark:text-zinc-500 tabular-nums">
+                                  {metrics ? formatNumber(metrics.impressions) : '—'}
+                                </td>
+                                <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400 tabular-nums">
+                                  {metrics ? formatNumber(metrics.clicks) : '—'}
+                                </td>
+                                <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400 tabular-nums">
+                                  {metrics ? `${formatPercent(metrics.ctr)}%` : '—'}
+                                </td>
+                                <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400 tabular-nums">
+                                  {metrics ? `${formatPercent(metrics.hook_rate || 0)}%` : '—'}
+                                </td>
+                                <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400 tabular-nums">
+                                  {metrics ? formatNumber(metrics.landing_page_views) : '—'}
+                                </td>
+                                <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400 tabular-nums">
+                                  {metrics ? `${formatPercent(getLpViewRate(metrics))}%` : '—'}
+                                </td>
+                                <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400 tabular-nums">
+                                  {metrics && metrics.landing_page_views > 0
+                                    ? formatMoney(metrics.spend / metrics.landing_page_views)
+                                    : '—'}
+                                </td>
+                                <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400 tabular-nums">
+                                  {metrics ? formatMoney(metrics.cpc) : '—'}
+                                </td>
+                                <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400 tabular-nums">
+                                  {metrics ? formatMoney(metrics.cpm) : '—'}
+                                </td>
+                                <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400 tabular-nums">
+                                  {metrics ? formatNumber(metrics.frequency || 0) : '—'}
+                                </td>
+                                <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400 tabular-nums">
+                                  {metrics ? formatNumber(metrics.initiates_checkout) : '—'}
+                                </td>
+                                <td className="px-4 py-3 text-zinc-700 dark:text-zinc-300 tabular-nums">
+                                  {metrics ? formatNumber(metrics.purchases) : '—'}
+                                </td>
+                                <td className="px-4 py-3">
+                                  <div className="flex items-center gap-1.5 justify-end">
+                                    <button
+                                      onClick={() => toggleMetaStatus(c)}
+                                      className={`text-[11px] px-2.5 py-1 rounded-md border transition-colors ${resolveDisplayStatus(c) === 'ACTIVE'
+                                        ? 'bg-zinc-900 border-zinc-700 text-zinc-400 hover:text-amber-300 hover:border-amber-500/40'
+                                        : 'bg-zinc-900 border-zinc-700 text-zinc-400 hover:text-emerald-300 hover:border-emerald-500/40'
+                                        }`}
+                                    >
+                                      {resolveDisplayStatus(c) === 'ACTIVE' ? 'Pausar' : 'Ativar'}
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          }
+
+          {/* ── Tab: Webhooks ── */}
+          {
+            tab === 'webhooks' && (
+              <WebhooksTab
+                site={site}
+                id={String(id)}
+                apiBaseUrl={apiBaseUrl}
+                webhookSecret={webhookSecret || ''}
+                showFlash={showFlash}
+              />
+            )
+          }
+
+          {/* ── Tab: Diagnóstico ── */}
+          {
+            tab === 'reports' && (
+              <div className="max-w-none space-y-4">
+                {campaigns.length > 0 && (
+                  <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/30 p-5 space-y-4">
+                    <div className="flex items-center gap-3">
+                      <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Configurar diagnóstico</h3>
+                      {selectedCampaign && (
+                        <Badge variant={getStatusVariant(selectedCampaign)}>
+                          {getStatusLabel(selectedCampaign)}
+                        </Badge>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 items-end">
+                      <div>
+                        <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-500 mb-1.5">
+                          Campanha
+                        </label>
+                        <select
+                          value={selectedCampaignId}
+                          onChange={(e) => setSelectedCampaignId(e.target.value)}
+                          className={selectCls}
+                        >
+                          <option value="">Selecione uma campanha…</option>
+                          {[...campaigns]
+                            .sort((a, b) => {
+                              const aA = a.status === 'ACTIVE' ? 0 : 1;
+                              const bA = b.status === 'ACTIVE' ? 0 : 1;
+                              if (aA !== bA) return aA - bA;
+                              return a.name.localeCompare(b.name);
+                            })
+                            .map((c) => (
+                              <option key={c.id} value={c.id}>
+                                {c.name} {c.status === 'ACTIVE' ? '(Ativa)' : '(Pausada)'}
                               </option>
                             ))}
-                          </select>
-                        )}
-                        {showUrlPaster ? (
-                          <div className="flex items-center gap-1.5 animate-in fade-in slide-in-from-right-4 duration-300">
-                            <input
-                              value={pastedUrl}
-                              onChange={(e) => setPastedUrl(e.target.value)}
-                              placeholder="https://..."
-                              className="w-64 rounded-lg bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 px-3 py-1.5 text-xs text-zinc-700 dark:text-zinc-300 outline-none focus:border-blue-500/50 transition-colors placeholder:text-zinc-600"
-                              autoFocus
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  e.preventDefault();
+                        </select>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {periodSelector}
+                        <button
+                          onClick={() => loadCampaigns({ force: true }).catch(() => { })}
+                          className="bg-zinc-50 dark:bg-zinc-900/60 hover:bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 px-3.5 py-2.5 rounded-lg text-xs transition-colors"
+                        >
+                          Atualizar
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="border-t border-zinc-200 dark:border-zinc-800 pt-4 space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-500">
+                          Filtros UTM (opcional)
+                        </h4>
+                        <div className="flex items-center gap-2">
+                          {savedUtms.length > 0 && (
+                            <select
+                              className="rounded-lg bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 px-2 py-1.5 text-xs text-zinc-900 dark:text-zinc-200 outline-none focus:border-zinc-600 max-w-[240px] truncate"
+                              onChange={(e) => {
+                                const utm = savedUtms.find((u) => u.id === Number(e.target.value));
+                                if (utm) selectSavedUtm(utm);
+                              }}
+                              value=""
+                            >
+                              <option value="" disabled>
+                                Carregar UTM salva...
+                              </option>
+                              {savedUtms.map((u) => (
+                                <option key={u.id} value={u.id} title={u.name}>
+                                  {u.name}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                          {showUrlPaster ? (
+                            <div className="flex items-center gap-1.5 animate-in fade-in slide-in-from-right-4 duration-300">
+                              <input
+                                value={pastedUrl}
+                                onChange={(e) => setPastedUrl(e.target.value)}
+                                placeholder="https://..."
+                                className="w-64 rounded-lg bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 px-3 py-1.5 text-xs text-zinc-700 dark:text-zinc-300 outline-none focus:border-blue-500/50 transition-colors placeholder:text-zinc-600"
+                                autoFocus
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    if (!pastedUrl) return;
+                                    try {
+                                      const u = new URL(pastedUrl);
+                                      const s = u.searchParams;
+                                      if (s.get('utm_source')) setDiagnosisUtmSource(s.get('utm_source') || '');
+                                      if (s.get('utm_medium')) setDiagnosisUtmMedium(s.get('utm_medium') || '');
+                                      if (s.get('utm_campaign')) setDiagnosisUtmCampaign(s.get('utm_campaign') || '');
+                                      if (s.get('utm_content')) setDiagnosisUtmContent(s.get('utm_content') || '');
+                                      if (s.get('utm_term')) setDiagnosisUtmTerm(s.get('utm_term') || '');
+                                      if (s.get('click_id')) setDiagnosisClickId(s.get('click_id') || '');
+                                      showFlash('UTMs extraídos com sucesso!');
+                                      setShowUrlPaster(false);
+                                      setPastedUrl('');
+                                    } catch {
+                                      showFlash('URL inválida.', 'error');
+                                    }
+                                  } else if (e.key === 'Escape') {
+                                    setShowUrlPaster(false);
+                                    setPastedUrl('');
+                                  }
+                                }}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
                                   if (!pastedUrl) return;
                                   try {
                                     const u = new URL(pastedUrl);
@@ -3260,366 +3330,342 @@ ${scriptContent}
                                   } catch {
                                     showFlash('URL inválida.', 'error');
                                   }
-                                } else if (e.key === 'Escape') {
+                                }}
+                                className="p-1.5 rounded-md bg-blue-600 hover:bg-blue-500 text-white transition-colors"
+                                title="Aplicar"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                  <polyline points="20 6 9 17 4 12"></polyline>
+                                </svg>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
                                   setShowUrlPaster(false);
                                   setPastedUrl('');
-                                }
-                              }}
-                            />
+                                }}
+                                className="p-1.5 rounded-md bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-700 text-zinc-600 dark:text-zinc-400 hover:text-zinc-800 dark:text-zinc-200 transition-colors"
+                                title="Cancelar"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                                </svg>
+                              </button>
+                            </div>
+                          ) : (
                             <button
                               type="button"
                               onClick={() => {
-                                if (!pastedUrl) return;
-                                try {
-                                  const u = new URL(pastedUrl);
-                                  const s = u.searchParams;
-                                  if (s.get('utm_source')) setDiagnosisUtmSource(s.get('utm_source') || '');
-                                  if (s.get('utm_medium')) setDiagnosisUtmMedium(s.get('utm_medium') || '');
-                                  if (s.get('utm_campaign')) setDiagnosisUtmCampaign(s.get('utm_campaign') || '');
-                                  if (s.get('utm_content')) setDiagnosisUtmContent(s.get('utm_content') || '');
-                                  if (s.get('utm_term')) setDiagnosisUtmTerm(s.get('utm_term') || '');
-                                  if (s.get('click_id')) setDiagnosisClickId(s.get('click_id') || '');
-                                  showFlash('UTMs extraídos com sucesso!');
-                                  setShowUrlPaster(false);
-                                  setPastedUrl('');
-                                } catch {
-                                  showFlash('URL inválida.', 'error');
-                                }
-                              }}
-                              className="p-1.5 rounded-md bg-blue-600 hover:bg-blue-500 text-white transition-colors"
-                              title="Aplicar"
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                                <polyline points="20 6 9 17 4 12"></polyline>
-                              </svg>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setShowUrlPaster(false);
+                                setShowUrlPaster(true);
                                 setPastedUrl('');
                               }}
-                              className="p-1.5 rounded-md bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-700 text-zinc-600 dark:text-zinc-400 hover:text-zinc-800 dark:text-zinc-200 transition-colors"
-                              title="Cancelar"
+                              className="text-[11px] border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/70 hover:bg-zinc-50 dark:hover:bg-zinc-900 text-zinc-600 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 px-3 py-2 rounded-lg transition-colors"
                             >
-                              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                                <line x1="18" y1="6" x2="6" y2="18"></line>
-                                <line x1="6" y1="6" x2="18" y2="18"></line>
-                              </svg>
+                              Colar URL
                             </button>
-                          </div>
-                        ) : (
+                          )}
                           <button
                             type="button"
                             onClick={() => {
-                              setShowUrlPaster(true);
-                              setPastedUrl('');
+                              setDiagnosisUtmSource('');
+                              setDiagnosisUtmMedium('');
+                              setDiagnosisUtmCampaign('');
+                              setDiagnosisUtmContent('');
+                              setDiagnosisUtmTerm('');
+                              setDiagnosisClickId('');
                             }}
                             className="text-[11px] border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/70 hover:bg-zinc-50 dark:hover:bg-zinc-900 text-zinc-600 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 px-3 py-2 rounded-lg transition-colors"
                           >
-                            Colar URL
+                            Limpar filtros
                           </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setDiagnosisUtmSource('');
-                            setDiagnosisUtmMedium('');
-                            setDiagnosisUtmCampaign('');
-                            setDiagnosisUtmContent('');
-                            setDiagnosisUtmTerm('');
-                            setDiagnosisClickId('');
-                          }}
-                          className="text-[11px] border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/70 hover:bg-zinc-50 dark:hover:bg-zinc-900 text-zinc-600 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 px-3 py-2 rounded-lg transition-colors"
-                        >
-                          Limpar filtros
-                        </button>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {[
+                          { label: 'utm_source', val: diagnosisUtmSource, set: setDiagnosisUtmSource, opts: utmOptions.sources },
+                          { label: 'utm_medium', val: diagnosisUtmMedium, set: setDiagnosisUtmMedium, opts: utmOptions.mediums },
+                          { label: 'utm_campaign', val: diagnosisUtmCampaign, set: setDiagnosisUtmCampaign, opts: utmOptions.campaigns },
+                          { label: 'utm_content', val: diagnosisUtmContent, set: setDiagnosisUtmContent, opts: utmOptions.contents },
+                          { label: 'utm_term', val: diagnosisUtmTerm, set: setDiagnosisUtmTerm, opts: utmOptions.terms },
+                          { label: 'click_id', val: diagnosisClickId, set: setDiagnosisClickId, opts: [] },
+                        ].map((field) => {
+                          const listId = `list-${field.label}`;
+                          return (
+                            <div key={field.label}>
+                              <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-500 mb-1.5">
+                                {field.label}
+                              </label>
+                              <input
+                                value={field.val}
+                                onChange={(e) => field.set(e.target.value)}
+                                className={inputCls}
+                                list={field.opts && field.opts.length > 0 ? listId : undefined}
+                                placeholder="Digite ou selecione..."
+                                autoComplete="off"
+                              />
+                              {field.opts && field.opts.length > 0 && (
+                                <datalist id={listId}>
+                                  {field.opts.map((opt) => (
+                                    <option key={opt} value={opt} />
+                                  ))}
+                                </datalist>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      {[
-                        { label: 'utm_source', val: diagnosisUtmSource, set: setDiagnosisUtmSource, opts: utmOptions.sources },
-                        { label: 'utm_medium', val: diagnosisUtmMedium, set: setDiagnosisUtmMedium, opts: utmOptions.mediums },
-                        { label: 'utm_campaign', val: diagnosisUtmCampaign, set: setDiagnosisUtmCampaign, opts: utmOptions.campaigns },
-                        { label: 'utm_content', val: diagnosisUtmContent, set: setDiagnosisUtmContent, opts: utmOptions.contents },
-                        { label: 'utm_term', val: diagnosisUtmTerm, set: setDiagnosisUtmTerm, opts: utmOptions.terms },
-                        { label: 'click_id', val: diagnosisClickId, set: setDiagnosisClickId, opts: [] },
-                      ].map((field) => {
-                        const listId = `list-${field.label}`;
-                        return (
-                          <div key={field.label}>
-                            <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-500 mb-1.5">
-                              {field.label}
-                            </label>
-                            <input
-                              value={field.val}
-                              onChange={(e) => field.set(e.target.value)}
-                              className={inputCls}
-                              list={field.opts && field.opts.length > 0 ? listId : undefined}
-                              placeholder="Digite ou selecione..."
-                              autoComplete="off"
-                            />
-                            {field.opts && field.opts.length > 0 && (
-                              <datalist id={listId}>
-                                {field.opts.map((opt) => (
-                                  <option key={opt} value={opt} />
-                                ))}
-                              </datalist>
-                            )}
+
+                    {selectedCampaignId && campaignMetrics[selectedCampaignId] && (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
+                        <StatCard
+                          label="Investido"
+                          value={formatMoney(campaignMetrics[selectedCampaignId].spend)}
+                        />
+                        <StatCard
+                          label="Alcance"
+                          value={formatNumber(campaignMetrics[selectedCampaignId].reach || 0)}
+                        />
+                        <StatCard
+                          label="Impressões"
+                          value={formatNumber(campaignMetrics[selectedCampaignId].impressions)}
+                        />
+                        <StatCard
+                          label="Cliques"
+                          value={formatNumber(campaignMetrics[selectedCampaignId].clicks)}
+                        />
+                        <StatCard
+                          label="CTR"
+                          value={`${formatPercent(campaignMetrics[selectedCampaignId].ctr)}%`}
+                        />
+                        <StatCard
+                          label="LP Views"
+                          value={formatNumber(campaignMetrics[selectedCampaignId].landing_page_views)}
+                        />
+                        <StatCard
+                          label="Taxa LP View"
+                          value={`${formatPercent(getLpViewRate(campaignMetrics[selectedCampaignId]))}%`}
+                        />
+                        <StatCard
+                          label="Custo LP View"
+                          value={
+                            campaignMetrics[selectedCampaignId].landing_page_views > 0
+                              ? formatMoney(
+                                campaignMetrics[selectedCampaignId].spend /
+                                campaignMetrics[selectedCampaignId].landing_page_views
+                              )
+                              : '—'
+                          }
+                        />
+                        <StatCard
+                          label="CPC"
+                          value={formatMoney(campaignMetrics[selectedCampaignId].cpc)}
+                        />
+                        <StatCard
+                          label="CPM"
+                          value={formatMoney(campaignMetrics[selectedCampaignId].cpm)}
+                        />
+                        <StatCard
+                          label="Frequência"
+                          value={formatNumber(campaignMetrics[selectedCampaignId].frequency || 0)}
+                        />
+                        <StatCard
+                          label="Hook Rate"
+                          value={`${formatPercent(campaignMetrics[selectedCampaignId].hook_rate || 0)}%`}
+                        />
+                        <StatCard
+                          label={`Objetivo (${getObjectiveMetricLabel(
+                            selectedCampaign,
+                            campaignMetrics[selectedCampaignId]
+                          )})`}
+                          value={formatNumber(
+                            getResultValue(selectedCampaign, campaignMetrics[selectedCampaignId])
+                          )}
+                        />
+                        <StatCard
+                          label="Finalização"
+                          value={formatNumber(campaignMetrics[selectedCampaignId].initiates_checkout)}
+                        />
+                        <StatCard
+                          label="Compras"
+                          value={formatNumber(campaignMetrics[selectedCampaignId].purchases)}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {report?.meta_breakdown && (
+                  <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/30 p-5 space-y-4">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Resumo por nível</h3>
+                      <span className="text-[11px] text-zinc-600 dark:text-zinc-500">Campanha · Conjunto · Anúncio</span>
+                    </div>
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                      {([
+                        { label: 'Campanhas', rows: report.meta_breakdown.campaigns || [] },
+                        { label: 'Conjuntos', rows: report.meta_breakdown.adsets || [] },
+                        { label: 'Anúncios', rows: report.meta_breakdown.ads || [] },
+                      ] as Array<{ label: string; rows: MetaBreakdownItem[] }>).map((group) => (
+                        <div key={group.label} className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/40">
+                          <div className="px-3.5 py-2.5 border-b border-zinc-200 dark:border-zinc-800 text-[11px] font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-500">
+                            {group.label}
                           </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {selectedCampaignId && campaignMetrics[selectedCampaignId] && (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
-                      <StatCard
-                        label="Investido"
-                        value={formatMoney(campaignMetrics[selectedCampaignId].spend)}
-                      />
-                      <StatCard
-                        label="Alcance"
-                        value={formatNumber(campaignMetrics[selectedCampaignId].reach || 0)}
-                      />
-                      <StatCard
-                        label="Impressões"
-                        value={formatNumber(campaignMetrics[selectedCampaignId].impressions)}
-                      />
-                      <StatCard
-                        label="Cliques"
-                        value={formatNumber(campaignMetrics[selectedCampaignId].clicks)}
-                      />
-                      <StatCard
-                        label="CTR"
-                        value={`${formatPercent(campaignMetrics[selectedCampaignId].ctr)}%`}
-                      />
-                      <StatCard
-                        label="LP Views"
-                        value={formatNumber(campaignMetrics[selectedCampaignId].landing_page_views)}
-                      />
-                      <StatCard
-                        label="Taxa LP View"
-                        value={`${formatPercent(getLpViewRate(campaignMetrics[selectedCampaignId]))}%`}
-                      />
-                      <StatCard
-                        label="Custo LP View"
-                        value={
-                          campaignMetrics[selectedCampaignId].landing_page_views > 0
-                            ? formatMoney(
-                              campaignMetrics[selectedCampaignId].spend /
-                              campaignMetrics[selectedCampaignId].landing_page_views
-                            )
-                            : '—'
-                        }
-                      />
-                      <StatCard
-                        label="CPC"
-                        value={formatMoney(campaignMetrics[selectedCampaignId].cpc)}
-                      />
-                      <StatCard
-                        label="CPM"
-                        value={formatMoney(campaignMetrics[selectedCampaignId].cpm)}
-                      />
-                      <StatCard
-                        label="Frequência"
-                        value={formatNumber(campaignMetrics[selectedCampaignId].frequency || 0)}
-                      />
-                      <StatCard
-                        label="Hook Rate"
-                        value={`${formatPercent(campaignMetrics[selectedCampaignId].hook_rate || 0)}%`}
-                      />
-                      <StatCard
-                        label={`Objetivo (${getObjectiveMetricLabel(
-                          selectedCampaign,
-                          campaignMetrics[selectedCampaignId]
-                        )})`}
-                        value={formatNumber(
-                          getResultValue(selectedCampaign, campaignMetrics[selectedCampaignId])
-                        )}
-                      />
-                      <StatCard
-                        label="Finalização"
-                        value={formatNumber(campaignMetrics[selectedCampaignId].initiates_checkout)}
-                      />
-                      <StatCard
-                        label="Compras"
-                        value={formatNumber(campaignMetrics[selectedCampaignId].purchases)}
-                      />
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {report?.meta_breakdown && (
-                <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/30 p-5 space-y-4">
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Resumo por nível</h3>
-                    <span className="text-[11px] text-zinc-600 dark:text-zinc-500">Campanha · Conjunto · Anúncio</span>
-                  </div>
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                    {([
-                      { label: 'Campanhas', rows: report.meta_breakdown.campaigns || [] },
-                      { label: 'Conjuntos', rows: report.meta_breakdown.adsets || [] },
-                      { label: 'Anúncios', rows: report.meta_breakdown.ads || [] },
-                    ] as Array<{ label: string; rows: MetaBreakdownItem[] }>).map((group) => (
-                      <div key={group.label} className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/40">
-                        <div className="px-3.5 py-2.5 border-b border-zinc-200 dark:border-zinc-800 text-[11px] font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-500">
-                          {group.label}
-                        </div>
-                        <div className="overflow-auto">
-                          <table className="w-full text-[11px]">
-                            <thead className="bg-zinc-50 dark:bg-zinc-900/60">
-                              <tr>
-                                <th className="text-left font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-500 px-3 py-2">
-                                  Nome
-                                </th>
-                                <th className="text-right font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-500 px-3 py-2">
-                                  Spend
-                                </th>
-                                <th className="text-right font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-500 px-3 py-2">
-                                  CTR
-                                </th>
-                                <th className="text-right font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-500 px-3 py-2">
-                                  LP%
-                                </th>
-                                <th className="text-right font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-500 px-3 py-2">
-                                  Compras
-                                </th>
-                                <th className="text-left font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-500 px-3 py-2">
-                                  Gargalo
-                                </th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {group.rows.length === 0 && (
+                          <div className="overflow-auto">
+                            <table className="w-full text-[11px]">
+                              <thead className="bg-zinc-50 dark:bg-zinc-900/60">
                                 <tr>
-                                  <td colSpan={6} className="px-3 py-3 text-center text-zinc-600 dark:text-zinc-500">
-                                    Sem dados neste nível.
-                                  </td>
+                                  <th className="text-left font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-500 px-3 py-2">
+                                    Nome
+                                  </th>
+                                  <th className="text-right font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-500 px-3 py-2">
+                                    Spend
+                                  </th>
+                                  <th className="text-right font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-500 px-3 py-2">
+                                    CTR
+                                  </th>
+                                  <th className="text-right font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-500 px-3 py-2">
+                                    LP%
+                                  </th>
+                                  <th className="text-right font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-500 px-3 py-2">
+                                    Compras
+                                  </th>
+                                  <th className="text-left font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-500 px-3 py-2">
+                                    Gargalo
+                                  </th>
                                 </tr>
-                              )}
-                              {group.rows.slice(0, 5).map((row) => (
-                                <tr key={row.id} className="border-t border-zinc-200 dark:border-zinc-800">
-                                  <td className="px-3 py-2 text-zinc-700 dark:text-zinc-300 max-w-[160px] truncate">
-                                    {row.name || '—'}
-                                  </td>
-                                  <td className="px-3 py-2 text-right text-zinc-700 dark:text-zinc-300 tabular-nums">
-                                    {formatMoney(row.spend)}
-                                  </td>
-                                  <td className="px-3 py-2 text-right text-zinc-600 dark:text-zinc-400 tabular-nums">
-                                    {formatPercent(getBreakdownCtr(row))}%
-                                  </td>
-                                  <td className="px-3 py-2 text-right text-zinc-600 dark:text-zinc-400 tabular-nums">
-                                    {formatPercent(getBreakdownLpRate(row))}%
-                                  </td>
-                                  <td className="px-3 py-2 text-right text-zinc-700 dark:text-zinc-300 tabular-nums">
-                                    {formatNumber(row.purchases || 0)}
-                                  </td>
-                                  <td className="px-3 py-2 text-zinc-600 dark:text-zinc-400">
-                                    {getBreakdownBottleneck(row)}
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
+                              </thead>
+                              <tbody>
+                                {group.rows.length === 0 && (
+                                  <tr>
+                                    <td colSpan={6} className="px-3 py-3 text-center text-zinc-600 dark:text-zinc-500">
+                                      Sem dados neste nível.
+                                    </td>
+                                  </tr>
+                                )}
+                                {group.rows.slice(0, 5).map((row) => (
+                                  <tr key={row.id} className="border-t border-zinc-200 dark:border-zinc-800">
+                                    <td className="px-3 py-2 text-zinc-700 dark:text-zinc-300 max-w-[160px] truncate">
+                                      {row.name || '—'}
+                                    </td>
+                                    <td className="px-3 py-2 text-right text-zinc-700 dark:text-zinc-300 tabular-nums">
+                                      {formatMoney(row.spend)}
+                                    </td>
+                                    <td className="px-3 py-2 text-right text-zinc-600 dark:text-zinc-400 tabular-nums">
+                                      {formatPercent(getBreakdownCtr(row))}%
+                                    </td>
+                                    <td className="px-3 py-2 text-right text-zinc-600 dark:text-zinc-400 tabular-nums">
+                                      {formatPercent(getBreakdownLpRate(row))}%
+                                    </td>
+                                    <td className="px-3 py-2 text-right text-zinc-700 dark:text-zinc-300 tabular-nums">
+                                      {formatNumber(row.purchases || 0)}
+                                    </td>
+                                    <td className="px-3 py-2 text-zinc-600 dark:text-zinc-400">
+                                      {getBreakdownBottleneck(row)}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
                         </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {!report && (
+                  <div className="rounded-xl border border-dashed border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/20 px-6 py-10 text-center">
+                    <div className="mx-auto w-10 h-10 rounded-full bg-zinc-200 dark:bg-zinc-800/60 flex items-center justify-center mb-3">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="18"
+                        height="18"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="text-zinc-600 dark:text-zinc-500"
+                      >
+                        <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z" />
+                      </svg>
+                    </div>
+                    <div className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Nenhum diagnóstico gerado</div>
+                    <div className="mt-1 text-xs text-zinc-600 dark:text-zinc-500">
+                      Selecione uma campanha e clique em{' '}
+                      <span className="text-zinc-600 dark:text-zinc-400">Gerar diagnóstico</span> no canto superior.
+                    </div>
+                  </div>
+                )}
+
+                {report?.analysis_text && (
+                  <div className="space-y-3">
+                    {visibleReportSections.map((section, index) => (
+                      <div
+                        key={`${section.title}-${index}`}
+                        className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/50 overflow-hidden"
+                      >
+                        <div className="px-5 py-3.5 border-b border-zinc-200 dark:border-zinc-800/40 bg-zinc-50 dark:bg-zinc-900/40">
+                          <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{section.title}</h3>
+                        </div>
+                        {section.body && (
+                          <div className="px-5 py-4 prose prose-invert max-w-none text-sm prose-headings:tracking-tight prose-h1:text-xl prose-h2:text-lg prose-h3:text-sm prose-p:text-zinc-600 dark:text-zinc-400 prose-p:leading-relaxed prose-strong:text-zinc-800 dark:text-zinc-200 prose-a:text-blue-400 prose-a:no-underline hover:prose-a:text-blue-300">
+                            <ReactMarkdown
+                              components={{
+                                table: ({ children }) => (
+                                  <div className="overflow-auto rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/40 my-4">
+                                    <table className="w-full border-collapse">{children}</table>
+                                  </div>
+                                ),
+                                thead: ({ children }) => (
+                                  <thead className="bg-zinc-50 dark:bg-zinc-900/60">{children}</thead>
+                                ),
+                                th: ({ children }) => (
+                                  <th className="text-left text-[10px] font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-400 px-4 py-2.5 border-b border-zinc-200 dark:border-zinc-800">
+                                    {children}
+                                  </th>
+                                ),
+                                td: ({ children }) => (
+                                  <td className="text-xs text-zinc-600 dark:text-zinc-400 px-4 py-2.5 border-b border-zinc-900/60">
+                                    {children}
+                                  </td>
+                                ),
+                                blockquote: ({ children }) => (
+                                  <blockquote className="border-l-2 border-blue-500/50 bg-blue-500/8 rounded-r-lg px-4 py-3 text-zinc-700 dark:text-zinc-300 not-italic my-4">
+                                    {children}
+                                  </blockquote>
+                                ),
+                                ul: ({ children }) => (
+                                  <ul className="list-disc list-inside space-y-1 text-zinc-600 dark:text-zinc-400">
+                                    {children}
+                                  </ul>
+                                ),
+                                ol: ({ children }) => (
+                                  <ol className="list-decimal list-inside space-y-1 text-zinc-600 dark:text-zinc-400">
+                                    {children}
+                                  </ol>
+                                ),
+                                hr: () => (
+                                  <div className="my-5 h-px w-full bg-zinc-200 dark:bg-zinc-800/60" />
+                                ),
+                              }}
+                            >
+                              {section.body}
+                            </ReactMarkdown>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
-                </div>
-              )}
-
-              {!report && (
-                <div className="rounded-xl border border-dashed border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/20 px-6 py-10 text-center">
-                  <div className="mx-auto w-10 h-10 rounded-full bg-zinc-200 dark:bg-zinc-800/60 flex items-center justify-center mb-3">
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="18"
-                      height="18"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className="text-zinc-600 dark:text-zinc-500"
-                    >
-                      <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z" />
-                    </svg>
-                  </div>
-                  <div className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Nenhum diagnóstico gerado</div>
-                  <div className="mt-1 text-xs text-zinc-600 dark:text-zinc-500">
-                    Selecione uma campanha e clique em{' '}
-                    <span className="text-zinc-600 dark:text-zinc-400">Gerar diagnóstico</span> no canto superior.
-                  </div>
-                </div>
-              )}
-
-              {report?.analysis_text && (
-                <div className="space-y-3">
-                  {visibleReportSections.map((section, index) => (
-                    <div
-                      key={`${section.title}-${index}`}
-                      className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/50 overflow-hidden"
-                    >
-                      <div className="px-5 py-3.5 border-b border-zinc-200 dark:border-zinc-800/40 bg-zinc-50 dark:bg-zinc-900/40">
-                        <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{section.title}</h3>
-                      </div>
-                      {section.body && (
-                        <div className="px-5 py-4 prose prose-invert max-w-none text-sm prose-headings:tracking-tight prose-h1:text-xl prose-h2:text-lg prose-h3:text-sm prose-p:text-zinc-600 dark:text-zinc-400 prose-p:leading-relaxed prose-strong:text-zinc-800 dark:text-zinc-200 prose-a:text-blue-400 prose-a:no-underline hover:prose-a:text-blue-300">
-                          <ReactMarkdown
-                            components={{
-                              table: ({ children }) => (
-                                <div className="overflow-auto rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/40 my-4">
-                                  <table className="w-full border-collapse">{children}</table>
-                                </div>
-                              ),
-                              thead: ({ children }) => (
-                                <thead className="bg-zinc-50 dark:bg-zinc-900/60">{children}</thead>
-                              ),
-                              th: ({ children }) => (
-                                <th className="text-left text-[10px] font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-400 px-4 py-2.5 border-b border-zinc-200 dark:border-zinc-800">
-                                  {children}
-                                </th>
-                              ),
-                              td: ({ children }) => (
-                                <td className="text-xs text-zinc-600 dark:text-zinc-400 px-4 py-2.5 border-b border-zinc-900/60">
-                                  {children}
-                                </td>
-                              ),
-                              blockquote: ({ children }) => (
-                                <blockquote className="border-l-2 border-blue-500/50 bg-blue-500/8 rounded-r-lg px-4 py-3 text-zinc-700 dark:text-zinc-300 not-italic my-4">
-                                  {children}
-                                </blockquote>
-                              ),
-                              ul: ({ children }) => (
-                                <ul className="list-disc list-inside space-y-1 text-zinc-600 dark:text-zinc-400">
-                                  {children}
-                                </ul>
-                              ),
-                              ol: ({ children }) => (
-                                <ol className="list-decimal list-inside space-y-1 text-zinc-600 dark:text-zinc-400">
-                                  {children}
-                                </ol>
-                              ),
-                              hr: () => (
-                                <div className="my-5 h-px w-full bg-zinc-200 dark:bg-zinc-800/60" />
-                              ),
-                            }}
-                          >
-                            {section.body}
-                          </ReactMarkdown>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
+                )}
+              </div>
+            )
+          }
+        </div >
+      </div >
     </Layout >
   );
 };

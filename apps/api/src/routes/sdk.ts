@@ -1,9 +1,50 @@
 import { Router } from 'express';
+import { pool } from '../db/pool';
 
 const router = Router();
 
-router.get('/tracker.js', async (_req, res) => {
-  const js = `
+router.get('/tracker.js', async (req, res) => {
+  const siteKey = req.query.key as string;
+  let configJs = '';
+
+  if (siteKey) {
+    try {
+      const siteRow = await pool.query('SELECT id FROM sites WHERE site_key = $1', [siteKey]);
+      if (siteRow && siteRow.rowCount && siteRow.rowCount > 0) {
+        const siteId = siteRow.rows[0].id;
+
+        const meta = await pool.query('SELECT enabled, pixel_id FROM integrations_meta WHERE site_id = $1', [siteId]);
+        const ga = await pool.query('SELECT enabled, measurement_id FROM integrations_ga WHERE site_id = $1', [siteId]);
+
+        const metaRow = meta.rows[0] as { enabled?: boolean | null; pixel_id?: string | null } | undefined;
+        const gaRow = ga.rows[0] as { enabled?: boolean | null; measurement_id?: string | null } | undefined;
+
+        const metaPixelId = metaRow && metaRow.enabled === false ? null : typeof metaRow?.pixel_id === 'string' ? metaRow.pixel_id.trim() : null;
+        const gaMeasurementId = gaRow && gaRow.enabled === false ? null : typeof gaRow?.measurement_id === 'string' ? gaRow.measurement_id.trim() : null;
+
+        const rules = await pool.query('SELECT rule_type, match_value, match_text, event_name, event_type FROM site_url_rules WHERE site_id = $1', [siteId]);
+        const eventRules = rules.rows;
+
+        const apiUrl = process.env.API_BASE_URL || 'https://api.trajettu.com';
+
+        const configObj = {
+          apiUrl,
+          siteKey,
+          metaPixelId,
+          gaMeasurementId,
+          eventRules
+        };
+
+        configJs = `window.TRACKING_CONFIG = ${JSON.stringify(configObj)};\n\n`;
+      } else {
+        configJs = `console.warn('[TRK] Site key not found');\n\n`;
+      }
+    } catch (e) {
+      configJs = `console.error('[TRK] Error loading smart config');\n\n`;
+    }
+  }
+
+  const js = configJs + `
 (function(){
   'use strict';
 
@@ -949,7 +990,7 @@ router.get('/tracker.js', async (_req, res) => {
 `;
 
   res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
-  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.setHeader('Cache-Control', 'public, max-age=60'); // 1-minute global cache for fast updates without overwhelming DB
   res.setHeader('X-Content-Type-Options', 'nosniff');
   return res.send(js);
 });
