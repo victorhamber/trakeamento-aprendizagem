@@ -438,9 +438,9 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
     }
 
     return res.status(202).json({ status: 'received' });
-  } catch (err) {
+  } catch (err: any) {
     console.error('[Ingest] Erro ao persistir evento:', err);
-    return res.status(500).json({ error: 'Internal server error' });
+    return res.status(500).json({ error: 'Internal server error', details: err.message || err.toString() });
   }
 });
 
