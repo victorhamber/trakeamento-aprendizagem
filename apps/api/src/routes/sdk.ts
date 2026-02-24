@@ -554,8 +554,13 @@ router.get('/tracker.js', async (_req, res) => {
     try {
       var url  = apiUrl + '/ingest/events?key=' + encodeURIComponent(siteKey);
       var body = JSON.stringify(payload);
-      // Primary: fetch with keepalive (handles CORS + JSON properly)
-      if (typeof fetch !== 'undefined') {
+      // Prioridade 1: navigator.sendBeacon (Sobrevive a redirects e não engatilha CORS preflight).
+      // Usar text/plain resolve o problema crítico onde o Mobile Safari / 4G Chromium matava a requisição
+      // no meio do redirect antes do OPTIONS (preflight) retornar.
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon(url, new Blob([body], { type: 'text/plain' }));
+      } else if (typeof fetch !== 'undefined') {
+        // Fallback: fetch com keepalive para browsers antigos sem sendBeacon (raro)
         fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -563,9 +568,6 @@ router.get('/tracker.js', async (_req, res) => {
           keepalive: true,
           mode: 'cors'
         }).catch(function(){});
-      } else if (navigator.sendBeacon) {
-        // Fallback: sendBeacon with text/plain (avoids CORS preflight)
-        navigator.sendBeacon(url, new Blob([body], { type: 'text/plain' }));
       }
     } catch(_e) {}
   }
