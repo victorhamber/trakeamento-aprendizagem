@@ -26,7 +26,7 @@ import compression from 'compression';
 const app = express();
 const port = process.env.PORT || 3000;
 
-app.set('trust proxy', true);
+app.set('trust proxy', 1);
 
 // Compressão Gzip para todas as respostas
 app.use(compression());

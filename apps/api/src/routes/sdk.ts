@@ -77,12 +77,12 @@ router.get('/tracker.js', async (_req, res) => {
   function normPhone(v)     {
     var digits = (v || '').toString().replace(/[^0-9]/g, '');
     if (!digits) return '';
-    // Meta exige E.164 sem o '+'
+    if (digits.length === 10 || digits.length === 11) return '55' + digits;
     return digits;
   }
   function normName(v)      { return (v || '').toString().trim().toLowerCase(); }
   function normCityState(v) { return (v || '').toString().trim().toLowerCase(); }
-  function normZip(v)       { return (v || '').toString().trim().toLowerCase().replace(/\\s+/g, ''); }
+  function normZip(v)       { return (v || '').toString().trim().toLowerCase().replace(/\s+/g, ''); }
   function normDob(v)       { return (v || '').toString().replace(/[^0-9]/g, ''); } // YYYYMMDD
 
   // ─── Hashed cookie helpers ────────────────────────────────────────────────
@@ -670,20 +670,8 @@ router.get('/tracker.js', async (_req, res) => {
       });
 
       if (cfg.metaPixelId) {
-        loadMetaPixel(cfg.metaPixelId);
-        trackMeta('PageEngagement', Object.assign(
-          {
-            ta_source:       'tracking_suite',
-            ta_site_key:     cfg.siteKey,
-            ta_event_id:     eventId,
-            event_url:       location.origin + location.pathname,
-            event_source_url: location.href,
-            page_title:      document.title
-          },
-          telemetry,
-          getTimeFields(eventTime),
-          payload.custom_data
-        ), eventId, true);
+        // Enviaremos PageEngagement apenas via CAPI (backend) para não atrasar/falhar no beforeunload do browser
+        // Meta Docs recomendam evitar web requests lentos durante o evento beforeunload
       }
 
       if (cfg.gaMeasurementId) {

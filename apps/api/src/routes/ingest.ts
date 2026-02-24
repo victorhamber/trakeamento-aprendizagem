@@ -91,7 +91,13 @@ function hashPii(value: string | undefined): string | undefined {
 
 const normalizers: Record<string, (v: string) => string> = {
   em: (v) => v.trim().toLowerCase(),
-  ph: (v) => v.replace(/[^0-9]/g, ''),   // apenas dígitos, E.164 sem +
+  ph: (v) => {
+    let digits = v.replace(/[^0-9]/g, '');
+    if (digits.length === 10 || digits.length === 11) {
+      digits = '55' + digits;
+    }
+    return digits;
+  },
   fn: (v) => v.trim().toLowerCase(),
   ln: (v) => v.trim().toLowerCase(),
   ct: (v) => v.trim().toLowerCase(),
@@ -104,6 +110,13 @@ const normalizers: Record<string, (v: string) => string> = {
 function normalizeAndHash(field: string, value: string | string[] | undefined): string | undefined {
   const raw = Array.isArray(value) ? value[0] : value;
   if (!raw) return undefined;
+
+  // Se já for um hash (64 hex characters), retorna em caixa baixa, 
+  // anulando o normalizer para não destruir o hash
+  if (/^[0-9a-f]{64}$/i.test(raw)) {
+    return raw.toLowerCase();
+  }
+
   const norm = normalizers[field] ? normalizers[field](raw) : raw.trim();
   if (!norm) return undefined;
   return hashPii(norm);
@@ -196,7 +209,9 @@ function isDuplicate(siteKey: string, eventId: string): boolean {
 // ─── CAPI payload builder ─────────────────────────────────────────────────────
 
 function resolveClientIp(req: Request, userData: NonNullable<IngestEvent['user_data']>) {
-  return (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim()
+  return (req.headers['cf-connecting-ip'] as string)?.trim()
+    || (req.headers['x-real-ip'] as string)?.trim()
+    || (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim()
     || req.ip
     || userData.client_ip_address
     || '';
