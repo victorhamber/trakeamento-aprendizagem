@@ -304,6 +304,7 @@ router.get('/tracker.js', async (_req, res) => {
 
   document.addEventListener('click', function(e) {
     totalClicks++;
+    try { checkButtonRules(e.target); } catch(_e) {}
     var el = e.target;
     while (el && el.tagName && el.tagName !== 'A' && el.tagName !== 'BUTTON') {
       el = el.parentElement;
@@ -772,6 +773,37 @@ router.get('/tracker.js', async (_req, res) => {
         }
         if (rule.rule_type === 'url_equals' && currentPath === rule.match_value) {
           track(rule.event_name, rule.custom_data || {});
+        }
+      }
+    } catch(_e) {}
+  }
+
+  // ─── Button rule engine ──────────────────────────────────────────────────
+  function checkButtonRules(target) {
+    try {
+      var cfg = window.TRACKING_CONFIG;
+      if (!cfg || !cfg.eventRules || !cfg.eventRules.length) return;
+      if (!target) return;
+      var currentPath = location.pathname + location.search;
+
+      var el = target;
+      while (el && el.tagName !== 'A' && el.tagName !== 'BUTTON' && el.parentElement) {
+        if (el.tagName === 'BODY' || el.tagName === 'HTML') break;
+        el = el.parentElement;
+      }
+      
+      var clickedText = (el && (el.innerText || el.value) ? (el.innerText || el.value) : (target.innerText || target.value || '')).toString().trim().toLowerCase();
+      if (!clickedText) return;
+
+      for (var i = 0; i < cfg.eventRules.length; i++) {
+        var rule = cfg.eventRules[i];
+        if (rule.rule_type === 'button_click' && rule.match_value && rule.match_text) {
+          if (rule.match_value === '/' || currentPath.indexOf(rule.match_value) >= 0) {
+            var mText = rule.match_text.toLowerCase().trim();
+            if (mText && clickedText.indexOf(mText) >= 0) {
+              track(rule.event_name, rule.custom_data || {});
+            }
+          }
         }
       }
     } catch(_e) {}

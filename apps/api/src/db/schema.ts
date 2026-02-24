@@ -181,6 +181,7 @@ const schemaSql = `
     site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
     rule_type VARCHAR(50) NOT NULL,
     match_value TEXT NOT NULL,
+    match_text TEXT,
     event_name VARCHAR(100) NOT NULL,
     event_type VARCHAR(50) NOT NULL DEFAULT 'custom',
     created_at TIMESTAMP DEFAULT NOW()
@@ -257,6 +258,7 @@ export const ensureSchema = async (pool: Pool) => {
     await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS fb_token_expires_at TIMESTAMP');
     await pool.query('ALTER TABLE integrations_ga ADD COLUMN IF NOT EXISTS enabled BOOLEAN DEFAULT TRUE');
     await pool.query('ALTER TABLE account_settings ADD COLUMN IF NOT EXISTS openai_model VARCHAR(50)');
+    await pool.query('ALTER TABLE site_url_rules ADD COLUMN IF NOT EXISTS match_text TEXT');
 
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS unique_clicks INTEGER');
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS link_clicks INTEGER');

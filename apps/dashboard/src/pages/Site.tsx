@@ -220,6 +220,11 @@ export const SitePage = () => {
   const [urlRuleValue, setUrlRuleValue] = useState('');
   const [urlRuleEventType, setUrlRuleEventType] = useState('Purchase');
   const [urlRuleCustomName, setUrlRuleCustomName] = useState('');
+  const [buttonRuleUrl, setButtonRuleUrl] = useState('');
+  const [buttonRuleText, setButtonRuleText] = useState('');
+  const [buttonRuleEventType, setButtonRuleEventType] = useState('Purchase');
+  const [buttonRuleCustomName, setButtonRuleCustomName] = useState('');
+  const [eventSubTab, setEventSubTab] = useState<'url' | 'button' | 'form'>('url');
   const [formFields, setFormFields] = useState({ name: true, email: true, phone: true });
   const [formButtonText, setFormButtonText] = useState('Quero me cadastrar');
   const [formEventType, setFormEventType] = useState('Lead');
@@ -593,6 +598,36 @@ export const SitePage = () => {
     } catch (err) {
       console.error(err);
       showFlash('Erro ao adicionar regra', 'error');
+    }
+  };
+
+  const handleAddButtonRule = async () => {
+    if (!buttonRuleUrl || !buttonRuleText) {
+      showFlash('Preencha a URL da página e o texto do botão', 'error');
+      return;
+    }
+    const evtName = buttonRuleEventType === 'Custom' ? buttonRuleCustomName : buttonRuleEventType;
+    if (!evtName) {
+      showFlash('Defina o nome do evento', 'error');
+      return;
+    }
+
+    try {
+      await api.post(`/sites/${id}/event-rules`, {
+        rule_type: 'button_click',
+        match_value: buttonRuleUrl,
+        match_text: buttonRuleText,
+        event_name: evtName,
+        event_type: buttonRuleEventType === 'Custom' ? 'custom' : 'standard'
+      });
+      setButtonRuleUrl('');
+      setButtonRuleText('');
+      setButtonRuleCustomName('');
+      await loadEventRules();
+      showFlash('Regra de botão adicionada!');
+    } catch (err) {
+      console.error(err);
+      showFlash('Erro ao adicionar a regra de botão', 'error');
     }
   };
 
@@ -2424,314 +2459,425 @@ ${scriptContent}
           {tab === 'matching' && (
             <div className="space-y-10 max-w-5xl">
 
-              {/* Seção 1: Configuração de Eventos por URL */}
-              <div className="space-y-5">
-                <div>
-                  <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Configuração de Eventos por URL</h3>
-                  <p className="text-sm text-zinc-600 dark:text-zinc-500">
-                    Dispare eventos automaticamente quando a URL contiver um trecho específico (ex: "obrigado").
-                  </p>
-                </div>
+              <div className="flex border-b border-zinc-200 dark:border-zinc-800">
+                <button type="button" onClick={() => setEventSubTab('url')} className={`px-4 py-2 font-medium text-sm transition-colors ${eventSubTab === 'url' ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400' : 'text-zinc-600 dark:text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'}`}>Eventos por URL</button>
+                <button type="button" onClick={() => setEventSubTab('button')} className={`px-4 py-2 font-medium text-sm transition-colors ${eventSubTab === 'button' ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400' : 'text-zinc-600 dark:text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'}`}>Eventos por Botão</button>
+                <button type="button" onClick={() => setEventSubTab('form')} className={`px-4 py-2 font-medium text-sm transition-colors ${eventSubTab === 'form' ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400' : 'text-zinc-600 dark:text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'}`}>Formulários</button>
+              </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end bg-zinc-50 dark:bg-zinc-900/30 p-5 rounded-xl border border-zinc-200 dark:border-zinc-800">
-                  <div className="md:col-span-4">
-                    <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Se a URL contém:</label>
-                    <input
-                      value={urlRuleValue}
-                      onChange={(e) => setUrlRuleValue(e.target.value)}
-                      placeholder="Ex: /obrigado-compra"
-                      className={inputCls}
-                    />
+              {/* Seção 1: Configuração de Eventos por URL */}
+              {eventSubTab === 'url' && (
+                <div className="space-y-5">
+                  <div>
+                    <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Configuração de Eventos por URL</h3>
+                    <p className="text-sm text-zinc-600 dark:text-zinc-500">
+                      Dispare eventos automaticamente quando a URL contiver um trecho específico (ex: "obrigado").
+                    </p>
                   </div>
-                  <div className="md:col-span-3">
-                    <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Disparar Evento:</label>
-                    <select
-                      value={urlRuleEventType}
-                      onChange={(e) => setUrlRuleEventType(e.target.value)}
-                      className={selectCls}
-                    >
-                      <option value="Purchase">Purchase (Compra)</option>
-                      <option value="Lead">Lead (Cadastro)</option>
-                      <option value="CompleteRegistration">CompleteRegistration</option>
-                      <option value="AddToCart">AddToCart</option>
-                      <option value="InitiateCheckout">InitiateCheckout</option>
-                      <option value="ViewContent">ViewContent</option>
-                      <option value="Contact">Contact</option>
-                      <option value="Custom">Personalizado...</option>
-                    </select>
-                  </div>
-                  {urlRuleEventType === 'Custom' && (
-                    <div className="md:col-span-3">
-                      <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Nome do Evento:</label>
+
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end bg-zinc-50 dark:bg-zinc-900/30 p-5 rounded-xl border border-zinc-200 dark:border-zinc-800">
+                    <div className="md:col-span-4">
+                      <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Se a URL contém:</label>
                       <input
-                        value={urlRuleCustomName}
-                        onChange={(e) => setUrlRuleCustomName(e.target.value)}
-                        placeholder="Ex: ClicouBotao"
+                        value={urlRuleValue}
+                        onChange={(e) => setUrlRuleValue(e.target.value)}
+                        placeholder="Ex: /obrigado-compra"
                         className={inputCls}
                       />
                     </div>
-                  )}
-                  <div className="md:col-span-2">
-                    <button
-                      onClick={handleAddUrlRule}
-                      className="w-full bg-blue-600 hover:bg-blue-500 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors"
-                    >
-                      Adicionar
-                    </button>
-                  </div>
-                </div>
-
-                {eventRules.length > 0 && (
-                  <div className="border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
-                    <table className="w-full text-left text-sm text-zinc-600 dark:text-zinc-400">
-                      <thead className="bg-zinc-50 dark:bg-zinc-900/60 text-xs uppercase font-medium text-zinc-600 dark:text-zinc-500 dark:text-zinc-400">
-                        <tr>
-                          <th className="px-4 py-3">Regra</th>
-                          <th className="px-4 py-3">Valor</th>
-                          <th className="px-4 py-3">Evento Disparado</th>
-                          <th className="px-4 py-3 text-right">Ações</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-zinc-800/60">
-                        {eventRules.map((rule) => (
-                          <tr key={rule.id} className="hover:bg-zinc-50 dark:bg-zinc-900/20">
-                            <td className="px-4 py-3">URL Contém</td>
-                            <td className="px-4 py-3 font-mono text-zinc-700 dark:text-zinc-300">{rule.match_value}</td>
-                            <td className="px-4 py-3">
-                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-500/10 text-blue-300 border border-blue-500/20">
-                                {rule.event_name}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3 text-right">
-                              <button
-                                onClick={() => handleDeleteRule(rule.id)}
-                                className="text-red-400 hover:text-red-300 text-xs"
-                              >
-                                Remover
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-
-              <hr className="border-zinc-200 dark:border-zinc-800" />
-
-              {/* Seção 2: Gerador de Formulário */}
-              <div className="space-y-5">
-                <div>
-                  <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Gerador de Formulário de Captura</h3>
-                  <p className="text-sm text-zinc-600 dark:text-zinc-500">
-                    Crie um formulário HTML pronto para instalar no seu site. Ele captura os dados (nome, email, telefone) e dispara o evento escolhido no clique do botão.
-                  </p>
-                </div>
-
-                {/* Saved Forms List */}
-                {savedForms.length > 0 && (
-                  <div className="mb-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {savedForms.map(form => (
-                      <div key={form.id} className={`relative p-4 rounded-xl border transition-all ${selectedFormId === form.id ? 'bg-blue-500/10 border-blue-500/50' : 'bg-zinc-900/30 border-zinc-200 dark:border-zinc-800 hover:border-zinc-700'}`}>
-                        <div className="flex justify-between items-start mb-2">
-                          <h4 className="font-medium text-zinc-800 dark:text-zinc-200 truncate pr-6">{form.name}</h4>
-                          <button onClick={(e) => { e.stopPropagation(); deleteForm(form.id); }} className="text-zinc-600 dark:text-zinc-500 hover:text-red-400 transition-colors">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" /></svg>
-                          </button>
-                        </div>
-                        <div className="text-[10px] text-zinc-600 dark:text-zinc-500 font-mono mb-3">ID: {form.public_id}</div>
-                        <div className="flex gap-2">
-                          <button onClick={() => loadFormToEditor(form)} className="flex-1 text-xs bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-400 dark:text-zinc-300 py-1.5 rounded border border-zinc-700 transition-colors">
-                            {selectedFormId === form.id ? 'Editando...' : 'Editar'}
-                          </button>
-                          <button onClick={() => copyFormHtml(form)} className="flex-1 text-xs bg-blue-600 hover:bg-blue-500 text-white py-1.5 rounded border border-blue-500 transition-colors shadow-lg shadow-blue-900/20">
-                            Copiar HTML
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  <div className="space-y-4">
-                    <div className="bg-zinc-50 dark:bg-zinc-900/30 p-5 rounded-xl border border-zinc-200 dark:border-zinc-800 space-y-5">
-
-                      {/* Form Name */}
-                      <div>
-                        <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Nome do Formulário (para salvar)</label>
-                        <div className="flex gap-2">
-                          <input
-                            value={formName}
-                            onChange={e => setFormName(e.target.value)}
-                            placeholder="Ex: Captura Ebook V1"
-                            className={inputCls}
-                          />
-                          <button onClick={saveForm} className="bg-zinc-100 hover:bg-white text-zinc-900 px-4 py-2 rounded-lg text-xs font-bold transition-colors">
-                            {selectedFormId ? 'Atualizar' : 'Salvar'}
-                          </button>
-                        </div>
-                      </div>
-
-                      <hr className="border-zinc-200 dark:border-zinc-800" />
-
-                      {/* Fields */}
-                      <div>
-                        <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-3">Campos do Formulário</label>
-                        <div className="space-y-2">
-                          <label className="flex items-center gap-2 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={formFields.name}
-                              onChange={(e) => setFormFields(prev => ({ ...prev, name: e.target.checked }))}
-                              className="w-4 h-4 rounded border-zinc-700 bg-zinc-200 dark:bg-zinc-800 text-blue-500"
-                            />
-                            <span className="text-sm text-zinc-700 dark:text-zinc-300">Nome</span>
-                          </label>
-                          <label className="flex items-center gap-2 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={formFields.email}
-                              onChange={(e) => setFormFields(prev => ({ ...prev, email: e.target.checked }))}
-                              className="w-4 h-4 rounded border-zinc-700 bg-zinc-200 dark:bg-zinc-800 text-blue-500"
-                            />
-                            <span className="text-sm text-zinc-700 dark:text-zinc-300">E-mail</span>
-                          </label>
-                          <label className="flex items-center gap-2 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={formFields.phone}
-                              onChange={(e) => setFormFields(prev => ({ ...prev, phone: e.target.checked }))}
-                              className="w-4 h-4 rounded border-zinc-700 bg-zinc-200 dark:bg-zinc-800 text-blue-500"
-                            />
-                            <span className="text-sm text-zinc-700 dark:text-zinc-300">Telefone</span>
-                          </label>
-                        </div>
-                      </div>
-
-                      {/* Theme */}
-                      <div>
-                        <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Tema do Formulário</label>
-                        <div className="flex gap-4">
-                          <label className="flex items-center gap-2 cursor-pointer">
-                            <input
-                              type="radio"
-                              name="formTheme"
-                              value="light"
-                              checked={formTheme === 'light'}
-                              onChange={() => setFormTheme('light')}
-                              className="w-4 h-4 text-blue-500 bg-zinc-200 dark:bg-zinc-800 border-zinc-700"
-                            />
-                            <span className="text-sm text-zinc-700 dark:text-zinc-300">Claro</span>
-                          </label>
-                          <label className="flex items-center gap-2 cursor-pointer">
-                            <input
-                              type="radio"
-                              name="formTheme"
-                              value="dark"
-                              checked={formTheme === 'dark'}
-                              onChange={() => setFormTheme('dark')}
-                              className="w-4 h-4 text-blue-500 bg-zinc-200 dark:bg-zinc-800 border-zinc-700"
-                            />
-                            <span className="text-sm text-zinc-700 dark:text-zinc-300">Escuro</span>
-                          </label>
-                        </div>
-                      </div>
-
-                      {/* Button Text */}
-                      <div>
-                        <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Texto do Botão</label>
+                    <div className="md:col-span-3">
+                      <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Disparar Evento:</label>
+                      <select
+                        value={urlRuleEventType}
+                        onChange={(e) => setUrlRuleEventType(e.target.value)}
+                        className={selectCls}
+                      >
+                        <option value="Purchase">Purchase (Compra)</option>
+                        <option value="Lead">Lead (Cadastro)</option>
+                        <option value="CompleteRegistration">CompleteRegistration</option>
+                        <option value="AddToCart">AddToCart</option>
+                        <option value="InitiateCheckout">InitiateCheckout</option>
+                        <option value="ViewContent">ViewContent</option>
+                        <option value="Contact">Contact</option>
+                        <option value="Custom">Personalizado...</option>
+                      </select>
+                    </div>
+                    {urlRuleEventType === 'Custom' && (
+                      <div className="md:col-span-3">
+                        <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Nome do Evento:</label>
                         <input
-                          value={formButtonText}
-                          onChange={(e) => setFormButtonText(e.target.value)}
+                          value={urlRuleCustomName}
+                          onChange={(e) => setUrlRuleCustomName(e.target.value)}
+                          placeholder="Ex: ClicouBotao"
                           className={inputCls}
                         />
                       </div>
+                    )}
+                    <div className="md:col-span-2">
+                      <button
+                        onClick={handleAddUrlRule}
+                        className="w-full bg-blue-600 hover:bg-blue-500 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors"
+                      >
+                        Adicionar
+                      </button>
+                    </div>
+                  </div>
 
-                      {/* Event Type */}
-                      <div>
-                        <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Evento ao Enviar</label>
-                        <select
-                          value={formEventType}
-                          onChange={(e) => setFormEventType(e.target.value)}
-                          className={selectCls}
-                        >
-                          <option value="Lead">Lead</option>
-                          <option value="Contact">Contact</option>
-                          <option value="Purchase">Purchase</option>
-                          <option value="CompleteRegistration">CompleteRegistration</option>
-                          <option value="Custom">Personalizado...</option>
-                        </select>
+                  {eventRules.length > 0 && (
+                    <div className="border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
+                      <table className="w-full text-left text-sm text-zinc-600 dark:text-zinc-400">
+                        <thead className="bg-zinc-50 dark:bg-zinc-900/60 text-xs uppercase font-medium text-zinc-600 dark:text-zinc-500 dark:text-zinc-400">
+                          <tr>
+                            <th className="px-4 py-3">Regra</th>
+                            <th className="px-4 py-3">Valor</th>
+                            <th className="px-4 py-3">Evento Disparado</th>
+                            <th className="px-4 py-3 text-right">Ações</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-zinc-800/60">
+                          {eventRules.filter(r => r.rule_type === 'url_contains' || r.rule_type === 'url_equals' || !r.rule_type).map((rule) => (
+                            <tr key={rule.id} className="hover:bg-zinc-50 dark:bg-zinc-900/20">
+                              <td className="px-4 py-3">URL Contém</td>
+                              <td className="px-4 py-3 font-mono text-zinc-700 dark:text-zinc-300">{rule.match_value}</td>
+                              <td className="px-4 py-3">
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-500/10 text-blue-300 border border-blue-500/20">
+                                  {rule.event_name}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-right">
+                                <button
+                                  onClick={() => handleDeleteRule(rule.id)}
+                                  className="text-red-400 hover:text-red-300 text-xs"
+                                >
+                                  Remover
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <hr className="border-zinc-200 dark:border-zinc-800" />
+
+              {eventSubTab === 'button' && (
+                <div className="space-y-5">
+                  <div>
+                    <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Configuração de Eventos por Botão</h3>
+                    <p className="text-sm text-zinc-600 dark:text-zinc-500">
+                      Dispare eventos automaticamente quando um botão contendo um texto específico for clicado.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end bg-zinc-50 dark:bg-zinc-900/30 p-5 rounded-xl border border-zinc-200 dark:border-zinc-800">
+                    <div className="md:col-span-3">
+                      <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Se a URL contém:</label>
+                      <input
+                        value={buttonRuleUrl}
+                        onChange={(e) => setButtonRuleUrl(e.target.value)}
+                        placeholder="Ex: / ou /obrigado"
+                        className={inputCls}
+                      />
+                    </div>
+                    <div className="md:col-span-3">
+                      <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Texto do Botão contém:</label>
+                      <input
+                        value={buttonRuleText}
+                        onChange={(e) => setButtonRuleText(e.target.value)}
+                        placeholder="Ex: Comprar Agora"
+                        className={inputCls}
+                      />
+                    </div>
+                    <div className="md:col-span-3">
+                      <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Evento:</label>
+                      <select
+                        value={buttonRuleEventType}
+                        onChange={(e) => setButtonRuleEventType(e.target.value)}
+                        className={selectCls}
+                      >
+                        <option value="Purchase">Purchase (Compra)</option>
+                        <option value="Lead">Lead (Cadastro)</option>
+                        <option value="Contact">Contact</option>
+                        <option value="AddToCart">AddToCart</option>
+                        <option value="Custom">Personalizado...</option>
+                      </select>
+                    </div>
+                    {buttonRuleEventType === 'Custom' && (
+                      <div className="md:col-span-3">
+                        <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Personalizado:</label>
+                        <input
+                          value={buttonRuleCustomName}
+                          onChange={(e) => setButtonRuleCustomName(e.target.value)}
+                          placeholder="Ex: Zap"
+                          className={inputCls}
+                        />
                       </div>
+                    )}
+                    <div className="md:col-span-3 md:col-start-1">
+                      <button
+                        onClick={handleAddButtonRule}
+                        className="w-full bg-blue-600 hover:bg-blue-500 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors"
+                      >
+                        Adicionar
+                      </button>
+                    </div>
+                  </div>
 
-                      {formEventType === 'Custom' && (
+                  {eventRules.filter(r => r.rule_type === 'button_click').length > 0 && (
+                    <div className="border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
+                      <table className="w-full text-left text-sm text-zinc-600 dark:text-zinc-400">
+                        <thead className="bg-zinc-50 dark:bg-zinc-900/60 text-xs uppercase font-medium text-zinc-600 dark:text-zinc-500 dark:text-zinc-400">
+                          <tr>
+                            <th className="px-4 py-3">Página (URL)</th>
+                            <th className="px-4 py-3">Texto do Botão</th>
+                            <th className="px-4 py-3">Evento Disparado</th>
+                            <th className="px-4 py-3 text-right">Ações</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-zinc-800/60">
+                          {eventRules.filter(r => r.rule_type === 'button_click').map((rule) => (
+                            <tr key={rule.id} className="hover:bg-zinc-50 dark:bg-zinc-900/20">
+                              <td className="px-4 py-3 font-mono text-zinc-700 dark:text-zinc-300">{rule.match_value}</td>
+                              <td className="px-4 py-3 text-zinc-700 dark:text-zinc-300">{rule.match_text}</td>
+                              <td className="px-4 py-3">
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-500/10 text-blue-300 border border-blue-500/20">
+                                  {rule.event_name}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-right">
+                                <button
+                                  onClick={() => handleDeleteRule(rule.id)}
+                                  className="text-red-400 hover:text-red-300 text-xs"
+                                >
+                                  Remover
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Seção 2: Gerador de Formulário */}
+              {eventSubTab === 'form' && (
+                <div className="space-y-5">
+                  <div>
+                    <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Gerador de Formulário de Captura</h3>
+                    <p className="text-sm text-zinc-600 dark:text-zinc-500">
+                      Crie um formulário HTML pronto para instalar no seu site. Ele captura os dados (nome, email, telefone) e dispara o evento escolhido no clique do botão.
+                    </p>
+                  </div>
+
+                  {/* Saved Forms List */}
+                  {savedForms.length > 0 && (
+                    <div className="mb-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {savedForms.map(form => (
+                        <div key={form.id} className={`relative p-4 rounded-xl border transition-all ${selectedFormId === form.id ? 'bg-blue-500/10 border-blue-500/50' : 'bg-zinc-900/30 border-zinc-200 dark:border-zinc-800 hover:border-zinc-700'}`}>
+                          <div className="flex justify-between items-start mb-2">
+                            <h4 className="font-medium text-zinc-800 dark:text-zinc-200 truncate pr-6">{form.name}</h4>
+                            <button onClick={(e) => { e.stopPropagation(); deleteForm(form.id); }} className="text-zinc-600 dark:text-zinc-500 hover:text-red-400 transition-colors">
+                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" /></svg>
+                            </button>
+                          </div>
+                          <div className="text-[10px] text-zinc-600 dark:text-zinc-500 font-mono mb-3">ID: {form.public_id}</div>
+                          <div className="flex gap-2">
+                            <button onClick={() => loadFormToEditor(form)} className="flex-1 text-xs bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-400 dark:text-zinc-300 py-1.5 rounded border border-zinc-700 transition-colors">
+                              {selectedFormId === form.id ? 'Editando...' : 'Editar'}
+                            </button>
+                            <button onClick={() => copyFormHtml(form)} className="flex-1 text-xs bg-blue-600 hover:bg-blue-500 text-white py-1.5 rounded border border-blue-500 transition-colors shadow-lg shadow-blue-900/20">
+                              Copiar HTML
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div className="space-y-4">
+                      <div className="bg-zinc-50 dark:bg-zinc-900/30 p-5 rounded-xl border border-zinc-200 dark:border-zinc-800 space-y-5">
+
+                        {/* Form Name */}
                         <div>
-                          <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Nome do Evento</label>
+                          <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Nome do Formulário (para salvar)</label>
+                          <div className="flex gap-2">
+                            <input
+                              value={formName}
+                              onChange={e => setFormName(e.target.value)}
+                              placeholder="Ex: Captura Ebook V1"
+                              className={inputCls}
+                            />
+                            <button onClick={saveForm} className="bg-zinc-100 hover:bg-white text-zinc-900 px-4 py-2 rounded-lg text-xs font-bold transition-colors">
+                              {selectedFormId ? 'Atualizar' : 'Salvar'}
+                            </button>
+                          </div>
+                        </div>
+
+                        <hr className="border-zinc-200 dark:border-zinc-800" />
+
+                        {/* Fields */}
+                        <div>
+                          <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-3">Campos do Formulário</label>
+                          <div className="space-y-2">
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={formFields.name}
+                                onChange={(e) => setFormFields(prev => ({ ...prev, name: e.target.checked }))}
+                                className="w-4 h-4 rounded border-zinc-700 bg-zinc-200 dark:bg-zinc-800 text-blue-500"
+                              />
+                              <span className="text-sm text-zinc-700 dark:text-zinc-300">Nome</span>
+                            </label>
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={formFields.email}
+                                onChange={(e) => setFormFields(prev => ({ ...prev, email: e.target.checked }))}
+                                className="w-4 h-4 rounded border-zinc-700 bg-zinc-200 dark:bg-zinc-800 text-blue-500"
+                              />
+                              <span className="text-sm text-zinc-700 dark:text-zinc-300">E-mail</span>
+                            </label>
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={formFields.phone}
+                                onChange={(e) => setFormFields(prev => ({ ...prev, phone: e.target.checked }))}
+                                className="w-4 h-4 rounded border-zinc-700 bg-zinc-200 dark:bg-zinc-800 text-blue-500"
+                              />
+                              <span className="text-sm text-zinc-700 dark:text-zinc-300">Telefone</span>
+                            </label>
+                          </div>
+                        </div>
+
+                        {/* Theme */}
+                        <div>
+                          <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Tema do Formulário</label>
+                          <div className="flex gap-4">
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input
+                                type="radio"
+                                name="formTheme"
+                                value="light"
+                                checked={formTheme === 'light'}
+                                onChange={() => setFormTheme('light')}
+                                className="w-4 h-4 text-blue-500 bg-zinc-200 dark:bg-zinc-800 border-zinc-700"
+                              />
+                              <span className="text-sm text-zinc-700 dark:text-zinc-300">Claro</span>
+                            </label>
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input
+                                type="radio"
+                                name="formTheme"
+                                value="dark"
+                                checked={formTheme === 'dark'}
+                                onChange={() => setFormTheme('dark')}
+                                className="w-4 h-4 text-blue-500 bg-zinc-200 dark:bg-zinc-800 border-zinc-700"
+                              />
+                              <span className="text-sm text-zinc-700 dark:text-zinc-300">Escuro</span>
+                            </label>
+                          </div>
+                        </div>
+
+                        {/* Button Text */}
+                        <div>
+                          <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Texto do Botão</label>
                           <input
-                            value={formCustomEventName}
-                            onChange={(e) => setFormCustomEventName(e.target.value)}
+                            value={formButtonText}
+                            onChange={(e) => setFormButtonText(e.target.value)}
                             className={inputCls}
                           />
                         </div>
-                      )}
 
-                      <hr className="border-zinc-200 dark:border-zinc-800" />
-
-                      {/* Post Submit Action */}
-                      <div>
-                        <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-3">Ação após o cadastro</label>
-                        <div className="flex gap-4 mb-3">
-                          <label className="flex items-center gap-2 cursor-pointer">
-                            <input type="radio" name="postSubmitAction" value="message" checked={postSubmitAction === 'message'} onChange={() => setPostSubmitAction('message')} className="w-4 h-4 text-blue-500 bg-zinc-200 dark:bg-zinc-800 border-zinc-700" />
-                            <span className="text-sm text-zinc-700 dark:text-zinc-300">Exibir Mensagem</span>
-                          </label>
-                          <label className="flex items-center gap-2 cursor-pointer">
-                            <input type="radio" name="postSubmitAction" value="redirect" checked={postSubmitAction === 'redirect'} onChange={() => setPostSubmitAction('redirect')} className="w-4 h-4 text-blue-500 bg-zinc-200 dark:bg-zinc-800 border-zinc-700" />
-                            <span className="text-sm text-zinc-700 dark:text-zinc-300">Redirecionar</span>
-                          </label>
+                        {/* Event Type */}
+                        <div>
+                          <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Evento ao Enviar</label>
+                          <select
+                            value={formEventType}
+                            onChange={(e) => setFormEventType(e.target.value)}
+                            className={selectCls}
+                          >
+                            <option value="Lead">Lead</option>
+                            <option value="Contact">Contact</option>
+                            <option value="Purchase">Purchase</option>
+                            <option value="CompleteRegistration">CompleteRegistration</option>
+                            <option value="Custom">Personalizado...</option>
+                          </select>
                         </div>
-                        {postSubmitAction === 'message' ? (
-                          <textarea value={postSubmitMessage} onChange={e => setPostSubmitMessage(e.target.value)} className={`${inputCls} min-h-[80px]`} placeholder="Digite a mensagem de agradecimento..." />
-                        ) : (
-                          <input value={postSubmitRedirectUrl} onChange={e => setPostSubmitRedirectUrl(e.target.value)} className={inputCls} placeholder="https://..." />
-                        )}
-                      </div>
 
-                      {/* Webhook */}
-                      <div>
-                        <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Webhook URL (Opcional)</label>
-                        <input value={formWebhookUrl} onChange={e => setFormWebhookUrl(e.target.value)} className={inputCls} placeholder="https://seu-crm.com/webhook..." />
-                        <p className="text-[10px] text-zinc-600 dark:text-zinc-500 mt-1">Enviaremos os dados do lead para esta URL via POST JSON.</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-500 uppercase tracking-wider">Prévia Visual (Aproximada)</label>
-                    <div className={`p-6 rounded-xl border border-zinc-200 dark:border-zinc-800 flex flex-col items-center justify-center min-h-[300px] transition-colors ${formTheme === 'dark' ? 'bg-[#111]' : 'bg-[#f5f5f5]'}`}>
-                      <div className={`w-full max-w-xs space-y-3 p-4 rounded shadow-sm transition-colors ${formTheme === 'dark' ? 'bg-black border border-zinc-200 dark:border-zinc-800' : 'bg-white border border-gray-200'}`}>
-                        {formFields.name && <div className={`h-10 rounded border px-3 flex items-center text-sm ${formTheme === 'dark' ? 'bg-[#222] border-[#444] text-white' : 'bg-white border-gray-300 text-gray-500'}`}>Nome</div>}
-                        {formFields.email && <div className={`h-10 rounded border px-3 flex items-center text-sm ${formTheme === 'dark' ? 'bg-[#222] border-[#444] text-white' : 'bg-white border-gray-300 text-gray-500'}`}>E-mail</div>}
-                        {formFields.phone && (
-                          <div className="flex gap-2">
-                            <div className={`h-10 rounded border px-3 flex items-center text-sm w-[70px] ${formTheme === 'dark' ? 'bg-[#222] border-[#444] text-white' : 'bg-white border-gray-300 text-gray-500'}`}>+55</div>
-                            <div className={`h-10 rounded border px-3 flex items-center text-sm flex-1 ${formTheme === 'dark' ? 'bg-[#222] border-[#444] text-white' : 'bg-white border-gray-300 text-gray-500'}`}>Telefone</div>
+                        {formEventType === 'Custom' && (
+                          <div>
+                            <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Nome do Evento</label>
+                            <input
+                              value={formCustomEventName}
+                              onChange={(e) => setFormCustomEventName(e.target.value)}
+                              className={inputCls}
+                            />
                           </div>
                         )}
-                        <div className={`h-10 rounded flex items-center justify-center font-bold text-sm ${formTheme === 'dark' ? 'bg-white text-black' : 'bg-black text-white'}`}>
-                          {formButtonText}
+
+                        <hr className="border-zinc-200 dark:border-zinc-800" />
+
+                        {/* Post Submit Action */}
+                        <div>
+                          <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-3">Ação após o cadastro</label>
+                          <div className="flex gap-4 mb-3">
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input type="radio" name="postSubmitAction" value="message" checked={postSubmitAction === 'message'} onChange={() => setPostSubmitAction('message')} className="w-4 h-4 text-blue-500 bg-zinc-200 dark:bg-zinc-800 border-zinc-700" />
+                              <span className="text-sm text-zinc-700 dark:text-zinc-300">Exibir Mensagem</span>
+                            </label>
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input type="radio" name="postSubmitAction" value="redirect" checked={postSubmitAction === 'redirect'} onChange={() => setPostSubmitAction('redirect')} className="w-4 h-4 text-blue-500 bg-zinc-200 dark:bg-zinc-800 border-zinc-700" />
+                              <span className="text-sm text-zinc-700 dark:text-zinc-300">Redirecionar</span>
+                            </label>
+                          </div>
+                          {postSubmitAction === 'message' ? (
+                            <textarea value={postSubmitMessage} onChange={e => setPostSubmitMessage(e.target.value)} className={`${inputCls} min-h-[80px]`} placeholder="Digite a mensagem de agradecimento..." />
+                          ) : (
+                            <input value={postSubmitRedirectUrl} onChange={e => setPostSubmitRedirectUrl(e.target.value)} className={inputCls} placeholder="https://..." />
+                          )}
+                        </div>
+
+                        {/* Webhook */}
+                        <div>
+                          <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Webhook URL (Opcional)</label>
+                          <input value={formWebhookUrl} onChange={e => setFormWebhookUrl(e.target.value)} className={inputCls} placeholder="https://seu-crm.com/webhook..." />
+                          <p className="text-[10px] text-zinc-600 dark:text-zinc-500 mt-1">Enviaremos os dados do lead para esta URL via POST JSON.</p>
                         </div>
                       </div>
-                      {postSubmitAction === 'message' && (
-                        <div className="mt-4 p-3 bg-green-500/10 text-green-500 text-xs border border-green-500/20 rounded">
-                          Simulação pós-envio: {postSubmitMessage}
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-500 uppercase tracking-wider">Prévia Visual (Aproximada)</label>
+                      <div className={`p-6 rounded-xl border border-zinc-200 dark:border-zinc-800 flex flex-col items-center justify-center min-h-[300px] transition-colors ${formTheme === 'dark' ? 'bg-[#111]' : 'bg-[#f5f5f5]'}`}>
+                        <div className={`w-full max-w-xs space-y-3 p-4 rounded shadow-sm transition-colors ${formTheme === 'dark' ? 'bg-black border border-zinc-200 dark:border-zinc-800' : 'bg-white border border-gray-200'}`}>
+                          {formFields.name && <div className={`h-10 rounded border px-3 flex items-center text-sm ${formTheme === 'dark' ? 'bg-[#222] border-[#444] text-white' : 'bg-white border-gray-300 text-gray-500'}`}>Nome</div>}
+                          {formFields.email && <div className={`h-10 rounded border px-3 flex items-center text-sm ${formTheme === 'dark' ? 'bg-[#222] border-[#444] text-white' : 'bg-white border-gray-300 text-gray-500'}`}>E-mail</div>}
+                          {formFields.phone && (
+                            <div className="flex gap-2">
+                              <div className={`h-10 rounded border px-3 flex items-center text-sm w-[70px] ${formTheme === 'dark' ? 'bg-[#222] border-[#444] text-white' : 'bg-white border-gray-300 text-gray-500'}`}>+55</div>
+                              <div className={`h-10 rounded border px-3 flex items-center text-sm flex-1 ${formTheme === 'dark' ? 'bg-[#222] border-[#444] text-white' : 'bg-white border-gray-300 text-gray-500'}`}>Telefone</div>
+                            </div>
+                          )}
+                          <div className={`h-10 rounded flex items-center justify-center font-bold text-sm ${formTheme === 'dark' ? 'bg-white text-black' : 'bg-black text-white'}`}>
+                            {formButtonText}
+                          </div>
                         </div>
-                      )}
+                        {postSubmitAction === 'message' && (
+                          <div className="mt-4 p-3 bg-green-500/10 text-green-500 text-xs border border-green-500/20 rounded">
+                            Simulação pós-envio: {postSubmitMessage}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
+              )}
             </div>
           )}
 

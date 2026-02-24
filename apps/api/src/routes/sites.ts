@@ -533,7 +533,7 @@ router.get('/:siteId/snippet', requireAuth, async (req, res) => {
         ? gaRow.measurement_id.trim()
         : null;
 
-  const rules = await pool.query('SELECT rule_type, match_value, event_name, event_type FROM site_url_rules WHERE site_id = $1', [siteId]);
+  const rules = await pool.query('SELECT rule_type, match_value, match_text, event_name, event_type FROM site_url_rules WHERE site_id = $1', [siteId]);
   const eventRules = rules.rows;
 
   const snippet = [
@@ -575,14 +575,15 @@ router.post('/:siteId/event-rules', requireAuth, async (req, res) => {
   const site = await pool.query('SELECT id FROM sites WHERE id = $1 AND account_id = $2', [siteId, auth.accountId]);
   if (!site.rowCount) return res.status(404).json({ error: 'Site not found' });
 
-  const { rule_type, match_value, event_name, event_type } = req.body;
+  const { rule_type, match_value, match_text, event_name, event_type } = req.body;
   if (!match_value || !event_name) return res.status(400).json({ error: 'Missing fields' });
+  if (rule_type === 'button_click' && !match_text) return res.status(400).json({ error: 'Missing button text' });
 
   const result = await pool.query(
-    `INSERT INTO site_url_rules (site_id, rule_type, match_value, event_name, event_type)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO site_url_rules (site_id, rule_type, match_value, match_text, event_name, event_type)
+     VALUES ($1, $2, $3, $4, $5, $6)
      RETURNING *`,
-    [siteId, rule_type || 'url_contains', match_value, event_name, event_type || 'custom']
+    [siteId, rule_type || 'url_contains', match_value, match_text || null, event_name, event_type || 'custom']
   );
 
   return res.status(201).json({ rule: result.rows[0] });
