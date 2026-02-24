@@ -251,31 +251,27 @@ export class Tracker {
      // Debug log (Habilitado temporariamente para diagnóstico)
      console.log('[TRK] Sending event:', payload.event_name, payload, 'to', url);
  
-     // Try fetch with keepalive first (modern standard)
-     if (typeof window.fetch === 'function') {
+     const beaconOk = typeof navigator.sendBeacon === 'function'
+       ? navigator.sendBeacon(url, new Blob([body], { type: 'text/plain' }))
+       : false;
+
+     if (!beaconOk && typeof window.fetch === 'function') {
         fetch(url, {
           method: 'POST',
-          credentials: 'omit', // Importante: não enviar cookies para evitar erro de CORS com wildcard/origem dinâmica pública
+          credentials: 'omit',
           headers: {
-            'Content-Type': 'application/json',
-            'X-Site-Key': this.siteKey
+            'Content-Type': 'text/plain'
           },
           body: body,
-          keepalive: true
+          keepalive: true,
+          mode: 'cors'
         }).then(res => {
          if (!res.ok) console.error('[TRK] Server error:', res.status, res.statusText);
          else console.log('[TRK] Event sent successfully');
        }).catch((err) => {
          console.error('[TRK] Fetch error:', err);
        });
-       return;
      }
-    
-    // Fallback to sendBeacon
-    if (navigator.sendBeacon) {
-      const blob = new Blob([body], { type: 'application/json' });
-      navigator.sendBeacon(url, blob);
-    }
   }
 
   private trackPageView() {

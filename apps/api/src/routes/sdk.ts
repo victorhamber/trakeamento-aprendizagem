@@ -25,7 +25,10 @@ router.get('/tracker.js', async (req, res) => {
         const rules = await pool.query('SELECT rule_type, match_value, match_text, event_name, event_type FROM site_url_rules WHERE site_id = $1', [siteId]);
         const eventRules = rules.rows;
 
-        const apiUrl = process.env.API_BASE_URL || 'https://api.trajettu.com';
+        const apiUrl =
+          process.env.PUBLIC_API_BASE_URL ||
+          process.env.API_BASE_URL ||
+          `${req.headers['x-forwarded-proto'] || req.protocol}://${req.headers['x-forwarded-host'] || req.get('host')}`;
 
         const configObj = {
           apiUrl,
@@ -596,16 +599,14 @@ router.get('/tracker.js', async (req, res) => {
     try {
       var url  = apiUrl + '/ingest/events?key=' + encodeURIComponent(siteKey);
       var body = JSON.stringify(payload);
-      // Prioridade 1: navigator.sendBeacon (Sobrevive a redirects e não engatilha CORS preflight).
-      // Usar text/plain resolve o problema crítico onde o Mobile Safari / 4G Chromium matava a requisição
-      // no meio do redirect antes do OPTIONS (preflight) retornar.
+      var ok = false;
       if (navigator.sendBeacon) {
-        navigator.sendBeacon(url, new Blob([body], { type: 'text/plain' }));
-      } else if (typeof fetch !== 'undefined') {
-        // Fallback: fetch com keepalive para browsers antigos sem sendBeacon (raro)
+        ok = navigator.sendBeacon(url, new Blob([body], { type: 'text/plain' }));
+      }
+      if (!ok && typeof fetch !== 'undefined') {
         fetch(url, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'text/plain' },
           body: body,
           keepalive: true,
           mode: 'cors'
