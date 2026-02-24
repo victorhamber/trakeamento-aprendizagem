@@ -221,7 +221,7 @@ router.get('/tracker.js', async (req, res) => {
       if (navigator.webdriver) return true;
       var ua = (navigator.userAgent || '').toLowerCase();
       if (/headless|phantom|prerender|crawl|bot|spider/i.test(ua)) return true;
-      if (!window.chrome && /chrome/i.test(ua)) return true; // headless chrome sem window.chrome
+      // Removido check de chrome sem window.chrome pois causa falso positivo em mobile/webviews
     } catch(_e) {}
     return false;
   }

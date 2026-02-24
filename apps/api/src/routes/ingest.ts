@@ -333,6 +333,7 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
 
   // Recusa bots
   if (event.telemetry?.is_bot === true) {
+    console.log('[Ingest] Ignored bot event:', event.event_name, event.user_data?.client_user_agent);
     return res.status(202).json({ status: 'ignored' });
   }
 
