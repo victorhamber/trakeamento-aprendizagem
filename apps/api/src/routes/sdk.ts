@@ -534,6 +534,10 @@ router.get('/tracker.js', async (req, res) => {
     } catch(_e) {}
   }
 
+  function hasFbq() {
+    try { return typeof window.fbq === 'function'; } catch(_e) { return false; }
+  }
+
   // ─── GA4 loader ───────────────────────────────────────────────────────────
   function loadGa(measurementId) {
     try {
@@ -587,6 +591,8 @@ router.get('/tracker.js', async (req, res) => {
       fid:             Math.round(webVitals.fid),
       cls:             Math.round(webVitals.cls * 1000) / 1000,
       fcp:             Math.round(webVitals.fcp),
+      pixel_loaded:    hasFbq(),
+      pixel_id_present: !!(window.TRACKING_CONFIG && window.TRACKING_CONFIG.metaPixelId),
       page_path:       location.pathname || '',
       page_title:      document.title   || '',
       is_bot:          isBot()
@@ -658,6 +664,8 @@ router.get('/tracker.js', async (req, res) => {
 
     if (cfg.metaPixelId) {
       loadMetaPixel(cfg.metaPixelId);
+    }
+    if (cfg.metaPixelId || hasFbq()) {
       trackMeta('PageView', Object.assign(
         { ta_source: 'tracking_suite', ta_site_key: cfg.siteKey, ta_event_id: eventId,
           event_url: location.origin + location.pathname,
@@ -764,6 +772,8 @@ router.get('/tracker.js', async (req, res) => {
 
       if (cfg.metaPixelId) {
         loadMetaPixel(cfg.metaPixelId);
+      }
+      if (cfg.metaPixelId || hasFbq()) {
         var isCustom = STANDARD_EVENTS.indexOf(eventName) < 0;
         var metaParams = Object.assign(
           {

@@ -232,19 +232,40 @@ function resolveGeo(clientIp: string) {
 function buildCapiUserData(
   req: Request,
   userData: NonNullable<IngestEvent['user_data']>,
-  siteKey: string
+  siteKey: string,
+  customData: Record<string, unknown>
 ) {
   const clientIp = resolveClientIp(req, userData);
   const clientUserAgent = req.headers['user-agent'] || userData.client_user_agent || '';
   const geo = resolveGeo(clientIp);
+  const pickCustom = (field: string) => {
+    const val = customData[field];
+    if (typeof val === 'string') return val;
+    if (Array.isArray(val)) {
+      for (const item of val) {
+        if (typeof item === 'string') return item;
+      }
+    }
+    return undefined;
+  };
+
+  const pickRaw = (field: string) => {
+    const fromUser = (userData as Record<string, unknown>)[field];
+    if (typeof fromUser === 'string' || Array.isArray(fromUser)) return fromUser as string | string[];
+    const fromCustom = pickCustom(field);
+    return fromCustom ? fromCustom : undefined;
+  };
 
   // Monta campos com prioridade: payload hasheado > payload raw > geo
   const pick = (field: string) =>
-    normalizeAndHash(field, (userData as Record<string, unknown>)[field] as string | string[] | undefined);
+    normalizeAndHash(field, pickRaw(field));
 
   const ct = pick('ct') ?? (geo.city ? hashPii(normalizers.ct(geo.city)) : undefined);
   const st = pick('st') ?? (geo.region ? hashPii(normalizers.st(geo.region)) : undefined);
   const country = pick('country') ?? (geo.country ? hashPii(normalizers.country(geo.country)) : undefined);
+  const fbp = userData.fbp || pickCustom('fbp');
+  const fbc = userData.fbc || pickCustom('fbc');
+  const externalIdRaw = userData.external_id || pickCustom('external_id');
 
   return {
     client_ip_address: clientIp,
@@ -258,9 +279,9 @@ function buildCapiUserData(
     country,
     zp: pick('zp'),
     db: pick('db'),
-    fbp: userData.fbp,
-    fbc: userData.fbc,
-    external_id: userData.external_id ? hashPii(userData.external_id) : undefined,
+    fbp,
+    fbc,
+    external_id: externalIdRaw ? hashPii(externalIdRaw) : undefined,
   };
 }
 
@@ -375,7 +396,7 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
     // ── 2. Envio CAPI (assíncrono com retry) ─────────────────────────────
     if ((result.rowCount ?? 0) > 0) {
       const userData = event.user_data ?? {};
-      const capiUser = buildCapiUserData(req, userData, siteKey);
+      const capiUser = buildCapiUserData(req, userData, siteKey, event.custom_data ?? {});
 
       // custom_data: campos padrão do Meta + dados de atribuição enriquecidos
       // Ref: https://developers.facebook.com/docs/marketing-api/conversions-api/parameters/custom-data
@@ -542,7 +563,7 @@ router.post('/batch', cors(), ingestLimiter, async (req, res) => {
 
       successfulIngests++;
 
-      const capiUser = buildCapiUserData(req, event.user_data || {}, siteKey);
+      const capiUser = buildCapiUserData(req, event.user_data || {}, siteKey, event.custom_data ?? {});
 
       const metaCustomData: Record<string, unknown> = {};
       if (event.custom_data) {
