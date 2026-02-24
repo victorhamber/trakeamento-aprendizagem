@@ -395,8 +395,14 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
         }
       }
       // Fallbacks para campos comuns
-      if (!metaCustomData['content_name'] && cd['page_title']) {
-        metaCustomData['content_name'] = cd['page_title'];
+      if (!metaCustomData['content_name']) {
+        if (cd['content_name'] && cd['content_name'] !== '') {
+          metaCustomData['content_name'] = cd['content_name'];
+        } else if (cd['page_title'] && cd['page_title'] !== '') {
+          metaCustomData['content_name'] = cd['page_title'];
+        } else if (tl['page_title'] && tl['page_title'] !== '') {
+          metaCustomData['content_name'] = tl['page_title'];
+        }
       }
       if (!metaCustomData['content_type']) {
         metaCustomData['content_type'] = 'product';

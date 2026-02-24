@@ -13,7 +13,7 @@ const normalizeStatus = (_status: unknown) => {
 // â”€â”€â”€ Core Ingestion Engine for all Webhooks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function processPurchaseWebhook({
   siteKey, payload, email, phone, firstName, lastName, city, state, zip, country, dob,
-  fbp, fbc, externalId, clientIp, clientUa, value, currency, status, orderId, platform
+  fbp, fbc, externalId, clientIp, clientUa, value, currency, status, orderId, platform, contentName
 }: any) {
   const { finalStatus, isApproved } = normalizeStatus(status);
   console.log(`[Webhook] processPurchaseWebhook called: value=${value} currency=${currency} status=${finalStatus} orderId=${orderId} platform=${platform} siteKey=${siteKey}`);
@@ -99,6 +99,7 @@ async function processPurchaseWebhook({
     custom_data: {
       currency: currency,
       value: value,
+      content_name: contentName || undefined,
       content_type: 'product',
       utm_source: payload.utm_source || payload.trackingParameters?.utm_source || payload.tracking_parameters?.utm_source || (payload.sck && !String(payload.sck).startsWith('trk_') ? payload.sck : undefined) || (payload.src && !String(payload.src).startsWith('trk_') ? payload.src : undefined) || undefined,
       utm_medium: payload.utm_medium || payload.trackingParameters?.utm_medium || payload.tracking_parameters?.utm_medium || undefined,
@@ -217,7 +218,7 @@ router.post('/purchase', async (req, res) => {
 
   // Multi-platform Parsers (Hotmart, Kiwify, Eduzz, Generic)
   let platform = 'generic';
-  let email, firstName, lastName, phone, value, currency, status, orderId, city, state, zip, country, dob;
+  let email, firstName, lastName, phone, value, currency, status, orderId, city, state, zip, country, dob, contentName;
 
   if (payload.hottok || payload.product?.id || payload.buyer?.email) {
     platform = 'hotmart';
@@ -233,6 +234,7 @@ router.post('/purchase', async (req, res) => {
     state = payload.buyer?.address?.state;
     zip = payload.buyer?.address?.zipCode || payload.buyer?.address?.zip_code;
     country = payload.buyer?.address?.country || payload.buyer?.address?.country_iso;
+    contentName = payload.product?.name;
   } else if (payload.webhook_event_type || payload.Customer) {
     platform = 'kiwify';
     email = payload.Customer?.email || payload.email;
@@ -249,6 +251,7 @@ router.post('/purchase', async (req, res) => {
     state = payload.Customer?.state;
     zip = payload.Customer?.zipcode;
     country = 'BR'; // Kiwify is mainly BR
+    contentName = payload.Product?.name || payload.product_name;
   } else if (payload.transacao_id || payload.cus_email || payload.eduzz_id) {
     platform = 'eduzz';
     email = payload.cus_email || payload.email;
@@ -263,6 +266,7 @@ router.post('/purchase', async (req, res) => {
     state = payload.cus_estado;
     zip = payload.cus_cep;
     country = 'BR';
+    contentName = payload.tit_nome || payload.product_name;
   } else {
     // Generic
     const pickStr = (keys: string[]): string | undefined => {
@@ -285,6 +289,7 @@ router.post('/purchase', async (req, res) => {
     currency = payload.currency || 'BRL';
     status = payload.status;
     orderId = payload.id || payload.order_id || payload.transaction_id || payload.transaction || `webhook_${Date.now()}`;
+    contentName = pickStr(['product_name', 'product', 'nome_produto', 'item_name', 'content_name']);
   }
 
   const { finalStatus } = normalizeStatus(status);
@@ -294,7 +299,7 @@ router.post('/purchase', async (req, res) => {
     fbp, fbc, externalId: payload.user_id || payload.buyer?.id || payload.Customer?.id,
     clientIp: payload.client_ip_address || payload.ip || undefined,
     clientUa: payload.client_user_agent || payload.user_agent || undefined,
-    value, currency, status: finalStatus, orderId, platform
+    value, currency, status: finalStatus, orderId, platform, contentName
   });
 
   if (!result.success) return res.status(result.status || 500).json({ error: result.error });
