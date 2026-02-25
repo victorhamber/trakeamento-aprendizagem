@@ -193,10 +193,10 @@ function getTimeDimensions(eventTimeSec: number) {
 }
 
 // ─── Deduplication (in-memory fallback + Postgres) ───────────────────────────
-// Para produção: troque pelo Redis com TTL de 24h
+// Aumentado para 100k e TTL 48h para cobrir janelas maiores de duplicidade
 const recentEventIds = new LRUCache({
-  max: 50000,
-  ttl: 24 * 60 * 60 * 1000,
+  max: 100000,
+  ttl: 48 * 60 * 60 * 1000,
 });
 
 function isDuplicate(siteKey: string, eventId: string): boolean {
@@ -366,18 +366,30 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
     [eventName, eventId, eventSourceUrl, siteKey]
   );
 
-  // Deduplicação em memória (rápida) — o ON CONFLICT no Postgres é a garantia definitiva
+  // ─── 1. Deduplicação (In-Memory) ──────────────────────────────────
   if (isDuplicate(siteKey, eventId)) {
-    return res.status(202).json({ status: 'duplicate' });
+    console.log(`[Ingest] Ignored duplicate event (memory): ${eventName} (${eventId})`);
+    return res.status(202).json({ status: 'ignored_duplicate' });
+  }
+
+  // ─── 1.5. Deduplicação (Banco de Dados - Robusta) ──────────────────
+  // Garante que se o servidor reiniciar, não perca o histórico recente
+  const existing = await pool.query(
+    'SELECT 1 FROM web_events WHERE site_key = $1 AND event_id = $2 LIMIT 1',
+    [siteKey, eventId]
+  );
+  if ((existing.rowCount || 0) > 0) {
+    console.log(`[Ingest] Ignored duplicate event (db): ${eventName} (${eventId})`);
+    return res.status(202).json({ status: 'ignored_duplicate' });
   }
 
   try {
-    // ── 1. Persistir no Postgres ──────────────────────────────────────────
     const query = `
-      INSERT INTO web_events(
-    site_key, event_id, event_name, event_time,
-    event_source_url, user_data, custom_data, telemetry, raw_payload
-  ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      INSERT INTO web_events (
+        site_key, event_id, event_name, event_time, event_source_url,
+        user_data, custom_data, telemetry, raw_payload
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       ON CONFLICT(site_key, event_id) DO NOTHING
       RETURNING id
   `;
