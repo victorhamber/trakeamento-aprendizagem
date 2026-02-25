@@ -269,6 +269,8 @@ export const SitePage = () => {
 
 
 
+  const [selectedRuleId, setSelectedRuleId] = useState<number | null>(null);
+
   const loadSavedForms = useCallback(async () => {
     try {
       const res = await api.get(`/sites/${id}/forms`);
@@ -618,16 +620,23 @@ export const SitePage = () => {
         }
       }
 
-      await api.post(`/sites/${id}/event-rules`, payload);
+      if (selectedRuleId) {
+        await api.put(`/sites/${id}/event-rules/${selectedRuleId}`, payload);
+        showFlash('Regra de URL atualizada!');
+      } else {
+        await api.post(`/sites/${id}/event-rules`, payload);
+        showFlash('Regra de URL adicionada!');
+      }
+
       setUrlRuleValue('');
       setUrlRuleCustomName('');
       setUrlRuleEventValue('');
       setUrlRuleEventCurrency('BRL');
+      setSelectedRuleId(null);
       await loadEventRules();
-      showFlash('Regra de URL adicionada!');
     } catch (err) {
       console.error(err);
-      showFlash('Erro ao adicionar regra', 'error');
+      showFlash('Erro ao salvar regra', 'error');
     }
   };
 
@@ -659,18 +668,62 @@ export const SitePage = () => {
         }
       }
 
-      await api.post(`/sites/${id}/event-rules`, payload);
+      if (selectedRuleId) {
+        await api.put(`/sites/${id}/event-rules/${selectedRuleId}`, payload);
+        showFlash('Regra de botão atualizada!');
+      } else {
+        await api.post(`/sites/${id}/event-rules`, payload);
+        showFlash('Regra de botão adicionada!');
+      }
+
       setButtonRuleUrl('');
       setButtonRuleText('');
       setButtonRuleCustomName('');
       setButtonRuleEventValue('');
       setButtonRuleEventCurrency('BRL');
+      setSelectedRuleId(null);
       await loadEventRules();
-      showFlash('Regra de botão adicionada!');
     } catch (err) {
       console.error(err);
-      showFlash('Erro ao adicionar a regra de botão', 'error');
+      showFlash('Erro ao salvar regra de botão', 'error');
     }
+  };
+
+  const handleEditRule = (rule: any) => {
+    setSelectedRuleId(rule.id);
+    if (rule.rule_type === 'url_contains') {
+      setUrlRuleValue(rule.match_value);
+      const isCustom = rule.event_type === 'custom';
+      setUrlRuleEventType(isCustom ? 'Custom' : rule.event_name);
+      setUrlRuleCustomName(isCustom ? rule.event_name : '');
+      setUrlRuleEventValue(rule.parameters?.value?.toString() || '');
+      setUrlRuleEventCurrency(rule.parameters?.currency || 'BRL');
+      setEventSubTab('url');
+    } else if (rule.rule_type === 'button_click') {
+      setButtonRuleUrl(rule.match_value);
+      setButtonRuleText(rule.match_text || '');
+      const isCustom = rule.event_type === 'custom';
+      setButtonRuleEventType(isCustom ? 'Custom' : rule.event_name);
+      setButtonRuleCustomName(isCustom ? rule.event_name : '');
+      setButtonRuleEventValue(rule.parameters?.value?.toString() || '');
+      setButtonRuleEventCurrency(rule.parameters?.currency || 'BRL');
+      setEventSubTab('button');
+    }
+    showFlash('Regra carregada para edição');
+  };
+
+  const handleCancelEditRule = () => {
+    setSelectedRuleId(null);
+    setUrlRuleValue('');
+    setUrlRuleCustomName('');
+    setUrlRuleEventValue('');
+    setUrlRuleEventCurrency('BRL');
+    setButtonRuleUrl('');
+    setButtonRuleText('');
+    setButtonRuleCustomName('');
+    setButtonRuleEventValue('');
+    setButtonRuleEventCurrency('BRL');
+    showFlash('Edição cancelada');
   };
 
   const handleDeleteRule = async (ruleId: number) => {
@@ -678,6 +731,7 @@ export const SitePage = () => {
     try {
       await api.delete(`/sites/${id}/event-rules/${ruleId}`);
       await loadEventRules();
+      if (selectedRuleId === ruleId) handleCancelEditRule();
       showFlash('Regra removida!');
     } catch (err) {
       console.error(err);
@@ -2606,13 +2660,21 @@ ${scriptContent}
                         </div>
                       </div>
                     )}
-                    <div className="md:col-span-2">
+                    <div className="md:col-span-2 flex gap-2">
                       <button
                         onClick={handleAddUrlRule}
-                        className="w-full bg-blue-600 hover:bg-blue-500 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors"
+                        className="flex-1 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors shadow-lg shadow-blue-900/20"
                       >
-                        Adicionar
+                        {selectedRuleId ? 'Atualizar' : 'Adicionar'}
                       </button>
+                      {selectedRuleId && (
+                        <button
+                          onClick={handleCancelEditRule}
+                          className="bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-400 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors"
+                        >
+                          ✕
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -2637,10 +2699,16 @@ ${scriptContent}
                                   {rule.event_name}
                                 </span>
                               </td>
-                              <td className="px-4 py-3 text-right">
+                              <td className="px-4 py-3 text-right flex justify-end gap-3">
+                                <button
+                                  onClick={() => handleEditRule(rule)}
+                                  className="text-zinc-600 dark:text-zinc-400 hover:text-blue-400 text-xs transition-colors"
+                                >
+                                  Editar
+                                </button>
                                 <button
                                   onClick={() => handleDeleteRule(rule.id)}
-                                  className="text-red-400 hover:text-red-300 text-xs"
+                                  className="text-red-400 hover:text-red-300 text-xs transition-colors"
                                 >
                                   Remover
                                 </button>
@@ -2750,13 +2818,21 @@ ${scriptContent}
                         </div>
                       </div>
                     )}
-                    <div className="md:col-span-3 md:col-start-1">
+                    <div className="md:col-span-3 md:col-start-1 flex gap-2">
                       <button
                         onClick={handleAddButtonRule}
-                        className="w-full bg-blue-600 hover:bg-blue-500 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors"
+                        className="flex-1 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors shadow-lg shadow-blue-900/20"
                       >
-                        Adicionar
+                        {selectedRuleId ? 'Atualizar' : 'Adicionar'}
                       </button>
+                      {selectedRuleId && (
+                        <button
+                          onClick={handleCancelEditRule}
+                          className="bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-400 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors"
+                        >
+                          ✕
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -2781,10 +2857,16 @@ ${scriptContent}
                                   {rule.event_name}
                                 </span>
                               </td>
-                              <td className="px-4 py-3 text-right">
+                              <td className="px-4 py-3 text-right flex justify-end gap-3">
+                                <button
+                                  onClick={() => handleEditRule(rule)}
+                                  className="text-zinc-600 dark:text-zinc-400 hover:text-blue-400 text-xs transition-colors"
+                                >
+                                  Editar
+                                </button>
                                 <button
                                   onClick={() => handleDeleteRule(rule.id)}
-                                  className="text-red-400 hover:text-red-300 text-xs"
+                                  className="text-red-400 hover:text-red-300 text-xs transition-colors"
                                 >
                                   Remover
                                 </button>
