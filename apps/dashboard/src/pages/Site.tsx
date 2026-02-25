@@ -340,8 +340,12 @@ export const SitePage = () => {
     setFormFields(cfg.fields || { name: true, email: true, phone: true });
     setFormTheme(cfg.theme || 'light');
     setFormButtonText(cfg.button_text || 'Quero me cadastrar');
+    setFormButtonBgColor(cfg.button_bg_color || (cfg.theme === 'dark' ? '#FFFFFF' : '#000000'));
+    setFormButtonTextColor(cfg.button_text_color || (cfg.theme === 'dark' ? '#000000' : '#FFFFFF'));
     setFormEventType(cfg.event_type || 'Lead');
     setFormCustomEventName(cfg.custom_event_name || '');
+    setFormEventValue(cfg.event_value || '');
+    setFormEventCurrency(cfg.event_currency || 'BRL');
     setPostSubmitAction(cfg.post_submit_action || 'message');
     setPostSubmitMessage(cfg.post_submit_message || 'Obrigado! Seus dados foram enviados com sucesso.');
     setPostSubmitRedirectUrl(cfg.post_submit_redirect_url || '');
