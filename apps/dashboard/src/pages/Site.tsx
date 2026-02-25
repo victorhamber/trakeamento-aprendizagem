@@ -220,15 +220,23 @@ export const SitePage = () => {
   const [urlRuleValue, setUrlRuleValue] = useState('');
   const [urlRuleEventType, setUrlRuleEventType] = useState('Purchase');
   const [urlRuleCustomName, setUrlRuleCustomName] = useState('');
+  const [urlRuleEventValue, setUrlRuleEventValue] = useState('');
+  const [urlRuleEventCurrency, setUrlRuleEventCurrency] = useState('BRL');
+
   const [buttonRuleUrl, setButtonRuleUrl] = useState('');
   const [buttonRuleText, setButtonRuleText] = useState('');
   const [buttonRuleEventType, setButtonRuleEventType] = useState('Purchase');
   const [buttonRuleCustomName, setButtonRuleCustomName] = useState('');
+  const [buttonRuleEventValue, setButtonRuleEventValue] = useState('');
+  const [buttonRuleEventCurrency, setButtonRuleEventCurrency] = useState('BRL');
+
   const [eventSubTab, setEventSubTab] = useState<'url' | 'button' | 'form'>('url');
   const [formFields, setFormFields] = useState({ name: true, email: true, phone: true });
   const [formButtonText, setFormButtonText] = useState('Quero me cadastrar');
   const [formEventType, setFormEventType] = useState('Lead');
   const [formCustomEventName, setFormCustomEventName] = useState('');
+  const [formEventValue, setFormEventValue] = useState('');
+  const [formEventCurrency, setFormEventCurrency] = useState('BRL');
   const [formTheme, setFormTheme] = useState<'light' | 'dark'>('light');
 
   // New Form Builder State
@@ -585,14 +593,26 @@ export const SitePage = () => {
     }
 
     try {
-      await api.post(`/sites/${id}/event-rules`, {
+      const payload: any = {
         rule_type: 'url_contains',
         match_value: urlRuleValue,
         event_name: evtName,
-        event_type: urlRuleEventType === 'Custom' ? 'custom' : 'standard'
-      });
+        event_type: urlRuleEventType === 'Custom' ? 'custom' : 'standard',
+        parameters: {}
+      };
+
+      if (urlRuleEventType === 'Purchase' || urlRuleEventType === 'Custom') {
+        if (urlRuleEventValue) {
+          payload.parameters.value = parseFloat(urlRuleEventValue);
+          payload.parameters.currency = urlRuleEventCurrency;
+        }
+      }
+
+      await api.post(`/sites/${id}/event-rules`, payload);
       setUrlRuleValue('');
       setUrlRuleCustomName('');
+      setUrlRuleEventValue('');
+      setUrlRuleEventCurrency('BRL');
       await loadEventRules();
       showFlash('Regra de URL adicionada!');
     } catch (err) {
@@ -613,16 +633,28 @@ export const SitePage = () => {
     }
 
     try {
-      await api.post(`/sites/${id}/event-rules`, {
+      const payload: any = {
         rule_type: 'button_click',
         match_value: buttonRuleUrl,
         match_text: buttonRuleText,
         event_name: evtName,
-        event_type: buttonRuleEventType === 'Custom' ? 'custom' : 'standard'
-      });
+        event_type: buttonRuleEventType === 'Custom' ? 'custom' : 'standard',
+        parameters: {}
+      };
+
+      if (buttonRuleEventType === 'Purchase' || buttonRuleEventType === 'Custom') {
+        if (buttonRuleEventValue) {
+          payload.parameters.value = parseFloat(buttonRuleEventValue);
+          payload.parameters.currency = buttonRuleEventCurrency;
+        }
+      }
+
+      await api.post(`/sites/${id}/event-rules`, payload);
       setButtonRuleUrl('');
       setButtonRuleText('');
       setButtonRuleCustomName('');
+      setButtonRuleEventValue('');
+      setButtonRuleEventCurrency('BRL');
       await loadEventRules();
       showFlash('Regra de botão adicionada!');
     } catch (err) {
@@ -2528,6 +2560,33 @@ ${scriptContent}
                         />
                       </div>
                     )}
+                    {(urlRuleEventType === 'Purchase' || urlRuleEventType === 'Custom') && (
+                      <div className="md:col-span-3 grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Valor:</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={urlRuleEventValue}
+                            onChange={(e) => setUrlRuleEventValue(e.target.value)}
+                            placeholder="0.00"
+                            className={inputCls}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Moeda:</label>
+                          <select
+                            value={urlRuleEventCurrency}
+                            onChange={(e) => setUrlRuleEventCurrency(e.target.value)}
+                            className={selectCls}
+                          >
+                            <option value="BRL">BRL</option>
+                            <option value="USD">USD</option>
+                            <option value="EUR">EUR</option>
+                          </select>
+                        </div>
+                      </div>
+                    )}
                     <div className="md:col-span-2">
                       <button
                         onClick={handleAddUrlRule}
@@ -2643,6 +2702,33 @@ ${scriptContent}
                           placeholder="Ex: Zap"
                           className={inputCls}
                         />
+                      </div>
+                    )}
+                    {(buttonRuleEventType === 'Purchase' || buttonRuleEventType === 'Custom') && (
+                      <div className="md:col-span-3 grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Valor:</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={buttonRuleEventValue}
+                            onChange={(e) => setButtonRuleEventValue(e.target.value)}
+                            placeholder="0.00"
+                            className={inputCls}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Moeda:</label>
+                          <select
+                            value={buttonRuleEventCurrency}
+                            onChange={(e) => setButtonRuleEventCurrency(e.target.value)}
+                            className={selectCls}
+                          >
+                            <option value="BRL">BRL</option>
+                            <option value="USD">USD</option>
+                            <option value="EUR">EUR</option>
+                          </select>
+                        </div>
                       </div>
                     )}
                     <div className="md:col-span-3 md:col-start-1">
@@ -2861,6 +2947,34 @@ ${scriptContent}
                               onChange={(e) => setFormCustomEventName(e.target.value)}
                               className={inputCls}
                             />
+                          </div>
+                        )}
+
+                        {(formEventType === 'Purchase' || formEventType === 'Custom') && (
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Valor</label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={formEventValue}
+                                onChange={(e) => setFormEventValue(e.target.value)}
+                                placeholder="0.00"
+                                className={inputCls}
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Moeda</label>
+                              <select
+                                value={formEventCurrency}
+                                onChange={(e) => setFormEventCurrency(e.target.value)}
+                                className={selectCls}
+                              >
+                                <option value="BRL">BRL</option>
+                                <option value="USD">USD</option>
+                                <option value="EUR">EUR</option>
+                              </select>
+                            </div>
                           </div>
                         )}
 

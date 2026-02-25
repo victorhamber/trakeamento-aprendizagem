@@ -825,19 +825,35 @@ router.get('/tracker.js', async (req, res) => {
     try {
       var cfg = window.TRACKING_CONFIG;
       if (!cfg || !cfg.eventRules || !cfg.eventRules.length) return;
+      
       var currentPath = location.pathname + location.search;
-      if (currentPath === lastPath) return;
-      lastPath = currentPath;
+      // Normalização simples
+      currentPath = currentPath.toLowerCase();
+
+      // Evita loop infinito se a regra for muito genérica, mas permite re-check em navegação
+      // if (currentPath === lastPath) return; 
+      // lastPath = currentPath;
+
       for (var i = 0; i < cfg.eventRules.length; i++) {
         var rule = cfg.eventRules[i];
-        if (rule.rule_type === 'url_contains' && currentPath.indexOf(rule.match_value) >= 0) {
-          track(rule.event_name, rule.custom_data || {});
+        if (!rule) continue;
+        
+        var matchVal = (rule.match_value || '').toLowerCase();
+        var isMatch = false;
+
+        if (rule.rule_type === 'url_contains' && currentPath.indexOf(matchVal) >= 0) {
+          isMatch = true;
         }
-        if (rule.rule_type === 'url_equals' && currentPath === rule.match_value) {
-          track(rule.event_name, rule.custom_data || {});
+        else if (rule.rule_type === 'url_equals' && currentPath === matchVal) {
+          isMatch = true;
+        }
+
+        if (isMatch) {
+          var customData = rule.parameters || {}; // Pega value/currency daqui
+          track(rule.event_name, customData);
         }
       }
-    } catch(_e) {}
+    } catch(_e) { console.error('[TRK] UrlRules error', _e); }
   }
 
   // ─── Button rule engine ──────────────────────────────────────────────────
@@ -846,29 +862,39 @@ router.get('/tracker.js', async (req, res) => {
       var cfg = window.TRACKING_CONFIG;
       if (!cfg || !cfg.eventRules || !cfg.eventRules.length) return;
       if (!target) return;
-      var currentPath = location.pathname + location.search;
+      
+      var currentPath = (location.pathname + location.search).toLowerCase();
 
       var el = target;
-      while (el && el.tagName !== 'A' && el.tagName !== 'BUTTON' && el.parentElement) {
+      // Sobe até encontrar A, BUTTON ou INPUT[type=submit/button]
+      while (el && el.tagName !== 'A' && el.tagName !== 'BUTTON' && el.tagName !== 'INPUT' && el.parentElement) {
         if (el.tagName === 'BODY' || el.tagName === 'HTML') break;
         el = el.parentElement;
       }
+      if (!el) return;
+
+      var clickedText = (el.innerText || el.value || el.textContent || '').toString().trim().toLowerCase();
+      if (!clickedText && el.getAttribute) clickedText = (el.getAttribute('aria-label') || el.getAttribute('title') || '').toLowerCase();
       
-      var clickedText = (el && (el.innerText || el.value) ? (el.innerText || el.value) : (target.innerText || target.value || '')).toString().trim().toLowerCase();
       if (!clickedText) return;
 
       for (var i = 0; i < cfg.eventRules.length; i++) {
         var rule = cfg.eventRules[i];
-        if (rule.rule_type === 'button_click' && rule.match_value && rule.match_text) {
-          if (rule.match_value === '/' || currentPath.indexOf(rule.match_value) >= 0) {
-            var mText = rule.match_text.toLowerCase().trim();
-            if (mText && clickedText.indexOf(mText) >= 0) {
-              track(rule.event_name, rule.custom_data || {});
+        if (rule.rule_type === 'button_click') {
+          var ruleUrl = (rule.match_value || '').toLowerCase();
+          var ruleText = (rule.match_text || '').toLowerCase();
+
+          // Verifica se está na URL correta (ou global '/')
+          if (ruleUrl === '/' || currentPath.indexOf(ruleUrl) >= 0) {
+            // Verifica se o texto bate
+            if (ruleText && clickedText.indexOf(ruleText) >= 0) {
+              var customData = rule.parameters || {};
+              track(rule.event_name, customData);
             }
           }
         }
       }
-    } catch(_e) {}
+    } catch(_e) { console.error('[TRK] BtnRules error', _e); }
   }
 
   // ─── History patch (SPA) ──────────────────────────────────────────────────
