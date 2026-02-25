@@ -416,6 +416,7 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
       const cd = event.custom_data ?? {};
       const tl = event.telemetry ?? {} as Record<string, unknown>;
       const metaCustomData: Record<string, unknown> = {};
+      
       // Campos padrão do Meta custom_data
       const metaCustomFields = [
         'value', 'currency', 'content_name', 'content_category',
@@ -423,10 +424,29 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
         'order_id', 'predicted_ltv', 'search_string', 'status',
         'delivery_category',
       ];
+      
       for (const f of metaCustomFields) {
+        // Correção: apenas inclui se não for undefined/null E (se for value/currency) não for string vazia
+        // Facebook rejeita value="" ou currency=""
         if (cd[f] !== undefined && cd[f] !== null && cd[f] !== '') {
-          metaCustomData[f] = cd[f];
+          // Parse float para value se vier como string
+          if (f === 'value') {
+            const val = parseFloat(cd[f] as string);
+            if (!isNaN(val)) metaCustomData[f] = val;
+          } else {
+            metaCustomData[f] = cd[f];
+          }
         }
+      }
+
+      // Validação de Currency (se tem value, precisa de currency válida)
+      if (metaCustomData['value'] !== undefined) {
+        if (!metaCustomData['currency']) {
+          metaCustomData['currency'] = 'BRL'; // Default BRL se não informado
+        }
+      } else {
+        // Se não tem value, remove currency para evitar warning de "missing value parameter"
+        delete metaCustomData['currency'];
       }
       // Fallbacks para campos comuns
       if (!metaCustomData['content_name']) {

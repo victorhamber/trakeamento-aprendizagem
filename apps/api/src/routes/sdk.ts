@@ -810,6 +810,15 @@ router.get('/tracker.js', async (req, res) => {
           getTimeFields(eventTime),
           payload.custom_data
         );
+
+        // Ensure value/currency are top-level for standard events like Purchase
+        if (payload.custom_data && payload.custom_data.value !== undefined) {
+          metaParams.value = payload.custom_data.value;
+        }
+        if (payload.custom_data && payload.custom_data.currency !== undefined) {
+          metaParams.currency = payload.custom_data.currency;
+        }
+
         trackMeta(eventName, metaParams, eventId, isCustom);
       }
 
