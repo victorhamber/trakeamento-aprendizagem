@@ -592,8 +592,17 @@ export class DiagnosisService {
     let landingPageContent: string | null = null;
 
     try {
+      // Rebuild query with correct parameter indices
+      // Original utmWhere.clause uses $4, $5, etc. based on previous query
+      // Here we start at $1 (siteKey), $2 (since), $3 (until), so UTM params should start at $4
+      // Fortunately, buildUtmWhere(4) was called earlier, so the indices in utmWhere.clause ($4, $5...)
+      // MATCH exactly what we need here: [siteKey, since, until, ...utmParams]
+      // $1=siteKey, $2=since, $3=until, $4=first_utm_param...
+      
+      const lpParams = [siteKey, since, until, ...utmWhere.params];
+      
       const topUrlRes = await pool.query(
-        `SELECT event_source_url, COUNT(*)::int as c
+        `SELECT event_source_url, COUNT(*)::bigint as c
          FROM web_events
          WHERE site_key = $1
            AND event_name = 'PageView'
@@ -603,7 +612,7 @@ export class DiagnosisService {
          GROUP BY event_source_url
          ORDER BY c DESC
          LIMIT 1`,
-        [siteKey, since, until, ...utmWhere.params]
+        lpParams
       );
       
       landingPageUrl = topUrlRes.rows[0]?.event_source_url || null;
