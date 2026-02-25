@@ -156,7 +156,7 @@ router.get('/campaigns/metrics', requireAuth, async (req, res) => {
 
       if (customEventCount > 0 && (objective.includes('custom') || objective.includes('conversion') || results === 0)) {
         return {
-          value: customEventCount,
+          value: results > 0 ? results : customEventCount,
           label: customEventName ? `Evento ${customEventName}` : 'Evento personalizado',
         };
       }

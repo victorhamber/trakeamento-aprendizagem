@@ -1422,19 +1422,19 @@ ${scriptContent}
 
     if (customEventName) {
       return {
-        value: metrics.custom_event_count ?? 0,
+        value: (metrics.results ?? 0) > 0 ? (metrics.results ?? 0) : metrics.custom_event_count ?? 0,
         label: `Evento ${customEventName}`,
       };
     }
 
     if (customEventType) {
       const t = customEventType.toLowerCase();
-      if (t.includes('purchase')) return { value: metrics.purchases ?? 0, label: 'Compras' };
-      if (t.includes('lead')) return { value: metrics.leads ?? 0, label: 'Leads' };
-      if (t.includes('contact')) return { value: metrics.contacts ?? 0, label: 'Contatos' };
-      if (t.includes('add_to_cart')) return { value: metrics.adds_to_cart ?? 0, label: 'Carrinhos' };
+      if (t.includes('purchase')) return { value: metrics.results ?? metrics.purchases ?? 0, label: 'Compras' };
+      if (t.includes('lead')) return { value: metrics.results ?? metrics.leads ?? 0, label: 'Leads' };
+      if (t.includes('contact')) return { value: metrics.results ?? metrics.contacts ?? 0, label: 'Contatos' };
+      if (t.includes('add_to_cart')) return { value: metrics.results ?? metrics.adds_to_cart ?? 0, label: 'Carrinhos' };
       if (t.includes('initiate_checkout')) {
-        return { value: metrics.initiates_checkout ?? 0, label: 'Finalizações' };
+        return { value: metrics.results ?? metrics.initiates_checkout ?? 0, label: 'Finalizações' };
       }
     }
 
