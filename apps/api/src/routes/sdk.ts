@@ -50,7 +50,6 @@ router.get('/tracker.js', async (req, res) => {
   const js = configJs + `
 (function(){
   'use strict';
-  try {
 
   // ─── Constants ────────────────────────────────────────────────────────────
   var COOKIE_TTL_2Y  = 60*60*24*365*2;
@@ -210,10 +209,19 @@ router.get('/tracker.js', async (req, res) => {
   var _fingerprintHash = null;
   function getFingerprintHash(cb) {
     if (_fingerprintHash) return cb(_fingerprintHash);
-    sha256Hex(getDeviceFingerprint(), function(h) {
-      _fingerprintHash = h;
-      cb(h);
-    });
+    
+    var done = false;
+    var safeCb = function(val) {
+      if (done) return;
+      done = true;
+      _fingerprintHash = val;
+      cb(val);
+    };
+
+    // Fallback de segurança se crypto demorar > 200ms
+    setTimeout(function() { safeCb(''); }, 200);
+
+    sha256Hex(getDeviceFingerprint(), safeCb);
   }
 
   // ─── Attribution params ───────────────────────────────────────────────────
@@ -601,89 +609,100 @@ router.get('/tracker.js', async (req, res) => {
       var url  = apiUrl + '/ingest/events?key=' + encodeURIComponent(siteKey);
       var body = JSON.stringify(payload);
       var ok = false;
-      if (navigator.sendBeacon) {
-        ok = navigator.sendBeacon(url, new Blob([body], { type: 'text/plain' }));
-      }
-      if (!ok && typeof fetch !== 'undefined') {
+      
+      // Tenta fetch com keepalive primeiro (mais robusto hoje em dia)
+      if (typeof fetch !== 'undefined') {
         fetch(url, {
           method: 'POST',
-          headers: { 'Content-Type': 'text/plain' },
+          headers: { 'Content-Type': 'application/json' },
           body: body,
           keepalive: true,
           mode: 'cors'
-        }).catch(function(){});
+        }).then(function(r){
+          if (!r.ok && navigator.sendBeacon) navigator.sendBeacon(url, new Blob([body], { type: 'text/plain' }));
+        }).catch(function(){
+          if (navigator.sendBeacon) navigator.sendBeacon(url, new Blob([body], { type: 'text/plain' }));
+        });
+        ok = true;
       }
-    } catch(_e) {}
+      
+      if (!ok && navigator.sendBeacon) {
+        navigator.sendBeacon(url, new Blob([body], { type: 'text/plain' }));
+      }
+    } catch(_e) { console.error('[TRK] Send error', _e); }
   }
 
   // ─── PageView ─────────────────────────────────────────────────────────────
   function pageView() {
-    var cfg = window.TRACKING_CONFIG;
-    if (!cfg || !cfg.apiUrl || !cfg.siteKey) return;
-    
-    // Removido bloqueio agressivo de bot para não perder mobile
-    // if (isBot()) return;
+    try {
+      var cfg = window.TRACKING_CONFIG;
+      if (!cfg || !cfg.apiUrl || !cfg.siteKey) return;
+      
+      // console.log('[TRK] PageView init', location.href);
 
-    var nav         = performance && performance.timing ? performance.timing : null;
-    var loadTimeMs  = nav && nav.domContentLoadedEventEnd > 0 ? (nav.domContentLoadedEventEnd - nav.navigationStart) : undefined;
-    if (loadTimeMs && loadTimeMs < 0) loadTimeMs = undefined;
+      var nav         = performance && performance.timing ? performance.timing : null;
+      var loadTimeMs  = nav && nav.domContentLoadedEventEnd > 0 ? (nav.domContentLoadedEventEnd - nav.navigationStart) : undefined;
+      if (loadTimeMs && loadTimeMs < 0) loadTimeMs = undefined;
 
-    var attrs       = getAttributionParams();
-    var eventTime   = Math.floor(Date.now() / 1000);
-    var eventId     = genEventId();
+      var attrs       = getAttributionParams();
+      var eventTime   = Math.floor(Date.now() / 1000);
+      var eventId     = genEventId();
 
-    var telemetry = buildTelemetry({ page_path: location.pathname, page_title: document.title });
-    var userData  = buildUserData();
-    if (loadTimeMs) telemetry.load_time_ms = loadTimeMs;
+      var telemetry = buildTelemetry({ page_path: location.pathname, page_title: document.title });
+      var userData  = buildUserData();
+      if (loadTimeMs) telemetry.load_time_ms = loadTimeMs;
 
-    var payload = {
-      event_name:        'PageView',
-      event_time:        eventTime,
-      event_id:          eventId,
-      event_source_url:  location.href,
-      action_source:     'website',
-      user_data:         userData,
-      custom_data:       Object.assign({
-        page_title:    document.title,
-        content_type:  'product',
-        referrer:      document.referrer,
-        page_path:     location.pathname,
-        client_user_agent: userData.client_user_agent,
-        external_id:   userData.external_id,
-        fbp:           userData.fbp,
-        fbc:           userData.fbc
-      }, attrs),
-      telemetry: telemetry
-    };
+      var payload = {
+        event_name:        'PageView',
+        event_time:        eventTime,
+        event_id:          eventId,
+        event_source_url:  location.href,
+        action_source:     'website',
+        user_data:         userData,
+        custom_data:       Object.assign({
+          page_title:    document.title,
+          content_type:  'product',
+          referrer:      document.referrer,
+          page_path:     location.pathname,
+          client_user_agent: userData.client_user_agent,
+          external_id:   userData.external_id,
+          fbp:           userData.fbp,
+          fbc:           userData.fbc
+        }, attrs),
+        telemetry: telemetry
+      };
 
-    getFingerprintHash(function(fp) {
-      payload.telemetry.device_fingerprint = fp;
-      send(cfg.apiUrl, cfg.siteKey, payload);
-    });
+      getFingerprintHash(function(fp) {
+        payload.telemetry.device_fingerprint = fp;
+        send(cfg.apiUrl, cfg.siteKey, payload);
+      });
 
-    if (cfg.metaPixelId) {
-      loadMetaPixel(cfg.metaPixelId);
-    }
-
-    // Usando setTimeout(0) para garantir que o script injetado seja processado pelo browser
-    // e o objeto fbq esteja disponível globalmente antes de chamar track.
-    // Isso evita race conditions em mobile/safari onde a injeção síncrona pode falhar.
-    setTimeout(function() {
-      if (cfg.metaPixelId || hasFbq()) {
-        trackMeta('PageView', Object.assign(
-          { ta_source: 'tracking_suite', ta_site_key: cfg.siteKey, ta_event_id: eventId,
-            event_url: location.origin + location.pathname,
-            traffic_source: document.referrer || '' },
-          telemetry,
-          getTimeFields(eventTime),
-          payload.custom_data
-        ), eventId, false);
+      if (cfg.metaPixelId) {
+        loadMetaPixel(cfg.metaPixelId);
       }
-    }, 0);
 
-    if (cfg.gaMeasurementId) {
-      loadGa(cfg.gaMeasurementId);
-      trackGa('page_view', { page_location: location.href, page_title: document.title, page_path: location.pathname });
+      // Usando setTimeout(0) para garantir que o script injetado seja processado pelo browser
+      // e o objeto fbq esteja disponível globalmente antes de chamar track.
+      // Isso evita race conditions em mobile/safari onde a injeção síncrona pode falhar.
+      setTimeout(function() {
+        if (cfg.metaPixelId || hasFbq()) {
+          trackMeta('PageView', Object.assign(
+            { ta_source: 'tracking_suite', ta_site_key: cfg.siteKey, ta_event_id: eventId,
+              event_url: location.origin + location.pathname,
+              traffic_source: document.referrer || '' },
+            telemetry,
+            getTimeFields(eventTime),
+            payload.custom_data
+          ), eventId, false);
+        }
+      }, 0);
+
+      if (cfg.gaMeasurementId) {
+        loadGa(cfg.gaMeasurementId);
+        trackGa('page_view', { page_location: location.href, page_title: document.title, page_path: location.pathname });
+      }
+    } catch(e) {
+      console.error('[TRK] PageView error', e);
     }
   }
 
@@ -1000,21 +1019,6 @@ router.get('/tracker.js', async (req, res) => {
 
   window.addEventListener('beforeunload', pageEngagement);
 
-  } catch(err) {
-    // Fail-safe global: tenta enviar erro para o servidor se possível
-    try {
-      var cfg = window.TRACKING_CONFIG;
-      if (cfg && cfg.apiUrl && cfg.siteKey && navigator.sendBeacon) {
-         var errUrl = cfg.apiUrl + '/ingest/events?key=' + encodeURIComponent(cfg.siteKey);
-         var errBody = JSON.stringify({
-           event_name: 'TrackerError',
-           event_time: Math.floor(Date.now()/1000),
-           custom_data: { error: err.message, stack: err.stack, ua: navigator.userAgent }
-         });
-         navigator.sendBeacon(errUrl, new Blob([errBody], { type: 'text/plain' }));
-      }
-    } catch(_e) {}
-  }
 })();
 `;
 
