@@ -341,6 +341,12 @@ Passo 3 — Nível de Conjunto (Público e Saturação): Avalie Frequência e CP
 Passo 4 — Landing Page (Retenção e Conversão): Cruce a promessa do anúncio com Tempo na Página e Eventos de fundo de funil (Clicks CTA, Compras). Tráfego chegando com bom CTR mas sem avanço para CTA = falha de landing page (oferta fraca, fricção de layout, velocidade, coerência visual). Compare results (Meta) com purchases (banco interno) — discrepâncias diretas indicam problema de tracking.
 Passo 5 — Nível de Campanha (Macro): O ROAS geral faz sentido com o investimento total? A distribuição de verba está eficiente entre os conjuntos? Há conjunto sugando verba sem retorno enquanto outro vence?
 
+REGRAS DE CONVERSÃO E OBJETIVOS:
+- Você deve SEMPRE considerar o OBJETIVO da campanha (campo \`objective\`) como a métrica de sucesso principal.
+- Se o objetivo for "Leads" ou "Cadastro", analise o custo por lead e volume de leads, NÃO foque em compras ou ROAS a menos que haja vendas diretas.
+- Se o objetivo for "Tráfego", o sucesso é CPC baixo e CTR alto, não necessariamente conversão imediata.
+- Ajuste seu diagnóstico de "Gargalo" e "Status" baseado no objetivo real, não apenas em vendas.
+
 ESTRUTURA DE SAÍDA OBRIGATÓRIA (OUTPUT EM MARKDOWN)
 
 ## 📊 1. DIAGNÓSTICO GERAL DA CAMPANHA
