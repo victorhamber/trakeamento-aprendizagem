@@ -664,16 +664,21 @@ router.get('/tracker.js', async (req, res) => {
       loadMetaPixel(cfg.metaPixelId);
     }
 
-    if (cfg.metaPixelId || hasFbq()) {
-      trackMeta('PageView', Object.assign(
-        { ta_source: 'tracking_suite', ta_site_key: cfg.siteKey, ta_event_id: eventId,
-          event_url: location.origin + location.pathname,
-          traffic_source: document.referrer || '' },
-        telemetry,
-        getTimeFields(eventTime),
-        payload.custom_data
-      ), eventId, false);
-    }
+    // Usando setTimeout(0) para garantir que o script injetado seja processado pelo browser
+    // e o objeto fbq esteja disponível globalmente antes de chamar track.
+    // Isso evita race conditions em mobile/safari onde a injeção síncrona pode falhar.
+    setTimeout(function() {
+      if (cfg.metaPixelId || hasFbq()) {
+        trackMeta('PageView', Object.assign(
+          { ta_source: 'tracking_suite', ta_site_key: cfg.siteKey, ta_event_id: eventId,
+            event_url: location.origin + location.pathname,
+            traffic_source: document.referrer || '' },
+          telemetry,
+          getTimeFields(eventTime),
+          payload.custom_data
+        ), eventId, false);
+      }
+    }, 0);
 
     if (cfg.gaMeasurementId) {
       loadGa(cfg.gaMeasurementId);
