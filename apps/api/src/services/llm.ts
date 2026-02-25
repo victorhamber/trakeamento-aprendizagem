@@ -359,7 +359,7 @@ REGRAS CRÍTICAS DE ANÁLISE (OBRIGATÓRIO):
    - Use \`capi.deep_scroll_count\` para medir interesse real no conteúdo.
 
 3. **ANÁLISE PROFUNDA (SEM GENERICIDADES)**:
-   - Use os dados detalhados do `meta_breakdown`.
+   - Use os dados detalhados do \`meta_breakdown\`.
    - Qual anúncio trouxe mais dos 22 cadastros? Qual teve o menor custo por cadastro?
    - Compare o CTR dos anúncios: se o Anúncio A tem CTR 2% e o B tem 1%, o A é 100% melhor na atração. Diga isso.
    - Use a Landing Page: Se o conteúdo da página fala de "Teste Grátis" e o anúncio fala de "Compre Agora", aponte a desconexão específica.
