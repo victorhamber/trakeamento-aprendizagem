@@ -748,7 +748,7 @@ export const SitePage = () => {
 
     const buttonStyle = 'padding:10px 20px; cursor:pointer; border:none; border-radius:4px; font-weight:bold; width:100%;';
     const buttonColor = (button_bg_color && button_text_color)
-      ? `background:${button_bg_color}; color:${button_text_color};`
+      ? `background-color:${button_bg_color} !important; color:${button_text_color} !important;`
       : (isDark ? 'background:#fff; color:#000;' : 'background:#000; color:#fff;');
 
     const formId = `trk-form-${Date.now()}`;
