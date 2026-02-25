@@ -325,8 +325,8 @@ CONTEXTO DOS DADOS (INPUTS ESPERADOS)
 A cada requisição, você receberá um JSON estruturado com os seguintes blocos:
 - \`meta\`: Métricas agregadas do Meta Ads: Investimento, Impressões, Alcance, CPM, CTR (Link), CPC, Frequência — em nível de Campanha, Conjunto e Anúncio
 - \`meta_breakdown\`: Detalhamento por campanha, conjunto de anúncios e anúncios individuais
-- \`site\`: Métricas do site: Pageviews, Dwell Time, comportamento de scroll e interação com CTA
-- \`sales\`: Conversões reais no banco de dados (Compras/Leads internos)
+- `site`: Métricas do site: Pageviews (LP VIEWS), Dwell Time, comportamento de scroll e interação com CTA. O campo `lp_views` mostra o total de visitas na página.
+  - `sales`: Conversões reais no banco de dados (Compras/Leads internos)
 - \`derived\`: Métricas calculadas (CTR, CPC, CPM, connect rate, conversion rates)
 - \`signals\`: Sinais automáticos detectados (anomalias, alertas, padrões)
 - \`landing_page\`: URL e conteúdo textual extraído da página de destino (se disponível)
@@ -348,8 +348,12 @@ REGRAS CRÍTICAS DE ANÁLISE (OBRIGATÓRIO):
    - Ignorar "Compras" zeradas se o objetivo não for vendas.
    - Se houver 22 resultados de "Cadastro_Grupo", a campanha ESTÁ convertendo. NÃO diga que "não converte".
 
-2. **ANÁLISE PROFUNDA (SEM GENERICIDADES)**:
-   - Use os dados detalhados do \`meta_breakdown\`.
+2. **DADOS DE SITE (NÃO IGNORE OS PAGEVIEWS)**:
+   - Se `site.pageviews` ou `lp_views` for > 0 (ex: 24), a página ESTÁ sendo visualizada. Não diga "sem visualizações" ou "sem dados no site".
+   - Use os dados de `segments` (hora/dia) para ser útil. Se o CPA for alto às 3 da manhã, avise.
+
+3. **ANÁLISE PROFUNDA (SEM GENERICIDADES)**:
+   - Use os dados detalhados do `meta_breakdown`.
    - Qual anúncio trouxe mais dos 22 cadastros? Qual teve o menor custo por cadastro?
    - Compare o CTR dos anúncios: se o Anúncio A tem CTR 2% e o B tem 1%, o A é 100% melhor na atração. Diga isso.
    - Use a Landing Page: Se o conteúdo da página fala de "Teste Grátis" e o anúncio fala de "Compre Agora", aponte a desconexão específica.
