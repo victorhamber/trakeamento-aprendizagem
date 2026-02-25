@@ -37,11 +37,11 @@ export const LoginPage = () => {
       <div className="relative w-full max-w-md animate-in fade-in" style={{ animationDuration: '400ms' }}>
         <div className="rounded-3xl border border-white/[0.08] bg-zinc-950/80 backdrop-blur-xl p-8 shadow-[0_25px_60px_rgba(0,0,0,0.5)]">
           {/* Logo */}
-          <div className="flex flex-col items-center mb-8">
+          <div className="flex flex-col items-center mb-2">
             <img 
               src="/logo-full.png" 
               alt="Trajettu AI Analytics" 
-              className="h-80 w-auto object-contain mb-8 animate-in fade-in zoom-in duration-500" 
+              className="h-80 w-auto object-contain animate-in fade-in zoom-in duration-500 pointer-events-none select-none" 
             />
           </div>
 
