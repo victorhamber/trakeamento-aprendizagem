@@ -336,7 +336,9 @@ export class DiagnosisService {
       add('click_id');
       return { clause: clauses.join('\n        '), params };
     };
-    const utmWhere = buildUtmWhere(4);
+    // Start at 3 because existing queries use $1, $2, $3. 
+    // Logic is $${base + length}, so 3+1 = $4.
+    const utmWhere = buildUtmWhere(3);
 
     const sitePageViews = await pool.query(
       `
