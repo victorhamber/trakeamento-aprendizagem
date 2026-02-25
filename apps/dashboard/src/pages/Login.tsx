@@ -41,7 +41,7 @@ export const LoginPage = () => {
             <img 
               src="/logo-full.png" 
               alt="Trajettu AI Analytics" 
-              className="h-28 w-auto object-contain mb-4 animate-in fade-in zoom-in duration-500" 
+              className="h-40 w-auto object-contain mb-6 animate-in fade-in zoom-in duration-500" 
             />
           </div>
 
