@@ -740,6 +740,7 @@ router.get('/tracker.js', async (req, res) => {
       var eventId   = genEventId();
       var attrs     = getAttributionParams();
       var userData  = buildUserData();
+      var baseCustom = {
         page_title:       document.title,
         page_path:        location.pathname,
         content_type:     'product',
