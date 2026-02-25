@@ -123,8 +123,8 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
 
       {/* ── Desktop Sidebar ── */}
       <aside className="hidden lg:flex flex-col bg-white dark:bg-[#080a0f] border-r border-zinc-200/60 dark:border-white/5 p-5 transition-colors duration-300">
-        <Link to="/dashboard" className="flex justify-center px-2 mb-8">
-          <img src="/Sidebar.png" alt="Trajettu" className="w-full h-auto object-contain max-h-[120px]" />
+        <Link to="/dashboard" className="flex justify-center px-2 mb-8 select-none">
+          <img src="/Sidebar.png" alt="Trajettu" className="w-full h-auto object-contain max-h-[100px] pointer-events-none" />
         </Link>
 
         <nav className="space-y-1.5 flex-1">
