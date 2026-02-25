@@ -38,11 +38,11 @@ export const LoginPage = () => {
         <div className="rounded-3xl border border-white/[0.08] bg-zinc-950/80 backdrop-blur-xl p-8 shadow-[0_25px_60px_rgba(0,0,0,0.5)]">
           {/* Logo */}
           <div className="flex flex-col items-center mb-8">
-            <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/25 mb-4">
-              <div className="h-3 w-3 rounded-full bg-white animate-pulse" />
-            </div>
-            <h1 className="text-2xl font-bold tracking-tight text-white">Trajettu</h1>
-            <p className="text-[11px] uppercase tracking-[0.25em] text-indigo-400 font-bold mt-1">AI Analytics</p>
+            <img 
+              src="/logo-full.png" 
+              alt="Trajettu AI Analytics" 
+              className="h-28 w-auto object-contain mb-4 animate-in fade-in zoom-in duration-500" 
+            />
           </div>
 
           <div className="text-center mb-6">
