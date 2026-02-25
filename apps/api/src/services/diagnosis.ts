@@ -1,8 +1,49 @@
+import axios from 'axios';
 import { pool } from '../db/pool';
 import { llmService } from './llm';
 import { metaMarketingService } from './meta-marketing';
 
 export class DiagnosisService {
+  /**
+   * Fetches and extracts text content from a URL.
+   */
+  private async fetchLandingPageContent(url: string): Promise<string | null> {
+    try {
+      if (!url || !url.startsWith('http')) return null;
+
+      const response = await axios.get(url, {
+        headers: {
+          'User-Agent': 'TrakeamentoBot/1.0 (Diagnosis Analysis)',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
+        },
+        timeout: 5000,
+        maxContentLength: 500000 // 500KB limit
+      });
+
+      if (response.status !== 200) return null;
+
+      let html = typeof response.data === 'string' ? response.data : '';
+      if (!html) return null;
+
+      // Simple HTML stripping
+      // 1. Remove scripts and styles
+      html = html.replace(/<script\b[^>]*>([\s\S]*?)<\/script>/gim, "")
+                 .replace(/<style\b[^>]*>([\s\S]*?)<\/style>/gim, "")
+                 .replace(/<noscript\b[^>]*>([\s\S]*?)<\/noscript>/gim, "");
+      
+      // 2. Remove tags
+      let text = html.replace(/<[^>]+>/g, ' ');
+      
+      // 3. Normalize whitespace
+      text = text.replace(/\s+/g, ' ').trim();
+
+      return text.slice(0, 3000); // Limit to 3000 chars
+    } catch (err) {
+      // Silent fail is fine, we just won't have the content
+      return null;
+    }
+  }
+
   /**
    * Normalize a date string or Date to start-of-day Date object.
    */
@@ -546,9 +587,40 @@ export class DiagnosisService {
 
     signals.sort((a, b) => b.weight - a.weight);
 
+    // ── Detect Landing Page Content ──────────────────────────────────────────
+    let landingPageUrl: string | null = null;
+    let landingPageContent: string | null = null;
+
+    try {
+      const topUrlRes = await pool.query(
+        `SELECT event_source_url, COUNT(*)::int as c
+         FROM web_events
+         WHERE site_key = $1
+           AND event_name = 'PageView'
+           AND event_time >= $2
+           AND event_time < $3
+           ${utmWhere.clause}
+         GROUP BY event_source_url
+         ORDER BY c DESC
+         LIMIT 1`,
+        [siteKey, since, until, ...utmWhere.params]
+      );
+      
+      landingPageUrl = topUrlRes.rows[0]?.event_source_url || null;
+      if (landingPageUrl) {
+        landingPageContent = await this.fetchLandingPageContent(landingPageUrl);
+      }
+    } catch (err) {
+      console.warn('[DiagnosisService] Failed to detect landing page:', err);
+    }
+
     // ── Build snapshot ─────────────────────────────────────────────────────────
     const snapshot = {
       site_key: siteKey,
+      landing_page: {
+        url: landingPageUrl,
+        content: landingPageContent
+      },
       period_days: daysNum,
       since: since.toISOString(),
       until: until.toISOString(),

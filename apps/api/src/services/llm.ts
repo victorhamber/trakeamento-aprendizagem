@@ -329,6 +329,7 @@ export class LlmService {
 - \`sales\`: Compras e receita rastreadas internamente via webhook/API
 - \`derived\`: Métricas calculadas (CTR, CPC, CPM, connect rate, conversion rates)
 - \`signals\`: Sinais automáticos detectados com peso de confiança e evidências
+- \`landing_page\`: URL e conteúdo textual extraído da página de destino (se disponível)
 
 **Regras de análise:**
 1. Use SOMENTE os dados fornecidos — não invente números ou estatísticas.
@@ -343,6 +344,7 @@ export class LlmService {
 10. Use os \`signals\` fornecidos como ponto de partida, mas investigue além deles.
 11. Evite parágrafos longos — prefira **bullets curtos** e deixe uma **linha em branco** entre blocos.
 12. Cite benchmarks quando aplicável, mas sempre ressalte que **variam por nicho, país e objetivo**.
+13. **Análise de Conteúdo**: Se \`landing_page.content\` estiver disponível, analise se a copy da página está alinhada com o objetivo da campanha e se há clareza na oferta. Aponte problemas de comunicação (ex: promessa vaga, falta de urgência, CTA escondido) se detectar.
 
 **Formato obrigatório (Markdown):**
 
