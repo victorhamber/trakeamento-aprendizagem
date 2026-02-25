@@ -50,6 +50,7 @@ router.get('/tracker.js', async (req, res) => {
   const js = configJs + `
 (function(){
   'use strict';
+  try {
 
   // ─── Constants ────────────────────────────────────────────────────────────
   var COOKIE_TTL_2Y  = 60*60*24*365*2;
@@ -999,6 +1000,21 @@ router.get('/tracker.js', async (req, res) => {
 
   window.addEventListener('beforeunload', pageEngagement);
 
+  } catch(err) {
+    // Fail-safe global: tenta enviar erro para o servidor se possível
+    try {
+      var cfg = window.TRACKING_CONFIG;
+      if (cfg && cfg.apiUrl && cfg.siteKey && navigator.sendBeacon) {
+         var errUrl = cfg.apiUrl + '/ingest/events?key=' + encodeURIComponent(cfg.siteKey);
+         var errBody = JSON.stringify({
+           event_name: 'TrackerError',
+           event_time: Math.floor(Date.now()/1000),
+           custom_data: { error: err.message, stack: err.stack, ua: navigator.userAgent }
+         });
+         navigator.sendBeacon(errUrl, new Blob([errBody], { type: 'text/plain' }));
+      }
+    } catch(_e) {}
+  }
 })();
 `;
 
