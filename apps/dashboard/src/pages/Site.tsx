@@ -48,11 +48,10 @@ type MetaBreakdownItem = {
   landing_page_views: number;
   leads: number;
   initiates_checkout: number;
-  purchases: number;
-  cpc_avg?: number | null;
-  cpm_avg?: number | null;
-  ctr_avg?: number | null;
-  frequency_avg?: number | null;
+  cost_per_purchase?: number | null;
+  cost_per_lead?: number | null;
+  results?: number | null;
+  cost_per_result?: number | null;
   ctr_calc_pct?: number;
   lp_rate_pct?: number;
 };
@@ -1470,21 +1469,23 @@ ${scriptContent}
       return '';
     }
   }, [utmBaseUrl, utmSource, utmMedium, utmCampaign, utmContent, utmTerm, utmClickId]);
-  const getBreakdownLpRate = (row: MetaBreakdownItem) => {
-    const baseClicks = row.unique_link_clicks > 0 ? row.unique_link_clicks : row.clicks;
-    return baseClicks > 0 ? (row.landing_page_views / baseClicks) * 100 : 0;
+  const getBreakdownResults = (row: MetaBreakdownItem) => {
+    return row.results || 0;
   };
-  const getBreakdownCtr = (row: MetaBreakdownItem) =>
-    row.impressions > 0 ? (row.clicks / row.impressions) * 100 : 0;
+  const getBreakdownCpr = (row: MetaBreakdownItem) => {
+    return row.cost_per_result || 0;
+  };
+
   const getBreakdownBottleneck = (row: MetaBreakdownItem) => {
-    if (row.spend > 0 && row.impressions === 0) return 'Entrega';
-    if (row.impressions > 0 && row.clicks === 0) return 'Criativo/Segmentação';
     const ctr = getBreakdownCtr(row);
-    if (ctr > 0 && ctr < 0.8) return 'Criativo/Segmentação';
-    const lpRate = getBreakdownLpRate(row);
-    if (lpRate > 0 && lpRate < 55) return 'Landing/Promessa';
-    if (row.landing_page_views > 0 && row.purchases === 0 && row.leads === 0) return 'Oferta/Checkout';
-    return 'Sem sinal forte';
+    const lp = getBreakdownLpRate(row);
+    const results = getBreakdownResults(row);
+
+    if (results > 0) return <span className="text-emerald-400">Convertendo</span>;
+    if (ctr > 0 && ctr < 0.8) return <span className="text-red-400">Criativo (CTR baixo)</span>;
+    if (lp > 0 && lp < 55) return <span className="text-amber-400">Landing (Load/Connect)</span>;
+    if (row.landing_page_views > 0 && results === 0) return <span className="text-zinc-500">Oferta/Checkout</span>;
+    return <span className="text-zinc-500">Sem sinal forte</span>;
   };
 
   const resolveDisplayStatus = (item: any) => {
@@ -3789,7 +3790,10 @@ ${scriptContent}
                                     LP%
                                   </th>
                                   <th className="text-right font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-500 px-3 py-2">
-                                    Compras
+                                    Res.
+                                  </th>
+                                  <th className="text-right font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-500 px-3 py-2">
+                                    Custo
                                   </th>
                                   <th className="text-left font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-500 px-3 py-2">
                                     Gargalo
@@ -3799,7 +3803,7 @@ ${scriptContent}
                               <tbody>
                                 {group.rows.length === 0 && (
                                   <tr>
-                                    <td colSpan={6} className="px-3 py-3 text-center text-zinc-600 dark:text-zinc-500">
+                                    <td colSpan={7} className="px-3 py-3 text-center text-zinc-600 dark:text-zinc-500">
                                       Sem dados neste nível.
                                     </td>
                                   </tr>
@@ -3818,10 +3822,13 @@ ${scriptContent}
                                     <td className="px-3 py-2 text-right text-zinc-600 dark:text-zinc-400 tabular-nums">
                                       {formatPercent(getBreakdownLpRate(row))}%
                                     </td>
-                                    <td className="px-3 py-2 text-right text-zinc-700 dark:text-zinc-300 tabular-nums">
-                                      {formatNumber(row.purchases || 0)}
+                                    <td className="px-3 py-2 text-right text-zinc-700 dark:text-zinc-300 tabular-nums font-medium">
+                                      {formatNumber(getBreakdownResults(row))}
                                     </td>
-                                    <td className="px-3 py-2 text-zinc-600 dark:text-zinc-400">
+                                    <td className="px-3 py-2 text-right text-zinc-600 dark:text-zinc-400 tabular-nums">
+                                      {getBreakdownCpr(row) > 0 ? formatMoney(getBreakdownCpr(row)) : '—'}
+                                    </td>
+                                    <td className="px-3 py-2 text-[10px]">
                                       {getBreakdownBottleneck(row)}
                                     </td>
                                   </tr>
