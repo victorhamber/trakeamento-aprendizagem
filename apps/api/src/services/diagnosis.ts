@@ -592,15 +592,14 @@ export class DiagnosisService {
     // ── Detect Landing Page Content ──────────────────────────────────────────
     let landingPageUrl: string | null = null;
     let landingPageContent: string | null = null;
+    let hourlyDistribution: Record<string, number> = {};
+    let dayOfWeekDistribution: Record<string, number> = {};
+    let topDeviceTypes: Record<string, number> = {};
+    let topBrowsers: Record<string, number> = {};
+    let topOS: Record<string, number> = {};
 
     try {
       // Rebuild query with correct parameter indices
-      // Original utmWhere.clause uses $4, $5, etc. based on previous query
-      // Here we start at $1 (siteKey), $2 (since), $3 (until), so UTM params should start at $4
-      // Fortunately, buildUtmWhere(4) was called earlier, so the indices in utmWhere.clause ($4, $5...)
-      // MATCH exactly what we need here: [siteKey, since, until, ...utmParams]
-      // $1=siteKey, $2=since, $3=until, $4=first_utm_param...
-      
       const lpParams = [siteKey, since, until, ...utmWhere.params];
       
       const topUrlRes = await pool.query(
@@ -621,8 +620,44 @@ export class DiagnosisService {
       if (landingPageUrl) {
         landingPageContent = await this.fetchLandingPageContent(landingPageUrl);
       }
+
+      // ── Advanced Segmentation Analysis ─────────────────────────────────────
+      // 1. Hourly Distribution (0-23)
+      const hourlyRes = await pool.query(
+        `SELECT EXTRACT(HOUR FROM event_time) as hour, COUNT(*)::int as c
+         FROM web_events
+         WHERE site_key = $1
+           AND event_name = 'PageView'
+           AND event_time >= $2
+           AND event_time < $3
+           ${utmWhere.clause}
+         GROUP BY 1
+         ORDER BY 2 DESC`,
+        lpParams
+      );
+      hourlyRes.rows.forEach(r => hourlyDistribution[r.hour] = r.c);
+
+      // 2. Day of Week (0=Sun, 6=Sat)
+      const dowRes = await pool.query(
+        `SELECT EXTRACT(DOW FROM event_time) as dow, COUNT(*)::int as c
+         FROM web_events
+         WHERE site_key = $1
+           AND event_name = 'PageView'
+           AND event_time >= $2
+           AND event_time < $3
+           ${utmWhere.clause}
+         GROUP BY 1
+         ORDER BY 2 DESC`,
+        lpParams
+      );
+      dowRes.rows.forEach(r => dayOfWeekDistribution[r.dow] = r.c);
+
+      // 3. Device/OS/Browser from User Agent (using basic string matching in SQL or just telemetry if available)
+      // Since parsing UA in SQL is hard, we'll try to use telemetry fields if they exist, or skip for now.
+      // Assuming we might have some telemetry about device. If not, we skip.
+      
     } catch (err) {
-      console.warn('[DiagnosisService] Failed to detect landing page:', err);
+      console.warn('[DiagnosisService] Failed to detect landing page or segments:', err);
     }
 
     // ── Build snapshot ─────────────────────────────────────────────────────────
@@ -631,6 +666,10 @@ export class DiagnosisService {
       landing_page: {
         url: landingPageUrl,
         content: landingPageContent
+      },
+      segments: {
+        hourly: hourlyDistribution,
+        day_of_week: dayOfWeekDistribution
       },
       period_days: daysNum,
       since: since.toISOString(),

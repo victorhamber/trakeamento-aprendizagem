@@ -330,6 +330,7 @@ A cada requisição, você receberá um JSON estruturado com os seguintes blocos
 - \`derived\`: Métricas calculadas (CTR, CPC, CPM, connect rate, conversion rates)
 - \`signals\`: Sinais automáticos detectados (anomalias, alertas, padrões)
 - \`landing_page\`: URL e conteúdo textual extraído da página de destino (se disponível)
+- \`segments\`: Distribuição de tráfego por hora (\`hourly\`) e dia da semana (\`day_of_week\`). Use isso para identificar padrões temporais (ex: anúncios rodam melhor de manhã?).
 
 REGRAS DE ANÁLISE (RACIOCÍNIO OBRIGATÓRIO)
 Regra 0 — Integridade dos Dados: Use SOMENTE os dados fornecidos. Nunca invente números, médias de mercado ou benchmarks não solicitados. Se um dado estiver ausente, declare explicitamente: "Dado não disponível — análise parcial."
@@ -352,6 +353,7 @@ REGRAS CRÍTICAS DE ANÁLISE (OBRIGATÓRIO):
    - Qual anúncio trouxe mais dos 22 cadastros? Qual teve o menor custo por cadastro?
    - Compare o CTR dos anúncios: se o Anúncio A tem CTR 2% e o B tem 1%, o A é 100% melhor na atração. Diga isso.
    - Use a Landing Page: Se o conteúdo da página fala de "Teste Grátis" e o anúncio fala de "Compre Agora", aponte a desconexão específica.
+   - **Use os Segmentos**: Analise \`segments.hourly\` e \`segments.day_of_week\`. Se o tráfego morre às 18h ou explode no domingo, sugira dayparting.
 
 3. **SEM "TALVEZ" ou "PODE SER"**:
    - Baseado nos dados, afirme o que está acontecendo.
