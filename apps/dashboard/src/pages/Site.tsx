@@ -233,6 +233,8 @@ export const SitePage = () => {
   const [eventSubTab, setEventSubTab] = useState<'url' | 'button' | 'form'>('url');
   const [formFields, setFormFields] = useState({ name: true, email: true, phone: true });
   const [formButtonText, setFormButtonText] = useState('Quero me cadastrar');
+  const [formButtonBgColor, setFormButtonBgColor] = useState('#2563EB'); // blue-600 default
+  const [formButtonTextColor, setFormButtonTextColor] = useState('#FFFFFF'); // white default
   const [formEventType, setFormEventType] = useState('Lead');
   const [formCustomEventName, setFormCustomEventName] = useState('');
   const [formEventValue, setFormEventValue] = useState('');
@@ -676,10 +678,12 @@ export const SitePage = () => {
   };
 
   const copyFormHtml = (form?: any) => {
-    let currentConfig = {
+    let currentConfig: any = {
       fields: formFields,
       theme: formTheme,
       button_text: formButtonText,
+      button_bg_color: formButtonBgColor,
+      button_text_color: formButtonTextColor,
       event_type: formEventType,
       custom_event_name: formCustomEventName,
       post_submit_action: postSubmitAction,
@@ -695,6 +699,8 @@ export const SitePage = () => {
         fields: form.config.fields || { name: true, email: true, phone: true },
         theme: form.config.theme || 'light',
         button_text: form.config.button_text || 'Quero me cadastrar',
+        button_bg_color: form.config.button_bg_color || (form.config.theme === 'dark' ? '#FFFFFF' : '#000000'),
+        button_text_color: form.config.button_text_color || (form.config.theme === 'dark' ? '#000000' : '#FFFFFF'),
         event_type: form.config.event_type || 'Lead',
         custom_event_name: form.config.custom_event_name || '',
         post_submit_action: form.config.post_submit_action || 'message',
@@ -708,7 +714,7 @@ export const SitePage = () => {
       if (saved) publicId = saved.public_id;
     }
 
-    const { fields, theme, button_text, event_type, custom_event_name, post_submit_action: action, webhook_url: webhook } = currentConfig;
+    const { fields, theme, button_text, button_bg_color, button_text_color, event_type, custom_event_name, post_submit_action: action, webhook_url: webhook } = currentConfig;
 
     const evtName = event_type === 'Custom' ? custom_event_name : event_type;
     if (!evtName) {
@@ -741,9 +747,9 @@ export const SitePage = () => {
     }
 
     const buttonStyle = 'padding:10px 20px; cursor:pointer; border:none; border-radius:4px; font-weight:bold; width:100%;';
-    const buttonColor = isDark
-      ? 'background:#fff; color:#000;'
-      : 'background:#000; color:#fff;';
+    const buttonColor = (button_bg_color && button_text_color)
+      ? `background:${button_bg_color}; color:${button_text_color};`
+      : (isDark ? 'background:#fff; color:#000;' : 'background:#000; color:#fff;');
 
     const formId = `trk-form-${Date.now()}`;
     let scriptContent = '';
@@ -2909,6 +2915,44 @@ ${scriptContent}
                           />
                         </div>
 
+                        {/* Button Colors */}
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Cor do Botão</label>
+                            <div className="flex gap-2 items-center">
+                              <input
+                                type="color"
+                                value={formButtonBgColor}
+                                onChange={(e) => setFormButtonBgColor(e.target.value)}
+                                className="h-9 w-12 p-0.5 rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 cursor-pointer"
+                              />
+                              <input
+                                value={formButtonBgColor}
+                                onChange={(e) => setFormButtonBgColor(e.target.value)}
+                                className={inputCls}
+                                placeholder="#000000"
+                              />
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Cor do Texto</label>
+                            <div className="flex gap-2 items-center">
+                              <input
+                                type="color"
+                                value={formButtonTextColor}
+                                onChange={(e) => setFormButtonTextColor(e.target.value)}
+                                className="h-9 w-12 p-0.5 rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 cursor-pointer"
+                              />
+                              <input
+                                value={formButtonTextColor}
+                                onChange={(e) => setFormButtonTextColor(e.target.value)}
+                                className={inputCls}
+                                placeholder="#FFFFFF"
+                              />
+                            </div>
+                          </div>
+                        </div>
+
                         {/* Event Type */}
                         <div>
                           <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Evento ao Enviar</label>
@@ -3021,7 +3065,10 @@ ${scriptContent}
                               <div className={`h-10 rounded border px-3 flex items-center text-sm flex-1 ${formTheme === 'dark' ? 'bg-[#222] border-[#444] text-white' : 'bg-white border-gray-300 text-gray-500'}`}>Telefone</div>
                             </div>
                           )}
-                          <div className={`h-10 rounded flex items-center justify-center font-bold text-sm ${formTheme === 'dark' ? 'bg-white text-black' : 'bg-black text-white'}`}>
+                          <div 
+                            className="h-10 rounded flex items-center justify-center font-bold text-sm"
+                            style={{ backgroundColor: formButtonBgColor, color: formButtonTextColor }}
+                          >
                             {formButtonText}
                           </div>
                         </div>
