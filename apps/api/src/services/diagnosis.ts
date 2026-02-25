@@ -195,6 +195,31 @@ export class DiagnosisService {
     const safeDiv = (a: number, b: number) => (b > 0 ? a / b : 0);
     const pct = (n: number) => Math.round(n * 10000) / 100;
 
+    // ── 5. UTM-based CAPI Metrics (Deep Dive) ──────────────────────────────
+    // Get advanced metrics from web_events joined by UTMs
+    let capiMetrics: any = {};
+    try {
+        const capiRes = await pool.query(
+            `SELECT
+                COUNT(CASE WHEN event_name = 'PageView' THEN 1 END)::int as pv_count,
+                AVG(CASE WHEN event_name = 'PageView' THEN (telemetry->>'load_time_ms')::numeric END)::numeric as avg_load_time,
+                COUNT(CASE WHEN event_name = 'PageEngagement' AND (telemetry->>'max_scroll_pct')::numeric > 50 THEN 1 END)::int as deep_scroll_count,
+                COUNT(CASE WHEN event_name = 'Purchase' THEN 1 END)::int as purchase_count,
+                COUNT(CASE WHEN event_name = 'Lead' THEN 1 END)::int as lead_count,
+                COUNT(CASE WHEN event_name = 'InitiateCheckout' THEN 1 END)::int as checkout_count,
+                AVG(CASE WHEN event_name = 'PageEngagement' THEN (telemetry->>'dwell_time_ms')::numeric END)::numeric as avg_dwell_time
+             FROM web_events
+             WHERE site_key = $1
+               AND event_time >= $2
+               AND event_time < $3
+               ${utmWhere.clause}`,
+             [siteKey, since, until, ...utmWhere.params]
+        );
+        capiMetrics = capiRes.rows[0] || {};
+    } catch (err) {
+        console.warn('[DiagnosisService] Failed to fetch CAPI metrics:', err);
+    }
+
     const buildBreakdown = (rows: Array<Record<string, unknown>>) =>
       rows.map((row) => {
         const spend = Number(row.spend || 0);
@@ -717,6 +742,15 @@ export class DiagnosisService {
           m.cost_per_purchase_avg !== null && m.cost_per_purchase_avg !== undefined
             ? Number(m.cost_per_purchase_avg)
             : null,
+      },
+      capi: {
+        page_views: Number(capiMetrics.pv_count || 0),
+        avg_load_time_ms: Number(capiMetrics.avg_load_time || 0),
+        deep_scroll_count: Number(capiMetrics.deep_scroll_count || 0),
+        leads: Number(capiMetrics.lead_count || 0),
+        purchases: Number(capiMetrics.purchase_count || 0),
+        checkouts: Number(capiMetrics.checkout_count || 0),
+        avg_dwell_time_ms: Number(capiMetrics.avg_dwell_time || 0)
       },
       meta_breakdown: {
         campaigns: campaignBreakdown,

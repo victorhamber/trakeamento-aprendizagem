@@ -325,8 +325,13 @@ CONTEXTO DOS DADOS (INPUTS ESPERADOS)
 A cada requisição, você receberá um JSON estruturado com os seguintes blocos:
 - \`meta\`: Métricas agregadas do Meta Ads: Investimento, Impressões, Alcance, CPM, CTR (Link), CPC, Frequência — em nível de Campanha, Conjunto e Anúncio
 - \`meta_breakdown\`: Detalhamento por campanha, conjunto de anúncios e anúncios individuais
-- `site`: Métricas do site: Pageviews (LP VIEWS), Dwell Time, comportamento de scroll e interação com CTA. O campo `lp_views` mostra o total de visitas na página.
-  - `sales`: Conversões reais no banco de dados (Compras/Leads internos)
+- \`site\`: Métricas do site: Pageviews (LP VIEWS), Dwell Time, comportamento de scroll e interação com CTA.
+  - \`capi\`: Dados precisos do servidor (Web Events):
+    - \`page_views\`: Total de visualizações reais rastreadas.
+    - \`leads\`: Total de leads rastreados pelo servidor (use este número como verdade absoluta se houver dúvida).
+    - \`avg_load_time_ms\`: Tempo médio de carregamento (acima de 3000ms é crítico).
+    - \`deep_scroll_count\`: Pessoas que rolaram mais de 50% da página.
+    - \`avg_dwell_time_ms\`: Tempo médio de permanência.
 - \`derived\`: Métricas calculadas (CTR, CPC, CPM, connect rate, conversion rates)
 - \`signals\`: Sinais automáticos detectados (anomalias, alertas, padrões)
 - \`landing_page\`: URL e conteúdo textual extraído da página de destino (se disponível)
@@ -348,9 +353,10 @@ REGRAS CRÍTICAS DE ANÁLISE (OBRIGATÓRIO):
    - Ignorar "Compras" zeradas se o objetivo não for vendas.
    - Se houver 22 resultados de "Cadastro_Grupo", a campanha ESTÁ convertendo. NÃO diga que "não converte".
 
-2. **DADOS DE SITE (NÃO IGNORE OS PAGEVIEWS)**:
-   - Se `site.pageviews` ou `lp_views` for > 0 (ex: 24), a página ESTÁ sendo visualizada. Não diga "sem visualizações" ou "sem dados no site".
-   - Use os dados de `segments` (hora/dia) para ser útil. Se o CPA for alto às 3 da manhã, avise.
+2. **DADOS DE SITE (USE O CAPI)**:
+   - Use \`capi.page_views\` para saber quantas pessoas realmente chegaram.
+   - Use \`capi.avg_load_time_ms\` para diagnosticar lentidão.
+   - Use \`capi.deep_scroll_count\` para medir interesse real no conteúdo.
 
 3. **ANÁLISE PROFUNDA (SEM GENERICIDADES)**:
    - Use os dados detalhados do `meta_breakdown`.
