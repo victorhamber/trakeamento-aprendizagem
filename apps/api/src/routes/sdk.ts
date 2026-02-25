@@ -215,17 +215,6 @@ router.get('/tracker.js', async (req, res) => {
     });
   }
 
-  // ─── Detecção de bot / headless ───────────────────────────────────────────
-  function isBot() {
-    try {
-      if (navigator.webdriver) return true;
-      var ua = (navigator.userAgent || '').toLowerCase();
-      if (/headless|phantom|prerender|crawl|bot|spider/i.test(ua)) return true;
-      // Removido check de chrome sem window.chrome pois causa falso positivo em mobile/webviews
-    } catch(_e) {}
-    return false;
-  }
-
   // ─── Attribution params ───────────────────────────────────────────────────
   function getAttributionParams() {
     var out  = {};
@@ -601,7 +590,6 @@ router.get('/tracker.js', async (req, res) => {
       pixel_id_present: !!(window.TRACKING_CONFIG && window.TRACKING_CONFIG.metaPixelId),
       page_path:       location.pathname || '',
       page_title:      document.title   || '',
-      is_bot:          isBot()
     }, getDeviceInfo());
     return Object.assign(base, extra || {});
   }
@@ -748,13 +736,11 @@ router.get('/tracker.js', async (req, res) => {
     try {
       var cfg = window.TRACKING_CONFIG;
       if (!cfg || !cfg.apiUrl || !cfg.siteKey) return;
-      if (isBot()) return;
 
       var eventTime = Math.floor(Date.now() / 1000);
       var eventId   = genEventId();
       var attrs     = getAttributionParams();
       var userData  = buildUserData();
-      var baseCustom = {
         page_title:       document.title,
         page_path:        location.pathname,
         content_type:     'product',
