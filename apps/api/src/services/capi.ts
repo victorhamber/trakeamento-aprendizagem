@@ -248,7 +248,9 @@ export class CapiService {
         `https://graph.facebook.com/v19.0/${cfg.pixelId}/events`,
         payload
       );
-      console.log(`CAPI Event Sent: ${event.event_name} - ID: ${event.event_id}`, response.data);
+      // Log detalhado para debug de deduplicação e status
+      console.log(`[CAPI] Success ${event.event_name} (ID: ${event.event_id}) - FB Trace: ${response.data?.fbtrace_id} - Messages: ${JSON.stringify(response.data?.messages || [])}`);
+      
       await this.updateLastStatus(siteKey, { ok: true, data: response.data });
       return response.data;
     } catch (error: unknown) {
