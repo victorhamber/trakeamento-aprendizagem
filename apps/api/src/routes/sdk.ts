@@ -687,7 +687,6 @@ router.get('/tracker.js', async (req, res) => {
     try {
       var cfg = window.TRACKING_CONFIG;
       if (!cfg || !cfg.apiUrl || !cfg.siteKey) return;
-      if (isBot()) return;
 
       var eventTime = Math.floor(Date.now() / 1000);
       var eventId   = genEventId();
