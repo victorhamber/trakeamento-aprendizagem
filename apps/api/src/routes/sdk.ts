@@ -664,19 +664,16 @@ router.get('/tracker.js', async (req, res) => {
       loadMetaPixel(cfg.metaPixelId);
     }
 
-    // Pequeno delay para garantir que o pixel foi injetado antes de disparar
-    setTimeout(function() {
-      if (cfg.metaPixelId || hasFbq()) {
-        trackMeta('PageView', Object.assign(
-          { ta_source: 'tracking_suite', ta_site_key: cfg.siteKey, ta_event_id: eventId,
-            event_url: location.origin + location.pathname,
-            traffic_source: document.referrer || '' },
-          telemetry,
-          getTimeFields(eventTime),
-          payload.custom_data
-        ), eventId, false);
-      }
-    }, 250);
+    if (cfg.metaPixelId || hasFbq()) {
+      trackMeta('PageView', Object.assign(
+        { ta_source: 'tracking_suite', ta_site_key: cfg.siteKey, ta_event_id: eventId,
+          event_url: location.origin + location.pathname,
+          traffic_source: document.referrer || '' },
+        telemetry,
+        getTimeFields(eventTime),
+        payload.custom_data
+      ), eventId, false);
+    }
 
     if (cfg.gaMeasurementId) {
       loadGa(cfg.gaMeasurementId);
