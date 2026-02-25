@@ -1127,11 +1127,15 @@ ${scriptContent}
             const metaInfo = metaMap[row.id] || {};
             const status = metaInfo.status || row.status || null;
             const effectiveStatus = metaInfo.effective_status || row.effective_status || status || null;
+            const optimizationGoal = metaInfo.optimization_goal || row.optimization_goal || null;
+            const promotedObject = metaInfo.promoted_object || row.promoted_object || null;
             return {
               ...row,
               name: row.name || metaInfo.name || row.ad_name,
               status,
               effective_status: effectiveStatus,
+              optimization_goal: optimizationGoal,
+              promoted_object: promotedObject,
             };
           });
           if (metaList.length) {
