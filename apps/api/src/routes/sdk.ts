@@ -624,7 +624,9 @@ router.get('/tracker.js', async (req, res) => {
     // if (isBot()) return;
 
     var nav         = performance && performance.timing ? performance.timing : null;
-    var loadTimeMs  = nav ? (nav.domContentLoadedEventEnd - nav.navigationStart) : undefined;
+    var loadTimeMs  = nav && nav.domContentLoadedEventEnd > 0 ? (nav.domContentLoadedEventEnd - nav.navigationStart) : undefined;
+    if (loadTimeMs && loadTimeMs < 0) loadTimeMs = undefined;
+
     var attrs       = getAttributionParams();
     var eventTime   = Math.floor(Date.now() / 1000);
     var eventId     = genEventId();
