@@ -707,6 +707,8 @@ export const SitePage = () => {
         button_text_color: form.config.button_text_color || (form.config.theme === 'dark' ? '#000000' : '#FFFFFF'),
         event_type: form.config.event_type || 'Lead',
         custom_event_name: form.config.custom_event_name || '',
+        event_value: form.config.event_value || '',
+        event_currency: form.config.event_currency || 'BRL',
         post_submit_action: form.config.post_submit_action || 'message',
         post_submit_message: form.config.post_submit_message || 'Obrigado! Seus dados foram enviados com sucesso.',
         post_submit_redirect_url: form.config.post_submit_redirect_url || '',
@@ -718,7 +720,7 @@ export const SitePage = () => {
       if (saved) publicId = saved.public_id;
     }
 
-    const { fields, theme, button_text, button_bg_color, button_text_color, event_type, custom_event_name, post_submit_action: action, webhook_url: webhook } = currentConfig;
+    const { fields, theme, button_text, button_bg_color, button_text_color, event_type, custom_event_name, event_value, event_currency, post_submit_action: action, webhook_url: webhook } = currentConfig;
 
     const evtName = event_type === 'Custom' ? custom_event_name : event_type;
     if (!evtName) {
@@ -796,7 +798,10 @@ async function handleTrkSubmit(e) {
   // 1. Client-side tracking
   if (window.tracker) {
     window.tracker.identify(data);
-    window.tracker.track('${evtName}');
+    var evtData = {};
+    ${(event_value && !isNaN(parseFloat(event_value))) ? `evtData.value = ${parseFloat(event_value)};` : ''}
+    ${(event_currency) ? `evtData.currency = '${event_currency}';` : ''}
+    window.tracker.track('${evtName}', evtData);
   }
 
   // 2. Server-side submission
