@@ -331,10 +331,31 @@ export class MetaMarketingService {
         [siteId, range.since, range.until]
       );
 
+      // ── Create Map of AdSet -> Objective/CustomEvent ──────────────────────
+      const adSetMap = new Map<string, { objective: string | null; customName: string | null }>();
+      
+      for (const row of adSetInsights) {
+        const adsetId = MetaMarketingService.asString(row.adset_id);
+        if (adsetId) {
+          const vals = this.getInsightValues(siteId, row);
+          // vals[23] = objective, vals[29] = custom_event_name
+          // (Check getInsightValues return array order)
+          // Column order in getInsightValues:
+          // ... leads(16), contacts(17), purchases(18), addsToCart(19), initiatesCheckout(20),
+          // costPerLead(21), costPerPurchase(22), objective(23), results(24), resultRate(25),
+          // dateStart(26), dateStop(27), rawPayload(28), customEventName(29), customEventCount(30)
+          
+          adSetMap.set(adsetId, {
+            objective: vals[23] as string | null,
+            customName: vals[29] as string | null
+          });
+        }
+      }
+
       // ── Insert fresh rows ─────────────────────────────────────────────────
       for (const row of campaignInsights) await this.persistCampaignInsight(siteId, row);
       for (const row of adSetInsights) await this.persistAdSetInsight(siteId, row);
-      for (const row of adInsights) await this.persistAdInsight(siteId, row);
+      for (const row of adInsights) await this.persistAdInsight(siteId, row, adSetMap);
 
       return {
         count: adInsights.length + adSetInsights.length + campaignInsights.length,
@@ -583,9 +604,49 @@ export class MetaMarketingService {
     ];
   }
 
-  private async persistAdInsight(siteId: number, row: Record<string, unknown>) {
+  private async persistAdInsight(siteId: number, row: Record<string, unknown>, adSetMap?: Map<string, { objective: string | null; customName: string | null }>) {
     // syncDailyInsights deletes rows for this site+range before calling persist*,
     // so a plain INSERT is safe and avoids fragile partial-index ON CONFLICT logic.
+    
+    const adsetId = MetaMarketingService.asString(row.adset_id);
+    const parent = adsetId && adSetMap ? adSetMap.get(adsetId) : null;
+    const values = this.getInsightValues(siteId, row);
+    
+    // Override objective and custom_event_name/count if missing/mismatched but present in parent
+    if (parent) {
+      // values[23] = objective
+      // values[29] = custom_event_name
+      // values[30] = custom_event_count
+      
+      if (!values[23] || (values[23] as string).includes('OUTCOME') || (values[23] as string).includes('CONVERSION')) {
+         if (parent.objective) values[23] = parent.objective;
+      }
+      
+      if (!values[29] && parent.customName) {
+        values[29] = parent.customName;
+        // Se temos o nome do custom event do pai, tentamos buscar nas actions do filho por esse nome específico
+        const actions = row.actions;
+        if (actions) {
+           // Procura nas actions do filho usando o nome do pai
+           // O prefixo pode ser offsite_conversion.custom. ou omni_custom.
+           // Mas o getCustomEvent já varreu tudo e não achou.
+           // Talvez seja um custom conversion pixel specific.
+           // Vamos tentar achar a action que corresponde a esse nome
+           const list = MetaMarketingService.asArray(actions);
+           for (const item of list) {
+             const type = MetaMarketingService.getActionType(item) || '';
+             if (type.endsWith(parent.customName)) {
+               const val = this.asInt(MetaMarketingService.getValueField(item));
+               if (val !== null) {
+                 values[30] = val; // Atualiza count
+                 break;
+               }
+             }
+           }
+        }
+      }
+    }
+
     await pool.query(
       `INSERT INTO meta_insights_daily (
         site_id, ad_id, ad_name, adset_id, adset_name, campaign_id, campaign_name,
@@ -610,7 +671,7 @@ export class MetaMarketingService {
         MetaMarketingService.asString(row.adset_name),
         MetaMarketingService.asString(row.campaign_id),
         MetaMarketingService.asString(row.campaign_name),
-        ...this.getInsightValues(siteId, row),
+        ...values,
       ]
     );
   }
