@@ -88,6 +88,14 @@ export class DiagnosisService {
 
   // ── UTM filter builder ─────────────────────────────────────────────────────
 
+  /**
+   * Detects unresolved Meta dynamic parameter macros like {{campaign.name}}, {{adset.name}}, {{ad.id}}.
+   * Meta substitutes these at click time — if passed literally to DB queries they match nothing.
+   */
+  private isUnresolvedMacro(value: string): boolean {
+    return /\{\{.+?\}\}/.test(value);
+  }
+
   private buildUtmWhere(baseIndex: number, options?: {
     utm_source?: string;
     utm_medium?: string;
@@ -98,14 +106,25 @@ export class DiagnosisService {
   }) {
     const clauses: string[] = [];
     const params: string[] = [];
+    const skipped: string[] = [];
     const fields = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'click_id'] as const;
+
     for (const key of fields) {
       const value = options?.[key]?.trim();
       if (!value) continue;
+
+      // Skip unresolved Meta macros — they will never match stored events
+      if (this.isUnresolvedMacro(value)) {
+        skipped.push(`${key}="${value}"`);
+        console.warn(`[DiagnosisService] Skipping UTM filter with unresolved macro: ${key}="${value}"`);
+        continue;
+      }
+
       params.push(value);
       clauses.push(`AND (custom_data->>'${key}') = $${baseIndex + params.length}`);
     }
-    return { clause: clauses.join('\n        '), params };
+
+    return { clause: clauses.join('\n        '), params, skipped };
   }
 
   // ── Breakdown builder ──────────────────────────────────────────────────────
@@ -125,10 +144,13 @@ export class DiagnosisService {
       const objective = row.objective != null ? String(row.objective) : null;
       const video3sViews = Number(row.video_3s_views || 0);
 
-      // Hook Rate = 3-second video views / impressions (measures creative hook effectiveness)
-      const hookRatePct = impressions > 0 ? this.pct(this.safeDiv(video3sViews, impressions)) : null;
+      // Hook Rate = 3-second video views / impressions (only meaningful for video ads)
+      // null = image ad or no video data — do NOT interpret as poor performance
+      const hookRatePct = video3sViews > 0 && impressions > 0
+        ? this.pct(this.safeDiv(video3sViews, impressions))
+        : null;
 
-      // Connect Rate = landing_page_views / link_clicks (measures post-click quality)
+      // Connect Rate = landing_page_views / link_clicks
       const baseClicks = uniqueLinkClicks > 0 ? uniqueLinkClicks : clicks;
       const connectRatePct = this.pct(this.safeDiv(landingPageViews, baseClicks));
 
@@ -143,11 +165,10 @@ export class DiagnosisService {
         clicks,
         unique_link_clicks: uniqueLinkClicks,
         landing_page_views: landingPageViews,
-        // ↑ LP Views UI field: people who clicked the ad AND the page loaded (Pixel-measured)
         connect_rate_pct: connectRatePct,
-        // ↑ Taxa LP View UI field: % of link clicks that resulted in a landing page view
+        // hook_rate_pct is null for image ads — treat null as "image ad, not applicable"
         hook_rate_pct: hookRatePct,
-        // ↑ Hook Rate UI field: % of impressions that watched 3+ seconds (only for video ads)
+        video_3s_views: video3sViews,
         leads,
         contacts,
         initiates_checkout: initiatesCheckout,
@@ -239,6 +260,9 @@ export class DiagnosisService {
     );
 
     const utmWhere = this.buildUtmWhere(3, options);
+    if (utmWhere.skipped.length > 0) {
+      console.warn('[DiagnosisService] UTM macros skipped (unresolved Meta templates):', utmWhere.skipped);
+    }
 
     // ── CAPI metrics (server-side — source of truth for site behavior) ─────────
     let capiMetrics: Record<string, unknown> = {};
@@ -414,12 +438,11 @@ export class DiagnosisService {
     const baseClicks = uniqueLinkClicks > 0 ? uniqueLinkClicks : clicks;
     const connectRatePct = this.pct(this.safeDiv(landingPageViews, baseClicks));
 
-    // Hook Rate: % of impressions that watched ≥3s of video (measures creative hook power)
-    const hookRatePct = impressions > 0 && video3sViews > 0
+    // Hook Rate: only set when video_3s_views > 0 (image ads have no hook rate)
+    const hookRatePct = video3sViews > 0 && impressions > 0
       ? this.pct(this.safeDiv(video3sViews, impressions))
       : null;
 
-    // Primary result metric: use `results` field (Meta's computed primary metric per objective)
     const resultMetric =
       results > 0 ? results
       : purchases > 0 ? purchases
@@ -429,53 +452,42 @@ export class DiagnosisService {
 
     const costPerResult = results > 0 ? spend / results : null;
 
-    // Internal sales from database (source of truth for revenue)
     const internalSales = Number(s.sales || 0);
     const internalRevenue = Number(s.revenue || 0);
-    const roas = spend > 0 ? internalRevenue / spend : null;
+    const roas = spend > 0 && internalRevenue > 0 ? internalRevenue / spend : null;
 
-    // CAPI values (server-side events — more accurate than Pixel)
     const capiPageViews = Number(capiMetrics.pv_count || 0);
     const capiLeads = Number(capiMetrics.lead_count || 0);
-    const capiAvgLoadMs = Number(capiMetrics.avg_load_time || 0);
-    const capiAvgDwellMs = Number(capiMetrics.avg_dwell_time || 0);
-    const capiAvgScrollPct = Number(capiMetrics.avg_scroll_pct || 0);
+    const capiAvgLoadMs = Number(capiMetrics.avg_load_time || 0) || null;
+    const capiAvgDwellMs = Number(capiMetrics.avg_dwell_time || 0) || null;
+    const capiAvgScrollPct = Number(capiMetrics.avg_scroll_pct || 0) || null;
     const capiDeepScrollCount = Number(capiMetrics.deep_scroll_count || 0);
 
-    // Use CAPI values when available, fall back to PageEngagement events
-    const effectiveDwellMs = capiAvgDwellMs > 0 ? capiAvgDwellMs
+    // Best available values: prefer CAPI (server-side), fallback to PageEngagement (browser-side)
+    const effectiveDwellMs = (capiAvgDwellMs && capiAvgDwellMs > 0) ? capiAvgDwellMs
       : (se.avg_dwell_time_ms != null ? Math.round(Number(se.avg_dwell_time_ms)) : null);
-    const effectiveScrollPct = capiAvgScrollPct > 0 ? capiAvgScrollPct
+    const effectiveScrollPct = (capiAvgScrollPct && capiAvgScrollPct > 0) ? capiAvgScrollPct
       : (se.avg_max_scroll_pct != null ? Math.round(Number(se.avg_max_scroll_pct)) : null);
-    const effectiveLoadMs = capiAvgLoadMs > 0 ? capiAvgLoadMs
+    const effectiveLoadMs = (capiAvgLoadMs && capiAvgLoadMs > 0) ? capiAvgLoadMs
       : (se.avg_load_time_ms != null ? Math.round(Number(se.avg_load_time_ms)) : null);
 
-    // Discrepancy: link clicks vs actual page views (server-confirmed)
-    // High gap = tracking issue, slow site, or accidental clicks
     const effectivePageViews = capiPageViews > 0 ? capiPageViews : landingPageViews;
     const clickToLPDiscrepancyPct = baseClicks > 0
       ? this.pct(1 - this.safeDiv(effectivePageViews, baseClicks))
       : null;
 
     const derived = {
-      // Funil Meta
       ctr_calc_pct: this.pct(this.safeDiv(clicks, impressions)),
       cpm_calc: Math.round(this.safeDiv(spend, impressions) * 1000 * 100) / 100,
       cpc_calc: Math.round(this.safeDiv(spend, clicks) * 100) / 100,
       connect_rate_pct: connectRatePct,
-      // ↑ "Taxa LP View" na UI: % de cliques que geraram landing_page_views (medido pelo Pixel)
       hook_rate_pct: hookRatePct,
-      // ↑ "Hook Rate" na UI: % de impressões que assistiram ≥3s do vídeo (só para ads em vídeo)
       result_metric: resultMetric,
       cost_per_result: costPerResult,
-      // Discrepância cliques → visitas reais
       click_to_lp_discrepancy_pct: clickToLPDiscrepancyPct,
-      // ↑ Quebra entre cliques do Meta e page views reais (>25% = sinal de problema)
-      // Taxas de conversão
       lp_to_result_rate_pct: landingPageViews > 0 && results > 0
         ? this.pct(this.safeDiv(results, landingPageViews)) : null,
       lp_to_purchase_rate_pct: this.pct(this.safeDiv(internalSales, landingPageViews)),
-      pv_to_purchase_rate_pct: this.pct(this.safeDiv(internalSales, capiPageViews > 0 ? capiPageViews : Number(se.engagement_events || 0))),
       roas,
       cta_per_engagement: Math.round(
         this.safeDiv(Number(se.clicks_cta || 0), Number(se.engagement_events || 0)) * 1000
@@ -493,114 +505,94 @@ export class DiagnosisService {
         area: 'entrega',
         signal: 'sem_entrega',
         weight: 0.95,
-        evidence: `Spend=R$${spend.toFixed(2)}, Impressões=${impressions}`,
+        evidence: `Spend=R$${spend.toFixed(2)}, Impressoes=${impressions}`,
       });
     } else {
       const ctr = derived.ctr_calc_pct;
       const loadMs = effectiveLoadMs ?? 0;
       const dwellMs = effectiveDwellMs ?? 0;
 
-      // CTR baixo
       if (ctr < 0.8) {
         signals.push({
           area: 'criativo',
           signal: 'ctr_baixo',
           weight: 0.75,
-          evidence: `CTR=${ctr.toFixed(2)}% — benchmark esperado: ≥1%. Criativo pode não estar chamando atenção suficiente.`,
+          evidence: `CTR=${ctr.toFixed(2)}% — benchmark esperado: >=1%.`,
         });
       }
 
-      // Connect Rate baixo (cliques que não chegam na página)
       if (connectRatePct > 0 && connectRatePct < 60) {
         signals.push({
           area: 'clique_para_landing',
           signal: 'connect_rate_baixo',
           weight: 0.75,
-          evidence: `Taxa LP View=${connectRatePct.toFixed(1)}% — apenas ${connectRatePct.toFixed(1)}% dos cliques viraram visualizações de página. Benchmark: >70%. Investigar velocidade ou redirect.`,
+          evidence: `Taxa LP View=${connectRatePct.toFixed(1)}% — benchmark: >70%. Investigar velocidade ou redirect.`,
         });
       }
 
-      // Discrepância alta entre cliques Meta e page views CAPI
       if (clickToLPDiscrepancyPct !== null && clickToLPDiscrepancyPct > 30) {
         signals.push({
           area: 'tracking',
           signal: 'discrepancia_cliques_vs_visitas',
           weight: 0.80,
-          evidence: `${clickToLPDiscrepancyPct.toFixed(1)}% dos cliques do Meta não geraram page views no servidor. Possível: Pixel mal instalado, site lento ou cliques acidentais.`,
+          evidence: `${clickToLPDiscrepancyPct.toFixed(1)}% dos cliques nao geraram page views. Possivel: Pixel mal instalado, site lento ou cliques acidentais.`,
         });
       }
 
-      // Site lento
       if (loadMs > 3500) {
         signals.push({
           area: 'site_performance',
           signal: 'site_lento',
           weight: 0.70,
-          evidence: `Tempo de carregamento=${Math.round(loadMs)}ms — acima do crítico (3500ms). Usuários abandonam antes de ver a oferta.`,
+          evidence: `Carregamento=${Math.round(loadMs)}ms — acima do critico (3500ms).`,
         });
       }
 
-      // Engajamento baixo
       if (dwellMs > 0 && dwellMs < 8000) {
         signals.push({
           area: 'landing_page',
           signal: 'baixo_engajamento',
           weight: 0.65,
-          evidence: `Dwell time=${Math.round(dwellMs)}ms, Scroll médio=${Math.round(effectiveScrollPct ?? 0)}%. Usuários estão saindo antes de ler a oferta.`,
+          evidence: `Dwell=${Math.round(dwellMs)}ms, Scroll=${Math.round(effectiveScrollPct ?? 0)}%. Usuarios saindo antes de ler a oferta.`,
         });
       }
 
-      // Sem resultado — verificar objetivo antes de disparar
-      const objectiveNormalized = (objective || '').toUpperCase();
-      const isSalesObjective = ['OUTCOME_SALES', 'CONVERSIONS', 'PURCHASES'].some(o => objectiveNormalized.includes(o));
-      const isLeadObjective = ['OUTCOME_LEADS', 'LEAD_GENERATION', 'LEADS', 'CADASTRO'].some(o => objectiveNormalized.includes(o));
-
-      if (isSalesObjective && internalSales === 0 && effectivePageViews > 50) {
+      // Signal logic uses results (the optimization event), not objective
+      // results = 0 with sufficient traffic = real conversion problem
+      if (results === 0 && effectivePageViews > 30) {
         signals.push({
           area: 'conversao',
-          signal: 'sem_venda',
+          signal: 'sem_resultado',
           weight: 0.75,
-          evidence: `Objetivo de VENDAS com ${effectivePageViews} visitas e 0 compras no banco de dados.`,
+          evidence: `0 resultados com ${effectivePageViews} visitas. Verificar se o evento de otimizacao esta disparando corretamente.`,
         });
       }
 
-      if (isLeadObjective && results === 0 && effectivePageViews > 30) {
-        signals.push({
-          area: 'conversao',
-          signal: 'sem_lead',
-          weight: 0.75,
-          evidence: `Objetivo de LEAD com ${effectivePageViews} visitas e 0 resultados registrados. Verificar formulário e tracking.`,
-        });
-      }
-
-      // CPA alto (relativo ao objetivo)
       if (costPerResult != null && costPerResult > 50) {
         signals.push({
           area: 'roi',
           signal: 'custo_por_resultado_alto',
           weight: 0.60,
-          evidence: `CPA=R$${costPerResult.toFixed(2)} para objetivo "${objective}". Avaliar se está dentro do LTV/margem do produto.`,
+          evidence: `CPA=R$${costPerResult.toFixed(2)}. Avaliar se esta dentro do LTV/margem.`,
         });
       }
 
-      // Frequência alta = público saturado
       const freq = m.frequency_avg != null ? Number(m.frequency_avg) : 0;
       if (freq > 3.5) {
         signals.push({
           area: 'publico',
           signal: 'frequencia_alta',
           weight: 0.60,
-          evidence: `Frequência média=${freq.toFixed(2)} — público pode estar saturado. Considere novos criativos ou expansão de audiência.`,
+          evidence: `Frequencia=${freq.toFixed(2)} — publico pode estar saturado.`,
         });
       }
 
-      // Hook Rate baixo (só relevante se tiver dados de vídeo)
       if (hookRatePct !== null && hookRatePct < 15) {
         signals.push({
           area: 'criativo_video',
           signal: 'hook_rate_baixo',
           weight: 0.60,
-          evidence: `Hook Rate=${hookRatePct.toFixed(2)}% — menos de 15% das impressões assistiram 3s do vídeo. Os primeiros segundos não estão prendendo atenção.`,
+          evidence: `Hook Rate=${hookRatePct.toFixed(2)}% — menos de 15% assistiram 3s do video.`,
         });
       }
     }
@@ -658,66 +650,51 @@ export class DiagnosisService {
     }
 
     // ── Build snapshot ─────────────────────────────────────────────────────────
-    //
-    // DATA SOURCE HIERARCHY (most reliable → least):
-    //   1. sales.*       — internal database (webhook/API) — absolute truth for revenue
-    //   2. capi.*        — server-side events — truth for site behavior
-    //   3. meta.*        — Meta Pixel/API — estimated, may have deduplication issues
-    //
-    // UI FIELD MAPPING:
-    //   UI "LP Views"         → meta.landing_page_views  (Pixel: people whose page loaded after clicking)
-    //   UI "Taxa LP View"     → meta.connect_rate_pct    (LP Views ÷ Link Clicks)
-    //   UI "Hook Rate"        → derived.hook_rate_pct    (3s video views ÷ Impressions)
-    //   UI "Objetivo (N)"     → meta.results             (Meta's primary metric per objective)
-    //   UI "Finalização"      → meta.initiates_checkout  (InitiateCheckout Pixel event)
-    //   UI "Compras"          → meta.purchases           (Purchase Pixel event — may differ from sales.purchases)
-    //
     const snapshot = {
       site_key: siteKey,
       period_days: daysNum,
       since: since.toISOString(),
       until: until.toISOString(),
 
-      // ── Meta Ads metrics (from Meta API / Pixel) ──────────────────────────
+      // UTM filters actually applied to web_events queries.
+      // Macros like {{campaign.name}} are skipped — they never match stored events.
+      utm_filters_applied: utmWhere.params.length > 0
+        ? Object.fromEntries(
+            (['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'click_id'] as const)
+              .filter(k => options?.[k] && !this.isUnresolvedMacro(options[k]!))
+              .map(k => [k, options![k]])
+          )
+        : null,
+      utm_filters_skipped: utmWhere.skipped.length > 0 ? utmWhere.skipped : null,
+
       meta: {
         objective,
-        // `results` = Meta's computed primary metric for this campaign objective.
-        // For CADASTRO_GRUPO → results = group join events.
-        // For LEAD_GENERATION → results = lead form fills.
-        // For OUTCOME_SALES → results = purchase events.
-        // THIS IS THE PRIMARY SUCCESS METRIC. Do not treat as secondary.
+        // results = the optimization event count (e.g. CADASTRO_GRUPO, LEAD, PURCHASE).
+        // THIS is the primary success metric — not meta.objective.
+        // A campaign with objective=OUTCOME_SALES can be optimized for CADASTRO_GRUPO.
+        // Always judge success by results, never by purchases/leads unless that IS the event.
         results,
         cost_per_result: costPerResult,
-
         spend,
         impressions,
         reach: Number(m.reach || 0),
         frequency_avg: m.frequency_avg != null ? Number(m.frequency_avg) : null,
-        clicks,                    // total clicks (including non-link)
-        unique_link_clicks: uniqueLinkClicks,  // link clicks (unique)
+        clicks,
+        unique_link_clicks: uniqueLinkClicks,
         outbound_clicks: outboundClicks,
-
-        // LP Views: people who CLICKED the ad AND whose browser loaded the landing page.
-        // Measured by the Meta Pixel. Different from CAPI page_views (server-side).
+        // landing_page_views = "LP Views" in UI. Pixel-measured (browser-side).
         landing_page_views: landingPageViews,
-
-        // Connect Rate (Taxa LP View): what % of link clicks resulted in a landing page view.
-        // < 70% = investigate site speed, redirects, or accidental clicks.
+        // connect_rate_pct = "Taxa LP View" in UI. landing_page_views / link_clicks.
         connect_rate_pct: connectRatePct,
-
-        // Hook Rate: % of impressions that watched ≥3 seconds of video.
-        // null = no video data available. < 15% = weak creative hook.
+        // hook_rate_pct = null for image ads. Only set when video_3s_views > 0.
         hook_rate_pct: hookRatePct,
         video_3s_views: video3sViews,
-
         leads,
         contacts,
         adds_to_cart: Number(m.adds_to_cart || 0),
-        // `initiates_checkout` = "Finalização" in the UI (InitiateCheckout Pixel event)
+        // initiates_checkout = "Finalizacao" in UI. Only relevant for sales objectives.
         initiates_checkout: initiatesCheckout,
-        // `purchases` = Purchase Pixel event (may differ from sales.purchases due to deduplication)
         purchases,
-
         cpm_avg: m.cpm_avg != null ? Number(m.cpm_avg) : null,
         cpc_avg: m.cpc_avg != null ? Number(m.cpc_avg) : null,
         ctr_avg: m.ctr_avg != null ? Number(m.ctr_avg) : null,
@@ -725,25 +702,19 @@ export class DiagnosisService {
         cost_per_purchase_avg: m.cost_per_purchase_avg != null ? Number(m.cost_per_purchase_avg) : null,
       },
 
-      // ── CAPI / Server-side events (source of truth for on-site behavior) ──
-      // These come from the server (not the browser Pixel), so they are:
-      // - Not affected by ad blockers or iOS privacy restrictions
-      // - More accurate for load times, scroll depth, dwell time
-      // - Filtered by the same UTM parameters as the campaign
+      // CAPI = server-side events. More accurate than Pixel (no ad blockers, no iOS restrictions).
+      // If utm_filters_skipped is not null, these values cover ALL site traffic (not just this campaign).
       capi: {
-        // Real page views confirmed server-side. Use this over meta.landing_page_views
-        // when diagnosing tracking discrepancies.
         page_views: capiPageViews,
-        avg_load_time_ms: capiAvgLoadMs != null ? capiAvgLoadMs : 0,       // > 3000ms = critical performance issue
-        deep_scroll_count: capiDeepScrollCount, // users who scrolled > 50% of page
-        avg_scroll_pct: capiAvgScrollPct != null ? capiAvgScrollPct : 0,       // average scroll depth %
-        avg_dwell_time_ms: capiAvgDwellMs != null ? capiAvgDwellMs : 0,      // average time on page (ms)
+        avg_load_time_ms: capiAvgLoadMs,
+        deep_scroll_count: capiDeepScrollCount,
+        avg_scroll_pct: capiAvgScrollPct,
+        avg_dwell_time_ms: capiAvgDwellMs,
         leads: capiLeads,
         purchases: Number(capiMetrics.purchase_count || 0),
         checkouts: Number(capiMetrics.checkout_count || 0),
       },
 
-      // ── Site engagement (from PageEngagement events — browser-side) ────────
       site: {
         engagement_events: Number(se.engagement_events || 0),
         avg_dwell_time_ms: se.avg_dwell_time_ms != null ? Math.round(Number(se.avg_dwell_time_ms)) : null,
@@ -752,44 +723,38 @@ export class DiagnosisService {
         clicks_total: Number(se.clicks_total || 0),
         clicks_cta: Number(se.clicks_cta || 0),
         bounces_est: Number(se.bounces_est || 0),
-        // Effective (best available) values for analysis:
+        // Effective = best available value (CAPI preferred, PageEngagement as fallback)
+        // null = no data from either source
         effective_dwell_ms: effectiveDwellMs,
         effective_scroll_pct: effectiveScrollPct,
         effective_load_ms: effectiveLoadMs,
       },
 
-      // ── Internal sales database (absolute truth for revenue/conversions) ──
       sales: {
-        purchases: internalSales,     // confirmed purchases via webhook/API
-        revenue: internalRevenue,      // confirmed revenue
-        roas,                          // internalRevenue / spend
+        purchases: internalSales,
+        revenue: internalRevenue,
+        roas,
       },
 
-      // ── Breakdown by Meta Ads level ────────────────────────────────────────
       meta_breakdown: {
         campaigns: campaignBreakdown,
         adsets: adsetBreakdown,
         ads: adBreakdown,
       },
 
-      // ── Computed/derived metrics ───────────────────────────────────────────
       derived,
-
-      // ── Signals (auto-detected anomalies) ─────────────────────────────────
       signals: signals.slice(0, 8),
 
-      // ── Content & temporal segments ───────────────────────────────────────
       landing_page: {
         url: landingPageUrl,
         content: landingPageContent,
       },
       segments: {
-        hourly: hourlyDistribution,        // page views by hour (0-23)
-        day_of_week: dayOfWeekDistribution, // page views by weekday (0=Sun, 6=Sat)
+        hourly: hourlyDistribution,
+        day_of_week: dayOfWeekDistribution,
       },
     };
 
-    // ── Generate LLM analysis ──────────────────────────────────────────────────
     const analysis = await llmService.generateAnalysisForSite(siteKey, snapshot);
 
     const reportResult = await pool.query(
