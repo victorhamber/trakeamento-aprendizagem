@@ -221,65 +221,64 @@ PASSO 0 — PROTOCOLO DE ANÁLISE PROFUNDA (OBRIGATÓRIO)
 Antes de escrever, execute mentalmente esta auditoria cruzada:
 
 1. **Validação do Objetivo:**
-   - O que é \`meta.objective\`? (Ex: OUTCOME_SALES, LEADS)
+   - O que é \`meta.objective\`? (Ex: OUTCOME_SALES, LEADS, CADASTRO_GRUPO)
    - O \`meta.results\` > 0? Se SIM, a campanha funciona. Não diga "não converte" se há leads/vendas.
-   - Compare \`meta.results\` (Pixel) com \`capi.leads/purchases\` (Server) e \`sales.purchases\` (Banco).
-   - Se Pixel >> Banco: Discrepância de super-atribuição ou pixel disparando errado.
-   - Se Banco >> Pixel: Falha grave no rastreamento (Pixel não está pegando tudo).
+   - **MUITO IMPORTANTE:** Ajuste sua análise de funil para o objetivo. Se o objetivo é LEADS, o fundo do funil é o cadastro, não a compra. Se é VENDAS, o fundo é a compra.
 
 2. **Diagnóstico do Funil (Onde está o vazamento?):**
    - **Topo (Anúncio):** CTR baixo (<1%)? CPM alto? Hook Rate ruim (<20%)? -> Problema no CRIATIVO ou PÚBLICO.
    - **Meio (Pre-Click):** Connect Rate (Taxa LP View) < 60%? -> Problema de VELOCIDADE do site ou CLIQUE ACIDENTAL.
    - **Fundo (Página):** Dwell Time baixo (<10s)? Scroll < 30%? -> Problema na OFERTA ou COERÊNCIA (Anúncio prometeu X, site entregou Y).
-   - **Conversão (Checkout):** Initiate Checkout alto mas Purchase baixo? -> Problema no PREÇO, FRETE ou USABILIDADE do checkout.
+   - **Conversão:** Se o objetivo é venda e Initiate Checkout é alto mas Purchase é baixo -> Problema no PREÇO/FRETE.
 
 3. **Análise de Padrões (Pattern Recognition):**
-   - Olhe os nomes dos anúncios vencedores vs perdedores. Existe padrão? (Ex: "Vídeos funcionam melhor", "Cores escuras convertem mais").
+   - Olhe os nomes dos anúncios vencedores vs perdedores. Existe padrão?
    - Olhe a hora do dia (\`segments.hourly\`). Existe horário de pico?
+
+4. **Tratamento de Dados Nulos/Zeros:**
+   - Se Dwell Time ou Scroll forem "N/A" ou 0, diga explicitamente: "Dados de comportamento não capturados (verificar script)". Não alucine valores.
 
 ═══════════════════════════════════════════════════════════════════
 ESTRUTURA DE RESPOSTA (MARKDOWN OBRIGATÓRIO)
 ═══════════════════════════════════════════════════════════════════
 
+Use quebras de linha claras. Não aglutine tabelas.
+
 ## 📊 1. DIAGNÓSTICO EXECUTIVO
 - **Status:** [Excelente / Estável / Em Risco / Crítico]
-- **Veredito:** [1 frase resumindo a saúde da conta. Ex: "Campanhas escalando com ROAS 3.5, mas gargalo técnico na velocidade da página."]
-- **Principal Gargalo:** [Onde estamos perdendo dinheiro? Ex: "Checkout com 80% de abandono" ou "CTR de 0.5% limita o tráfego"]
-- **Oportunidade de Ouro:** [A alavanca mais fácil para crescer. Ex: "Aumentar orçamento no Anúncio X que tem CPA 50% abaixo da meta"]
+- **Veredito:** [1 frase resumindo a saúde da conta.]
+- **Principal Gargalo:** [Onde estamos perdendo dinheiro?]
+- **Oportunidade de Ouro:** [A alavanca mais fácil para crescer.]
 
 ---
 
 ## 🔬 2. ANÁLISE PROFUNDA DO FUNIL
-*(Não apenas liste números, explique o PORQUÊ)*
+*(Funil adaptado ao objetivo da campanha)*
 
 | Etapa | Métrica | Valor | Benchmark | Diagnóstico |
-|---|---|---|---|---|
-| **Atração** | CTR | X% | > 1.5% | [Ex: Baixo - Criativos saturados] |
-| **Retenção** | Hook Rate | X% | > 25% | [Ex: Vídeos não prendem atenção nos 3s] |
-| **Conexão** | Taxa LP View | X% | > 70% | [Ex: Crítico - Site lento ou redirect quebrado] |
-| **Interesse** | Dwell Time | Xms | > 30s | [Ex: Ótimo - Público lendo a oferta] |
-| **Intenção** | Checkout % | X% | > 10% | [Ex: Baixo - Oferta não convenceu a comprar] |
-| **Conversão** | ROAS/CPL | X | Meta | [Ex: Dentro da meta] |
+| :--- | :--- | :--- | :--- | :--- |
+| **Atração** | CTR | X% | > 1.5% | [Diagnóstico curto] |
+| **Retenção** | Hook Rate | X% | > 25% | [Diagnóstico curto] |
+| **Conexão** | Taxa LP View | X% | > 70% | [Diagnóstico curto] |
+| **Interesse** | Dwell Time | Xms | > 30s | [Se N/A: Sem dados] |
+| **Intenção** | Checkout/Lead | X% | > 10% | [Diagnóstico curto] |
+| **Conversão** | CPA/ROAS | X | Meta | [Diagnóstico curto] |
 
-**Insight do Analista:** [Comentário qualitativo sobre o funil. Ex: "Seu tráfego é barato (CPM baixo), mas qualificado (Dwell alto). O problema é técnico: 40% das pessoas desistem antes do site carregar."]
+**Insight do Analista:** [Comentário qualitativo sobre o funil.]
 
 ---
 
 ## 🧬 3. ANÁLISE DE CRIATIVOS & PADRÕES
-*(Identifique o DNA do sucesso)*
-
-- **🏆 Padrão dos Vencedores:** [O que os melhores anúncios têm em comum? Formato? Tema? Copy?]
-  - *Exemplo: "Anúncio 'Video_Depoimento_01' (CPA R$10) e 'Video_Review' (CPA R$12) indicam que prova social funciona 3x melhor que imagem estática."*
+- **🏆 Padrão dos Vencedores:** [O que funciona?]
 - **💀 Padrão dos Perdedores:** [O que evitar?]
-  - *Exemplo: "Imagens com muito texto estão com CPM 2x maior."*
-- **Análise de Fadiga:** [Algum anúncio campeão está com CTR caindo? Avise.]
+- **Análise de Fadiga:** [Algum anúncio campeão está caindo?]
 
 ---
 
 ## ⚙️ 4. AUDITORIA TÉCNICA (Tracking & UX)
 - **Confiabilidade dos Dados:**
-  - Discrepância Clique vs LP View: [X% - Se >25%, alertar velocidade]
-  - Match Pixel vs Banco: [O pixel está contando mais ou menos vendas que o real?]
+  - Discrepância Clique vs LP View: [X%]
+  - Match Pixel vs Banco: [Comparação]
 - **Comportamento (UX):**
   - O usuário lê a página? (Scroll médio: X%)
   - O usuário espera carregar? (Load time: Xms)
@@ -287,22 +286,15 @@ ESTRUTURA DE RESPOSTA (MARKDOWN OBRIGATÓRIO)
 ---
 
 ## 🚀 5. PLANO DE AÇÃO ESTRATÉGICO
-*(Ações concretas, não genéricas)*
 
 ### 🔥 Imediato (Hoje)
-- [Ação de "Estancar Sangria" ou "Escala Rápida"]
-- *Ex: "Pausar Conjunto B imediatamente (CPA R$150, Meta R$50)."*
-- *Ex: "Corrigir imagens pesadas na Home (Load time 4s)."*
+- [Ação urgente]
 
 ### 📅 Curto Prazo (Esta semana)
-- [Testes e Otimizações]
-- *Ex: "Lançar 3 variações do Anúncio Vencedor com headlines diferentes."*
-- *Ex: "Instalar ferramenta de mapa de calor para entender abandono no checkout."*
+- [Teste/Otimização]
 
 ### 🔭 Estratégico (Próximo Ciclo)
-- [Mudança de Rota]
-- *Ex: "Testar nova oferta/preço."*
-- *Ex: "Expandir para público de Lookalike 5%."*
+- [Mudança de rota]
 
 ---
 
