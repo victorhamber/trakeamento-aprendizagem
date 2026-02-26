@@ -71,6 +71,16 @@ export class Tracker {
           }
         }
       }
+    } else if (out.fn && !out.ln && out.fn.trim().includes(' ')) {
+      // Fallback: se 'fn' contiver espaços e não tiver 'ln', assumir que é nome completo
+      const fullName = out.fn.trim();
+      const parts = fullName.split(' ');
+      if (parts.length > 0) {
+        out.fn = parts[0];
+        if (parts.length > 1) {
+          out.ln = parts.slice(1).join(' ');
+        }
+      }
     }
 
     // Telefone (apenas números)

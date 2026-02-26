@@ -802,7 +802,7 @@ export const SitePage = () => {
     const phoneStyle = `flex:1; ${baseInputStyle}`;
 
     const fieldsHtml = [];
-    if (fields.name) fieldsHtml.push(`  <input type="text" name="fn" placeholder="Nome" required style="${inputStyle}" />`);
+    if (fields.name) fieldsHtml.push(`  <input type="text" name="fullname" placeholder="Nome Completo" required style="${inputStyle}" />`);
     if (fields.email) fieldsHtml.push(`  <input type="email" name="email" placeholder="E-mail" required style="${inputStyle}" />`);
     if (fields.phone) {
       const ddiOptions = DDI_LIST.map(d => `<option value="${d.code}"${d.code === '+55' ? ' selected' : ''}>${d.code} ${d.country}</option>`).join('');
@@ -837,8 +837,9 @@ async function handleTrkSubmit(e) {
 
   var data = {};
   // Meta CAPI requer: fn (first_name) e ln (last_name) em lowercase
-  if (form.fn && form.fn.value) {
-    var fullName = form.fn.value.trim().toLowerCase();
+  var nameInput = form.fullname || form.name || form.fn;
+  if (nameInput && nameInput.value) {
+    var fullName = nameInput.value.trim().toLowerCase();
     var parts = fullName.split(/\s+/);
     data.fn = parts[0];
     if (parts.length > 1) data.ln = parts.slice(1).join(' ');
@@ -897,8 +898,9 @@ function handleTrkSubmit(e) {
   var form = e.target;
   var data = {};
   // Meta CAPI requer: fn (first_name) e ln (last_name) em lowercase
-  if (form.fn && form.fn.value) {
-    var fullName = form.fn.value.trim().toLowerCase();
+  var nameInput = form.fullname || form.name || form.fn;
+  if (nameInput && nameInput.value) {
+    var fullName = nameInput.value.trim().toLowerCase();
     var parts = fullName.split(/\s+/);
     data.fn = parts[0];
     if (parts.length > 1) data.ln = parts.slice(1).join(' ');
