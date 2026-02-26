@@ -97,7 +97,7 @@ interface Snapshot {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const DEFAULT_MODEL = 'gpt-4o';
+const DEFAULT_MODEL = 'gpt-4o-mini';
 const DEFAULT_TEMPERATURE = 0.2; // Lower = more deterministic/analytical
 const DEFAULT_MAX_TOKENS = 4096;
 const REQUEST_TIMEOUT_MS = 90_000;
