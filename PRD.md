@@ -26,6 +26,9 @@ O documento descreve como dor principal:
   - Identificadores de evento e navegador (ex.: `event_id`, `fbp`, `fbc`, `external_id` quando disponível).
 - Envio de eventos para o Meta:
   - Eventos via Pixel (browser) e via **Conversions API (server)** com **deduplicação** por `event_id`.
+- Integração Google Analytics 4 (GA4):
+  - Coleta de dados via Measurement Protocol (server-side) para contornar bloqueadores.
+  - Extração de relatórios via Analytics Data API para enriquecimento de análise (origem orgânica, tecnologia, engajamento).
 - Webhook de compra:
   - Endpoint para receber dados do comprador (plataforma de vendas) e repassar como evento (ex.: Purchase) ao Meta.
 - Consolidação e análise:
@@ -79,7 +82,19 @@ O documento descreve como dor principal:
 - Resultados por objetivo (leads, compras, finalizações, eventos personalizados).
 - Operação de status em cada nível (campanha, conjunto, anúncio) com atualização em tempo real.
 
-### 5.6 Gestão de Eventos e Formulários
+### 5.6 Integração Google Analytics 4 (GA4)
+- **Measurement Protocol (Server-Side)**:
+  - Enviar eventos de conversão (Purchase, Lead) e engajamento (PageEngagement) via API do Google.
+  - Mitigar perda de dados causada por AdBlockers e navegadores com restrição de privacidade.
+  - Garantir consistência de `client_id` (cookies) e `user_id` (login).
+- **Analytics Data API (Reporting)**:
+  - Extrair métricas agregadas diárias para o dashboard.
+  - Dimensões: Origem/Mídia (orgânico vs pago), Categoria de Dispositivo, País/Cidade.
+  - Métricas: Sessões, Usuários Ativos, Tempo de Engajamento Médio.
+- **Cruzamento de Dados**:
+  - Comparar dados do Meta Ads com GA4 para validar atribuição e identificar discrepâncias.
+
+### 5.7 Gestão de Eventos e Formulários
 - **Regras de Eventos por URL**:
   - Permitir configurar disparos automáticos de eventos (Standard ou Custom) baseados em correspondência de URL (ex: URL contém "/obrigado").
   - Execução no client-side via Web SDK.

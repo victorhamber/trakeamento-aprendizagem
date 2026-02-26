@@ -98,7 +98,16 @@ Arquitetura recomendada em 3 camadas:
 - Segmentação por campanha/anúncio/URL/tempo.
 - Heurísticas de gargalo (regra/score) para alimentar o LLM.
 
-### 4.6 Recomendações (LLM) (`/modules/recommendations`)
+### 4.6 Integração Google Analytics 4 (GA4)
+- **Measurement Protocol**:
+  - Serviço `Ga4Service` para envio server-side.
+  - Payload padrão: `client_id`, `events` (name, params), `user_properties`.
+  - Tratamento de `debug_mode` para validação.
+- **Reporting API**:
+  - Serviço `Ga4ReportingService` para consulta de dados.
+  - Cache local (Redis/Banco) de relatórios diários para evitar cotas.
+
+### 4.7 Recomendações (LLM) (`/modules/recommendations`)
 - Monta contexto mínimo (sem PII em claro) e chama LLM.
 - Persiste relatório, evidências e ações sugeridas.
 
@@ -109,6 +118,8 @@ Arquitetura recomendada em 3 camadas:
 - `users`: usuários do dashboard.
 - `sites`: domínios/projetos (chave de ingestão).
 - `meta_connections`: tokens, pixel, configurações (armazenar token criptografado).
+- `ga4_connections`:
+  - `property_id`, `measurement_id`, `api_secret`, `service_account_credentials` (JSON criptografado).
 - `web_events`:
   - colunas: `site_id`, `event_name`, `event_time`, `event_id`, `event_source_url`, `event_url`, `page_title`, `load_time_ms`, `fbp`, `fbc`, `external_id_hash`, `ip`, `ua`, `raw_payload` (JSONB).
 - `sessions` (opcional no MVP): agregação por `session_id`.
@@ -116,6 +127,8 @@ Arquitetura recomendada em 3 camadas:
   - `order_id`, `value`, `currency`, `items` (JSONB), `buyer_hashes`, `event_time`, `raw_payload`.
 - `meta_insights_daily`:
   - dimensões (campaign/adset/ad) + métricas + data.
+- `ga4_insights_daily`:
+  - dimensões (source/medium/device) + métricas (sessions, active_users, conversions) + data.
 - `recommendation_reports`:
   - `site_id`, período, summary, detalhes (JSONB), status.
 

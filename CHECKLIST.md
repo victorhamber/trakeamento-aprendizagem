@@ -9,6 +9,7 @@
 - [x] Webhook de compra (assinatura, normalização, Purchase via CAPI e Debug Visual)
 - [ ] Teste real de envio CAPI em produção
 - [ ] Sync de insights do Meta Ads (jobs agendados)
+- [ ] Integração GA4 (Reporting & Measurement)
 - [ ] Dashboard MVP (funil, páginas, anúncios)
 - [x] Tabela de campanhas com drilldown e métricas de funil
 - [x] Ações de status por campanha/conjunto/anúncio
