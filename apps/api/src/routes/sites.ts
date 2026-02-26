@@ -551,18 +551,52 @@ router.post('/:siteId/event-rules', requireAuth, async (req, res) => {
   const site = await pool.query('SELECT id FROM sites WHERE id = $1 AND account_id = $2', [siteId, auth.accountId]);
   if (!site.rowCount) return res.status(404).json({ error: 'Site not found' });
 
-  const { rule_type, match_value, match_text, event_name, event_type } = req.body;
+  const { rule_type, match_value, match_text, event_name, event_type, parameters } = req.body;
   if (!match_value || !event_name) return res.status(400).json({ error: 'Missing fields' });
   if (rule_type === 'button_click' && !match_text) return res.status(400).json({ error: 'Missing button text' });
 
   const result = await pool.query(
-    `INSERT INTO site_url_rules (site_id, rule_type, match_value, match_text, event_name, event_type)
-     VALUES ($1, $2, $3, $4, $5, $6)
+    `INSERT INTO site_url_rules (site_id, rule_type, match_value, match_text, event_name, event_type, parameters)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING *`,
-    [siteId, rule_type || 'url_contains', match_value, match_text || null, event_name, event_type || 'custom']
+    [siteId, rule_type || 'url_contains', match_value, match_text || null, event_name, event_type || 'custom', parameters || {}]
   );
 
   return res.status(201).json({ rule: result.rows[0] });
+});
+
+router.put('/:siteId/event-rules/:id', requireAuth, async (req, res) => {
+  const auth = req.auth!;
+  const siteId = Number(req.params.siteId);
+  const id = Number(req.params.id);
+
+  const site = await pool.query('SELECT id FROM sites WHERE id = $1 AND account_id = $2', [siteId, auth.accountId]);
+  if (!site.rowCount) return res.status(404).json({ error: 'Site not found' });
+
+  const { rule_type, match_value, match_text, event_name, event_type, parameters } = req.body;
+  if (!match_value || !event_name) return res.status(400).json({ error: 'Missing fields' });
+  if (rule_type === 'button_click' && !match_text) return res.status(400).json({ error: 'Missing button text' });
+
+  const result = await pool.query(
+    `UPDATE site_url_rules
+     SET rule_type = $1, match_value = $2, match_text = $3, event_name = $4, event_type = $5, parameters = $6
+     WHERE id = $7 AND site_id = $8
+     RETURNING *`,
+    [
+      rule_type || 'url_contains',
+      match_value,
+      match_text || null,
+      event_name,
+      event_type || 'custom',
+      parameters || {},
+      id,
+      siteId,
+    ]
+  );
+
+  if (!result.rowCount) return res.status(404).json({ error: 'Rule not found' });
+
+  return res.json({ rule: result.rows[0] });
 });
 
 router.delete('/:siteId/event-rules/:id', requireAuth, async (req, res) => {

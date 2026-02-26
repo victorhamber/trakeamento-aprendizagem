@@ -259,6 +259,7 @@ export const ensureSchema = async (pool: Pool) => {
     await pool.query('ALTER TABLE integrations_ga ADD COLUMN IF NOT EXISTS enabled BOOLEAN DEFAULT TRUE');
     await pool.query('ALTER TABLE account_settings ADD COLUMN IF NOT EXISTS openai_model VARCHAR(50)');
     await pool.query('ALTER TABLE site_url_rules ADD COLUMN IF NOT EXISTS match_text TEXT');
+    await pool.query('ALTER TABLE site_url_rules ADD COLUMN IF NOT EXISTS parameters JSONB DEFAULT \'{}\'::jsonb');
 
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS unique_clicks INTEGER');
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS link_clicks INTEGER');
