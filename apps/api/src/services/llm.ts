@@ -9,100 +9,14 @@ interface LlmConfig {
   model: string;
 }
 
-interface Signal {
-  area?: unknown;
-  signal?: unknown;
-  weight?: unknown;
-  evidence?: unknown;
-}
-
-interface SnapshotSite {
-  pageviews?: unknown;
-  avg_load_time_ms?: unknown;
-  avg_dwell_time_ms?: unknown;
-  avg_max_scroll_pct?: unknown;
-  clicks_cta?: unknown;
-  bounces_est?: unknown;
-  capi?: {
-    page_views?: unknown;
-    leads?: unknown;
-    avg_load_time_ms?: unknown;
-    deep_scroll_count?: unknown;
-    avg_dwell_time_ms?: unknown;
-  };
-}
-
-interface SnapshotMeta {
-  objective?: unknown;
-  results?: unknown;
-  cost_per_result?: unknown;
-  spend?: unknown;
-  impressions?: unknown;
-  clicks?: unknown;
-  landing_page_views?: unknown;
-  leads?: unknown;
-  contacts?: unknown;
-  initiates_checkout?: unknown;
-  purchases?: unknown;
-}
-
-interface SnapshotSales {
-  purchases?: unknown;
-  revenue?: unknown;
-}
-
-interface SnapshotDerived {
-  ctr_calc_pct?: unknown;
-  cpc_calc?: unknown;
-  cpm_calc?: unknown;
-  connect_rate_pct?: unknown;
-  lp_to_purchase_rate_pct?: unknown;
-  pv_to_purchase_rate_pct?: unknown;
-}
-
-interface BreakdownRow {
-  name?: unknown;
-  objective?: unknown;
-  results?: unknown;
-  spend?: unknown;
-  impressions?: unknown;
-  clicks?: unknown;
-  landing_page_views?: unknown;
-  leads?: unknown;
-  purchases?: unknown;
-  cost_per_result?: unknown;
-}
-
-interface Snapshot {
-  period_days?: unknown;
-  meta?: SnapshotMeta;
-  site?: SnapshotSite;
-  sales?: SnapshotSales;
-  derived?: SnapshotDerived;
-  signals?: Signal[];
-  meta_breakdown?: {
-    campaigns?: BreakdownRow[];
-    adsets?: BreakdownRow[];
-    ads?: BreakdownRow[];
-  };
-  segments?: {
-    hourly?: Record<string, unknown>;
-    day_of_week?: Record<string, unknown>;
-  };
-  landing_page?: {
-    url?: string;
-    content?: string;
-  };
-}
-
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const DEFAULT_MODEL = 'gpt-4o-mini';
-const DEFAULT_TEMPERATURE = 0.2; // Lower = more deterministic/analytical
+const DEFAULT_MODEL = 'gpt-4o';
+const DEFAULT_TEMPERATURE = 0.2;
 const DEFAULT_MAX_TOKENS = 4096;
 const REQUEST_TIMEOUT_MS = 90_000;
 const MAX_RETRY_ATTEMPTS = 2;
-const MAX_SNAPSHOT_CHARS = 60_000; // ~15k tokens — prevents context overflow
+const MAX_SNAPSHOT_CHARS = 60_000;
 const BREAKDOWN_MAX_ROWS = 10;
 
 // ─── Service ──────────────────────────────────────────────────────────────────
@@ -117,69 +31,64 @@ export class LlmService {
       : {};
   }
 
-  private formatNumber(n: unknown, digits = 2): string {
+  private fmt(n: unknown, digits = 2): string {
     const v = Number(n);
-    if (!Number.isFinite(v)) return '—';
-    return v.toFixed(digits);
+    return Number.isFinite(v) ? v.toFixed(digits) : '—';
   }
 
-  private formatInt(n: unknown): string {
+  private fmtInt(n: unknown): string {
     const v = Number(n);
-    if (!Number.isFinite(v)) return '—';
-    return Math.trunc(v).toLocaleString('pt-BR');
+    return Number.isFinite(v) ? Math.trunc(v).toLocaleString('pt-BR') : '—';
   }
 
-  private formatMoney(n: unknown): string {
+  private fmtMoney(n: unknown): string {
     const v = Number(n);
-    if (!Number.isFinite(v)) return '—';
-    return `R$ ${v.toFixed(2)}`;
+    return Number.isFinite(v) ? `R$ ${v.toFixed(2)}` : '—';
   }
 
-  private formatMs(n: unknown): string {
+  private fmtMs(n: unknown): string {
     const v = Number(n);
-    if (!Number.isFinite(v)) return '—';
-    return `${Math.trunc(v)}ms`;
+    return Number.isFinite(v) && v > 0 ? `${Math.trunc(v)}ms` : '—';
+  }
+
+  private fmtPct(n: unknown): string {
+    const v = Number(n);
+    return Number.isFinite(v) ? `${v.toFixed(2)}%` : '—';
   }
 
   private log(level: 'info' | 'warn' | 'error', msg: string, extra?: unknown) {
     const prefix = `[LlmService][${level.toUpperCase()}]`;
-    if (level === 'error') {
-      console.error(prefix, msg, extra ?? '');
-    } else if (level === 'warn') {
-      console.warn(prefix, msg, extra ?? '');
-    } else {
-      console.log(prefix, msg, extra ?? '');
-    }
+    if (level === 'error') console.error(prefix, msg, extra ?? '');
+    else if (level === 'warn') console.warn(prefix, msg, extra ?? '');
+    else console.log(prefix, msg, extra ?? '');
   }
 
   /**
-   * Truncates the snapshot JSON so it never exceeds MAX_SNAPSHOT_CHARS.
-   * Strips landing_page content first (largest, least critical for metrics).
+   * Truncates snapshot to stay within token limits.
+   * Priority: keep meta + capi + derived + signals. Trim LP content + segments last.
    */
   private sanitizeSnapshot(snapshot: unknown): string {
     const snap = structuredClone(snapshot) as Record<string, unknown>;
 
-    // Truncate landing_page content to avoid token explosion
+    // Truncate landing page content
     const lp = this.asRecord(snap.landing_page);
     if (typeof lp.content === 'string' && lp.content.length > 3000) {
       lp.content = lp.content.slice(0, 3000) + '\n[...conteúdo truncado...]';
       snap.landing_page = lp;
     }
 
-    // Limit breakdown arrays
+    // Limit breakdown rows
     const mb = this.asRecord(snap.meta_breakdown);
-    for (const key of ['campaigns', 'adsets', 'ads'] as const) {
+    for (const key of ['campaigns', 'adsets', 'ads']) {
       const arr = Array.isArray(mb[key]) ? (mb[key] as unknown[]) : [];
-      if (arr.length > BREAKDOWN_MAX_ROWS) {
-        mb[key] = arr.slice(0, BREAKDOWN_MAX_ROWS);
-      }
+      if (arr.length > BREAKDOWN_MAX_ROWS) mb[key] = arr.slice(0, BREAKDOWN_MAX_ROWS);
     }
     snap.meta_breakdown = mb;
 
     const json = JSON.stringify(snap, null, 2);
     if (json.length <= MAX_SNAPSHOT_CHARS) return json;
 
-    // Last resort: truncate signals and segments
+    // Emergency: remove segments
     const snapReduced = { ...snap };
     delete snapReduced.segments;
     const signals = Array.isArray(snapReduced.signals) ? snapReduced.signals : [];
@@ -189,7 +98,7 @@ export class LlmService {
       + '\n...snapshot truncado por limite de tokens...';
   }
 
-  // ── DB / Config ────────────────────────────────────────────────────────────
+  // ── DB Config ──────────────────────────────────────────────────────────────
 
   private async getKeyForSite(siteKey: string): Promise<LlmConfig | null> {
     try {
@@ -212,7 +121,7 @@ export class LlmService {
     }
   }
 
-  // ── Core: OpenAI call with retry ───────────────────────────────────────────
+  // ── OpenAI call with retry ─────────────────────────────────────────────────
 
   private async callOpenAI(
     apiKey: string,
@@ -223,7 +132,6 @@ export class LlmService {
   ): Promise<string> {
     try {
       this.log('info', `Calling OpenAI [model=${model}, attempt=${attempt}]`);
-
       const response = await axios.post(
         'https://api.openai.com/v1/chat/completions',
         {
@@ -236,24 +144,19 @@ export class LlmService {
           ],
         },
         {
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-          },
+          headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
           timeout: REQUEST_TIMEOUT_MS,
         }
       );
 
       const content = response.data?.choices?.[0]?.message?.content;
-      if (!content || typeof content !== 'string') {
-        throw new Error('Resposta inválida da OpenAI API — content vazio.');
-      }
-
-      this.log('info', `OpenAI response received (${content.length} chars)`);
+      if (!content || typeof content !== 'string') throw new Error('Resposta inválida da OpenAI — content vazio.');
+      this.log('info', `OpenAI OK (${content.length} chars)`);
       return content;
-
     } catch (error) {
-      const isRetryable = this.isRetryableError(error);
+      const isRetryable = axios.isAxiosError(error) &&
+        ((error as AxiosError).response?.status === 429 ||
+         ((error as AxiosError).response?.status ?? 0) >= 500);
 
       if (isRetryable && attempt < MAX_RETRY_ATTEMPTS) {
         const delay = attempt * 2000;
@@ -262,56 +165,39 @@ export class LlmService {
         return this.callOpenAI(apiKey, model, systemPrompt, userContent, attempt + 1);
       }
 
-      // Log structured error
       if (axios.isAxiosError(error)) {
-        const axErr = error as AxiosError;
         this.log('error', 'OpenAI Axios error', {
-          status: axErr.response?.status,
-          data: axErr.response?.data,
-          message: axErr.message,
+          status: (error as AxiosError).response?.status,
+          data: (error as AxiosError).response?.data,
         });
       } else if (error instanceof Error) {
         this.log('error', 'OpenAI error', error.message);
       }
-
       throw error;
     }
   }
 
-  private isRetryableError(error: unknown): boolean {
-    if (!axios.isAxiosError(error)) return false;
-    const status = (error as AxiosError).response?.status;
-    // Retry on rate limit (429) or server errors (5xx), not on auth (401/403) or bad request (400)
-    return status === 429 || (status !== undefined && status >= 500);
-  }
-
   // ── Public entry point ─────────────────────────────────────────────────────
 
-  public async generateAnalysisForSite(
-    siteKey: string,
-    snapshot: unknown
-  ): Promise<string> {
-    // 1. Resolve API key (DB → env fallback)
+  public async generateAnalysisForSite(siteKey: string, snapshot: unknown): Promise<string> {
     const cfg = await this.getKeyForSite(siteKey);
     const apiKey = cfg?.apiKey || process.env.OPENAI_API_KEY || '';
     const model = cfg?.model || DEFAULT_MODEL;
 
     if (!apiKey) {
-      this.log('warn', 'No OpenAI key configured — returning fallback report');
-      return this.fallbackReport(snapshot as Snapshot);
+      this.log('warn', 'No OpenAI key — returning fallback report');
+      return this.fallbackReport(snapshot);
     }
 
-    // 2. Prepare inputs
     const systemPrompt = this.buildSystemPrompt();
     const snapshotJson = this.sanitizeSnapshot(snapshot);
     const userContent = `Dados estruturados do período (JSON):\n\n${snapshotJson}`;
 
-    // 3. Call OpenAI with retry, fallback on failure
     try {
       return await this.callOpenAI(apiKey, model, systemPrompt, userContent);
     } catch {
       this.log('warn', 'All OpenAI attempts failed — returning fallback report');
-      return this.fallbackReport(snapshot as Snapshot);
+      return this.fallbackReport(snapshot);
     }
   }
 
@@ -319,249 +205,341 @@ export class LlmService {
 
   private buildSystemPrompt(): string {
     return `\
-🤖 AGENTE ANALISTA DE PERFORMANCE — META ADS + GA4 + CRO
-══════════════════════════════════════════════════════════
+🤖 AGENTE ANALISTA DE PERFORMANCE — TRAJETTU (META ADS + CAPI + CRO)
+══════════════════════════════════════════════════════════════════════
 
-PAPEL (ROLE)
-Você é um Analista de Tráfego Sênior e Cientista de Dados, especializado em Meta Ads, GA4, Pixel da Meta e CRO (Conversion Rate Optimization). Você raciocina como um gestor de tráfego experiente com mais de 10 anos de experiência — não como um assistente genérico.
-
-SUA MISSÃO: Receber dados multicanal e diagnosticar com precisão cirúrgica por que uma campanha está ou não gerando resultados — apontando o gargalo exato e o plano de ação mais inteligente.
+PAPEL
+Você é um Analista de Tráfego Sênior especializado em Meta Ads, rastreamento de eventos server-side (CAPI) e CRO. Você raciocina como um gestor de tráfego experiente, citando números exatos e dando diagnósticos concretos — nunca afirmações vagas.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-CONTEXTO DOS DADOS (INPUTS)
+MAPA COMPLETO DOS CAMPOS DO JSON
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Você receberá um JSON com os seguintes blocos:
+HIERARQUIA DE CONFIABILIDADE (da mais para menos confiável):
+  1. \`sales.*\`  → banco de dados interno (webhooks) — VERDADE ABSOLUTA para receita/conversões
+  2. \`capi.*\`   → eventos server-side — VERDADE para comportamento no site (não afetado por iOS/adblock)
+  3. \`meta.*\`   → Pixel Meta / API — estimado, pode ter subcontagem
 
-• \`meta\` → Métricas agregadas do Meta Ads: Investimento, Impressões, Alcance, CPM, CTR (Link), CPC, Frequência, Resultados, CPA, ROAS.
-• \`meta_breakdown\` → Detalhamento por campanha, conjunto de anúncios e anúncios individuais. USE ESSES DADOS para identificar vencedores e ofensores.
-• \`site\` → Métricas do site rastreadas pelo tracking interno:
-    - \`pageviews\`: total de visualizações de página.
-    - \`avg_load_time_ms\`: tempo médio de carregamento. Acima de 3000ms = crítico.
-    - \`avg_dwell_time_ms\`: tempo médio de permanência. Abaixo de 10s = abandono.
-    - \`avg_max_scroll_pct\`: profundidade de rolagem. Abaixo de 30% = não leram a oferta.
-    - \`clicks_cta\`: cliques em botões de ação (CTA).
-    - \`bounces_est\`: visitas com < 5s e < 10% de scroll.
-    - \`capi\`: dados de servidor (mais precisos que o Pixel):
-        - \`page_views\`: visitas reais rastreadas (fonte da verdade).
-        - \`leads\`: leads confirmados no servidor.
-        - \`avg_load_time_ms\`: velocidade no servidor.
-        - \`deep_scroll_count\`: pessoas que rolaram > 50% da página.
-        - \`avg_dwell_time_ms\`: tempo real de permanência.
-• \`derived\` → Métricas calculadas: CTR, CPC, CPM, connect_rate, conversion rates.
-• \`signals\` → Sinais automáticos detectados (anomalias, alertas, padrões).
-• \`landing_page\` → URL + conteúdo textual extraído. Use para avaliar alinhamento com o criativo.
-• \`segments\` → Distribuição por hora (\`hourly\`) e dia da semana (\`day_of_week\`). Use para identificar padrões de performance temporal.
+─── BLOCO: meta ──────────────────────────────────────────────────────────────
+\`meta.objective\`
+  → Objetivo da campanha (ex: CADASTRO_GRUPO, OUTCOME_LEADS, OUTCOME_SALES, LINK_CLICKS).
+  → DEFINE como medir o sucesso. Leia ANTES de qualquer análise.
+
+\`meta.results\`
+  → ⭐ MÉTRICA PRINCIPAL. Quantidade de resultados conforme o objetivo.
+  → "Objetivo (9)" na UI = meta.results = 9 cadastros/leads/vendas.
+  → Se results > 0, a campanha ESTÁ convertendo. Nunca diga que não converte se este campo > 0.
+
+\`meta.cost_per_result\`
+  → CPA: custo médio por resultado. Calcule: meta.spend ÷ meta.results.
+
+\`meta.landing_page_views\`
+  → "LP Views" na UI. Pessoas que clicaram no anúncio E cuja página carregou (medido pelo Pixel).
+  → Diferente de \`capi.page_views\` (que é server-side e mais preciso).
+
+\`meta.connect_rate_pct\`
+  → "Taxa LP View" na UI. Fórmula: landing_page_views ÷ link_clicks × 100.
+  → Mede quantos cliques efetivamente chegaram à página. < 60% = problema.
+
+\`meta.hook_rate_pct\`
+  → "Hook Rate" na UI. Fórmula: video_3s_views ÷ impressions × 100.
+  → Mede se os primeiros segundos do vídeo prendem atenção. null = sem dados de vídeo.
+  → < 15% = hook fraco (primeiros 3 segundos do criativo precisam de revisão).
+
+\`meta.initiates_checkout\`
+  → "Finalização" na UI. Evento InitiateCheckout do Pixel.
+  → Para objetivo de vendas: se este é 0 mas há cliques, o checkout pode estar com problema.
+
+\`meta.purchases\`
+  → Compras rastreadas pelo Pixel. Pode divergir de \`sales.purchases\` (banco interno).
+  → Discrepância alta = problema de deduplicação ou Pixel mal configurado.
+
+─── BLOCO: capi ──────────────────────────────────────────────────────────────
+\`capi.page_views\`
+  → Page views confirmados server-side. Mais preciso que \`meta.landing_page_views\`.
+  → Use como referência principal ao calcular taxa de conversão real.
+
+\`capi.avg_load_time_ms\`
+  → Tempo de carregamento da página (servidor). > 3000ms = crítico. > 5000ms = emergência.
+
+\`capi.avg_dwell_time_ms\`
+  → Tempo médio que os usuários ficam na página (server-side). < 8000ms = abandono rápido.
+
+\`capi.avg_scroll_pct\`
+  → Scroll médio da página. < 30% = a maioria não chegou na oferta.
+
+\`capi.deep_scroll_count\`
+  → Quantidade de usuários que rolaram > 50% da página (engajamento real com o conteúdo).
+
+\`capi.leads\` / \`capi.purchases\`
+  → Eventos de conversão confirmados server-side. Mais confiáveis que \`meta.leads\`/\`meta.purchases\`.
+
+─── BLOCO: site ──────────────────────────────────────────────────────────────
+\`site.effective_dwell_ms\`
+  → Melhor valor disponível de dwell time (CAPI se disponível, fallback para PageEngagement).
+
+\`site.effective_scroll_pct\`
+  → Melhor valor disponível de scroll (mesma lógica).
+
+\`site.clicks_cta\`
+  → Cliques em botões de ação (CTA) rastreados na página.
+
+\`site.bounces_est\`
+  → Estimativa de bounces: visitas com < 5s de permanência + < 10% scroll + 0 cliques.
+
+─── BLOCO: sales ─────────────────────────────────────────────────────────────
+\`sales.purchases\`
+  → Compras confirmadas no banco de dados via webhook. VERDADE ABSOLUTA para conversões de venda.
+
+\`sales.revenue\`
+  → Receita confirmada no banco de dados.
+
+\`sales.roas\`
+  → ROAS real: sales.revenue ÷ meta.spend. Use este, não o ROAS do Meta.
+
+─── BLOCO: derived ───────────────────────────────────────────────────────────
+\`derived.ctr_calc_pct\`       → CTR calculado: clicks ÷ impressions × 100
+\`derived.cpc_calc\`           → CPC calculado: spend ÷ clicks
+\`derived.cpm_calc\`           → CPM calculado: spend ÷ impressions × 1000
+\`derived.connect_rate_pct\`   → Taxa LP View (mesmo que meta.connect_rate_pct)
+\`derived.hook_rate_pct\`      → Hook Rate (mesmo que meta.hook_rate_pct)
+\`derived.click_to_lp_discrepancy_pct\`
+  → % de cliques que NÃO geraram page view (quebra no topo do funil).
+  → > 25% = sinal de alerta. > 40% = crítico (tracking quebrado ou site inacessível).
+\`derived.lp_to_result_rate_pct\`
+  → Taxa de conversão da landing page: results ÷ landing_page_views × 100
+\`derived.roas\`               → ROAS real (mesmo que sales.roas)
+
+─── BLOCO: meta_breakdown ────────────────────────────────────────────────────
+Contém arrays \`campaigns\`, \`adsets\`, \`ads\` — cada item tem:
+  - \`name\`, \`results\`, \`spend\`, \`ctr_calc_pct\`, \`connect_rate_pct\`, \`hook_rate_pct\`,
+    \`cost_per_result\`, \`landing_page_views\`, \`leads\`, \`purchases\`
+Use para comparar performance entre anúncios e identificar vencedores/ofensores.
+
+─── BLOCO: signals ───────────────────────────────────────────────────────────
+Anomalias detectadas automaticamente. Cada sinal tem \`area\`, \`signal\`, \`weight\` (0-1), \`evidence\`.
+Weight > 0.7 = problema confirmado. Weight 0.5-0.7 = suspeita. Use como guia, não como verdade absoluta.
+
+─── BLOCO: segments ──────────────────────────────────────────────────────────
+\`segments.hourly\`      → page views por hora (0-23)
+\`segments.day_of_week\` → page views por dia (0=Domingo, 6=Sábado)
+Use para sugerir dayparting se houver concentração clara de performance.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-REGRAS DE ANÁLISE (RACIOCÍNIO OBRIGATÓRIO)
+REGRAS DE ANÁLISE (OBRIGATÓRIAS)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-REGRA 0 — INTEGRIDADE DOS DADOS
-Use SOMENTE os dados fornecidos. Jamais invente números, benchmarks ou médias de mercado não solicitadas.
-Se um dado estiver ausente, declare: "Dado não disponível — análise parcial."
-Um valor 0 pode ser "nenhum evento" OU "tracking quebrado". Investigue antes de concluir.
 
 REGRA 1 — OBJETIVO É REI
-Leia o campo \`objective\` antes de qualquer análise.
-• Se objetivo = LEADS/CADASTRO → meça por \`results\` (quantidade) e \`cost_per_result\` (CPA). Compras zeradas são IRRELEVANTES.
-• Se objetivo = CONVERSÃO/COMPRA → meça por \`purchases\` e ROAS.
-• Se objetivo = TRÁFEGO → meça por CTR, CPC e landing_page_views.
-NUNCA aponte como problema uma métrica que não corresponde ao objetivo da campanha.
+Leia \`meta.objective\` antes de qualquer coisa. O sucesso da campanha é medido por \`meta.results\`.
+- CADASTRO_GRUPO / LEAD_GENERATION / OUTCOME_LEADS → sucesso = results (leads/cadastros) e CPA
+- OUTCOME_SALES / CONVERSIONS → sucesso = sales.purchases e sales.roas
+- LINK_CLICKS / TRAFFIC → sucesso = landing_page_views e connect_rate_pct
+NUNCA aponte como problema uma métrica fora do escopo do objetivo.
+Se meta.results > 0 → a campanha ESTÁ convertendo. Não diga que "não converte".
 
-REGRA 2 — FUNIL (DO TOPO À BASE)
-Analise sempre nessa ordem:
-  Entrega → Clique → Landing → Engajamento → CTA → Conversão
+REGRA 2 — FUNIL COMPLETO
+Analise sempre nesta ordem:
+  Entrega (CPM/Reach) → Clique (CTR/CPC) → Landing (Connect Rate/Velocidade)
+  → Engajamento (Dwell/Scroll) → CTA (clicks_cta) → Conversão (results/purchases)
+O gargalo é onde a taxa cai de forma anormal. Identifique o estágio EXATO.
 
-REGRA 3 — DISCREPÂNCIA META x SITE
-Compare \`meta.clicks\` com \`site.capi.page_views\` (ou \`site.pageviews\` se capi indisponível).
-• Quebra > 20–30% → suspeita de: lentidão, cliques acidentais, pixel mal instalado ou redirect quebrado.
-• Zeros em conversão com CTR alto = tracking quebrado, não funil frio.
+REGRA 3 — DISCREPÂNCIA CLIQUES vs VISITAS
+Compare \`meta.clicks\` (ou \`meta.unique_link_clicks\`) com \`capi.page_views\`.
+- \`derived.click_to_lp_discrepancy_pct\` > 25% → sinal de alerta
+- > 40% → crítico: tracking quebrado, site inacessível ou cliques acidentais
+Se \`capi.page_views\` = 0 mas há cliques → Pixel provavelmente não instalado na landing page.
 
-REGRA 4 — ANÁLISE DO ANÚNCIO (CRIATIVO)
-• Alto CTR + baixa conversão = desalinhamento entre promessa do anúncio e landing page.
-• Compare o conteúdo de \`landing_page.content\` com a mensagem inferida dos anúncios.
-• Use \`meta_breakdown.ads\` para ranquear anúncios por CTR, CPA e resultados.
+REGRA 4 — ZERO NÃO É SEMPRE FALHA
+Um campo zerado pode ser:
+(a) "Não aconteceu" → normal se o objetivo não inclui essa métrica
+(b) "Erro de tracking" → problema se o objetivo deveria gerar esse evento
+SEMPRE verifique \`meta.objective\` antes de interpretar um zero.
 
-REGRA 5 — SATURAÇÃO DO PÚBLICO
-• Frequência > 3.5 + CPA crescente = público saturado. Sugira nova segmentação ou criativo.
-• Cruce com \`site.avg_dwell_time_ms\`: dwell time baixo mesmo com alta frequência = público errado.
+REGRA 5 — USE OS NÚMEROS, NUNCA SEJA VAGO
+❌ PROIBIDO: "Talvez a landing page não esteja convertendo bem."
+✅ OBRIGATÓRIO: "A landing page recebeu ${this.PLACEHOLDER_example('capi.page_views')} visitas confirmadas e gerou ${this.PLACEHOLDER_example('meta.results')} resultados (taxa ${this.PLACEHOLDER_example('derived.lp_to_result_rate_pct')}%). O scroll médio de ${this.PLACEHOLDER_example('capi.avg_scroll_pct')}% indica que a maioria saiu antes de ler a oferta."
+Sempre cite valores exatos ao fazer uma afirmação.
 
-REGRA 6 — LANDING PAGE
-• Cruce \`site.avg_dwell_time_ms\` e \`site.avg_max_scroll_pct\` com taxa de conversão.
-• Tráfego chegando mas sem cliques em CTA = falha na oferta, layout ou velocidade.
-• Avalie velocidade: \`site.capi.avg_load_time_ms\` > 3000ms = ação imediata.
+REGRA 6 — USE O META_BREAKDOWN
+Compare CTR, CPA e connect_rate entre anúncios e conjuntos.
+Se Anúncio A tem CTR 3% e Anúncio B tem CTR 1%: "Anúncio A atrai 3x mais cliques que o B".
+Identifique qual anúncio gerou mais resultados e qual está consumindo verba sem retorno.
 
-REGRA 7 — SEGMENTOS TEMPORAIS
-• Analise \`segments.hourly\` e \`segments.day_of_week\`.
-• Se há padrão claro (ex: conversões concentradas de 9h–13h), sugira dayparting.
+REGRA 7 — HOOK RATE (APENAS PARA VÍDEO)
+Se \`meta.hook_rate_pct\` é null → sem dados de vídeo, não mencione hook rate.
+Se disponível: < 15% = primeiros 3 segundos do vídeo são fracos → sugira reformular o início.
 
-REGRA 8 — SEM VAGABUNDEZ ANALÍTICA
-• PROIBIDO: "Talvez a landing page não esteja convertendo bem."
-• OBRIGATÓRIO: "A landing page recebeu 150 visitas e gerou 2 leads (1,3% de conversão). O scroll médio de 22% indica que a maioria nem chegou na oferta. O problema está no topo da página."
-• Sempre cite os números exatos ao fazer uma afirmação.
-• Sempre compare resultados entre anúncios/conjuntos quando o breakdown estiver disponível.
+REGRA 8 — DADOS AUSENTES
+Se um campo é null ou 0 de forma suspeita, declare: "Dado indisponível — análise parcial neste ponto."
+Nunca invente valores. Nunca use benchmarks de mercado sem citar a fonte.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ESTRUTURA DE SAÍDA OBRIGATÓRIA (MARKDOWN)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-## 📊 1. DIAGNÓSTICO GERAL DA CAMPANHA
+## 📊 1. DIAGNÓSTICO GERAL
 - **Status:** [Excelente / Razoável / Crítico]
-- **Resumo:** (2–3 linhas sobre o impacto real nos resultados, citando números)
+- **Objetivo da campanha:** [objective] → mede-se por [métrica principal]
+- **Resumo:** (2–3 linhas com os números mais relevantes do período)
 - **Ação Recomendada:** [Escalar / Manter / Otimizar / Pausar + justificativa objetiva]
 
 ---
 
-## 📋 2. TABELA DE MÉTRICAS (META x SITE x BANCO)
-| Métrica | Meta Ads | Site / CAPI | Banco Interno | Discrepância |
+## 📋 2. TABELA DE MÉTRICAS (META × CAPI × BANCO)
+| Métrica | Meta (Pixel) | CAPI (Servidor) | Banco Interno | Discrepância |
 |---|---|---|---|---|
-| Cliques / Visitas | | | — | |
-| Conversões | | | | |
-| CPA | | — | — | — |
-| ROAS | | — | | |
+| Investimento | meta.spend | — | — | — |
+| Resultados principais | meta.results | capi.leads ou capi.purchases | sales.purchases | (dif) |
+| Cliques / Visitas | meta.unique_link_clicks | capi.page_views | — | derived.click_to_lp_discrepancy_pct |
+| CPA | meta.cost_per_result | — | — | — |
+| ROAS | — | — | sales.roas | — |
+(Preencher com os valores reais do JSON)
 
 ---
 
 ## 🔍 3. ANÁLISE DO FUNIL
-- **Entrega (CPM / Alcance):** [diagnóstico com números]
-- **Clique (CTR / CPC):** [diagnóstico com números]
-- **Landing (Velocidade / Bounce):** [diagnóstico com números]
-- **Engajamento (Scroll / Dwell Time):** [diagnóstico com números]
-- **Conversão (CTA / Resultado):** [diagnóstico com números]
+- **Entrega** (CPM R$X, Alcance Y pessoas): [diagnóstico]
+- **Clique** (CTR X%, CPC R$Y): [diagnóstico]
+- **Landing** (Connect Rate X%, Velocidade Yms): [diagnóstico]
+- **Engajamento** (Dwell Xms, Scroll Y%, CTA Z cliques): [diagnóstico]
+- **Conversão** (Results X, Taxa Y%): [diagnóstico]
 
-→ **🎯 Gargalo Principal:** [etapa exata onde o funil quebra, com evidência numérica]
+→ 🎯 **Gargalo identificado:** [etapa exata + evidência numérica]
 
 ---
 
 ## 🧩 4. AVALIAÇÃO DOS CONJUNTOS DE ANÚNCIOS
 Para cada conjunto relevante:
-- **[Nome]:** [Veredito] — [Justificativa cruzando público + comportamento no site + CPA]
+- **[Nome]:** [Veredito] — [dados: spend, results, CPA, connect_rate, frequência]
 
 ---
 
 ## 🎯 5. AVALIAÇÃO DOS ANÚNCIOS
-- **🏆 Vencedores:** [Nome, CTR, CPA, por que funciona, confirmação no banco]
-- **🚨 Ofensores:** [Nome, onde gasta sem retorno, gargalo identificado]
+- **🏆 Vencedores:** [nome, CTR, CPA, results — por que funciona]
+- **🚨 Ofensores:** [nome, onde gasta sem retorno, qual métrica comprova]
 
 ---
 
-## 🖥️ 6. DIAGNÓSTICO DA PÁGINA DE DESTINO
-- **Alinhamento criativo x promessa:** [ok / problema — citar evidência]
-- **Velocidade:** [ms — ok / alerta / crítico]
-- **Retenção:** [scroll % + dwell time — interpretação]
-- **Sugestão prática:** [ação específica e implementável]
+## 🖥️ 6. DIAGNÓSTICO DA LANDING PAGE
+- **Velocidade:** [Xms — ok / alerta / crítico]
+- **Retenção:** [dwell Xms + scroll Y% — interpretação]
+- **Alinhamento criativo × promessa:** [análise do conteúdo da LP vs. mensagem dos anúncios]
+- **Sugestão específica:** [ação implementável]
 
 ---
 
-## 📅 7. ANÁLISE DE SEGMENTOS TEMPORAIS
-(Somente se \`segments\` estiver disponível e mostrar padrão relevante)
-- Melhor horário/dia: [dados]
-- Pior horário/dia: [dados]
-- Recomendação: [dayparting, orçamento concentrado, etc.]
+## 📅 7. SEGMENTOS TEMPORAIS
+(Só se segments mostrar padrão relevante com diferença > 30% entre períodos)
+- Melhor período: [hora/dia + dado]
+- Pior período: [hora/dia + dado]
+- Recomendação: [dayparting ou concentração de orçamento]
 
 ---
 
 ## ⚠️ 8. HIPÓTESES ALTERNATIVAS
-(O que mais poderia explicar os resultados além do gargalo principal? Liste 2–3 hipóteses com base nos dados.)
+(2–3 hipóteses além do gargalo principal, baseadas nos dados)
 
 ---
 
-## ✅ 9. PLANO DE AÇÃO PRIORITÁRIO
-1. **[Hoje]** — [Ação imediata específica]
-2. **[Esta semana]** — [Ação de curto prazo]
-3. **[Próximo ciclo]** — [Ação estratégica]
+## ✅ 9. PLANO DE AÇÃO
+1. **[Hoje]** — [ação imediata e específica]
+2. **[Esta semana]** — [ação de curto prazo]
+3. **[Próximo ciclo]** — [ação estratégica]
 `;
+  }
+
+  // Placeholder helper (just for documentation in the prompt — replaced by real values at runtime)
+  private PLACEHOLDER_example(field: string): string {
+    return `{${field}}`;
   }
 
   // ── Fallback Report ────────────────────────────────────────────────────────
 
-  /**
-   * Generates a structured Markdown report without AI when:
-   * - OpenAI key is not configured
-   * - All OpenAI retry attempts fail
-   */
-  private fallbackReport(snapshot: Snapshot): string {
-    const m = snapshot.meta ?? {};
-    const s = snapshot.site ?? {};
-    const capi = s.capi ?? {};
-    const sa = snapshot.sales ?? {};
-    const d = snapshot.derived ?? {};
-    const signals: Signal[] = snapshot.signals ?? [];
-    const mb = snapshot.meta_breakdown ?? {};
-    const campaigns = mb.campaigns ?? [];
-    const adsets = mb.adsets ?? [];
-    const ads = mb.ads ?? [];
-    const segments = snapshot.segments;
+  private fallbackReport(snapshot: unknown): string {
+    const snap = this.asRecord(snapshot);
+    const m = this.asRecord(snap.meta);
+    const capi = this.asRecord(snap.capi);
+    const site = this.asRecord(snap.site);
+    const sales = this.asRecord(snap.sales);
+    const d = this.asRecord(snap.derived);
+    const signals = Array.isArray(snap.signals) ? snap.signals as Record<string, unknown>[] : [];
+    const mb = this.asRecord(snap.meta_breakdown);
+    const campaigns = Array.isArray(mb.campaigns) ? mb.campaigns as Record<string, unknown>[] : [];
+    const adsets = Array.isArray(mb.adsets) ? mb.adsets as Record<string, unknown>[] : [];
+    const ads = Array.isArray(mb.ads) ? mb.ads as Record<string, unknown>[] : [];
+    const segments = this.asRecord(snap.segments);
 
     const lines: string[] = [];
 
-    // ── Header ───────────────────────────────────────────────────────────────
-    lines.push(`# 📊 Diagnóstico de Performance (Modo Básico)`);
+    lines.push(`# 📊 Diagnóstico de Performance (Modo Básico — sem IA)`);
     lines.push('');
-    lines.push(`> ⚠️ Relatório gerado sem IA. Configure uma chave OpenAI para análise aprofundada com diagnóstico de gargalos e recomendações personalizadas.`);
+    lines.push(`> ⚠️ Relatório gerado sem IA. Configure uma chave OpenAI nas configurações da conta para análise aprofundada.`);
     lines.push('');
-    lines.push(`**Período analisado:** ${this.formatInt(snapshot.period_days)} dias`);
+    lines.push(`**Período:** ${this.fmtInt(snap.period_days)} dias | **Objetivo:** ${String(m.objective || '—')}`);
     lines.push('');
 
-    // ── Metrics table ─────────────────────────────────────────────────────────
-    lines.push(`## 📋 Tabela de Métricas`);
+    // ── Metrics ───────────────────────────────────────────────────────────────
+    lines.push(`## 📋 Métricas Principais`);
     lines.push('');
-    lines.push(`| Área | Métrica | Valor | Observação |`);
-    lines.push(`|---|---|---:|---|`);
+    lines.push(`| Campo | Valor | Descrição |`);
+    lines.push(`|---|---:|---|`);
 
     // Meta
-    lines.push(`| **Meta** | Objetivo | ${m.objective || '—'} | Tipo de resultado otimizado |`);
-    lines.push(`| Meta | Resultados | ${this.formatInt(m.results)} | Métrica principal conforme objetivo |`);
-    lines.push(`| Meta | Custo por resultado | ${this.formatMoney(m.cost_per_result)} | Spend ÷ Resultados |`);
-    lines.push(`| Meta | Investimento total | ${this.formatMoney(m.spend)} | Gasto no período |`);
-    lines.push(`| Meta | Impressões | ${this.formatInt(m.impressions)} | Alcance dos anúncios |`);
-    lines.push(`| Meta | Cliques (link) | ${this.formatInt(m.clicks)} | Total de cliques |`);
-    lines.push(`| Meta | CTR | ${this.formatNumber(d.ctr_calc_pct)}% | Cliques ÷ Impressões |`);
-    lines.push(`| Meta | CPC | ${this.formatMoney(d.cpc_calc)} | Custo médio por clique |`);
-    lines.push(`| Meta | CPM | ${this.formatMoney(d.cpm_calc)} | Custo por mil impressões |`);
-    lines.push(`| Meta | Connect Rate | ${this.formatNumber(d.connect_rate_pct)}% | Cliques → Landing page views |`);
-    lines.push(`| Meta | Landing Page Views | ${this.formatInt(m.landing_page_views)} | Chegaram ao site (Meta) |`);
-    lines.push(`| Meta | Leads | ${this.formatInt(m.leads)} | Leads registrados (Pixel) |`);
-    lines.push(`| Meta | Iniciar checkout | ${this.formatInt(m.initiates_checkout)} | Checkouts iniciados (Pixel) |`);
-    lines.push(`| Meta | Compras (Pixel) | ${this.formatInt(m.purchases)} | Compras rastreadas pelo Pixel |`);
+    lines.push(`| **Meta — Resultados** | **${this.fmtInt(m.results)}** | ⭐ Métrica principal (objetivo: ${String(m.objective || '—')}) |`);
+    lines.push(`| Meta — CPA | ${this.fmtMoney(m.cost_per_result)} | Custo por resultado |`);
+    lines.push(`| Meta — Investimento | ${this.fmtMoney(m.spend)} | Total gasto no período |`);
+    lines.push(`| Meta — Impressões | ${this.fmtInt(m.impressions)} | Alcance de anúncios |`);
+    lines.push(`| Meta — Alcance | ${this.fmtInt(m.reach)} | Pessoas únicas alcançadas |`);
+    lines.push(`| Meta — Cliques (link) | ${this.fmtInt(m.unique_link_clicks)} | Cliques únicos no link |`);
+    lines.push(`| Meta — CTR | ${this.fmtPct(d.ctr_calc_pct)} | Cliques ÷ Impressões |`);
+    lines.push(`| Meta — CPC | ${this.fmtMoney(d.cpc_calc)} | Custo por clique |`);
+    lines.push(`| Meta — CPM | ${this.fmtMoney(d.cpm_calc)} | Custo por mil impressões |`);
+    lines.push(`| Meta — LP Views | ${this.fmtInt(m.landing_page_views)} | Pessoas que chegaram à landing (Pixel) |`);
+    lines.push(`| Meta — Taxa LP View | ${this.fmtPct(m.connect_rate_pct)} | Cliques → LP Views |`);
+    lines.push(`| Meta — Hook Rate | ${m.hook_rate_pct != null ? this.fmtPct(m.hook_rate_pct) : '—'} | Retenção vídeo 3s ÷ Impressões |`);
+    lines.push(`| Meta — Frequência | ${this.fmt(m.frequency_avg)} | Média de vezes que viu o anúncio |`);
+    lines.push(`| Meta — Leads (Pixel) | ${this.fmtInt(m.leads)} | Leads rastreados pelo Pixel |`);
+    lines.push(`| Meta — Finalização | ${this.fmtInt(m.initiates_checkout)} | InitiateCheckout (Pixel) |`);
+    lines.push(`| Meta — Compras (Pixel) | ${this.fmtInt(m.purchases)} | Compras rastreadas pelo Pixel |`);
     lines.push('');
 
-    // CAPI / Site
-    lines.push(`| **CAPI** | Page Views (servidor) | ${this.formatInt(capi.page_views)} | Visitas reais confirmadas |`);
-    lines.push(`| CAPI | Leads (servidor) | ${this.formatInt(capi.leads)} | Leads confirmados no servidor |`);
-    lines.push(`| CAPI | Velocidade (servidor) | ${this.formatMs(capi.avg_load_time_ms)} | Acima de 3000ms = crítico |`);
-    lines.push(`| CAPI | Deep scroll (>50%) | ${this.formatInt(capi.deep_scroll_count)} | Engajamento real com conteúdo |`);
-    lines.push(`| CAPI | Dwell time | ${this.formatMs(capi.avg_dwell_time_ms)} | Tempo real na página |`);
+    // CAPI
+    lines.push(`| **CAPI — Page Views** | **${this.fmtInt(capi.page_views)}** | Visitas reais server-side |`);
+    lines.push(`| CAPI — Leads | ${this.fmtInt(capi.leads)} | Leads server-side (mais preciso) |`);
+    lines.push(`| CAPI — Compras | ${this.fmtInt(capi.purchases)} | Compras server-side |`);
+    lines.push(`| CAPI — Velocidade | ${this.fmtMs(capi.avg_load_time_ms)} | > 3000ms = crítico |`);
+    lines.push(`| CAPI — Dwell Time | ${this.fmtMs(capi.avg_dwell_time_ms)} | Tempo real na página |`);
+    lines.push(`| CAPI — Scroll médio | ${capi.avg_scroll_pct != null ? this.fmtPct(capi.avg_scroll_pct) : '—'} | Profundidade de rolagem |`);
+    lines.push(`| CAPI — Deep scroll (>50%) | ${this.fmtInt(capi.deep_scroll_count)} | Usuários que leram o conteúdo |`);
     lines.push('');
 
-    // Site
-    lines.push(`| **Site** | Page Views | ${this.formatInt(s.pageviews)} | Total de páginas vistas |`);
-    lines.push(`| Site | Velocidade | ${this.formatMs(s.avg_load_time_ms)} | Tempo médio de carregamento |`);
-    lines.push(`| Site | Dwell time | ${this.formatMs(s.avg_dwell_time_ms)} | Permanência média |`);
-    lines.push(`| Site | Scroll médio | ${s.avg_max_scroll_pct != null ? `${this.formatInt(s.avg_max_scroll_pct)}%` : '—'} | Profundidade de rolagem |`);
-    lines.push(`| Site | Cliques em CTA | ${this.formatInt(s.clicks_cta)} | Cliques em botões de ação |`);
-    lines.push(`| Site | Bounces estimados | ${this.formatInt(s.bounces_est)} | Visitas < 5s e < 10% scroll |`);
+    // Discrepancy
+    const discPct = Number(d.click_to_lp_discrepancy_pct);
+    const discStatus = !Number.isFinite(discPct) ? '—'
+      : discPct > 40 ? `⚠️ ${discPct.toFixed(1)}% (CRÍTICO)`
+      : discPct > 25 ? `⚠️ ${discPct.toFixed(1)}% (Alerta)`
+      : `✅ ${discPct.toFixed(1)}% (OK)`;
+    lines.push(`| **Discrepância Cliques→Visitas** | ${discStatus} | > 25% = tracking ou velocidade |`);
     lines.push('');
 
-    // Conversions
-    lines.push(`| **Conversão** | Compras (banco) | ${this.formatInt(sa.purchases)} | Compras via webhook/API |`);
-    lines.push(`| Conversão | Receita | ${this.formatMoney(sa.revenue)} | Receita total rastreada |`);
-    lines.push(`| Conversão | Taxa LPV → Compra | ${this.formatNumber(d.lp_to_purchase_rate_pct)}% | LPV para venda |`);
-    lines.push(`| Conversão | Taxa PV → Compra | ${this.formatNumber(d.pv_to_purchase_rate_pct)}% | Page view para venda |`);
+    // Sales (source of truth)
+    lines.push(`| **Banco — Compras** | **${this.fmtInt(sales.purchases)}** | ✅ Verdade absoluta para conversões |`);
+    lines.push(`| Banco — Receita | ${this.fmtMoney(sales.revenue)} | Receita confirmada |`);
+    lines.push(`| Banco — ROAS | ${d.roas != null ? this.fmt(d.roas) + 'x' : '—'} | Receita real ÷ Investimento |`);
     lines.push('');
 
     // ── Breakdown ─────────────────────────────────────────────────────────────
     if (campaigns.length || adsets.length || ads.length) {
-      lines.push(`## 🧩 Breakdown por Nível (Meta Ads)`);
+      lines.push(`## 🧩 Breakdown por Nível`);
       lines.push('');
-      lines.push(`| Nível | Nome | Objetivo | Resultados | Investimento | Impressões | Cliques | LPV | Leads | Compras | CPA |`);
-      lines.push(`|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|`);
+      lines.push(`| Nível | Nome | Resultados | Spend | CTR | LP Views | Taxa LP | Hook Rate | CPA |`);
+      lines.push(`|---|---|---:|---:|---:|---:|---:|---:|---:|`);
 
-      const renderRows = (level: string, rows: BreakdownRow[]) => {
+      const renderRows = (level: string, rows: Record<string, unknown>[]) => {
         for (const row of rows.slice(0, BREAKDOWN_MAX_ROWS)) {
+          const hookRate = row.hook_rate_pct != null ? this.fmtPct(row.hook_rate_pct) : '—';
           lines.push(
-            `| ${level} | ${String(row.name || '—')} | ${String(row.objective || '—')} | ${this.formatInt(row.results)} | ${this.formatMoney(row.spend)} | ${this.formatInt(row.impressions)} | ${this.formatInt(row.clicks)} | ${this.formatInt(row.landing_page_views)} | ${this.formatInt(row.leads)} | ${this.formatInt(row.purchases)} | ${this.formatMoney(row.cost_per_result)} |`
+            `| ${level} | ${String(row.name || '—')} | ${this.fmtInt(row.results)} | ${this.fmtMoney(row.spend)} | ${this.fmtPct(row.ctr_calc_pct)} | ${this.fmtInt(row.landing_page_views)} | ${this.fmtPct(row.connect_rate_pct)} | ${hookRate} | ${this.fmtMoney(row.cost_per_result)} |`
           );
         }
       };
@@ -573,58 +551,63 @@ Para cada conjunto relevante:
     }
 
     // ── Segments ──────────────────────────────────────────────────────────────
-    if (segments?.hourly || segments?.day_of_week) {
+    const hourly = this.asRecord(segments.hourly);
+    const dow = this.asRecord(segments.day_of_week);
+    const dowNames = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+
+    if (Object.keys(hourly).length > 0 || Object.keys(dow).length > 0) {
       lines.push(`## 📅 Distribuição Temporal`);
       lines.push('');
-      if (segments.hourly) {
-        lines.push('**Por hora do dia:**');
+      if (Object.keys(hourly).length > 0) {
+        lines.push('**Visitas por hora do dia:**');
         lines.push('');
-        lines.push('| Hora | Valor |');
+        lines.push('| Hora | Visitas |');
         lines.push('|---|---:|');
-        for (const [hour, val] of Object.entries(segments.hourly).slice(0, 24)) {
-          lines.push(`| ${hour}h | ${this.formatNumber(val)} |`);
+        for (const [h, v] of Object.entries(hourly)) {
+          lines.push(`| ${h}h | ${this.fmtInt(v)} |`);
         }
         lines.push('');
       }
-      if (segments.day_of_week) {
-        lines.push('**Por dia da semana:**');
+      if (Object.keys(dow).length > 0) {
+        lines.push('**Visitas por dia da semana:**');
         lines.push('');
-        lines.push('| Dia | Valor |');
+        lines.push('| Dia | Visitas |');
         lines.push('|---|---:|');
-        for (const [day, val] of Object.entries(segments.day_of_week)) {
-          lines.push(`| ${day} | ${this.formatNumber(val)} |`);
+        for (const [d, v] of Object.entries(dow)) {
+          const dayName = dowNames[Number(d)] || d;
+          lines.push(`| ${dayName} | ${this.fmtInt(v)} |`);
         }
         lines.push('');
       }
     }
 
     // ── Signals ───────────────────────────────────────────────────────────────
-    lines.push(`## ⚠️ Sinais Automáticos Detectados`);
+    lines.push(`## ⚠️ Sinais Detectados`);
     lines.push('');
     if (!signals.length) {
-      lines.push(`- **Sem sinais.** Volume de dados insuficiente (Meta e/ou eventos no site).`);
-      lines.push(`- Aguarde mais dados ou verifique Pixel + CAPI + tracking de eventos.`);
+      lines.push(`- Sem sinais. Volume de dados insuficiente ou integração de Pixel/CAPI pendente.`);
     } else {
       for (const sig of signals.slice(0, 8)) {
-        lines.push(`- **[${String(sig.area)}]** ${String(sig.signal)} *(confiança: ${this.formatNumber(sig.weight)})*`);
+        const weight = Number(sig.weight || 0);
+        const icon = weight >= 0.75 ? '🔴' : weight >= 0.60 ? '🟡' : '🟢';
+        lines.push(`- ${icon} **[${String(sig.area)}]** ${String(sig.signal)} *(peso: ${weight.toFixed(2)})*`);
         lines.push(`  - ${String(sig.evidence)}`);
       }
     }
     lines.push('');
 
-    // ── Quick actions ─────────────────────────────────────────────────────────
-    lines.push(`## ✅ Próximas Ações (Diagnóstico Manual)`);
+    // ── Actions ───────────────────────────────────────────────────────────────
+    lines.push(`## ✅ Próximas Ações (diagnóstico manual)`);
     lines.push('');
-    lines.push(`1. **Validar dados do Meta** — Confirme registros na tabela \`meta_insights_daily\` para os últimos ${this.formatInt(snapshot.period_days)} dias.`);
-    lines.push(`2. **Verificar tracking de eventos** — Valide que \`PageView\` e \`PageEngagement\` chegam em \`web_events\` sem duplicação.`);
-    lines.push(`3. **Analisar connect rate** — Se CTR está ok mas Connect Rate < 70%, investigue destino do anúncio, velocidade e consistência da promessa.`);
-    lines.push(`4. **Cruzar resultados por objetivo** — Compare \`results\` com \`purchases\`/\`leads\`/\`contacts\` para detectar discrepâncias de tracking.`);
-    lines.push(`5. **Verificar velocidade da landing page** — CAPI \`avg_load_time_ms\` acima de 3000ms requer ação imediata.`);
-    lines.push(`6. **Ativar análise com IA** — Configure uma chave OpenAI nas configurações da conta para diagnóstico completo com hipóteses e recomendações.`);
+    lines.push(`1. **Validar objetivo** — Confirme que \`meta.objective\` = "${String(m.objective || '?')}" e que \`meta.results\` representa o evento certo.`);
+    lines.push(`2. **Verificar discrepância** — Cliques: ${this.fmtInt(m.unique_link_clicks)} × LP Views: ${this.fmtInt(m.landing_page_views)} × CAPI page_views: ${this.fmtInt(capi.page_views)}. Diferença > 25% exige investigação.`);
+    lines.push(`3. **Checar velocidade** — CAPI avg_load_time_ms: ${this.fmtMs(capi.avg_load_time_ms)}. Acima de 3000ms = ação imediata.`);
+    lines.push(`4. **Analisar engajamento** — Dwell: ${this.fmtMs(capi.avg_dwell_time_ms)}, Scroll: ${capi.avg_scroll_pct != null ? this.fmtPct(capi.avg_scroll_pct) : '—'}. Abaixo de 15s/50% = landing page não está convertendo.`);
+    lines.push(`5. **Ativar IA** — Configure uma chave OpenAI para diagnóstico automático com hipóteses e plano de ação.`);
     lines.push('');
     lines.push('---');
     lines.push('');
-    lines.push(`*Relatório básico gerado automaticamente. Para análise aprofundada com diagnóstico de gargalos, hipóteses alternativas e plano de ação priorizado, ative o diagnóstico via IA configurando uma chave OpenAI.*`);
+    lines.push(`*Relatório básico gerado automaticamente sem IA. Para análise completa, configure OpenAI nas configurações da conta.*`);
 
     return lines.join('\n');
   }
