@@ -1469,6 +1469,23 @@ ${scriptContent}
       return '';
     }
   }, [utmBaseUrl, utmSource, utmMedium, utmCampaign, utmContent, utmTerm, utmClickId]);
+
+  const getBreakdownCtr = (row: MetaBreakdownItem) => {
+    if (row.ctr_calc_pct !== undefined) return row.ctr_calc_pct;
+    const clicks = row.clicks || 0;
+    const impressions = row.impressions || 0;
+    if (!impressions) return 0;
+    return (clicks / impressions) * 100;
+  };
+
+  const getBreakdownLpRate = (row: MetaBreakdownItem) => {
+    if (row.lp_rate_pct !== undefined) return row.lp_rate_pct;
+    const clicks = row.unique_link_clicks || row.clicks || 0;
+    const views = row.landing_page_views || 0;
+    if (!clicks) return 0;
+    return (views / clicks) * 100;
+  };
+
   const getBreakdownResults = (row: MetaBreakdownItem) => {
     return row.results || 0;
   };
