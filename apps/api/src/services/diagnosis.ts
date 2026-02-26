@@ -734,10 +734,10 @@ export class DiagnosisService {
         // Real page views confirmed server-side. Use this over meta.landing_page_views
         // when diagnosing tracking discrepancies.
         page_views: capiPageViews,
-        avg_load_time_ms: capiAvgLoadMs,       // > 3000ms = critical performance issue
+        avg_load_time_ms: capiAvgLoadMs != null ? capiAvgLoadMs : 0,       // > 3000ms = critical performance issue
         deep_scroll_count: capiDeepScrollCount, // users who scrolled > 50% of page
-        avg_scroll_pct: capiAvgScrollPct,       // average scroll depth %
-        avg_dwell_time_ms: capiAvgDwellMs,      // average time on page (ms)
+        avg_scroll_pct: capiAvgScrollPct != null ? capiAvgScrollPct : 0,       // average scroll depth %
+        avg_dwell_time_ms: capiAvgDwellMs != null ? capiAvgDwellMs : 0,      // average time on page (ms)
         leads: capiLeads,
         purchases: Number(capiMetrics.purchase_count || 0),
         checkouts: Number(capiMetrics.checkout_count || 0),
