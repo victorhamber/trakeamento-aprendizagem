@@ -195,6 +195,35 @@ export class DiagnosisService {
     const safeDiv = (a: number, b: number) => (b > 0 ? a / b : 0);
     const pct = (n: number) => Math.round(n * 10000) / 100;
 
+    const utmFilters = {
+      utm_source: options?.utm_source?.trim() || '',
+      utm_medium: options?.utm_medium?.trim() || '',
+      utm_campaign: options?.utm_campaign?.trim() || '',
+      utm_content: options?.utm_content?.trim() || '',
+      utm_term: options?.utm_term?.trim() || '',
+      click_id: options?.click_id?.trim() || '',
+    };
+    const buildUtmWhere = (baseIndex: number) => {
+      const clauses: string[] = [];
+      const params: string[] = [];
+      const add = (key: keyof typeof utmFilters) => {
+        const value = utmFilters[key];
+        if (!value) return;
+        params.push(value);
+        clauses.push(`AND (custom_data->>'${key}') = $${baseIndex + params.length}`);
+      };
+      add('utm_source');
+      add('utm_medium');
+      add('utm_campaign');
+      add('utm_content');
+      add('utm_term');
+      add('click_id');
+      return { clause: clauses.join('\n        '), params };
+    };
+    // Start at 3 because existing queries use $1, $2, $3. 
+    // Logic is $${base + length}, so 3+1 = $4.
+    const utmWhere = buildUtmWhere(3);
+
     // ── 5. UTM-based CAPI Metrics (Deep Dive) ──────────────────────────────
     // Get advanced metrics from web_events joined by UTMs
     let capiMetrics: any = {};
@@ -336,34 +365,7 @@ export class DiagnosisService {
       loadBreakdown('ad'),
     ]);
 
-    const utmFilters = {
-      utm_source: options?.utm_source?.trim() || '',
-      utm_medium: options?.utm_medium?.trim() || '',
-      utm_campaign: options?.utm_campaign?.trim() || '',
-      utm_content: options?.utm_content?.trim() || '',
-      utm_term: options?.utm_term?.trim() || '',
-      click_id: options?.click_id?.trim() || '',
-    };
-    const buildUtmWhere = (baseIndex: number) => {
-      const clauses: string[] = [];
-      const params: string[] = [];
-      const add = (key: keyof typeof utmFilters) => {
-        const value = utmFilters[key];
-        if (!value) return;
-        params.push(value);
-        clauses.push(`AND (custom_data->>'${key}') = $${baseIndex + params.length}`);
-      };
-      add('utm_source');
-      add('utm_medium');
-      add('utm_campaign');
-      add('utm_content');
-      add('utm_term');
-      add('click_id');
-      return { clause: clauses.join('\n        '), params };
-    };
-    // Start at 3 because existing queries use $1, $2, $3. 
-    // Logic is $${base + length}, so 3+1 = $4.
-    const utmWhere = buildUtmWhere(3);
+
 
     const sitePageViews = await pool.query(
       `
