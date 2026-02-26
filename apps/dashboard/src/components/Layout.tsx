@@ -124,7 +124,7 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
       {/* ── Desktop Sidebar ── */}
       <aside className="hidden lg:flex flex-col bg-white dark:bg-[#080a0f] border-r border-zinc-200/60 dark:border-white/5 p-5 transition-colors duration-300">
         <Link to="/dashboard" className="flex items-center gap-3 px-2 mb-7 select-none">
-          <img src="/logo-icon.png" alt="Trajettu" className="h-12 w-12 object-contain pointer-events-none" />
+          <img src="/logo-icon.png?v=2" alt="Trajettu" className="h-12 w-12 object-contain pointer-events-none" />
           <div className="leading-tight">
             <div className="font-bold text-xl tracking-tight text-zinc-900 dark:text-transparent dark:bg-clip-text dark:bg-gradient-to-r dark:from-white dark:to-zinc-400">Trajettu</div>
             <div className="text-[10px] uppercase tracking-[0.2em] text-indigo-500 dark:text-indigo-400 font-bold">AI Analytics</div>

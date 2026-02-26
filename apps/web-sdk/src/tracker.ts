@@ -42,16 +42,123 @@ export class Tracker {
     this.trackPageView();
     this.autoTagLinks();
     this.setupUrlRules();
+    this.setupFormListeners();
   }
 
   public identify(userData: Record<string, any>) {
     try {
+      const normalized = this.normalizeUserData(userData);
       const existing = JSON.parse(localStorage.getItem('ta_user_data') || '{}');
-      const updated = { ...existing, ...userData };
+      const updated = { ...existing, ...normalized };
       localStorage.setItem('ta_user_data', JSON.stringify(updated));
     } catch (e) {
       console.error('Error saving user data', e);
     }
+  }
+
+  private normalizeUserData(data: Record<string, any>): Record<string, any> {
+    const out: Record<string, any> = { ...data };
+
+    // Nome
+    if (out.name || out.nome || out.fullname || out.full_name) {
+      const fullName = (out.name || out.nome || out.fullname || out.full_name || '').trim();
+      if (fullName && (!out.fn || !out.ln)) {
+        const parts = fullName.split(' ');
+        if (parts.length > 0) {
+          out.fn = parts[0];
+          if (parts.length > 1) {
+            out.ln = parts.slice(1).join(' ');
+          }
+        }
+      }
+    }
+
+    // Telefone (apenas números)
+    if (out.phone || out.telefone || out.celular || out.whatsapp) {
+      const rawPhone = out.phone || out.telefone || out.celular || out.whatsapp;
+      out.ph = rawPhone.replace(/\D/g, '');
+    }
+
+    // Email (lowercase)
+    if (out.email || out.e_mail || out.mail) {
+      const rawEmail = out.email || out.e_mail || out.mail;
+      out.em = rawEmail.trim().toLowerCase();
+    }
+    
+    return out;
+  }
+
+  private setupFormListeners() {
+    // Listener de Submit
+    document.addEventListener('submit', (e) => {
+      const form = e.target as HTMLFormElement;
+      if (!form) return;
+
+      const data: Record<string, any> = {};
+      const elements = form.elements; // HTMLFormControlsCollection
+
+      for (let i = 0; i < elements.length; i++) {
+        const element = elements[i] as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
+        const name = element.name;
+        const value = element.value;
+
+        if (name && value) {
+          const k = name.toLowerCase().replace(/[^a-z0-9]/g, '');
+          if (['email', 'e_mail', 'mail'].includes(k)) data.email = value;
+          if (['phone', 'telefone', 'celular', 'whatsapp', 'tel', 'cel'].includes(k)) data.phone = value;
+          if (['name', 'nome', 'fullname', 'full_name', 'nomecompleto'].includes(k)) data.name = value;
+          if (['fn', 'firstname', 'primeironome'].includes(k)) data.fn = value;
+          if (['ln', 'lastname', 'sobrenome'].includes(k)) data.ln = value;
+        }
+      }
+      
+      if (!data.email) {
+         const emailInput = form.querySelector('input[type="email"]');
+         if (emailInput) data.email = (emailInput as HTMLInputElement).value;
+      }
+      if (!data.phone) {
+         const telInput = form.querySelector('input[type="tel"]');
+         if (telInput) data.phone = (telInput as HTMLInputElement).value;
+      }
+
+      if (Object.keys(data).length > 0) {
+        this.identify(data);
+      }
+    }, true);
+
+    // Listener de Blur (captura progressiva)
+    document.addEventListener('blur', (e) => {
+      const target = e.target as HTMLInputElement;
+      if (!target || target.tagName !== 'INPUT') return;
+      
+      const type = target.type;
+      const name = (target.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const value = target.value;
+      
+      if (!value) return;
+
+      const data: Record<string, any> = {};
+
+      if (type === 'email' || ['email', 'e_mail', 'mail'].includes(name)) {
+        data.email = value;
+      }
+      if (type === 'tel' || ['phone', 'telefone', 'celular', 'whatsapp', 'tel'].includes(name)) {
+        data.phone = value;
+      }
+      if (['name', 'nome', 'fullname', 'full_name'].includes(name)) {
+        data.name = value;
+      }
+      if (['fn', 'firstname', 'primeironome'].includes(name)) {
+        data.fn = value;
+      }
+      if (['ln', 'lastname', 'sobrenome'].includes(name)) {
+        data.ln = value;
+      }
+      
+      if (Object.keys(data).length > 0) {
+        this.identify(data);
+      }
+    }, true);
   }
 
   private setupUrlRules() {
