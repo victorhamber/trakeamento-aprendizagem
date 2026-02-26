@@ -4,10 +4,13 @@ import geoip from 'geoip-lite';
 import { z } from 'zod';
 import { pool } from '../db/pool';
 import { capiService, CapiService, CapiEvent } from '../services/capi';
+import { Ga4Service } from '../services/ga4';
 import rateLimit from 'express-rate-limit'; // Added import for express-rate-limit
 import cors from 'cors'; // Added import for cors
 
 const LRUCache = require('lru-cache').LRUCache || require('lru-cache');
+
+const ga4Service = new Ga4Service(pool);
 
 const ingestLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
@@ -538,6 +541,24 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
 
       // Fire-and-forget com retry — não bloqueia a resposta HTTP
       sendCapiWithRetry(siteKey, capiPayload).catch(() => { });
+
+      // ── 3. Envio GA4 (Server-side) ───────────────────────────────────────
+      // Também assíncrono para não impactar latência
+      ga4Service.sendEvent(
+        siteKey,
+        eventName,
+        { ...event.custom_data, ...event.telemetry },
+        {
+          client_id: event.user_data?.external_id || undefined, // Idealmente cookie _ga, usando fallback
+          user_id: undefined, // Se tiver login, mapear aqui
+          ip_address: capiUser.client_ip_address,
+          user_agent: capiUser.client_user_agent,
+          fbp: capiUser.fbp,
+          fbc: capiUser.fbc,
+          external_id: capiUser.external_id
+        }
+      ).catch(err => console.error('[Ingest] GA4 error:', err));
+
     }
 
     return res.status(202).json({ status: 'received' });
