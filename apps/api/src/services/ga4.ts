@@ -1,5 +1,5 @@
 import { Pool } from 'pg';
-import { decrypt, encrypt } from '../lib/crypto';
+import { decryptString, encryptString } from '../lib/crypto';
 import { v4 as uuidv4 } from 'uuid';
 
 interface Ga4EventPayload {
@@ -138,7 +138,7 @@ export class Ga4Service {
     if (!row.api_secret_enc) return null;
 
     try {
-      const apiSecret = decrypt(row.api_secret_enc);
+      const apiSecret = decryptString(row.api_secret_enc);
       return {
         measurement_id: row.measurement_id,
         api_secret: apiSecret,
