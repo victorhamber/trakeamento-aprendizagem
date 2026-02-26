@@ -2575,6 +2575,25 @@ ${scriptContent}
                   className={inputCls}
                 />
               </div>
+              <div>
+                <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
+                  API Secret (Measurement Protocol)
+                </label>
+                <input
+                  name="api_secret"
+                  type="password"
+                  placeholder="Opcional: Para envio server-side"
+                  className={inputCls}
+                />
+                {ga?.has_api_secret && (
+                  <p className="text-xs text-emerald-600 mt-1">
+                    ✓ API Secret configurado
+                  </p>
+                )}
+                <p className="text-xs text-zinc-500 mt-1">
+                  Gere em: Admin &gt; Fluxos de dados &gt; Segredos da API do Measurement Protocol.
+                </p>
+              </div>
               <button
                 disabled={loading}
                 className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-6 py-2.5 rounded-lg text-sm font-medium disabled:opacity-40 transition-all"
