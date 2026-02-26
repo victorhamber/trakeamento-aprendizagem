@@ -30,6 +30,9 @@ export class Tracker {
   private siteKey: string;
   private eventRules: Array<{ rule_type: string; match_value: string; event_name: string }> = [];
   private lastPath: string = '';
+  private engagementInterval: number | null = null;
+  private startTime: number = Date.now();
+  private maxScroll: number = 0;
 
   constructor(apiUrl: string, siteKey: string, eventRules: any[] = []) {
     this.apiUrl = apiUrl;
@@ -43,6 +46,66 @@ export class Tracker {
     this.autoTagLinks();
     this.setupUrlRules();
     this.setupFormListeners();
+    this.setupEngagementTracking();
+  }
+
+  private setupEngagementTracking() {
+    // Scroll listener
+    window.addEventListener('scroll', () => {
+      const h = document.documentElement;
+      const b = document.body;
+      const st = 'scrollTop';
+      const sh = 'scrollHeight';
+      const pct = Math.round((h[st] || b[st]) / ((h[sh] || b[sh]) - h.clientHeight) * 100);
+      if (pct > this.maxScroll) this.maxScroll = pct;
+    }, { passive: true });
+
+    // Heartbeat: envia dados a cada 15s se houver atividade
+    this.engagementInterval = window.setInterval(() => {
+      this.sendEngagement();
+    }, 15000);
+
+    // Envio final ao sair
+    window.addEventListener('beforeunload', () => {
+      this.sendEngagement(true);
+    });
+  }
+
+  private sendEngagement(isFinal = false) {
+    const dwellTime = Date.now() - this.startTime;
+    if (dwellTime < 1000) return; // Ignora muito curto
+
+    const payload: EventPayload = {
+      event_name: 'PageEngagement',
+      event_time: Math.floor(Date.now() / 1000),
+      event_id: `eng_${this.getCookie('_ta_eid')}_${this.lastPath.replace(/[^a-z0-9]/gi, '')}`, // ID estável por página/sessão
+      event_source_url: window.location.href,
+      user_data: {
+        client_user_agent: navigator.userAgent,
+        fbp: this.getCookie('_fbp'),
+        fbc: this.getFbc(),
+        external_id: this.getOrCreateExternalId(),
+      },
+      telemetry: {
+        load_time_ms: window.performance?.timing?.domContentLoadedEventEnd - window.performance?.timing?.navigationStart,
+        screen_width: window.screen.width,
+        screen_height: window.screen.height,
+        // @ts-ignore
+        dwell_time_ms: dwellTime,
+        // @ts-ignore
+        max_scroll_pct: this.maxScroll,
+        // @ts-ignore
+        is_final: isFinal
+      }
+    };
+
+    // Adiciona dados persistidos (email, nome, etc)
+    try {
+      const stored = JSON.parse(localStorage.getItem('ta_user_data') || '{}');
+      payload.user_data = { ...payload.user_data, ...stored };
+    } catch {}
+
+    this.send(payload);
   }
 
   public identify(userData: Record<string, any>) {

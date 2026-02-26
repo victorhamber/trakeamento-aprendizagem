@@ -384,7 +384,34 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
   }
 
   try {
-    const query = `
+    let result;
+    if (eventName === 'PageEngagement') {
+      const query = `
+        INSERT INTO web_events (
+          site_key, event_id, event_name, event_time, event_source_url,
+          user_data, custom_data, telemetry, raw_payload
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        ON CONFLICT (site_key, event_id)
+        DO UPDATE SET
+          telemetry = web_events.telemetry || EXCLUDED.telemetry,
+          event_time = EXCLUDED.event_time,
+          raw_payload = EXCLUDED.raw_payload
+        RETURNING id
+      `;
+      result = await pool.query(query, [
+        siteKey,
+        eventId,
+        eventName,
+        new Date(eventTimeMs),
+        eventSourceUrl,
+        event.user_data ?? null,
+        event.custom_data ?? null,
+        event.telemetry ?? null,
+        event,
+      ]);
+    } else {
+      const query = `
       INSERT INTO web_events (
         site_key, event_id, event_name, event_time, event_source_url,
         user_data, custom_data, telemetry, raw_payload
@@ -394,17 +421,18 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
       RETURNING id
   `;
 
-    const result = await pool.query(query, [
-      siteKey,
-      eventId,
-      eventName,
-      new Date(eventTimeMs),
-      eventSourceUrl,
-      event.user_data ?? null,
-      event.custom_data ?? null,
-      event.telemetry ?? null,
-      event,
-    ]);
+      result = await pool.query(query, [
+        siteKey,
+        eventId,
+        eventName,
+        new Date(eventTimeMs),
+        eventSourceUrl,
+        event.user_data ?? null,
+        event.custom_data ?? null,
+        event.telemetry ?? null,
+        event,
+      ]);
+    }
 
     // ── 2. Envio CAPI (assíncrono com retry) ─────────────────────────────
     if ((result.rowCount ?? 0) > 0) {
