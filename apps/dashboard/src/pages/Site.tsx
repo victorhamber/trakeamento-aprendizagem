@@ -6,6 +6,7 @@ import { api } from '../lib/api';
 import { DDI_LIST } from '../lib/ddi';
 import { Layout } from '../components/Layout';
 import WebhooksTab from '../components/site/WebhooksTab';
+import { ConversionHeatmap } from '../components/ConversionHeatmap';
 
 type Site = {
   id: number;
@@ -3506,6 +3507,7 @@ ${scriptContent}
           {
             tab === 'reports' && (
               <div className="max-w-none space-y-4">
+                <ConversionHeatmap siteId={site.id} />
                 {campaigns.length > 0 && (
                   <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/30 p-5 space-y-4">
                     <div className="flex items-center gap-3">

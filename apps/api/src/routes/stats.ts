@@ -252,4 +252,65 @@ router.get('/sales-daily', requireAuth, async (req, res) => {
   }
 });
 
+router.get('/heatmap', requireAuth, async (req, res) => {
+  const auth = req.auth!;
+  const siteId = req.query.siteId ? Number(req.query.siteId) : null;
+  const period = (req.query.period as string) || 'last_30d';
+  const events = (req.query.events as string)?.split(',') || ['Purchase', 'Lead', 'CompleteRegistration', 'InitiateCheckout'];
+
+  const now = new Date();
+  let start: Date;
+  
+  // Default to 30 days for meaningful heatmap data
+  if (period === 'last_7d') start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  else if (period === 'last_14d') start = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+  else if (period === 'last_30d') start = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  else if (period === 'maximum') start = new Date(0);
+  else start = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000); // Default fallback
+
+  try {
+    // Agrupa por Dia da Semana (0-6) e Hora (0-23)
+    // Se siteId for null, pega de todos os sites da conta (Média Geral)
+    const query = `
+      SELECT 
+        EXTRACT(DOW FROM e.event_time)::int as dow,
+        EXTRACT(HOUR FROM e.event_time)::int as hour,
+        COUNT(*)::int as count
+      FROM web_events e
+      JOIN sites s ON s.site_key = e.site_key
+      WHERE s.account_id = $1
+        AND ($2::int IS NULL OR s.id = $2::int)
+        AND e.event_name = ANY($3)
+        AND e.event_time >= $4
+      GROUP BY 1, 2
+      ORDER BY 1, 2
+    `;
+
+    const result = await pool.query(query, [auth.accountId, siteId, events, start]);
+    
+    // Preenche lacunas com zero para facilitar o frontend
+    const matrix: { dow: number; hour: number; count: number }[] = [];
+    const dataMap = new Map<string, number>();
+    
+    result.rows.forEach(r => {
+      dataMap.set(`${r.dow}-${r.hour}`, r.count);
+    });
+
+    for (let d = 0; d <= 6; d++) {
+      for (let h = 0; h <= 23; h++) {
+        matrix.push({
+          dow: d,
+          hour: h,
+          count: dataMap.get(`${d}-${h}`) || 0
+        });
+      }
+    }
+
+    return res.json({ matrix });
+  } catch (e: any) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 export default router;
