@@ -2668,7 +2668,7 @@ ${scriptContent}
                         <input
                           value={urlRuleCustomName}
                           onChange={(e) => setUrlRuleCustomName(e.target.value)}
-                          placeholder="Ex: ClicouBotao"
+                          placeholder="Ex: StartTrial"
                           className={inputCls}
                         />
                       </div>
