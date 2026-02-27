@@ -241,6 +241,7 @@ meta.purchases = 0 com objetivo CADASTRO_GRUPO ou LEAD: NORMAL. Nao mencione.
 ---
 
 ## Analise do Funil
+
 *(Funil adaptado ao evento otimizado: [nome do evento])*
 
 | Etapa | Metrica | Valor | Status | Diagnostico |
@@ -396,6 +397,7 @@ Regra: Hook Rate so e mencionado para anuncios com video_3s_views > 0.
       lines.push('');
       if (Object.keys(hourly).length > 0) {
         lines.push('**Por hora:**');
+        lines.push('');
         lines.push('| Hora | Visitas |');
         lines.push('|---|---:|');
         for (const [h, v] of Object.entries(hourly)) lines.push(`| ${h}h | ${this.fmtInt(v)} |`);
@@ -403,6 +405,7 @@ Regra: Hook Rate so e mencionado para anuncios com video_3s_views > 0.
       }
       if (Object.keys(dow).length > 0) {
         lines.push('**Por dia:**');
+        lines.push('');
         lines.push('| Dia | Visitas |');
         lines.push('|---|---:|');
         for (const [dd, v] of Object.entries(dow)) lines.push(`| ${dowNames[Number(dd)] || dd} | ${this.fmtInt(v)} |`);

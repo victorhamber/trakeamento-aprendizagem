@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { api } from '../lib/api';
 import { DDI_LIST } from '../lib/ddi';
 import { Layout } from '../components/Layout';
@@ -3919,6 +3920,7 @@ ${scriptContent}
                         {section.body && (
                           <div className="px-5 py-4 prose prose-invert max-w-none text-sm prose-headings:tracking-tight prose-h1:text-xl prose-h2:text-lg prose-h3:text-sm prose-p:text-zinc-600 dark:text-zinc-400 prose-p:leading-relaxed prose-strong:text-zinc-800 dark:text-zinc-200 prose-a:text-blue-400 prose-a:no-underline hover:prose-a:text-blue-300">
                             <ReactMarkdown
+                              remarkPlugins={[remarkGfm]}
                               components={{
                                 table: ({ children }) => (
                                   <div className="overflow-auto rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/40 my-4">
