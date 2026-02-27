@@ -153,10 +153,26 @@ router.get('/tracker.js', async (req, res) => {
 
   // ─── External ID ─────────────────────────────────────────────────────────
   function getOrCreateExternalId() {
+    // 1. Tenta recuperar do cookie
     var v = getCookie('_ta_eid');
     if (v) return v;
+
+    // 2. Se não existir, tenta recuperar do localStorage (persistência cross-session se cookies forem limpos)
+    try {
+      var ls = localStorage.getItem('_ta_eid');
+      if (ls) {
+        setCookie('_ta_eid', ls, COOKIE_TTL_2Y);
+        return ls;
+      }
+    } catch(_e) {}
+
+    // 3. Gera novo ID
     var id = 'eid_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+    
+    // 4. Salva em ambos (Cookie + LocalStorage) para redundância
     setCookie('_ta_eid', id, COOKIE_TTL_2Y);
+    try { localStorage.setItem('_ta_eid', id); } catch(_e) {}
+    
     return id;
   }
 
