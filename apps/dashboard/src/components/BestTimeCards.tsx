@@ -93,11 +93,6 @@ export function BestTimeCards({ siteId }: BestTimeCardsProps) {
       
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card 
-          title="Compras (Sales)" 
-          data={data?.purchase || { best_day: null, best_hour: null, total: 0 }} 
-          color="bg-emerald-500" 
-        />
-        <Card 
           title="Leads (Cadastro)" 
           data={data?.lead || { best_day: null, best_hour: null, total: 0 }} 
           color="bg-blue-500" 
@@ -106,6 +101,11 @@ export function BestTimeCards({ siteId }: BestTimeCardsProps) {
           title="Checkout (IC)" 
           data={data?.checkout || { best_day: null, best_hour: null, total: 0 }} 
           color="bg-amber-500" 
+        />
+        <Card 
+          title="Compras (Sales)" 
+          data={data?.purchase || { best_day: null, best_hour: null, total: 0 }} 
+          color="bg-emerald-500" 
         />
       </div>
     </div>
