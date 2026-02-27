@@ -578,7 +578,7 @@ export const DashboardPage = () => {
         <SalesChart data={salesData} currency={currency} isDark={isDark} />
       </div>
 
-      <BestTimeCards />
+      <BestTimeCards siteId={selectedSiteId ? Number(selectedSiteId) : undefined} />
 
       {/* ── Bottom grid ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
