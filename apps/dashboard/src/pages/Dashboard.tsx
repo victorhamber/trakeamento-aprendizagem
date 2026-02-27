@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { Layout } from '../components/Layout';
-import { ConversionHeatmap } from '../components/ConversionHeatmap';
+import { BestTimeCards } from '../components/BestTimeCards';
 
 type Overview = {
   sites: number;
@@ -578,7 +578,7 @@ export const DashboardPage = () => {
         <SalesChart data={salesData} currency={currency} isDark={isDark} />
       </div>
 
-      <ConversionHeatmap />
+      <BestTimeCards />
 
       {/* ── Bottom grid ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
