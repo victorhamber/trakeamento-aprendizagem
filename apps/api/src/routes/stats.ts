@@ -259,13 +259,21 @@ router.get('/best-times', requireAuth, async (req, res) => {
   
   const now = new Date();
   let start: Date;
-  
-  // Default to 30 days for meaningful data
-  if (period === 'last_7d') start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-  else if (period === 'last_14d') start = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
-  else if (period === 'last_30d') start = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-  else if (period === 'maximum') start = new Date(0);
-  else start = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  let end: Date = now;
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  switch (period) {
+    case 'today': start = todayStart; break;
+    case 'yesterday': 
+      start = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000); 
+      end = todayStart;
+      break;
+    case 'last_7d': start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000); break;
+    case 'last_14d': start = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000); break;
+    case 'last_30d': start = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000); break;
+    case 'maximum': start = new Date(0); break;
+    default: start = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  }
 
   try {
     // Queries para encontrar picos por tipo de evento
@@ -279,12 +287,12 @@ router.get('/best-times', requireAuth, async (req, res) => {
         FROM web_events e
         JOIN sites s ON s.site_key = e.site_key
         WHERE s.account_id = $1 AND ($2::int IS NULL OR s.id = $2::int)
-          AND e.event_name = ANY($3) AND e.event_time >= $4
+          AND e.event_name = ANY($3) AND e.event_time >= $4 AND e.event_time <= $5
         GROUP BY 1, 2
         ORDER BY 3 DESC
       `;
 
-      const result = await pool.query(query, [auth.accountId, siteId, eventNames, start]);
+      const result = await pool.query(query, [auth.accountId, siteId, eventNames, start, end]);
       
       // Encontra o melhor horário para cada dia da semana
       const bestByDay = new Map<number, { hour: number; count: number }>();
