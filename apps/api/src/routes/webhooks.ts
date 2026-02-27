@@ -279,6 +279,18 @@ router.post('/purchase', async (req, res) => {
     email = payload.email || payload.buyer_email;
     firstName = pickStr(['first_name', 'firstname', 'nome', 'buyer_name', 'name']);
     lastName = pickStr(['last_name', 'lastname', 'sobrenome']); // se 'name' tiver tudo, o CAPI hash lida com isso se fn/ln forem separados depois
+
+    // Fix: Se fn tem espaço e ln está vazio, separa automaticamente (padrão CAPI)
+    // Ex: "João Silva" -> fn="joão", ln="silva"
+    // Ex: "teste27" -> fn="teste27", ln=undefined (correto)
+    if (firstName && !lastName && firstName.trim().includes(' ')) {
+      const parts = firstName.trim().split(/\s+/);
+      if (parts.length >= 2) {
+        firstName = parts[0];
+        lastName = parts.slice(1).join(' ');
+      }
+    }
+
     phone = pickStr(['phone', 'buyer_phone', 'telefone', 'cel']);
     city = pickStr(['city', 'cidade', 'buyer_city']);
     state = pickStr(['state', 'estado', 'buyer_state', 'uf']);
