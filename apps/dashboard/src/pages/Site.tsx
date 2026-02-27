@@ -3936,7 +3936,7 @@ ${scriptContent}
                                   </th>
                                 ),
                                 td: ({ children }) => (
-                                  <td className="text-xs text-zinc-600 dark:text-zinc-400 px-4 py-2.5 border-b border-zinc-900/60">
+                                  <td className="text-xs text-zinc-600 dark:text-zinc-400 px-4 py-2.5 border-b border-zinc-200 dark:border-zinc-800">
                                     {children}
                                   </td>
                                 ),
