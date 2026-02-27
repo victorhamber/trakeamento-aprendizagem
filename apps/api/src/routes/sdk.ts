@@ -22,7 +22,7 @@ router.get('/tracker.js', async (req, res) => {
         const metaPixelId = metaRow && metaRow.enabled === false ? null : typeof metaRow?.pixel_id === 'string' ? metaRow.pixel_id.trim() : null;
         const gaMeasurementId = gaRow && gaRow.enabled === false ? null : typeof gaRow?.measurement_id === 'string' ? gaRow.measurement_id.trim() : null;
 
-        const rules = await pool.query('SELECT rule_type, match_value, match_text, event_name, event_type FROM site_url_rules WHERE site_id = $1', [siteId]);
+        const rules = await pool.query('SELECT rule_type, match_value, match_text, event_name, event_type, parameters FROM site_url_rules WHERE site_id = $1', [siteId]);
         const eventRules = rules.rows;
 
         const apiUrl =
