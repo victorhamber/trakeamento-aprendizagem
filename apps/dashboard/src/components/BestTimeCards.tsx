@@ -22,9 +22,18 @@ type BestTimesData = {
 
 interface BestTimeCardsProps {
   siteId?: number;
+  period?: string;
 }
 
 const DAYS_SHORT = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+const PERIOD_LABELS: Record<string, string> = {
+  'today': 'Hoje',
+  'yesterday': 'Ontem',
+  'last_7d': '7 dias',
+  'last_14d': '14 dias',
+  'last_30d': '30 dias',
+  'maximum': 'Máximo'
+};
 
 const Card = ({ title, data, color, textColor }: { title: string; data: PeakData; color: string; textColor: string }) => {
   const hasData = data.daily_peaks.some(d => d.count > 0);
@@ -80,7 +89,7 @@ const Card = ({ title, data, color, textColor }: { title: string; data: PeakData
   );
 };
 
-export function BestTimeCards({ siteId }: BestTimeCardsProps) {
+export function BestTimeCards({ siteId, period = 'last_30d' }: BestTimeCardsProps) {
   const [data, setData] = useState<BestTimesData | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -90,7 +99,7 @@ export function BestTimeCards({ siteId }: BestTimeCardsProps) {
         setLoading(true);
         const params = new URLSearchParams();
         if (siteId) params.append('siteId', String(siteId));
-        params.append('period', 'last_30d');
+        params.append('period', period);
 
         const res = await api.get(`/stats/best-times?${params.toString()}`);
         setData(res.data);
@@ -101,7 +110,7 @@ export function BestTimeCards({ siteId }: BestTimeCardsProps) {
       }
     }
     load();
-  }, [siteId]);
+  }, [siteId, period]);
 
   if (loading) return (
     <div className="mb-6 grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -128,7 +137,7 @@ export function BestTimeCards({ siteId }: BestTimeCardsProps) {
             Picos de Conversão
           </h3>
           <p className="text-[11px] text-zinc-500 mt-0.5">
-            Melhores horários de cada dia para anunciar (Base: 30 dias)
+            Melhores horários de cada dia para anunciar (Base: {PERIOD_LABELS[period] || '30 dias'})
           </p>
         </div>
       </div>
