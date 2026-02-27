@@ -96,6 +96,9 @@ const normalizers: Record<string, (v: string) => string> = {
   em: (v) => v.trim().toLowerCase(),
   ph: (v) => {
     let digits = v.replace(/[^0-9]/g, '');
+    // Se o telefone já vier com DDI (ex: 5511999999999 tem 12 ou 13 dígitos), mantém.
+    // Se vier sem (ex: 11999999999 tem 10 ou 11), adiciona 55 por padrão.
+    // Mas como o usuário informou que o form já manda com DDI, priorizamos não mexer se parecer completo.
     if (digits.length === 10 || digits.length === 11) {
       digits = '55' + digits;
     }
