@@ -6,10 +6,29 @@ const router = Router();
 
 router.get('/debug', async (req, res) => {
   try {
-    const evts = await pool.query('SELECT site_key, event_name, event_time, raw_payload->>$$user_data$$ AS ud FROM web_events ORDER BY created_at DESC LIMIT 5');
-    const errs = await pool.query('SELECT * FROM capi_outbox ORDER BY created_at DESC LIMIT 5');
-    const meta = await pool.query('SELECT site_id, last_capi_status, last_capi_error FROM integrations_meta LIMIT 5');
-    res.json({ events: evts.rows, errors: errs.rows, meta: meta.rows });
+    const timeCheck = await pool.query(`
+      SELECT 
+        NOW() as db_now,
+        NOW() AT TIME ZONE 'UTC' as db_now_utc,
+        NOW() AT TIME ZONE 'America/Sao_Paulo' as db_now_sp,
+        current_setting('TIMEZONE') as db_timezone
+    `);
+
+    const evts = await pool.query(`
+      SELECT 
+        event_time, 
+        event_time AT TIME ZONE 'America/Sao_Paulo' as sp_time,
+        EXTRACT(HOUR FROM event_time) as h_raw,
+        EXTRACT(HOUR FROM (event_time AT TIME ZONE 'America/Sao_Paulo')) as h_sp
+      FROM web_events 
+      ORDER BY created_at DESC 
+      LIMIT 5
+    `);
+    
+    res.json({ 
+      time_check: timeCheck.rows[0],
+      events_sample: evts.rows 
+    });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
@@ -279,10 +298,11 @@ router.get('/best-times', requireAuth, async (req, res) => {
     // Queries para encontrar picos por tipo de evento
     const getPeak = async (eventNames: string[]) => {
       // Agrupa por Dia da Semana (0-6) e Hora (0-23)
+      // Ajustado para Horário de Brasília (America/Sao_Paulo)
       const query = `
         SELECT 
-          EXTRACT(DOW FROM e.event_time)::int as dow,
-          EXTRACT(HOUR FROM e.event_time)::int as hour,
+          EXTRACT(DOW FROM (e.event_time AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo'))::int as dow,
+          EXTRACT(HOUR FROM (e.event_time AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo'))::int as hour,
           COUNT(*)::int as count
         FROM web_events e
         JOIN sites s ON s.site_key = e.site_key
