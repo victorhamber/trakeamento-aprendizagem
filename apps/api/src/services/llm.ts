@@ -260,42 +260,35 @@ meta.purchases = 0 com objetivo CADASTRO_GRUPO ou LEAD: NORMAL. Nao mencione.
 
 ## Analise de Criativos
 
-Para cada anuncio em meta_breakdown.ads, informe: nome, results, spend, CPA, CTR, tipo (video/imagem).
+| Anuncio | Resultados | Custo | CPA | CTR | Hook Rate | Diagnostico |
+|:---|---:|---:|---:|---:|---:|:---|
+| [nome] | X | R$X | R$X | X% | X% ou N/A | [Vencedor/Otimizar/Fadiga] — [motivo curto] |
 
-- Vencedor: [nome — results X, CPA R$X, CTR X% — por que funciona em 1 linha]
-- Otimizar/Pausar: [nome — results X, CPA R$X — motivo em 1 linha]
-- Fadiga: [ha anuncios rodando ha muito tempo com queda de CTR?]
-
-Regra: Hook Rate so e mencionado para anuncios com video_3s_views > 0.
+*Nota: Hook Rate apenas para videos (3s plays).*
 
 ---
 
 ## Auditoria Tecnica
 
-**Rastreamento:**
-- Filtros UTM aplicados: [utm_filters_applied ou "Nenhum"]
-- Filtros ignorados (macros nao resolvidas): [utm_filters_skipped ou "Nenhum"]
-  - Se houver: "Os filtros com macros foram ignorados. Os dados de CAPI/site cobrem todo o trafego do dominio, sem segmentacao por campanha."
-- Discrepancia Cliques vs LP Views: [X% — ok/alerta/critico]
-- Cliques (Meta): X | LP Views Pixel: X | Page Views CAPI: X
-
-**Comportamento na pagina:**
-- Load time: [valor ou "Nao capturado — verificar script PageView"]
-- Scroll medio: [valor ou "Nao capturado — verificar script PageEngagement"]
-- Dwell time: [valor ou "Nao capturado — verificar script PageEngagement"]
+| Area | Item | Status | Detalhes |
+|:---|:---|:---:|:---|
+| Rastreamento | Filtros UTM | OK/Alert | [utm_filters_applied] |
+| Rastreamento | Macros nao resolvidas | OK/Alert | [utm_filters_skipped] |
+| Rastreamento | Discrepancia | X% | Cliques vs LP Views |
+| Rastreamento | Funil de Dados | — | Meta: X | Pixel: X | CAPI: X |
+| Comportamento | Load Time | Xms | [status] |
+| Comportamento | Scroll Medio | X% | [status] |
+| Comportamento | Dwell Time | Xms | [status] |
 
 ---
 
 ## Plano de Acao
 
-**Hoje**
-- [acao urgente e especifica]
-
-**Esta semana**
-- [teste ou otimizacao]
-
-**Proximo ciclo**
-- [mudanca estrategica]
+| Prazo | Acao Recomendada | Impacto Esperado |
+|:---|:---|:---|
+| **Hoje** | [acao urgente] | Alto |
+| **Esta Semana** | [teste ou otimizacao] | Medio |
+| **Proximo Ciclo** | [mudanca estrategica] | Longo prazo |
 
 ---
 *Diagnostico gerado por IA — Meta Ads + CAPI + Banco de Dados.*`;
@@ -413,18 +406,27 @@ Regra: Hook Rate so e mencionado para anuncios com video_3s_views > 0.
       }
     }
 
-    lines.push(`## Sinais Detectados`);
+    lines.push(`## Auditoria Tecnica`);
     lines.push('');
-    if (!signals.length) {
-      lines.push(`- Sem sinais. Volume insuficiente ou integracao pendente.`);
-    } else {
-      for (const sig of signals.slice(0, 8)) {
-        const weight = Number(sig.weight || 0);
-        const icon = weight >= 0.75 ? 'CRITICO' : weight >= 0.60 ? 'ATENCAO' : 'INFO';
-        lines.push(`- [${icon}] **${String(sig.area)}**: ${String(sig.signal)}`);
-        lines.push(`  - ${String(sig.evidence)}`);
-      }
-    }
+    lines.push(`| Area | Item | Status | Detalhes |`);
+    lines.push(`|:---|:---|:---:|:---|`);
+    
+    // Rastreamento
+    lines.push(`| Rastreamento | Filtros UTM | ${applied ? 'OK' : 'N/A'} | ${JSON.stringify(applied || 'Nenhum')} |`);
+    lines.push(`| Rastreamento | Macros nao resolvidas | ${skipped.length ? 'ALERTA' : 'OK'} | ${skipped.length ? skipped.join(', ') : 'Nenhuma'} |`);
+    lines.push(`| Rastreamento | Discrepancia | ${discStatus.split(' ')[0]} | Cliques vs LP Views: ${discPct.toFixed(1)}% |`);
+    lines.push(`| Rastreamento | Funil de Dados | — | Meta: ${this.fmtInt(m.unique_link_clicks)} | Pixel: ${this.fmtInt(m.landing_page_views)} | CAPI: ${this.fmtInt(capi.page_views)} |`);
+    
+    // Comportamento
+    const loadTime = capi.avg_load_time_ms != null ? this.fmtMs(capi.avg_load_time_ms) : 'N/A';
+    const loadStatus = capi.avg_load_time_ms && Number(capi.avg_load_time_ms) > 3500 ? 'CRITICO' : 'OK';
+    lines.push(`| Comportamento | Load Time | ${loadStatus} | ${loadTime} |`);
+    
+    const scroll = capi.avg_scroll_pct != null ? this.fmtPct(capi.avg_scroll_pct) : 'N/A';
+    lines.push(`| Comportamento | Scroll Medio | — | ${scroll} |`);
+    
+    const dwell = capi.avg_dwell_time_ms != null ? this.fmtMs(capi.avg_dwell_time_ms) : 'N/A';
+    lines.push(`| Comportamento | Dwell Time | — | ${dwell} |`);
     lines.push('');
     lines.push('---');
     lines.push('*Relatorio basico sem IA. Configure OpenAI nas configuracoes da conta para analise completa.*');
