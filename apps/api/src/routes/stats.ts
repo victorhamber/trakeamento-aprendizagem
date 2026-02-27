@@ -270,34 +270,58 @@ router.get('/best-times', requireAuth, async (req, res) => {
   try {
     // Queries para encontrar picos por tipo de evento
     const getPeak = async (eventNames: string[]) => {
-      // Pico de Dia da Semana
-      const dayQuery = `
-        SELECT EXTRACT(DOW FROM e.event_time)::int as dow, COUNT(*)::int as count
+      // Agrupa por Dia da Semana (0-6) e Hora (0-23)
+      const query = `
+        SELECT 
+          EXTRACT(DOW FROM e.event_time)::int as dow,
+          EXTRACT(HOUR FROM e.event_time)::int as hour,
+          COUNT(*)::int as count
         FROM web_events e
         JOIN sites s ON s.site_key = e.site_key
         WHERE s.account_id = $1 AND ($2::int IS NULL OR s.id = $2::int)
           AND e.event_name = ANY($3) AND e.event_time >= $4
-        GROUP BY 1 ORDER BY 2 DESC LIMIT 1
-      `;
-      // Pico de Hora
-      const hourQuery = `
-        SELECT EXTRACT(HOUR FROM e.event_time)::int as hour, COUNT(*)::int as count
-        FROM web_events e
-        JOIN sites s ON s.site_key = e.site_key
-        WHERE s.account_id = $1 AND ($2::int IS NULL OR s.id = $2::int)
-          AND e.event_name = ANY($3) AND e.event_time >= $4
-        GROUP BY 1 ORDER BY 2 DESC LIMIT 1
+        GROUP BY 1, 2
+        ORDER BY 3 DESC
       `;
 
-      const [dayRes, hourRes] = await Promise.all([
-        pool.query(dayQuery, [auth.accountId, siteId, eventNames, start]),
-        pool.query(hourQuery, [auth.accountId, siteId, eventNames, start])
-      ]);
+      const result = await pool.query(query, [auth.accountId, siteId, eventNames, start]);
+      
+      // Encontra o melhor horário para cada dia da semana
+      const bestByDay = new Map<number, { hour: number; count: number }>();
+      let globalBestDay = -1;
+      let maxCount = -1;
+
+      result.rows.forEach(row => {
+        const dow = row.dow;
+        const count = row.count;
+        
+        // Atualiza melhor dia global
+        if (count > maxCount) {
+          maxCount = count;
+          globalBestDay = dow;
+        }
+
+        // Se ainda não tem melhor horário para esse dia, ou achou um com mais volume
+        if (!bestByDay.has(dow)) {
+          bestByDay.set(dow, { hour: row.hour, count });
+        }
+      });
+
+      // Retorna array ordenado por dia da semana (0=Dom, 6=Sab)
+      const dailyPeaks = [];
+      for (let i = 0; i <= 6; i++) {
+        const data = bestByDay.get(i);
+        dailyPeaks.push({
+          dow: i,
+          hour: data?.hour ?? null,
+          count: data?.count ?? 0,
+          is_best_day: i === globalBestDay
+        });
+      }
 
       return {
-        best_day: dayRes.rows[0]?.dow ?? null,
-        best_hour: hourRes.rows[0]?.hour ?? null,
-        total: dayRes.rows[0]?.count ?? 0 // count do dia com mais vendas serve como proxy de volume
+        daily_peaks: dailyPeaks,
+        total_volume: maxCount // apenas para referência de escala
       };
     };
 
