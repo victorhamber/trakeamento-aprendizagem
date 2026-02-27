@@ -1,6 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
-import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
 interface HeatmapData {
