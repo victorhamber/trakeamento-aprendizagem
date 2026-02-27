@@ -95,17 +95,19 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
   const [notifications, setNotifications] = useState<Notification[]>([]);
 
   const loadNotifications = useCallback(async () => {
+    if (!auth?.token) return;
     try {
       const res = await api.get('/notifications');
       setNotifications(res.data.notifications || []);
     } catch { /* silent */ }
-  }, []);
+  }, [auth?.token]);
 
   useEffect(() => {
+    if (!auth?.token) return;
     loadNotifications();
     const interval = setInterval(loadNotifications, 60_000);
     return () => clearInterval(interval);
-  }, [loadNotifications]);
+  }, [loadNotifications, auth?.token]);
 
   const unreadCount = notifications.filter(n => !n.is_read).length;
 
