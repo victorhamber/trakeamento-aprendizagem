@@ -450,7 +450,7 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
       const cd = event.custom_data ?? {};
       const tl = event.telemetry ?? {} as Record<string, unknown>;
       const metaCustomData: Record<string, unknown> = {};
-      
+
       // Campos padrão do Meta custom_data
       const metaCustomFields = [
         'value', 'currency', 'content_name', 'content_category',
@@ -458,7 +458,7 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
         'order_id', 'predicted_ltv', 'search_string', 'status',
         'delivery_category',
       ];
-      
+
       for (const f of metaCustomFields) {
         // Correção: apenas inclui se não for undefined/null E (se for value/currency) não for string vazia
         // Facebook rejeita value="" ou currency=""
@@ -492,38 +492,30 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
           metaCustomData['content_name'] = tl['page_title'];
         }
       }
-      if (!metaCustomData['content_type']) {
+      // content_type só faz sentido em eventos de comércio (Purchase, AddToCart, etc.)
+      // Para PageView/PageEngagement, o Meta ignora e pode poluir o payload
+      if (!metaCustomData['content_type'] && metaCustomData['value'] !== undefined) {
         metaCustomData['content_type'] = 'product';
       }
 
-      // ── Dados de atribuição (UTM, referrer, página) ──────────────────────
-      // Essenciais para match com compras e análises do agente IA
+      // ── Dados de atribuição para o Meta CAPI ──────────────────────────────
+      // APENAS campos que o Meta utiliza para atribuição e análise.
+      // Dados de engajamento (dwell_time, scroll, clicks) e dispositivo (screen, platform, 
+      // timezone, language, connection_type) ficam apenas no DB para o agente IA.
+      // O Meta ignora esses campos e eles só poluem o payload.
       const attributionFields: [string, unknown][] = [
-        // UTM parameters
+        // UTM parameters — essenciais para atribuição
         ['utm_source', cd['utm_source'] || tl['utm_source']],
         ['utm_medium', cd['utm_medium'] || tl['utm_medium']],
         ['utm_campaign', cd['utm_campaign'] || tl['utm_campaign']],
         ['utm_term', cd['utm_term'] || tl['utm_term']],
         ['utm_content', cd['utm_content'] || tl['utm_content']],
-        // Dados de página
+        // Dados de página — úteis para content_name fallback
         ['page_path', cd['page_path'] || tl['page_path']],
         ['page_title', cd['page_title'] || tl['page_title']],
         ['referrer', cd['referrer'] || tl['referrer']],
         // Fonte de tráfego
         ['traffic_source', cd['traffic_source']],
-        // Dados de engajamento
-        ['dwell_time_ms', tl['dwell_time_ms']],
-        ['max_scroll_pct', tl['max_scroll_pct']],
-        ['visible_time_ms', tl['visible_time_ms']],
-        ['clicks_total', tl['clicks_total']],
-        ['clicks_cta', tl['clicks_cta']],
-        // Dados de dispositivo (útil quando pixel é bloqueado no iOS)
-        ['screen_width', tl['screen_width']],
-        ['screen_height', tl['screen_height']],
-        ['platform', tl['platform']],
-        ['connection_type', tl['connection_type']],
-        ['language', tl['language']],
-        ['timezone', tl['timezone']],
       ];
       for (const [key, val] of attributionFields) {
         if (val !== undefined && val !== null && val !== '') {

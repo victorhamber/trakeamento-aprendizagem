@@ -47,6 +47,7 @@ Arquitetura recomendada em 3 camadas:
       /lib
       /middleware
       /routes
+        sdk.ts        ← Smart Snippet (tracker servido dinamicamente)
       /scripts
       /services
       main.ts
@@ -58,10 +59,6 @@ Arquitetura recomendada em 3 camadas:
       /state
       App.tsx
       main.tsx
-  /web-sdk
-    /src
-      index.ts
-      tracker.ts
 /infra
   /docker
 ```

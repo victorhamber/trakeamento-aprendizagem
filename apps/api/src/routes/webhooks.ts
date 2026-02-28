@@ -6,7 +6,35 @@ import { decryptString } from '../lib/crypto';
 
 const router = Router();
 
-const normalizeStatus = (_status: unknown) => {
+const normalizeStatus = (rawStatus: unknown) => {
+  const s = String(rawStatus || '').toLowerCase().trim();
+
+  // Status que indicam compra aprovada/confirmada
+  const approvedStatuses = [
+    'approved', 'completed', 'complete', 'paid', 'active',
+    'approved_by_acquirer', 'purchase_complete', 'confirmed',
+    'waiting_payment', // Hotmart gera boleto — conta como lead qualificado
+  ];
+
+  // Status que indicam reembolso/cancelamento — NÃO gerar Purchase CAPI
+  const refundStatuses = [
+    'refunded', 'refund', 'cancelled', 'canceled', 'dispute',
+    'chargeback', 'chargedback', 'expired', 'blocked',
+    'purchase_refunded', 'purchase_chargeback', 'purchase_canceled',
+    'purchase_expired', 'purchase_protest', 'purchase_delayed',
+  ];
+
+  if (refundStatuses.includes(s)) {
+    return { finalStatus: s, isApproved: false };
+  }
+
+  if (approvedStatuses.includes(s)) {
+    return { finalStatus: 'approved', isApproved: true };
+  }
+
+  // Status desconhecido — loga para debug mas trata como aprovado
+  // para não perder conversões legítimas de plataformas com status custom
+  console.warn(`[Webhook] Unknown status "${s}" — treating as approved. Review if this is correct.`);
   return { finalStatus: 'approved', isApproved: true };
 };
 

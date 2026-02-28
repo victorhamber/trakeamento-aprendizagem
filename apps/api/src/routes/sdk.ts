@@ -677,13 +677,8 @@ router.get('/tracker.js', async (req, res) => {
         user_data:         userData,
         custom_data:       Object.assign({
           page_title:    document.title,
-          content_type:  'product',
           referrer:      document.referrer,
-          page_path:     location.pathname,
-          client_user_agent: userData.client_user_agent,
-          external_id:   userData.external_id,
-          fbp:           userData.fbp,
-          fbc:           userData.fbc
+          page_path:     location.pathname
         }, attrs),
         telemetry: telemetry
       };
@@ -703,10 +698,8 @@ router.get('/tracker.js', async (req, res) => {
       setTimeout(function() {
         if (cfg.metaPixelId || hasFbq()) {
           trackMeta('PageView', Object.assign(
-            { ta_source: 'tracking_suite', ta_site_key: cfg.siteKey, ta_event_id: eventId,
-              event_url: location.origin + location.pathname,
+            { event_url: location.origin + location.pathname,
               traffic_source: document.referrer || '' },
-            telemetry,
             getTimeFields(eventTime),
             payload.custom_data
           ), eventId, false);
@@ -744,12 +737,7 @@ router.get('/tracker.js', async (req, res) => {
         telemetry:        telemetry,
         custom_data:      Object.assign({
           page_title:   document.title,
-          page_path:    location.pathname,
-          event_url:    location.origin + location.pathname,
-          client_user_agent: userData.client_user_agent,
-          external_id:  userData.external_id,
-          fbp:          userData.fbp,
-          fbc:          userData.fbc
+          page_path:    location.pathname
         }, attrs)
       };
 
@@ -783,12 +771,7 @@ router.get('/tracker.js', async (req, res) => {
       var baseCustom = {
         page_title:       document.title,
         page_path:        location.pathname,
-        content_type:     'product',
-        event_url:        location.origin + location.pathname,
-        client_user_agent: userData.client_user_agent,
-        external_id:      userData.external_id,
-        fbp:              userData.fbp,
-        fbc:              userData.fbc
+        event_url:        location.origin + location.pathname
       };
       var telemetry = buildTelemetry({ page_path: location.pathname, page_title: document.title });
 
@@ -815,14 +798,9 @@ router.get('/tracker.js', async (req, res) => {
         var isCustom = STANDARD_EVENTS.indexOf(eventName) < 0;
         var metaParams = Object.assign(
           {
-            ta_source:   'tracking_suite',
-            ta_site_key: cfg.siteKey,
-            ta_event_id: eventId,
             event_url:   location.origin + location.pathname,
-            event_source_url: location.href,
             page_title:  document.title
           },
-          telemetry,
           getTimeFields(eventTime),
           payload.custom_data
         );

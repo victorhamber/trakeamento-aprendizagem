@@ -198,7 +198,7 @@ export class CapiService {
 
     try {
       const response = await axios.post(
-        `https://graph.facebook.com/v19.0/${cfg.pixelId}/events`,
+        `https://graph.facebook.com/v21.0/${cfg.pixelId}/events`,
         payload
       );
       const result = { ok: true, data: response.data } as const;
@@ -245,12 +245,12 @@ export class CapiService {
 
     try {
       const response = await axios.post(
-        `https://graph.facebook.com/v19.0/${cfg.pixelId}/events`,
+        `https://graph.facebook.com/v21.0/${cfg.pixelId}/events`,
         payload
       );
       // Log detalhado para debug de deduplicação e status
       console.log(`[CAPI] Success ${event.event_name} (ID: ${event.event_id}) - FB Trace: ${response.data?.fbtrace_id} - Messages: ${JSON.stringify(response.data?.messages || [])}`);
-      
+
       await this.updateLastStatus(siteKey, { ok: true, data: response.data });
       return response.data;
     } catch (error: unknown) {

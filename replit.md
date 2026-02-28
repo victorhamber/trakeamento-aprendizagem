@@ -8,7 +8,7 @@ A web analytics and tracking platform with Meta (Facebook) CAPI integration, bui
 ### Structure
 - `apps/api/` - Express.js backend API (TypeScript, port 3001)
 - `apps/dashboard/` - Vite + React frontend dashboard (TypeScript, port 5000)
-- `apps/web-sdk/` - JavaScript tracking SDK
+- `apps/api/src/routes/sdk.ts` - Smart Snippet tracker (served dynamically via `/sdk/tracker.js`)
 - `api/` - Legacy API code (not actively used)
 - `src/` - Legacy root frontend (not actively used)
 - `migrations/` - SQL migration files
