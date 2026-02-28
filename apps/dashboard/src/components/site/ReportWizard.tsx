@@ -80,7 +80,7 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
                     'x-site-key': siteKey,
                     'Content-Type': 'multipart/form-data',
                 },
-                timeout: 120000,
+                timeout: 300000, // 5 min for video transcription
             });
 
             const final = [...creatives];
