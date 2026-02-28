@@ -356,7 +356,7 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
   // Gera IDs estáveis
   const eventTimeSec = event.event_time ?? Math.floor(Date.now() / 1000);
   const eventTimeMs = eventTimeSec * 1000;
-  const eventId = event.event_id || `evt_${eventTimeSec}_${Math.random().toString(36).slice(2, 8)} `;
+  const eventId = event.event_id || `evt_${eventTimeSec}_${Math.random().toString(36).slice(2, 8)}`;
   const eventName = event.event_name;
   const eventSourceUrl = event.event_source_url || '';
   const timeDimensions = getTimeDimensions(eventTimeSec);

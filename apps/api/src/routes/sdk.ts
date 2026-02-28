@@ -148,6 +148,11 @@ router.get('/tracker.js', async (req, res) => {
       var v = getCookie(fields[k]);
       if (v) out[k] = v;
     }
+    // Incluir external_id e fbp para deduplicação no Meta Pixel
+    var eid = getOrCreateExternalId();
+    if (eid) out.external_id = eid;
+    var fbp = getFbp();
+    if (fbp) out.fbp = fbp;
     return out;
   }
 
