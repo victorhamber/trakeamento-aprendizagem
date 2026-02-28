@@ -70,6 +70,15 @@ router.post('/creative', requireAuth, upload.single('file'), async (req, res) =>
         const isAudio = file.mimetype.startsWith('audio/');
         const isImage = file.mimetype.startsWith('image/');
 
+        // Whisper API has a hard 25MB limit for audio/video files
+        const WHISPER_MAX_BYTES = 25 * 1024 * 1024;
+        if ((isVideo || isAudio) && file.size > WHISPER_MAX_BYTES) {
+            const sizeMB = (file.size / 1024 / 1024).toFixed(1);
+            return res.status(400).json({
+                error: `Vídeo/áudio muito grande (${sizeMB}MB). O limite da API de transcrição é 25MB. Tente comprimir o arquivo ou usar um trecho menor.`,
+            });
+        }
+
         let mediaDescription = '';
 
         if (isImage) {
