@@ -193,7 +193,7 @@ function getTimeDimensions(eventTimeSec: number) {
     event_day: days[d.getDay()],
     event_day_in_month: d.getDate(),
     event_month: months[d.getMonth()],
-    event_time_interval: `${hour} -${hour + 1} `,
+    event_time_interval: `${hour}-${hour + 1}`,
     event_hour: hour,
   };
 }
@@ -287,7 +287,7 @@ function buildCapiUserData(
     db: pick('db'),
     fbp,
     fbc,
-    external_id: externalIdRaw ? hashPii(externalIdRaw) : undefined,
+    external_id: externalIdRaw ? [hashPii(String(externalIdRaw))!] : undefined,
   };
 }
 
@@ -550,7 +550,7 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
           user_agent: capiUser.client_user_agent,
           fbp: capiUser.fbp,
           fbc: capiUser.fbc,
-          external_id: capiUser.external_id
+          external_id: Array.isArray(capiUser.external_id) ? capiUser.external_id[0] : capiUser.external_id
         }
       ).catch(err => console.error('[Ingest] GA4 error:', err));
 
