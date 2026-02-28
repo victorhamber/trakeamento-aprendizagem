@@ -2,6 +2,8 @@ import { Router } from 'express';
 import multer from 'multer';
 import axios from 'axios';
 import fs from 'fs';
+import path from 'path';
+import os from 'os';
 import FormData from 'form-data';
 import { requireAuth } from '../middleware/auth';
 import { pool } from '../db/pool';
@@ -9,14 +11,18 @@ import { decryptString } from '../lib/crypto';
 
 const router = Router();
 
-// Multer config: 25MB limit, temp storage
+// Multer config: 50MB limit, cross-platform temp storage
+const uploadDir = path.join(os.tmpdir(), 'ta-uploads');
+try { fs.mkdirSync(uploadDir, { recursive: true }); } catch { /* ignore */ }
+
 const upload = multer({
-    dest: '/tmp/uploads/',
-    limits: { fileSize: 25 * 1024 * 1024 }, // 25MB (Whisper API limit)
+    dest: uploadDir,
+    limits: { fileSize: 50 * 1024 * 1024 }, // 50MB for videos
     fileFilter: (_req, file, cb) => {
         const allowed = [
             'image/jpeg', 'image/png', 'image/webp', 'image/gif',
             'video/mp4', 'video/quicktime', 'video/webm', 'video/avi',
+            'video/x-msvideo', 'video/x-matroska',
             'audio/mpeg', 'audio/mp4', 'audio/wav', 'audio/webm',
         ];
         if (allowed.includes(file.mimetype)) {
@@ -28,7 +34,6 @@ const upload = multer({
 });
 
 async function getOpenAIKey(siteKey: string): Promise<string> {
-    // Try site-specific key first
     const siteRes = await pool.query(
         `SELECT a.openai_api_key_enc FROM account_settings a
      JOIN sites s ON s.account_id = a.account_id
@@ -45,7 +50,7 @@ async function getOpenAIKey(siteKey: string): Promise<string> {
  * POST /upload/creative
  * Uploads a creative file (image or video) and returns a text description.
  * - Images: analyzed with GPT-4o Vision
- * - Videos: transcribed with Whisper, then described with GPT-4o
+ * - Videos/Audio: transcribed with Whisper
  */
 router.post('/creative', requireAuth, upload.single('file'), async (req, res) => {
     const file = req.file;
@@ -93,21 +98,41 @@ router.post('/creative', requireAuth, upload.single('file'), async (req, res) =>
                 },
                 {
                     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-                    timeout: 30000,
+                    timeout: 60000,
                 }
             );
 
             mediaDescription = response.data?.choices?.[0]?.message?.content || 'Não foi possível descrever a imagem.';
         } else if (isVideo || isAudio) {
-            // Whisper: transcribe audio/video
+            // Whisper API supports: mp3, mp4, mpeg, mpga, m4a, wav, webm
+            // Rename temp file with proper extension so Whisper recognizes it
+            const extMap: Record<string, string> = {
+                'video/mp4': '.mp4',
+                'video/quicktime': '.mp4',
+                'video/webm': '.webm',
+                'video/avi': '.mp4',
+                'video/x-msvideo': '.mp4',
+                'video/x-matroska': '.mp4',
+                'audio/mpeg': '.mp3',
+                'audio/mp4': '.m4a',
+                'audio/wav': '.wav',
+                'audio/webm': '.webm',
+            };
+            const ext = extMap[file.mimetype] || '.mp4';
+            const renamedPath = file.path + ext;
+            fs.renameSync(file.path, renamedPath);
+            file.path = renamedPath;
+
             const form = new FormData();
-            form.append('file', fs.createReadStream(file.path), {
-                filename: file.originalname,
+            form.append('file', fs.createReadStream(renamedPath), {
+                filename: (file.originalname || `creative${ext}`),
                 contentType: file.mimetype,
             });
             form.append('model', 'whisper-1');
             form.append('language', 'pt');
             form.append('response_format', 'text');
+
+            console.log(`[Upload] Sending ${isVideo ? 'video' : 'audio'} to Whisper API: ${file.originalname} (${(file.size / 1024 / 1024).toFixed(1)}MB)`);
 
             const whisperRes = await axios.post(
                 'https://api.openai.com/v1/audio/transcriptions',
@@ -117,15 +142,17 @@ router.post('/creative', requireAuth, upload.single('file'), async (req, res) =>
                         Authorization: `Bearer ${apiKey}`,
                         ...form.getHeaders(),
                     },
-                    timeout: 120000, // 2 min for long videos
-                    maxContentLength: 30 * 1024 * 1024,
-                    maxBodyLength: 30 * 1024 * 1024,
+                    timeout: 180000, // 3 min for long videos
+                    maxContentLength: 60 * 1024 * 1024,
+                    maxBodyLength: 60 * 1024 * 1024,
                 }
             );
 
             const transcript = typeof whisperRes.data === 'string'
                 ? whisperRes.data.trim()
                 : whisperRes.data?.text?.trim() || '';
+
+            console.log(`[Upload] Whisper transcription result: ${transcript.length} chars`);
 
             if (transcript) {
                 mediaDescription = `[TRANSCRICAO DO VIDEO]\n${transcript}`;
@@ -141,7 +168,10 @@ router.post('/creative', requireAuth, upload.single('file'), async (req, res) =>
         });
     } catch (err: unknown) {
         console.error('[Upload] Error processing creative:', err);
-        const message = err instanceof Error ? err.message : 'Erro ao processar criativo.';
+        const axiosErr = err as { response?: { data?: unknown; status?: number } };
+        const message = axiosErr?.response?.data
+            ? `Erro da API: ${JSON.stringify(axiosErr.response.data).slice(0, 200)}`
+            : err instanceof Error ? err.message : 'Erro ao processar criativo.';
         res.status(500).json({ error: message });
     } finally {
         // Cleanup temp file

@@ -8,6 +8,7 @@ interface Creative {
     media_description: string;
     uploading: boolean;
     uploaded: boolean;
+    error: string;
 }
 
 interface ReportWizardProps {
@@ -52,6 +53,7 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
             media_description: '',
             uploading: false,
             uploaded: false,
+            error: '',
         }))
     );
     const [currentAdIndex, setCurrentAdIndex] = useState(0);
@@ -89,10 +91,11 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
                 uploaded: true,
             };
             setCreatives(final);
-        } catch (err) {
+        } catch (err: any) {
             console.error('Upload failed:', err);
+            const errMsg = err?.response?.data?.error || err?.message || 'Erro ao processar criativo.';
             const final = [...creatives];
-            final[currentAdIndex] = { ...final[currentAdIndex], uploading: false };
+            final[currentAdIndex] = { ...final[currentAdIndex], uploading: false, error: errMsg };
             setCreatives(final);
         }
     };
@@ -170,8 +173,8 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
                                     key={opt.value}
                                     onClick={() => setObjective(opt.value)}
                                     className={`w-full text-left px-4 py-3 rounded-xl border transition-all text-sm font-medium ${objective === opt.value
-                                            ? 'border-blue-500 bg-blue-500/10 text-blue-600 dark:text-blue-400'
-                                            : 'border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 hover:border-zinc-400 dark:hover:border-zinc-600'
+                                        ? 'border-blue-500 bg-blue-500/10 text-blue-600 dark:text-blue-400'
+                                        : 'border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 hover:border-zinc-400 dark:hover:border-zinc-600'
                                         }`}
                                 >
                                     {opt.label}
@@ -279,6 +282,11 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
                                                 >
                                                     📎 Clique para carregar imagem ou vídeo
                                                 </button>
+                                            )}
+                                            {currentAd?.error && (
+                                                <div className="px-4 py-3 rounded-xl border border-red-500/30 bg-red-500/5 text-sm text-red-400">
+                                                    ❌ {currentAd.error}
+                                                </div>
                                             )}
                                         </div>
                                     </div>

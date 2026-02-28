@@ -96,6 +96,33 @@ export class DiagnosisService {
     return /\{\{.+?\}\}/.test(value);
   }
 
+  /**
+   * Resolve Meta URL template macros using actual campaign/adset/ad data.
+   * E.g. {{campaign.name}} → "Campanha Leads", {{ad.id}} → "12345678"
+   */
+  private resolveMacros(value: string, metaEntities: {
+    campaign_id?: string; campaign_name?: string;
+    adset_id?: string; adset_name?: string;
+    ad_id?: string; ad_name?: string;
+  }): string {
+    const replacements: Record<string, string | undefined> = {
+      '{{campaign.name}}': metaEntities.campaign_name,
+      '{{campaign.id}}': metaEntities.campaign_id,
+      '{{adset.name}}': metaEntities.adset_name,
+      '{{adset.id}}': metaEntities.adset_id,
+      '{{ad.name}}': metaEntities.ad_name,
+      '{{ad.id}}': metaEntities.ad_id,
+    };
+
+    let resolved = value;
+    for (const [macro, replacement] of Object.entries(replacements)) {
+      if (replacement && resolved.includes(macro)) {
+        resolved = resolved.replace(macro, replacement);
+      }
+    }
+    return resolved;
+  }
+
   private buildUtmWhere(baseIndex: number, options?: {
     utm_source?: string;
     utm_medium?: string;
@@ -103,17 +130,32 @@ export class DiagnosisService {
     utm_content?: string;
     utm_term?: string;
     click_id?: string;
+  }, metaEntities?: {
+    campaign_id?: string; campaign_name?: string;
+    adset_id?: string; adset_name?: string;
+    ad_id?: string; ad_name?: string;
   }) {
     const clauses: string[] = [];
     const params: string[] = [];
     const skipped: string[] = [];
+    const resolved: string[] = [];
     const fields = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'click_id'] as const;
 
     for (const key of fields) {
-      const value = options?.[key]?.trim();
+      let value = options?.[key]?.trim();
       if (!value) continue;
 
-      // Skip unresolved Meta macros — they will never match stored events
+      // Try to resolve Meta macros using campaign data
+      if (this.isUnresolvedMacro(value) && metaEntities) {
+        const original = value;
+        value = this.resolveMacros(value, metaEntities);
+        if (!this.isUnresolvedMacro(value)) {
+          resolved.push(`${key}: "${original}" → "${value}"`);
+          console.log(`[DiagnosisService] Resolved macro: ${key}="${original}" → "${value}"`);
+        }
+      }
+
+      // Skip still-unresolved macros
       if (this.isUnresolvedMacro(value)) {
         skipped.push(`${key}="${value}"`);
         console.warn(`[DiagnosisService] Skipping UTM filter with unresolved macro: ${key}="${value}"`);
@@ -124,7 +166,7 @@ export class DiagnosisService {
       clauses.push(`AND (custom_data->>'${key}') = $${baseIndex + params.length}`);
     }
 
-    return { clause: clauses.join('\n        '), params, skipped };
+    return { clause: clauses.join('\n        '), params, skipped, resolved };
   }
 
   // ── Breakdown builder ──────────────────────────────────────────────────────
@@ -296,7 +338,36 @@ export class DiagnosisService {
       campaignId ? [siteId || 0, since, until, campaignId] : [siteId || 0, since, until]
     );
 
-    const utmWhere = this.buildUtmWhere(3, options);
+    // ── Resolve Meta UTM macros using campaign entity data ───────────────────
+    let metaEntities: { campaign_id?: string; campaign_name?: string; adset_id?: string; adset_name?: string; ad_id?: string; ad_name?: string } = {};
+    if (campaignId && siteId) {
+      try {
+        const entityRow = await pool.query(
+          `SELECT campaign_id, campaign_name, adset_id, adset_name, ad_id, ad_name
+           FROM meta_insights_daily
+           WHERE site_id = $1 AND campaign_id = $2
+           ORDER BY date_start DESC LIMIT 1`,
+          [siteId, campaignId]
+        );
+        if (entityRow.rowCount && entityRow.rows[0]) {
+          metaEntities = {
+            campaign_id: entityRow.rows[0].campaign_id || campaignId,
+            campaign_name: entityRow.rows[0].campaign_name || undefined,
+            adset_id: entityRow.rows[0].adset_id || undefined,
+            adset_name: entityRow.rows[0].adset_name || undefined,
+            ad_id: entityRow.rows[0].ad_id || undefined,
+            ad_name: entityRow.rows[0].ad_name || undefined,
+          };
+        }
+      } catch {
+        // If lookup fails, macros will remain unresolved (skipped as before)
+      }
+    }
+
+    const utmWhere = this.buildUtmWhere(3, options, metaEntities);
+    if (utmWhere.resolved.length > 0) {
+      console.log('[DiagnosisService] Resolved UTM macros:', utmWhere.resolved);
+    }
     if (utmWhere.skipped.length > 0) {
       console.warn('[DiagnosisService] UTM macros skipped (unresolved Meta templates):', utmWhere.skipped);
     }
