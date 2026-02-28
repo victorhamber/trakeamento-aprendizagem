@@ -98,7 +98,7 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
     if (siteRes.rowCount) {
       const siteKey = siteRes.rows[0].site_key;
       const body = req.body || {};
-      
+
       // Normalize keys to lowercase + stripped
       const data: Record<string, string> = {};
       Object.keys(body).forEach(k => {
@@ -108,7 +108,7 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
       // Extract User Data
       const email = data['email'] || data['mail'] || data['e_mail'];
       const phone = data['phone'] || data['tel'] || data['telefone'] || data['celular'] || data['whatsapp'];
-      
+
       let fn = data['fn'] || data['firstname'] || data['first_name'] || data['primeironome'] || data['primeiro_nome'];
       let ln = data['ln'] || data['lastname'] || data['last_name'] || data['sobrenome'] || data['ultimo_nome'];
       const name = data['name'] || data['nome'] || data['fullname'] || data['full_name'] || data['nomecompleto'];
@@ -143,14 +143,14 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
       capiService.sendEventDetailed(siteKey, {
         event_name: eventName,
         event_time: Math.floor(Date.now() / 1000),
-        event_id: `${eventName.toLowerCase()}_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+        event_id: body.event_id || `${eventName.toLowerCase()}_${Date.now()}_${Math.random().toString(36).slice(2)}`,
         event_source_url: req.headers.referer || `https://form-submit.trakeamento.com/${publicId}`,
         action_source: 'website',
         user_data: userData,
         custom_data: {
           form_name: form.name,
           form_id: publicId,
-          ...body
+          ...(({ event_id, ...rest }) => rest)(body)
         }
       }).catch(err => console.error(`CAPI failed for form ${publicId}:`, err));
     }

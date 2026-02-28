@@ -858,10 +858,14 @@ async function handleTrkSubmit(e) {
   var phoneDigits = (phoneRaw || '').toString().replace(/[^0-9]/g, '');
   if (phoneDigits) data.phone = '+' + ddiDigits + phoneDigits;
 
+  // Prevent duplicates by generating a single event ID for both Tracker (browser) and API (server)
+  var eventId = 'evt_' + Math.floor(Date.now() / 1000) + '_' + Math.random().toString(36).slice(2);
+  data.event_id = eventId;
+
   // 1. Client-side tracking
   if (window.tracker) {
     window.tracker.identify(data);
-    var evtData = {};
+    var evtData = { event_id: eventId };
     ${(event_value && !isNaN(parseFloat(event_value))) ? `evtData.value = ${parseFloat(event_value)};` : ''}
     ${(event_currency) ? `evtData.currency = '${event_currency}';` : ''}
     window.tracker.track('${evtName}', evtData);

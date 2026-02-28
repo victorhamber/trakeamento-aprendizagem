@@ -782,7 +782,7 @@ router.get('/tracker.js', async (req, res) => {
       _lastRuleFire[evKey] = nowMs;
 
       var eventTime = Math.floor(Date.now() / 1000);
-      var eventId   = genEventId();
+      var eventId   = (customData && customData.event_id) ? customData.event_id : genEventId();
       var attrs     = getAttributionParams();
       var userData  = buildUserData();
       var baseCustom = {
