@@ -411,9 +411,12 @@ Se o evento otimizado NAO for Purchase, escreva: "Evento otimizado nao e Purchas
 
 *Nota: Hook Rate apenas para videos (3s plays).*
 
+*(Se user_context.creatives existir, adicione aqui a avaliacao qualitativa de cada criativo fornecido:)*
+- **[Nome do Anuncio]**: [Avaliacao do copy, clareza, alinhamento com a LP, e formato (imagem/video). Destaque pontos fortes e o que melhorar.]
+
 ---
 
-## Tendencia (se trend existir)
+## Tendência
 
 | Metrica | Periodo Anterior | Periodo Atual | Variacao | Tendencia |
 |:---|---:|---:|---:|:---:|

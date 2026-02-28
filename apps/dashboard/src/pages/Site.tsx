@@ -200,6 +200,7 @@ export const SitePage = () => {
   const [diagnosisClickId, setDiagnosisClickId] = useState('');
   const [showUrlPaster, setShowUrlPaster] = useState(false);
   const [showWizard, setShowWizard] = useState(false);
+  const [wizardAds, setWizardAds] = useState<any[]>([]);
   const [pastedUrl, setPastedUrl] = useState('');
   const [utmOptions, setUtmOptions] = useState<{
     sources: string[];
@@ -1409,10 +1410,21 @@ ${scriptContent}
       showFlash('Defina o período personalizado.', 'error');
       return;
     }
-    // Open the wizard instead of calling API directly
-    setShowWizard(true);
-  };
 
+    setLoading(true);
+    try {
+      const res = await api.get(`/integrations/sites/${id}/meta/ads`, {
+        params: { campaign_id: selectedCampaignId }
+      });
+      setWizardAds(res.data.ads || []);
+    } catch (err) {
+      console.error('Failed to load ads for wizard', err);
+      setWizardAds([]);
+    } finally {
+      setLoading(false);
+      setShowWizard(true);
+    }
+  };
   const handleWizardGenerate = async (context: {
     objective: string;
     landing_page_url: string;
@@ -3998,9 +4010,7 @@ ${scriptContent}
           onClose={() => setShowWizard(false)}
           onGenerate={handleWizardGenerate}
           siteKey={site.site_key}
-          ads={campaigns
-            .filter((c: any) => c.id)
-            .map((c: any) => ({ id: c.id, name: c.name || c.id }))}
+          ads={wizardAds.map((a: any) => ({ id: a.id, name: a.name || a.id }))}
           loading={loading}
         />
       )}

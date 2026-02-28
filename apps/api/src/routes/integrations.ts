@@ -391,6 +391,7 @@ router.get('/sites/:siteId/meta/ads', requireAuth, async (req, res) => {
   const auth = req.auth!;
   const siteId = Number(req.params.siteId);
   const adsetId = typeof req.query.adset_id === 'string' ? req.query.adset_id.trim() : '';
+  const campaignId = typeof req.query.campaign_id === 'string' ? req.query.campaign_id.trim() : '';
   if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
   if (!(await requireSiteOwnership(auth.accountId, siteId))) return res.status(404).json({ error: 'Site not found' });
 
@@ -424,6 +425,8 @@ router.get('/sites/:siteId/meta/ads', requireAuth, async (req, res) => {
 
   if (adsetId) {
     nextParams.filtering = JSON.stringify([{ field: 'adset.id', operator: 'EQUAL', value: adsetId }]);
+  } else if (campaignId) {
+    nextParams.filtering = JSON.stringify([{ field: 'campaign.id', operator: 'EQUAL', value: campaignId }]);
   } else {
     nextParams.effective_status = ['ACTIVE', 'PAUSED', 'IN_PROCESS', 'PENDING_REVIEW', 'WITH_ISSUES'];
   }
