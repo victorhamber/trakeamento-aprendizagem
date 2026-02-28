@@ -313,12 +313,15 @@ Se user_context existir no snapshot:
 2. user_context.landing_page_url: URL da LP informada pelo usuario. Mais confiavel que auto-detect.
 
 3. user_context.creatives: Array de criativos com copy e descricao de midia.
-   Para cada criativo analisado:
-   - copy: avalie clareza, CTA, proposta de valor, alinhamento com LP
-   - media_description (se imagem): avalie elementos visuais, cores, CTA visual
+   OBRIGATORIO: Se user_context.creatives existir, voce DEVE analisar CADA criativo individualmente.
+   Para cada criativo:
+   - copy: avalie clareza, CTA, proposta de valor, alinhamento com LP, gatilhos mentais
+   - media_description (se imagem): avalie elementos visuais, cores, CTA visual, emocao, congruencia com copy
    - media_description (se comeca com [TRANSCRICAO DO VIDEO]): avalie hook dos primeiros 3s,
      conteudo da fala, CTA verbal, tom de voz, e alinhamento com a oferta
-   Compare criativos entre si: qual tem melhor potencial de conversao?
+   - Compare criativos entre si: qual tem melhor potencial de conversao e por que?
+   - De uma nota de 1-10 para cada criativo e justifique
+   NUNCA omita esta analise quando creatives forem fornecidos. Esta e a parte mais valiosa para o usuario.
 
 Se user_context nao existir, ignore esta regra completamente.
 
@@ -405,14 +408,33 @@ Se o evento otimizado NAO for Purchase, escreva: "Evento otimizado nao e Purchas
 
 ## Analise de Criativos
 
+### Performance por Anuncio (dados Meta)
+
 | Anuncio | Resultados | Custo | CPA | CTR | Hook Rate | Diagnostico |
 |:---|---:|---:|---:|---:|---:|:---|
 | [nome] | X | R$X | R$X | X% | X% ou N/A | [Vencedor/Otimizar/Fadiga] — [motivo curto] |
 
 *Nota: Hook Rate apenas para videos (3s plays).*
 
-*(Se user_context.creatives existir, adicione aqui a avaliacao qualitativa de cada criativo fornecido:)*
-- **[Nome do Anuncio]**: [Avaliacao do copy, clareza, alinhamento com a LP, e formato (imagem/video). Destaque pontos fortes e o que melhorar.]
+### Avaliacao Qualitativa dos Criativos
+
+**OBRIGATORIO**: Se user_context.creatives existir, analise CADA um abaixo. NAO pule esta secao.
+
+Para cada criativo em user_context.creatives:
+
+#### [ad_name]
+
+**Copy**: [avaliacao detalhada — clareza, proposta de valor, CTA, gatilhos mentais, alinhamento com LP]
+
+**Midia**: [avaliacao detalhada da imagem/video — elementos visuais, emocao, hook, CTA visual/verbal]
+
+**Nota**: [X/10] — [justificativa em 1 frase]
+
+**Sugestao de melhoria**: [1 sugestao especifica e acionavel]
+
+*(Repita para cada criativo)*
+
+**Ranking Geral**: [Qual criativo tem maior potencial e por que. Se houver 2+, compare diretamente.]
 
 ---
 
@@ -446,9 +468,9 @@ Se segments.hourly ou segments.day_of_week tiverem dados:
 | Area | Item | Status | Detalhes |
 |:---|:---|:---:|:---|
 | Rastreamento | Filtros UTM | OK/Alert | [utm_filters_applied] |
-| Rastreamento | Macros nao resolvidas | OK/Alert | [utm_filters_skipped] |
+| Rastreamento | Macros nao resolvidas | OK/Alert | [Se resolvidas: mostrar valores resolvidos. Se ignoradas: listar quais e por que] |
 | Rastreamento | Discrepancia | X% | Cliques vs LP Views |
-| Rastreamento | Funil de Dados | — | Meta: X | Pixel: X | CAPI: X |
+| Rastreamento | Funil de Dados | OK/Alert | Meta: [impressions] impressoes, [clicks] cliques, [landing_page_views] LP Views | CAPI: [capi.page_views] PageViews |
 | Rastreamento | Vendas Meta vs Banco | OK/Alert | Meta: X vs Banco: X |
 | Comportamento | Load Time | Xms | [status] |
 | Comportamento | Scroll Medio | X% | [status] |

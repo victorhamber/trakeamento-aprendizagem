@@ -898,6 +898,7 @@ export class DiagnosisService {
         )
         : null,
       utm_filters_skipped: utmWhere.skipped.length > 0 ? utmWhere.skipped : null,
+      utm_filters_resolved: utmWhere.resolved.length > 0 ? utmWhere.resolved : null,
 
       meta: {
         objective,
