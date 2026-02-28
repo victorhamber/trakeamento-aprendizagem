@@ -180,8 +180,8 @@ export class Tracker {
           if (['email', 'e_mail', 'mail'].includes(k)) data.email = value;
           if (['phone', 'telefone', 'celular', 'whatsapp', 'tel', 'cel'].includes(k)) data.phone = value;
           if (['name', 'nome', 'fullname', 'full_name', 'nomecompleto'].includes(k)) data.name = value;
-          if (['fn', 'firstname', 'primeironome'].includes(k)) data.fn = value;
-          if (['ln', 'lastname', 'sobrenome'].includes(k)) data.ln = value;
+          if (['fn', 'firstname', 'primeironome', 'first_name', 'primeiro_nome'].includes(k)) data.fn = value;
+          if (['ln', 'lastname', 'sobrenome', 'last_name', 'ultimo_nome'].includes(k)) data.ln = value;
         }
       }
       
@@ -218,13 +218,13 @@ export class Tracker {
       if (type === 'tel' || ['phone', 'telefone', 'celular', 'whatsapp', 'tel'].includes(name)) {
         data.phone = value;
       }
-      if (['name', 'nome', 'fullname', 'full_name'].includes(name)) {
+      if (['name', 'nome', 'fullname', 'full_name', 'nomecompleto'].includes(name)) {
         data.name = value;
       }
-      if (['fn', 'firstname', 'primeironome'].includes(name)) {
+      if (['fn', 'firstname', 'primeironome', 'first_name', 'primeiro_nome'].includes(name)) {
         data.fn = value;
       }
-      if (['ln', 'lastname', 'sobrenome'].includes(name)) {
+      if (['ln', 'lastname', 'sobrenome', 'last_name', 'ultimo_nome'].includes(name)) {
         data.ln = value;
       }
       

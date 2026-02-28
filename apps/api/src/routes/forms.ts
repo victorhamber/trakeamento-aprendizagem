@@ -1,8 +1,20 @@
 import { Router } from 'express';
 import { pool } from '../db/pool';
 import { requireAuth } from '../middleware/auth';
+import { capiService, CapiService } from '../services/capi';
 
 const router = Router();
+
+// Helper to extract first and last name from full name
+function splitName(fullName: string): { fn?: string; ln?: string } {
+  const parts = fullName.trim().split(/\s+/);
+  if (parts.length === 0) return {};
+  if (parts.length === 1) return { fn: parts[0] };
+  return {
+    fn: parts[0],
+    ln: parts.slice(1).join(' ')
+  };
+}
 
 // List Forms
 router.get('/sites/:siteId/forms', requireAuth, async (req, res) => {
@@ -79,6 +91,69 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
     if (!formRes.rowCount) return res.status(404).json({ error: 'Form not found' });
     const form = formRes.rows[0];
     const config = form.config || {};
+
+    // ── CAPI INTEGRATION ──
+    const siteId = form.site_id;
+    const siteRes = await pool.query('SELECT site_key FROM sites WHERE id = $1', [siteId]);
+    if (siteRes.rowCount) {
+      const siteKey = siteRes.rows[0].site_key;
+      const body = req.body || {};
+      
+      // Normalize keys to lowercase + stripped
+      const data: Record<string, string> = {};
+      Object.keys(body).forEach(k => {
+        data[k.toLowerCase().replace(/[^a-z0-9]/g, '')] = String(body[k]);
+      });
+
+      // Extract User Data
+      const email = data['email'] || data['mail'] || data['e_mail'];
+      const phone = data['phone'] || data['tel'] || data['telefone'] || data['celular'] || data['whatsapp'];
+      
+      let fn = data['fn'] || data['firstname'] || data['first_name'] || data['primeironome'] || data['primeiro_nome'];
+      let ln = data['ln'] || data['lastname'] || data['last_name'] || data['sobrenome'] || data['ultimo_nome'];
+      const name = data['name'] || data['nome'] || data['fullname'] || data['full_name'] || data['nomecompleto'];
+
+      if (!fn && !ln && name) {
+        const parts = splitName(name);
+        if (parts.fn) fn = parts.fn;
+        if (parts.ln) ln = parts.ln;
+      }
+
+      const userData: any = {
+        client_ip_address: req.ip || (req.headers['x-forwarded-for'] as string)?.split(',')[0],
+        client_user_agent: req.headers['user-agent'] || undefined,
+      };
+
+      if (email) userData.em = CapiService.hash(email);
+      if (phone) userData.ph = CapiService.hash(phone.replace(/\D/g, ''));
+      if (fn) userData.fn = CapiService.hash(fn);
+      if (ln) userData.ln = CapiService.hash(ln);
+
+      // Determine Event Name from Config
+      let eventName = 'Lead';
+      if (form.config?.event_type) {
+        if (form.config.event_type === 'Custom') {
+          eventName = form.config.custom_event_name || 'Lead';
+        } else {
+          eventName = form.config.event_type;
+        }
+      }
+
+      // Send Event (async)
+      capiService.sendEventDetailed(siteKey, {
+        event_name: eventName,
+        event_time: Math.floor(Date.now() / 1000),
+        event_id: `${eventName.toLowerCase()}_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+        event_source_url: req.headers.referer || `https://form-submit.trakeamento.com/${publicId}`,
+        action_source: 'website',
+        user_data: userData,
+        custom_data: {
+          form_name: form.name,
+          form_id: publicId,
+          ...body
+        }
+      }).catch(err => console.error(`CAPI failed for form ${publicId}:`, err));
+    }
 
     // Trigger Webhook if configured
     if (config.webhook_url) {
