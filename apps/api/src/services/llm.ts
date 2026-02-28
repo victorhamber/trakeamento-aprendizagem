@@ -9,7 +9,7 @@ interface LlmConfig {
 
 const DEFAULT_MODEL = 'gpt-4o';
 const DEFAULT_TEMPERATURE = 0.2;
-const DEFAULT_MAX_TOKENS = 4096;
+const DEFAULT_MAX_TOKENS = 8000;
 const REQUEST_TIMEOUT_MS = 90_000;
 const MAX_RETRY_ATTEMPTS = 2;
 const MAX_SNAPSHOT_CHARS = 60_000;
@@ -131,7 +131,7 @@ export class LlmService {
     } catch (error) {
       const isRetryable = axios.isAxiosError(error) &&
         ((error as AxiosError).response?.status === 429 ||
-         ((error as AxiosError).response?.status ?? 0) >= 500);
+          ((error as AxiosError).response?.status ?? 0) >= 500);
       if (isRetryable && attempt < MAX_RETRY_ATTEMPTS) {
         const delay = attempt * 2000;
         this.log('warn', `Retrying in ${delay}ms (attempt ${attempt})...`);
@@ -189,6 +189,9 @@ Execute este checklist mentalmente:
 6. site.effective_dwell_ms e null ou 0 E site.effective_scroll_pct e null ou 0?
    Significa que nao ha dados de comportamento (PageEngagement nao capturado).
    Diga "Dados de comportamento nao capturados (verificar script)". NAO invente nada sobre o usuario.
+7. Confira sales.purchases e sales.revenue — esses sao dados REAIS do banco, nao do Meta.
+   Compare com meta.purchases para detectar discrepancias de rastreamento.
+8. Confira trend — se existir, compare metricas do periodo atual vs anterior para detectar tendencias.
 
 === REGRA CRITICA: OBJETIVO vs EVENTO DE OTIMIZACAO ===
 
@@ -205,11 +208,57 @@ Tabela de interpretacao:
 | PURCHASE | results count + ROAS | leads, contacts |
 | LINK_CLICKS | landing_page_views | purchases, leads |
 
+=== REGRA: ROAS E VENDAS REAIS ===
+
+sales.purchases = compras REAIS registradas no banco de dados (fonte absoluta de verdade).
+sales.revenue = receita REAL.
+sales.roas = receita real / investimento Meta.
+
+Interpretacao:
+| ROAS | Status | Acao |
+|------|--------|------|
+| > 3.0 | Excelente | Escalar investimento |
+| 2.0 - 3.0 | Saudavel | Otimizar para crescer |
+| 1.0 - 2.0 | Marginal | Avaliar margem — pode nao ser lucrativo |
+| < 1.0 | Prejuizo | Acao urgente — investimento maior que receita |
+| null / N/A | Sem dados | Evento otimizado nao e Purchase, ou sem vendas no periodo |
+
+Se meta.purchases != sales.purchases, sinalize DISCREPANCIA. Possiveis causas:
+- Compra sem parametros de tracking (atribuicao perdida)
+- Webhook nao configurado para todas as plataformas
+- Compra atribuida a outra campanha
+
 === REGRA: HOOK RATE ===
 
 hook_rate_pct = null OU video_3s_views = 0 -> anuncio e IMAGEM. NAO mencione hook rate para esse anuncio.
 Nunca diga que um anuncio tem "hook ruim" se nao ha dados de video.
 Mencione hook rate apenas para anuncios onde video_3s_views > 0.
+
+=== REGRA: LANDING PAGE ===
+
+Se landing_page.content existir (nao null), analise brevemente:
+- O titulo/headline esta claro e alinhado com o anuncio?
+- Existe call-to-action visivel?
+- O conteudo reforca a proposta de valor?
+Se landing_page.content for null, diga "Conteudo da LP nao disponivel para analise".
+
+=== REGRA: TENDENCIA (TREND) ===
+
+Se o objeto trend existir no snapshot, compare periodo atual vs anterior:
+- Spend subiu/desceu X%? Resultados acompanharam?
+- CPA melhorou ou piorou?
+- CTR esta subindo (criativo bom) ou caindo (fadiga)?
+- ROAS esta melhorando ou deteriorando?
+
+Use setas para indicar tendencia: ↑ (melhora), ↓ (piora), → (estavel, variacao < 5%).
+Se trend nao existir, omita a secao de tendencia.
+
+=== REGRA: DISTRIBUICAO TEMPORAL ===
+
+Se segments.hourly ou segments.day_of_week existirem com dados, analise:
+- Qual horario tem mais visitas? E o melhor horario para anunciar?
+- Quais dias da semana tem mais trafego? Ha oportunidade de ajustar orcamento?
+- Ha concentracao excessiva em um unico horario/dia?
 
 === REGRA: DADOS AUSENTES ===
 
@@ -234,6 +283,8 @@ meta.purchases = 0 com objetivo CADASTRO_GRUPO ou LEAD: NORMAL. Nao mencione.
 | Objetivo | [meta.objective] |
 | Evento otimizado | [o que meta.results representa — ex: CADASTRO_GRUPO] |
 | Resultado | [meta.results] conversoes ao custo de [meta.cost_per_result] cada |
+| ROAS Real | [sales.roas]x ou N/A |
+| Tendencia | [↑/↓/→] [resumo de 1 frase se trend existir, ou "Sem dados de comparacao"] |
 | Veredito | [1 frase direta sobre a saude da campanha] |
 | Principal Gargalo | [onde esta o problema, ou "Sem gargalo critico identificado"] |
 | Oportunidade | [alavanca mais facil para melhorar resultados] |
@@ -258,6 +309,20 @@ meta.purchases = 0 com objetivo CADASTRO_GRUPO ou LEAD: NORMAL. Nao mencione.
 
 ---
 
+## Vendas e ROAS
+
+| Fonte | Compras | Receita | ROAS |
+|:---|---:|---:|---:|
+| Meta (Pixel/CAPI) | [meta.purchases] | — | — |
+| **Banco (real)** | **[sales.purchases]** | **R$[sales.revenue]** | **[sales.roas]x** |
+| Discrepancia | [diferenca] | — | — |
+
+*[Comentario sobre discrepancia se houver, ou "Dados consistentes."]*
+
+Se o evento otimizado NAO for Purchase, escreva: "Evento otimizado nao e Purchase — ROAS informativo apenas."
+
+---
+
 ## Analise de Criativos
 
 | Anuncio | Resultados | Custo | CPA | CTR | Hook Rate | Diagnostico |
@@ -265,6 +330,31 @@ meta.purchases = 0 com objetivo CADASTRO_GRUPO ou LEAD: NORMAL. Nao mencione.
 | [nome] | X | R$X | R$X | X% | X% ou N/A | [Vencedor/Otimizar/Fadiga] — [motivo curto] |
 
 *Nota: Hook Rate apenas para videos (3s plays).*
+
+---
+
+## Tendencia (se trend existir)
+
+| Metrica | Periodo Anterior | Periodo Atual | Variacao | Tendencia |
+|:---|---:|---:|---:|:---:|
+| Spend | R$X | R$X | +X% | ↑/↓/→ |
+| Results | X | X | +X% | ↑/↓/→ |
+| CPA | R$X | R$X | +X% | ↑/↓/→ |
+| CTR | X% | X% | +X% | ↑/↓/→ |
+| ROAS Real | Xx | Xx | +X% | ↑/↓/→ |
+
+*Se trend nao existir no snapshot, omita esta secao inteiramente.*
+
+---
+
+## Distribuicao Temporal
+
+Se segments.hourly ou segments.day_of_week tiverem dados:
+- Melhores horarios para anunciar: [top 3 horarios]
+- Melhores dias: [top dias]
+- Recomendacao: [ajuste de orcamento por horario/dia se aplicavel]
+
+*Se nao houver dados temporais, omita esta secao.*
 
 ---
 
@@ -276,9 +366,23 @@ meta.purchases = 0 com objetivo CADASTRO_GRUPO ou LEAD: NORMAL. Nao mencione.
 | Rastreamento | Macros nao resolvidas | OK/Alert | [utm_filters_skipped] |
 | Rastreamento | Discrepancia | X% | Cliques vs LP Views |
 | Rastreamento | Funil de Dados | — | Meta: X | Pixel: X | CAPI: X |
+| Rastreamento | Vendas Meta vs Banco | OK/Alert | Meta: X vs Banco: X |
 | Comportamento | Load Time | Xms | [status] |
 | Comportamento | Scroll Medio | X% | [status] |
 | Comportamento | Dwell Time | Xms | [status] |
+
+---
+
+## Analise da Landing Page
+
+Se landing_page.content existir:
+- URL: [landing_page.url]
+- Headline alinhada com anuncio? [Sim/Nao — motivo]
+- CTA visivel? [Sim/Nao]
+- Proposta de valor clara? [Sim/Nao]
+- Sugestao: [1 melhoria especifica para conversao]
+
+*Se landing_page.content for null, escreva: "Conteudo da LP nao disponivel para analise."*
 
 ---
 
@@ -356,8 +460,8 @@ meta.purchases = 0 com objetivo CADASTRO_GRUPO ou LEAD: NORMAL. Nao mencione.
     const discPct = Number(d.click_to_lp_discrepancy_pct);
     const discStatus = !Number.isFinite(discPct) ? '—'
       : discPct > 40 ? `CRITICO ${discPct.toFixed(1)}%`
-      : discPct > 25 ? `Alerta ${discPct.toFixed(1)}%`
-      : `OK ${discPct.toFixed(1)}%`;
+        : discPct > 25 ? `Alerta ${discPct.toFixed(1)}%`
+          : `OK ${discPct.toFixed(1)}%`;
     lines.push(`| Discrepancia Cliques->Visitas | ${discStatus} | >25% = investigar |`);
     lines.push('');
     lines.push(`| **Banco — Compras** | **${this.fmtInt(sales.purchases)}** | Verdade absoluta |`);
@@ -410,21 +514,21 @@ meta.purchases = 0 com objetivo CADASTRO_GRUPO ou LEAD: NORMAL. Nao mencione.
     lines.push('');
     lines.push(`| Area | Item | Status | Detalhes |`);
     lines.push(`|:---|:---|:---:|:---|`);
-    
+
     // Rastreamento
     lines.push(`| Rastreamento | Filtros UTM | ${applied ? 'OK' : 'N/A'} | ${JSON.stringify(applied || 'Nenhum')} |`);
     lines.push(`| Rastreamento | Macros nao resolvidas | ${skipped.length ? 'ALERTA' : 'OK'} | ${skipped.length ? skipped.join(', ') : 'Nenhuma'} |`);
     lines.push(`| Rastreamento | Discrepancia | ${discStatus.split(' ')[0]} | Cliques vs LP Views: ${discPct.toFixed(1)}% |`);
     lines.push(`| Rastreamento | Funil de Dados | — | Meta: ${this.fmtInt(m.unique_link_clicks)} | Pixel: ${this.fmtInt(m.landing_page_views)} | CAPI: ${this.fmtInt(capi.page_views)} |`);
-    
+
     // Comportamento
     const loadTime = capi.avg_load_time_ms != null ? this.fmtMs(capi.avg_load_time_ms) : 'N/A';
     const loadStatus = capi.avg_load_time_ms && Number(capi.avg_load_time_ms) > 3500 ? 'CRITICO' : 'OK';
     lines.push(`| Comportamento | Load Time | ${loadStatus} | ${loadTime} |`);
-    
+
     const scroll = capi.avg_scroll_pct != null ? this.fmtPct(capi.avg_scroll_pct) : 'N/A';
     lines.push(`| Comportamento | Scroll Medio | — | ${scroll} |`);
-    
+
     const dwell = capi.avg_dwell_time_ms != null ? this.fmtMs(capi.avg_dwell_time_ms) : 'N/A';
     lines.push(`| Comportamento | Dwell Time | — | ${dwell} |`);
     lines.push('');

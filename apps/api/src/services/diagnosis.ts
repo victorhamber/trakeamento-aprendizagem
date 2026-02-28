@@ -299,8 +299,8 @@ export class DiagnosisService {
         level === 'campaign'
           ? { id: 'campaign_id', name: 'campaign_name', where: 'campaign_id IS NOT NULL AND adset_id IS NULL' }
           : level === 'adset'
-          ? { id: 'adset_id', name: 'adset_name', where: 'adset_id IS NOT NULL AND ad_id IS NULL' }
-          : { id: 'ad_id', name: 'ad_name', where: 'ad_id IS NOT NULL' };
+            ? { id: 'adset_id', name: 'adset_name', where: 'adset_id IS NOT NULL AND ad_id IS NULL' }
+            : { id: 'ad_id', name: 'ad_name', where: 'ad_id IS NOT NULL' };
 
       const params: Array<string | number | Date> = [siteId || 0, since, until];
       let campaignFilter = '';
@@ -445,10 +445,10 @@ export class DiagnosisService {
 
     const resultMetric =
       results > 0 ? results
-      : purchases > 0 ? purchases
-      : leads > 0 ? leads
-      : contacts > 0 ? contacts
-      : landingPageViews;
+        : purchases > 0 ? purchases
+          : leads > 0 ? leads
+            : contacts > 0 ? contacts
+              : landingPageViews;
 
     const costPerResult = results > 0 ? spend / results : null;
 
@@ -559,7 +559,7 @@ export class DiagnosisService {
 
       // Signal logic uses results (the optimization event), not objective
       // results = 0 with sufficient traffic = real conversion problem
-      if (results === 0 && effectivePageViews > 30) {
+      if (results === 0 && effectivePageViews > 50) {
         signals.push({
           area: 'conversao',
           signal: 'sem_resultado',
@@ -568,13 +568,59 @@ export class DiagnosisService {
         });
       }
 
-      if (costPerResult != null && costPerResult > 50) {
+      // CPA relativo — alerta se o CPA for 3x mais caro que o CPA medio da campanha.
+      // Isso funciona para qualquer nicho, ao inves de um hardcoded R$50.
+      if (costPerResult != null && results > 0) {
+        const avgCPA = m.cost_per_lead_avg != null ? Number(m.cost_per_lead_avg)
+          : m.cost_per_purchase_avg != null ? Number(m.cost_per_purchase_avg) : null;
+
+        // Se temos CPA medio da campanha, compara relativamente; senao, usa threshold absoluto razoavel
+        const isHighCPA = avgCPA && avgCPA > 0
+          ? costPerResult > avgCPA * 3
+          : costPerResult > spend * 0.5; // CPA > 50% do gasto total = muito poucos resultados
+
+        if (isHighCPA) {
+          signals.push({
+            area: 'roi',
+            signal: 'custo_por_resultado_alto',
+            weight: 0.65,
+            evidence: `CPA=R$${costPerResult.toFixed(2)}${avgCPA ? ` (media da campanha: R$${avgCPA.toFixed(2)})` : ''}. Avaliar se esta dentro do LTV/margem.`,
+          });
+        }
+      }
+
+      // ROAS baixo — alerta quando receita < investimento
+      if (roas !== null && roas < 1.0) {
         signals.push({
           area: 'roi',
-          signal: 'custo_por_resultado_alto',
-          weight: 0.60,
-          evidence: `CPA=R$${costPerResult.toFixed(2)}. Avaliar se esta dentro do LTV/margem.`,
+          signal: 'roas_negativo',
+          weight: 0.85,
+          evidence: `ROAS=${roas.toFixed(2)}x — receita (R$${internalRevenue.toFixed(2)}) menor que investimento (R$${spend.toFixed(2)}). Campanha esta dando prejuizo.`,
         });
+      }
+
+      // CPM alto — pode indicar saturacao de publico ou leilao muito competitivo
+      const cpmCalc = derived.cpm_calc;
+      if (cpmCalc > 50) {
+        signals.push({
+          area: 'entrega',
+          signal: 'cpm_alto',
+          weight: 0.55,
+          evidence: `CPM=R$${cpmCalc.toFixed(2)} — acima de R$50. Possivel saturacao de publico ou leilao competitivo.`,
+        });
+      }
+
+      // Discrepancia de vendas Meta vs Banco
+      if (purchases > 0 && internalSales > 0 && Math.abs(purchases - internalSales) > 1) {
+        const discpPct = Math.abs(1 - internalSales / purchases) * 100;
+        if (discpPct > 20) {
+          signals.push({
+            area: 'tracking',
+            signal: 'discrepancia_vendas',
+            weight: 0.70,
+            evidence: `Meta reporta ${purchases} compras, banco tem ${internalSales}. Diferenca de ${discpPct.toFixed(0)}%. Verificar atribuicao e webhooks.`,
+          });
+        }
       }
 
       const freq = m.frequency_avg != null ? Number(m.frequency_avg) : 0;
@@ -650,6 +696,78 @@ export class DiagnosisService {
     }
 
     // ── Build snapshot ─────────────────────────────────────────────────────────
+
+    // ── Trend: previous period comparison ───────────────────────────────────────
+    let trend: Record<string, unknown> | null = null;
+    try {
+      const prevSince = new Date(since.getTime() - (until.getTime() - since.getTime()));
+      const prevUntil = since;
+
+      const [prevMetaRes, prevSalesRes] = await Promise.all([
+        pool.query(
+          `SELECT
+            COALESCE(SUM(spend), 0)::numeric AS spend,
+            COALESCE(SUM(impressions), 0)::bigint AS impressions,
+            COALESCE(SUM(clicks), 0)::bigint AS clicks,
+            COALESCE(SUM(results), 0)::bigint AS results
+          FROM meta_insights_daily
+          WHERE site_id = $1
+            AND date_start >= $2 AND date_start < $3
+            AND adset_id IS NULL AND ad_id IS NULL
+            ${campaignId ? 'AND campaign_id = $4' : ''}`,
+          campaignId ? [siteId || 0, prevSince, prevUntil, campaignId] : [siteId || 0, prevSince, prevUntil]
+        ),
+        pool.query(
+          `SELECT COUNT(*)::bigint AS sales, COALESCE(SUM(amount), 0)::numeric AS revenue
+           FROM purchases WHERE site_key = $1 AND created_at >= $2 AND created_at < $3`,
+          [siteKey, prevSince, prevUntil]
+        ),
+      ]);
+
+      const pm = prevMetaRes.rows[0] || {};
+      const ps = prevSalesRes.rows[0] || {};
+      const prevSpend = Number(pm.spend || 0);
+      const prevResults = Number(pm.results || 0);
+      const prevClicks = Number(pm.clicks || 0);
+      const prevImpressions = Number(pm.impressions || 0);
+      const prevRevenue = Number(ps.revenue || 0);
+      const prevRoas = prevSpend > 0 && prevRevenue > 0 ? prevRevenue / prevSpend : null;
+      const prevCPA = prevResults > 0 ? prevSpend / prevResults : null;
+      const prevCTR = prevImpressions > 0 ? this.pct(this.safeDiv(prevClicks, prevImpressions)) : 0;
+
+      // Only include trend if there was actual data in the previous period
+      if (prevSpend > 0 || prevResults > 0) {
+        const pctChange = (curr: number, prev: number) =>
+          prev > 0 ? Math.round(((curr - prev) / prev) * 10000) / 100 : null;
+
+        trend = {
+          previous_period: {
+            since: prevSince.toISOString(),
+            until: prevUntil.toISOString(),
+          },
+          spend: { current: spend, previous: prevSpend, change_pct: pctChange(spend, prevSpend) },
+          results: { current: results, previous: prevResults, change_pct: pctChange(results, prevResults) },
+          cpa: {
+            current: costPerResult,
+            previous: prevCPA,
+            change_pct: costPerResult && prevCPA ? pctChange(costPerResult, prevCPA) : null,
+          },
+          ctr: {
+            current: derived.ctr_calc_pct,
+            previous: prevCTR,
+            change_pct: pctChange(derived.ctr_calc_pct, prevCTR),
+          },
+          roas: {
+            current: roas,
+            previous: prevRoas,
+            change_pct: roas && prevRoas ? pctChange(roas, prevRoas) : null,
+          },
+        };
+      }
+    } catch (err) {
+      console.warn('[DiagnosisService] Trend calculation failed:', err);
+    }
+
     const snapshot = {
       site_key: siteKey,
       period_days: daysNum,
@@ -660,10 +778,10 @@ export class DiagnosisService {
       // Macros like {{campaign.name}} are skipped — they never match stored events.
       utm_filters_applied: utmWhere.params.length > 0
         ? Object.fromEntries(
-            (['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'click_id'] as const)
-              .filter(k => options?.[k] && !this.isUnresolvedMacro(options[k]!))
-              .map(k => [k, options![k]])
-          )
+          (['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'click_id'] as const)
+            .filter(k => options?.[k] && !this.isUnresolvedMacro(options[k]!))
+            .map(k => [k, options![k]])
+        )
         : null,
       utm_filters_skipped: utmWhere.skipped.length > 0 ? utmWhere.skipped : null,
 
@@ -743,7 +861,8 @@ export class DiagnosisService {
       },
 
       derived,
-      signals: signals.slice(0, 8),
+      signals: signals.slice(0, 10),
+      trend,
 
       landing_page: {
         url: landingPageUrl,
