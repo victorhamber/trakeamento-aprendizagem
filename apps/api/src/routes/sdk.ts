@@ -71,6 +71,8 @@ router.get('/tracker.js', async (req, res) => {
   var lastPath     = '';
   var metaLoaded   = false;
   var gaLoaded     = false;
+  var _lastRuleFire = {};  // dedup guard: { eventName: timestamp }
+  var RULE_DEDUP_MS = 5000; // 5s cooldown for same event name
   var pendingQueue = []; // batch queue para beforeunload
   var webVitals    = { lcp: 0, fid: 0, cls: 0, fcp: 0 };
 
@@ -768,6 +770,16 @@ router.get('/tracker.js', async (req, res) => {
     try {
       var cfg = window.TRACKING_CONFIG;
       if (!cfg || !cfg.apiUrl || !cfg.siteKey) return;
+
+      // Dedup guard: prevent same event name from firing twice within RULE_DEDUP_MS
+      // This prevents button_click + url_contains rules from duplicating the same conversion
+      var evKey = eventName;
+      var nowMs = Date.now();
+      if (_lastRuleFire[evKey] && (nowMs - _lastRuleFire[evKey]) < RULE_DEDUP_MS) {
+        console.log('[TRK] Dedup skip: ' + eventName + ' fired ' + (nowMs - _lastRuleFire[evKey]) + 'ms ago');
+        return;
+      }
+      _lastRuleFire[evKey] = nowMs;
 
       var eventTime = Math.floor(Date.now() / 1000);
       var eventId   = genEventId();
