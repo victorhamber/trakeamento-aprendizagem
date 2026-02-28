@@ -2,6 +2,7 @@ import axios from 'axios';
 import { pool } from '../db/pool';
 import { llmService } from './llm';
 import { metaMarketingService } from './meta-marketing';
+import { decryptString } from '../lib/crypto';
 
 export class DiagnosisService {
   // ── Helpers ────────────────────────────────────────────────────────────────
@@ -31,6 +32,97 @@ export class DiagnosisService {
         .slice(0, 3000);
     } catch {
       return null;
+    }
+  }
+
+  /**
+   * Fetch ad creatives from Meta Graph API for a given campaign.
+   * Returns structured creative data (ad_name, copy, media_type, image_url).
+   */
+  private async fetchAdCreatives(
+    siteId: number,
+    campaignId: string
+  ): Promise<Array<{ ad_name: string; copy: string; media_description: string }>> {
+    try {
+      // Get token and ad_account_id
+      const metaRow = await pool.query(
+        'SELECT fb_user_token_enc, fb_token_expires_at, ad_account_id FROM integrations_meta WHERE site_id = $1',
+        [siteId]
+      );
+      const meta = metaRow.rows[0];
+      if (!meta?.fb_user_token_enc || !meta?.ad_account_id) {
+        console.log('[DiagnosisService] No Meta token or ad_account_id — skipping creative fetch');
+        return [];
+      }
+      // Check token expiry
+      if (meta.fb_token_expires_at && new Date(meta.fb_token_expires_at) < new Date()) {
+        console.log('[DiagnosisService] Meta token expired — skipping creative fetch');
+        return [];
+      }
+
+      const token = decryptString(meta.fb_user_token_enc);
+      const adAccountId = meta.ad_account_id;
+      const fbApiVersion = 'v19.0';
+
+      // Fetch ads for this campaign with creative details
+      const adsRes = await axios.get(
+        `https://graph.facebook.com/${fbApiVersion}/${encodeURIComponent(adAccountId)}/ads`,
+        {
+          params: {
+            fields: 'id,name,status,effective_status,creative{id,name,body,title,thumbnail_url,image_url,object_story_spec}',
+            filtering: JSON.stringify([{ field: 'campaign.id', operator: 'EQUAL', value: campaignId }]),
+            access_token: token,
+            limit: 20,
+          },
+          timeout: 10000,
+        }
+      );
+
+      const ads = Array.isArray(adsRes.data?.data) ? adsRes.data.data : [];
+      console.log(`[DiagnosisService] Fetched ${ads.length} ads from Meta for campaign ${campaignId}`);
+
+      return ads.map((ad: any) => {
+        const creative = ad.creative || {};
+        const oss = creative.object_story_spec || {};
+
+        // Extract copy from various possible locations in object_story_spec
+        const linkData = oss.link_data || {};
+        const videoData = oss.video_data || {};
+        const photoData = oss.photo_data || {};
+
+        // Copy body: try link_data.message, video_data.message, creative.body, or photo_data.message
+        const copy = linkData.message || videoData.message || creative.body || photoData.message || '';
+
+        // Title (headline)
+        const title = linkData.name || videoData.title || creative.title || '';
+
+        // Description
+        const description = linkData.description || videoData.description || '';
+
+        // Media info
+        const imageUrl = creative.image_url || creative.thumbnail_url || linkData.image_hash || '';
+        const hasVideo = !!videoData.video_id || !!oss.video_id;
+
+        // Build media description
+        let mediaDescription = hasVideo ? '[VIDEO]' : '[IMAGEM]';
+        if (imageUrl) mediaDescription += ` URL: ${imageUrl}`;
+
+        // Build full copy text
+        let fullCopy = '';
+        if (title) fullCopy += `Título: ${title}\n`;
+        if (copy) fullCopy += `Corpo: ${copy}\n`;
+        if (description) fullCopy += `Descrição: ${description}`;
+        fullCopy = fullCopy.trim();
+
+        return {
+          ad_name: ad.name || `Ad ${ad.id}`,
+          copy: fullCopy,
+          media_description: mediaDescription,
+        };
+      }).filter((c: any) => c.copy || c.media_description);
+    } catch (err: any) {
+      console.error('[DiagnosisService] Error fetching ad creatives from Meta:', err?.response?.data || err?.message || err);
+      return [];
     }
   }
 
@@ -882,6 +974,30 @@ export class DiagnosisService {
       console.warn('[DiagnosisService] Trend calculation failed:', err);
     }
 
+    // ── Auto-fetch creatives from Meta API if not provided by user ──────
+    let autoCreatives: Array<{ ad_name: string; copy: string; media_description: string }> = [];
+    if (siteId && campaignId) {
+      autoCreatives = await this.fetchAdCreatives(siteId, campaignId);
+      if (autoCreatives.length > 0) {
+        console.log(`[DiagnosisService] Auto-fetched ${autoCreatives.length} creatives from Meta`);
+      }
+    }
+
+    // Merge: user-provided creatives take priority, auto-fetched fill gaps
+    const userCreatives = options?.userContext?.creatives || [];
+    const finalCreatives = userCreatives.length > 0 ? userCreatives : autoCreatives;
+
+    const finalUserContext = {
+      ...(options?.userContext || {}),
+      creatives: finalCreatives.length > 0 ? finalCreatives : undefined,
+      creatives_source: userCreatives.length > 0 ? 'user_upload' as const : (autoCreatives.length > 0 ? 'meta_api' as const : 'none' as const),
+    };
+
+    // Only include user_context if it has meaningful data
+    const hasUserContext = Object.entries(finalUserContext).some(
+      ([k, v]) => k !== 'creatives_source' && v !== undefined && v !== ''
+    );
+
     const snapshot = {
       site_key: siteKey,
       period_days: daysNum,
@@ -987,7 +1103,7 @@ export class DiagnosisService {
         hourly: hourlyDistribution,
         day_of_week: dayOfWeekDistribution,
       },
-      user_context: options?.userContext || null,
+      user_context: hasUserContext ? finalUserContext : null,
     };
 
     const analysis = await llmService.generateAnalysisForSite(siteKey, snapshot);
