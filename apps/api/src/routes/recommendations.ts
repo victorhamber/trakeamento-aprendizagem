@@ -34,6 +34,8 @@ router.post('/generate', requireAuth, async (req, res) => {
   const daysRaw = Number(req.query.days || 7);
   const days = Number.isFinite(daysRaw) ? Math.min(90, Math.max(1, Math.trunc(daysRaw))) : 7;
 
+  const force = req.query.force === 'true' || req.query.force === '1';
+
   try {
     const reportOptions = {
       datePreset,
@@ -45,6 +47,7 @@ router.post('/generate', requireAuth, async (req, res) => {
       utm_content: utmContent,
       utm_term: utmTerm,
       click_id: clickId,
+      force,
     } as any;
     const report = await diagnosisService.generateReport(siteKey as string, days, campaignId, reportOptions);
     res.json({

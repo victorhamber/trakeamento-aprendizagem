@@ -150,6 +150,47 @@ export class LlmService {
     }
   }
 
+  private readonly REQUIRED_SECTIONS = [
+    '## Diagnostico Executivo',
+    '## Analise do Funil',
+    '## Plano de Acao',
+  ];
+
+  private readonly EXPECTED_SECTIONS = [
+    '## Vendas e ROAS',
+    '## Analise de Criativos',
+    '## Auditoria Tecnica',
+  ];
+
+  private validateOutput(content: string): { valid: boolean; missing: string[]; truncated: boolean } {
+    const missing = this.REQUIRED_SECTIONS.filter(
+      section => !content.includes(section)
+    );
+    // Check if output appears truncated (no natural ending)
+    const trimmed = content.trimEnd();
+    const truncated = !trimmed.endsWith('*') && !trimmed.endsWith('---') && !trimmed.endsWith('|')
+      && !trimmed.endsWith('.') && !trimmed.endsWith(')')
+      && trimmed.length > 2000;
+
+    return { valid: missing.length === 0, missing, truncated };
+  }
+
+  private appendValidationWarnings(content: string, missing: string[], truncated: boolean): string {
+    const warnings: string[] = [];
+    if (truncated) {
+      warnings.push('> ⚠️ **Aviso:** Este relatório pode estar incompleto (resposta truncada pelo modelo).');
+    }
+    if (missing.length > 0) {
+      warnings.push(`> ⚠️ **Seções ausentes:** ${missing.join(', ')}. O modelo não seguiu a estrutura completa.`);
+    }
+    const missingExpected = this.EXPECTED_SECTIONS.filter(s => !content.includes(s));
+    if (missingExpected.length > 0) {
+      warnings.push(`> ℹ️ **Seções opcionais não incluídas:** ${missingExpected.join(', ')}.`);
+    }
+    if (warnings.length === 0) return content;
+    return content + '\n\n---\n\n' + warnings.join('\n\n');
+  }
+
   public async generateAnalysisForSite(siteKey: string, snapshot: unknown): Promise<string> {
     const cfg = await this.getKeyForSite(siteKey);
     const apiKey = cfg?.apiKey || process.env.OPENAI_API_KEY || '';
@@ -162,7 +203,26 @@ export class LlmService {
     const snapshotJson = this.sanitizeSnapshot(snapshot);
     const userContent = `Dados estruturados do periodo (JSON):\n\n${snapshotJson}`;
     try {
-      return await this.callOpenAI(apiKey, model, systemPrompt, userContent);
+      let content = await this.callOpenAI(apiKey, model, systemPrompt, userContent);
+      const validation = this.validateOutput(content);
+
+      // If critical sections are missing, retry once with a corrective prompt
+      if (!validation.valid) {
+        this.log('warn', `Output missing sections: ${validation.missing.join(', ')}. Retrying...`);
+        try {
+          const retryPrompt = `Voce gerou um relatorio incompleto. As seguintes secoes OBRIGATORIAS estao faltando: ${validation.missing.join(', ')}.\n\nPor favor, gere o relatorio COMPLETO seguindo a estrutura exata do system prompt. Inclua TODAS as secoes obrigatorias.\n\nDados:\n\n${snapshotJson}`;
+          content = await this.callOpenAI(apiKey, model, systemPrompt, retryPrompt);
+          const revalidation = this.validateOutput(content);
+          content = this.appendValidationWarnings(content, revalidation.missing, revalidation.truncated);
+        } catch {
+          // If retry fails, use original content with warnings
+          content = this.appendValidationWarnings(content, validation.missing, validation.truncated);
+        }
+      } else {
+        content = this.appendValidationWarnings(content, [], validation.truncated);
+      }
+
+      return content;
     } catch {
       this.log('warn', 'All OpenAI attempts failed — returning fallback report');
       return this.fallbackReport(snapshot);

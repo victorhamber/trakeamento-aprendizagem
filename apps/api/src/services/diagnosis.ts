@@ -199,6 +199,7 @@ export class DiagnosisService {
       utm_content?: string;
       utm_term?: string;
       click_id?: string;
+      force?: boolean;
     }
   ) {
     const siteRow = await pool.query('SELECT id FROM sites WHERE site_key = $1', [siteKey]);
@@ -206,6 +207,37 @@ export class DiagnosisService {
 
     const range = this.resolveDateRange({ ...options, days });
     const { since, until, days: daysNum } = range;
+
+    // ── Cache check: return recent report if available (TTL 1h) ───────────
+    const cacheKey = options?.datePreset || `custom_${daysNum}d`;
+    if (!options?.force) {
+      try {
+        const cached = await pool.query(
+          `SELECT * FROM recommendation_reports
+           WHERE site_key = $1
+             AND COALESCE(campaign_id, '') = COALESCE($2, '')
+             AND COALESCE(date_preset, '') = $3
+             AND created_at > NOW() - INTERVAL '1 hour'
+           ORDER BY created_at DESC LIMIT 1`,
+          [siteKey, campaignId || null, cacheKey]
+        );
+        if (cached.rowCount && cached.rows[0]) {
+          console.log(`[DiagnosisService] Cache hit — returning report from ${cached.rows[0].created_at}`);
+          return {
+            ...cached.rows[0],
+            from_cache: true,
+            meta_breakdown: { campaigns: [], adsets: [], ads: [] },
+            period: {
+              since: since.toISOString(),
+              until: until.toISOString(),
+              days: daysNum,
+            },
+          };
+        }
+      } catch (err) {
+        console.warn('[DiagnosisService] Cache check failed, proceeding with fresh report:', err);
+      }
+    }
 
     // ── Sync Meta data ─────────────────────────────────────────────────────────
     if (siteId && campaignId) {
@@ -877,8 +909,8 @@ export class DiagnosisService {
     const analysis = await llmService.generateAnalysisForSite(siteKey, snapshot);
 
     const reportResult = await pool.query(
-      `INSERT INTO recommendation_reports (site_key, analysis_text) VALUES ($1, $2) RETURNING *`,
-      [siteKey, analysis]
+      `INSERT INTO recommendation_reports (site_key, campaign_id, date_preset, analysis_text) VALUES ($1, $2, $3, $4) RETURNING *`,
+      [siteKey, campaignId || null, cacheKey, analysis]
     );
 
     return {
