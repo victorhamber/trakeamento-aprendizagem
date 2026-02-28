@@ -302,6 +302,26 @@ Se landing_page.content existir (nao null), analise brevemente:
 - O conteudo reforca a proposta de valor?
 Se landing_page.content for null, diga "Conteudo da LP nao disponivel para analise".
 
+=== REGRA: CONTEXTO DO USUARIO ===
+
+Se user_context existir no snapshot:
+
+1. user_context.stated_objective: O usuario informou manualmente o objetivo real da campanha.
+   Use como REFERENCIA PRINCIPAL para avaliar sucesso. Se conflitar com meta.objective, priorize
+   o que o usuario declarou e mencione a divergencia.
+
+2. user_context.landing_page_url: URL da LP informada pelo usuario. Mais confiavel que auto-detect.
+
+3. user_context.creatives: Array de criativos com copy e descricao de midia.
+   Para cada criativo analisado:
+   - copy: avalie clareza, CTA, proposta de valor, alinhamento com LP
+   - media_description (se imagem): avalie elementos visuais, cores, CTA visual
+   - media_description (se comeca com [TRANSCRICAO DO VIDEO]): avalie hook dos primeiros 3s,
+     conteudo da fala, CTA verbal, tom de voz, e alinhamento com a oferta
+   Compare criativos entre si: qual tem melhor potencial de conversao?
+
+Se user_context nao existir, ignore esta regra completamente.
+
 === REGRA: TENDENCIA (TREND) ===
 
 Se o objeto trend existir no snapshot, compare periodo atual vs anterior:

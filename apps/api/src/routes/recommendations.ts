@@ -36,6 +36,22 @@ router.post('/generate', requireAuth, async (req, res) => {
 
   const force = req.query.force === 'true' || req.query.force === '1';
 
+  // User context from wizard (optional)
+  const body = req.body || {};
+  const userContext = {
+    stated_objective: typeof body.objective === 'string' ? body.objective.trim() : undefined,
+    landing_page_url: typeof body.landing_page_url === 'string' ? body.landing_page_url.trim() : undefined,
+    creatives: Array.isArray(body.creatives) ? body.creatives.map((c: any) => ({
+      ad_name: typeof c.ad_name === 'string' ? c.ad_name : 'Anúncio',
+      copy: typeof c.copy === 'string' ? c.copy.trim() : '',
+      media_description: typeof c.media_description === 'string' ? c.media_description.trim() : '',
+    })).filter((c: any) => c.copy || c.media_description) : undefined,
+  };
+  // Remove undefined fields
+  const cleanContext = Object.fromEntries(
+    Object.entries(userContext).filter(([, v]) => v !== undefined && v !== '')
+  );
+
   try {
     const reportOptions = {
       datePreset,
@@ -48,6 +64,7 @@ router.post('/generate', requireAuth, async (req, res) => {
       utm_term: utmTerm,
       click_id: clickId,
       force,
+      userContext: Object.keys(cleanContext).length > 0 ? cleanContext : undefined,
     } as any;
     const report = await diagnosisService.generateReport(siteKey as string, days, campaignId, reportOptions);
     res.json({

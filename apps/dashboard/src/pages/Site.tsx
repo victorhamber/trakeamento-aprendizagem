@@ -6,6 +6,7 @@ import { api } from '../lib/api';
 import { DDI_LIST } from '../lib/ddi';
 import { Layout } from '../components/Layout';
 import WebhooksTab from '../components/site/WebhooksTab';
+import { ReportWizard } from '../components/site/ReportWizard';
 import { BestTimeCards } from '../components/BestTimeCards';
 
 type Site = {
@@ -198,6 +199,7 @@ export const SitePage = () => {
   const [diagnosisUtmTerm, setDiagnosisUtmTerm] = useState('');
   const [diagnosisClickId, setDiagnosisClickId] = useState('');
   const [showUrlPaster, setShowUrlPaster] = useState(false);
+  const [showWizard, setShowWizard] = useState(false);
   const [pastedUrl, setPastedUrl] = useState('');
   const [utmOptions, setUtmOptions] = useState<{
     sources: string[];
@@ -1407,6 +1409,17 @@ ${scriptContent}
       showFlash('Defina o período personalizado.', 'error');
       return;
     }
+    // Open the wizard instead of calling API directly
+    setShowWizard(true);
+  };
+
+  const handleWizardGenerate = async (context: {
+    objective: string;
+    landing_page_url: string;
+    creatives?: any[];
+  }) => {
+    if (!site) return;
+    setShowWizard(false);
     setLoading(true);
     try {
       const params: Record<string, string> = { campaign_id: selectedCampaignId };
@@ -1424,7 +1437,11 @@ ${scriptContent}
       if (diagnosisClickId) params.click_id = diagnosisClickId;
       const res = await api.post(
         '/recommendations/generate',
-        {},
+        {
+          objective: context.objective,
+          landing_page_url: context.landing_page_url,
+          creatives: context.creatives,
+        },
         { headers: { 'x-site-key': site.site_key }, params }
       );
       setReport(res.data);
@@ -3201,7 +3218,7 @@ ${scriptContent}
                               <div className={`h-10 rounded border px-3 flex items-center text-sm flex-1 ${formTheme === 'dark' ? 'bg-[#222] border-[#444] text-white' : 'bg-white border-gray-300 text-gray-500'}`}>Telefone</div>
                             </div>
                           )}
-                          <div 
+                          <div
                             className="h-10 rounded flex items-center justify-center font-bold text-sm"
                             style={{ backgroundColor: formButtonBgColor, color: formButtonTextColor }}
                           >
@@ -3975,6 +3992,18 @@ ${scriptContent}
           }
         </div >
       </div >
+      {showWizard && site && (
+        <ReportWizard
+          open={showWizard}
+          onClose={() => setShowWizard(false)}
+          onGenerate={handleWizardGenerate}
+          siteKey={site.site_key}
+          ads={campaigns
+            .filter((c: any) => c.id)
+            .map((c: any) => ({ id: c.id, name: c.name || c.id }))}
+          loading={loading}
+        />
+      )}
     </Layout >
   );
 };

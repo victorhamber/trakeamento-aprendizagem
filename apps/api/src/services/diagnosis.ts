@@ -200,6 +200,11 @@ export class DiagnosisService {
       utm_term?: string;
       click_id?: string;
       force?: boolean;
+      userContext?: {
+        stated_objective?: string;
+        landing_page_url?: string;
+        creatives?: Array<{ ad_name: string; copy: string; media_description: string }>;
+      };
     }
   ) {
     const siteRow = await pool.query('SELECT id FROM sites WHERE site_key = $1', [siteKey]);
@@ -699,6 +704,12 @@ export class DiagnosisService {
         lpParams
       );
       landingPageUrl = topUrlRes.rows[0]?.event_source_url || null;
+
+      // Override with user-provided LP URL (from wizard)
+      if (options?.userContext?.landing_page_url) {
+        landingPageUrl = options.userContext.landing_page_url;
+      }
+
       if (landingPageUrl) {
         landingPageContent = await this.fetchLandingPageContent(landingPageUrl);
       }
@@ -897,13 +908,14 @@ export class DiagnosisService {
       trend,
 
       landing_page: {
-        url: landingPageUrl,
+        url: options?.userContext?.landing_page_url || landingPageUrl,
         content: landingPageContent,
       },
       segments: {
         hourly: hourlyDistribution,
         day_of_week: dayOfWeekDistribution,
       },
+      user_context: options?.userContext || null,
     };
 
     const analysis = await llmService.generateAnalysisForSite(siteKey, snapshot);

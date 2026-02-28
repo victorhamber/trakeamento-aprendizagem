@@ -16,6 +16,7 @@ import { pool } from './db/pool';
 import metaRoutes from './routes/meta';
 import recommendationRoutes from './routes/recommendations';
 import notificationRoutes from './routes/notifications';
+import uploadRoutes from './routes/upload';
 import { formsRouter } from './routes/forms';
 import publicRoutes from './routes/public';
 import { ensureSchema } from './db/schema';
@@ -88,6 +89,7 @@ app.use('/webhooks', webhookRoutes);
 app.use('/meta', metaRoutes);
 app.use('/recommendations', recommendationRoutes);
 app.use('/notifications', notificationRoutes);
+app.use('/upload', uploadRoutes);
 app.use('/public', publicRoutes);
 app.use('/', formsRouter);
 
