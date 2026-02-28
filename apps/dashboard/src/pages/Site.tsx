@@ -1428,7 +1428,7 @@ ${scriptContent}
   const handleWizardGenerate = async (context: {
     objective: string;
     landing_page_url: string;
-    creatives?: any[];
+    selected_ad_ids?: string[];
   }) => {
     if (!site) return;
     setShowWizard(false);
@@ -1452,7 +1452,7 @@ ${scriptContent}
         {
           objective: context.objective,
           landing_page_url: context.landing_page_url,
-          creatives: context.creatives,
+          selected_ad_ids: context.selected_ad_ids,
         },
         { headers: { 'x-site-key': site.site_key }, params }
       );
@@ -4009,7 +4009,6 @@ ${scriptContent}
           open={showWizard}
           onClose={() => setShowWizard(false)}
           onGenerate={handleWizardGenerate}
-          siteKey={site.site_key}
           ads={wizardAds.map((a: any) => ({ id: a.id, name: a.name || a.id }))}
           loading={loading}
         />

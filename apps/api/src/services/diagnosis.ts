@@ -41,7 +41,8 @@ export class DiagnosisService {
    */
   private async fetchAdCreatives(
     siteId: number,
-    campaignId: string
+    campaignId: string,
+    selectedAdIds?: string[]
   ): Promise<Array<{ ad_name: string; copy: string; media_description: string }>> {
     try {
       // Get token and ad_account_id
@@ -78,7 +79,10 @@ export class DiagnosisService {
         }
       );
 
-      const ads = Array.isArray(adsRes.data?.data) ? adsRes.data.data : [];
+      let ads = Array.isArray(adsRes.data?.data) ? adsRes.data.data : [];
+      if (selectedAdIds && selectedAdIds.length > 0) {
+        ads = ads.filter((ad: any) => selectedAdIds.includes(ad.id));
+      }
       console.log(`[DiagnosisService] Fetched ${ads.length} ads from Meta for campaign ${campaignId}`);
 
       return ads.map((ad: any) => {
@@ -338,6 +342,7 @@ export class DiagnosisService {
         stated_objective?: string;
         landing_page_url?: string;
         creatives?: Array<{ ad_name: string; copy: string; media_description: string }>;
+        selected_ad_ids?: string[];
       };
     }
   ) {
@@ -977,7 +982,7 @@ export class DiagnosisService {
     // ── Auto-fetch creatives from Meta API if not provided by user ──────
     let autoCreatives: Array<{ ad_name: string; copy: string; media_description: string }> = [];
     if (siteId && campaignId) {
-      autoCreatives = await this.fetchAdCreatives(siteId, campaignId);
+      autoCreatives = await this.fetchAdCreatives(siteId, campaignId, options?.userContext?.selected_ad_ids);
       if (autoCreatives.length > 0) {
         console.log(`[DiagnosisService] Auto-fetched ${autoCreatives.length} creatives from Meta`);
       }

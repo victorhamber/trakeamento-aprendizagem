@@ -1,25 +1,12 @@
-import React, { useState, useRef } from 'react';
-import { api } from '../../lib/api';
-
-interface Creative {
-    ad_id: string;
-    ad_name: string;
-    copy: string;
-    media_description: string;
-    uploading: boolean;
-    uploaded: boolean;
-    error: string;
-}
-
+import React, { useState } from 'react';
 interface ReportWizardProps {
     open: boolean;
     onClose: () => void;
     onGenerate: (context: {
         objective: string;
         landing_page_url: string;
-        creatives?: Creative[];
+        selected_ad_ids?: string[];
     }) => void;
-    siteKey: string;
     ads: Array<{ id: string; name: string }>;
     loading: boolean;
 }
@@ -37,7 +24,6 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
     open,
     onClose,
     onGenerate,
-    siteKey,
     ads,
     loading,
 }) => {
@@ -45,19 +31,7 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
     const [objective, setObjective] = useState('');
     const [customObjective, setCustomObjective] = useState('');
     const [lpUrl, setLpUrl] = useState('');
-    const [creatives, setCreatives] = useState<Creative[]>(
-        ads.map((ad) => ({
-            ad_id: ad.id,
-            ad_name: ad.name,
-            copy: '',
-            media_description: '',
-            uploading: false,
-            uploaded: false,
-            error: '',
-        }))
-    );
-    const [currentAdIndex, setCurrentAdIndex] = useState(0);
-    const fileRef = useRef<HTMLInputElement>(null);
+    const [selectedAdIds, setSelectedAdIds] = useState<string[]>(ads.map((a) => a.id));
 
     if (!open) return null;
 
@@ -65,64 +39,19 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
     const canNext1 = !!finalObjective;
     const canNext2 = !!lpUrl && lpUrl.startsWith('http');
 
-    const handleUploadFile = async (file: File) => {
-        const updated = [...creatives];
-        updated[currentAdIndex] = { ...updated[currentAdIndex], uploading: true };
-        setCreatives(updated);
-
-        try {
-            const formData = new FormData();
-            formData.append('file', file);
-            formData.append('ad_name', creatives[currentAdIndex].ad_name);
-
-            const res = await api.post('/upload/creative', formData, {
-                headers: {
-                    'x-site-key': siteKey,
-                    'Content-Type': 'multipart/form-data',
-                },
-                timeout: 300000, // 5 min for video transcription
-            });
-
-            const final = [...creatives];
-            final[currentAdIndex] = {
-                ...final[currentAdIndex],
-                media_description: res.data.media_description || '',
-                uploading: false,
-                uploaded: true,
-            };
-            setCreatives(final);
-        } catch (err: any) {
-            console.error('Upload failed:', err);
-            const errMsg = err?.response?.data?.error || err?.message || 'Erro ao processar criativo.';
-            const final = [...creatives];
-            final[currentAdIndex] = { ...final[currentAdIndex], uploading: false, error: errMsg };
-            setCreatives(final);
-        }
-    };
-
-    const handleCopyChange = (value: string) => {
-        const updated = [...creatives];
-        updated[currentAdIndex] = { ...updated[currentAdIndex], copy: value };
-        setCreatives(updated);
-    };
-
-    const handleNextAd = () => {
-        if (currentAdIndex < creatives.length - 1) {
-            setCurrentAdIndex(currentAdIndex + 1);
-        }
+    const toggleAd = (adId: string) => {
+        setSelectedAdIds((prev) =>
+            prev.includes(adId) ? prev.filter((id) => id !== adId) : [...prev, adId]
+        );
     };
 
     const handleGenerate = () => {
-        const filledCreatives = creatives.filter((c) => c.copy || c.media_description);
         onGenerate({
             objective: finalObjective,
             landing_page_url: lpUrl,
-            creatives: filledCreatives.length > 0 ? filledCreatives : undefined,
+            selected_ad_ids: selectedAdIds.length > 0 ? selectedAdIds : undefined,
         });
     };
-
-    const currentAd = creatives[currentAdIndex];
-    const isLastAd = currentAdIndex >= creatives.length - 1;
 
     const inputCls =
         'w-full rounded-lg bg-zinc-100 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-200 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/40 transition-all placeholder:text-zinc-500';
@@ -216,91 +145,36 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
                     {/* Step 3: Creatives (Optional) */}
                     {step === 3 && (
                         <div className="space-y-4">
-                            {creatives.length === 0 ? (
-                                <p className="text-sm text-zinc-500">Nenhum anúncio encontrado na campanha.</p>
+                            <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                                Selecione quais criativos você deseja que a inteligência artificial analise. O conteúdo real dos anúncios será buscado automaticamente da API do Meta.
+                            </p>
+                            {ads.length === 0 ? (
+                                <p className="text-sm text-zinc-500">Nenhum anúncio encontrado nesta campanha.</p>
                             ) : (
-                                <>
-                                    <div className="flex items-center justify-between">
-                                        <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                                            Anúncio {currentAdIndex + 1} de {creatives.length}
-                                        </p>
-                                        <span className="text-xs px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400">
-                                            Opcional
-                                        </span>
-                                    </div>
-
-                                    <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 p-4 space-y-3">
-                                        <h4 className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">
-                                            {currentAd?.ad_name || `Anúncio ${currentAdIndex + 1}`}
-                                        </h4>
-
-                                        {/* Copy */}
-                                        <div>
-                                            <label className="block text-xs text-zinc-500 dark:text-zinc-500 mb-1.5">
-                                                Copy do anúncio
+                                <div className="space-y-2 max-h-[30vh] overflow-y-auto pr-2">
+                                    {ads.map((ad) => {
+                                        const isSelected = selectedAdIds.includes(ad.id);
+                                        return (
+                                            <label
+                                                key={ad.id}
+                                                className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${isSelected
+                                                    ? 'border-blue-500 bg-blue-500/5'
+                                                    : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700'
+                                                    }`}
+                                            >
+                                                <input
+                                                    type="checkbox"
+                                                    className="w-4 h-4 text-blue-600 rounded border-zinc-300 dark:border-zinc-700 dark:bg-zinc-800 focus:ring-blue-500"
+                                                    checked={isSelected}
+                                                    onChange={() => toggleAd(ad.id)}
+                                                />
+                                                <span className={`text-sm font-medium ${isSelected ? 'text-zinc-900 dark:text-zinc-100' : 'text-zinc-600 dark:text-zinc-400'}`}>
+                                                    {ad.name || `Anúncio ${ad.id}`}
+                                                </span>
                                             </label>
-                                            <textarea
-                                                rows={3}
-                                                placeholder="Cole o texto/copy usado neste anúncio..."
-                                                value={currentAd?.copy || ''}
-                                                onChange={(e) => handleCopyChange(e.target.value)}
-                                                className={inputCls + ' resize-none'}
-                                            />
-                                        </div>
-
-                                        {/* File Upload */}
-                                        <div>
-                                            <label className="block text-xs text-zinc-500 dark:text-zinc-500 mb-1.5">
-                                                Criativo (imagem ou vídeo)
-                                            </label>
-                                            <input
-                                                ref={fileRef}
-                                                type="file"
-                                                accept="image/*,video/*"
-                                                className="hidden"
-                                                onChange={(e) => {
-                                                    const file = e.target.files?.[0];
-                                                    if (file) handleUploadFile(file);
-                                                }}
-                                            />
-                                            {currentAd?.uploading ? (
-                                                <div className="flex items-center gap-2 px-4 py-3 rounded-xl border border-blue-500/30 bg-blue-500/5 text-sm text-blue-400">
-                                                    <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
-                                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
-                                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                                                    </svg>
-                                                    Processando criativo...
-                                                </div>
-                                            ) : currentAd?.uploaded ? (
-                                                <div className="px-4 py-3 rounded-xl border border-emerald-500/30 bg-emerald-500/5 text-sm text-emerald-400">
-                                                    ✅ Criativo analisado com sucesso
-                                                </div>
-                                            ) : (
-                                                <button
-                                                    onClick={() => fileRef.current?.click()}
-                                                    className="w-full px-4 py-3 rounded-xl border border-dashed border-zinc-300 dark:border-zinc-700 text-sm text-zinc-500 dark:text-zinc-400 hover:border-blue-500 hover:text-blue-500 transition-all"
-                                                >
-                                                    📎 Clique para carregar imagem ou vídeo
-                                                </button>
-                                            )}
-                                            {currentAd?.error && (
-                                                <div className="px-4 py-3 rounded-xl border border-red-500/30 bg-red-500/5 text-sm text-red-400">
-                                                    ❌ {currentAd.error}
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    {/* Navigation between ads */}
-                                    {!isLastAd && (
-                                        <button
-                                            onClick={handleNextAd}
-                                            className="w-full px-4 py-2.5 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
-                                        >
-                                            Próximo anúncio →
-                                        </button>
-                                    )}
-                                </>
+                                        );
+                                    })}
+                                </div>
                             )}
                         </div>
                     )}
@@ -323,10 +197,10 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
                         {step === 3 && (
                             <button
                                 onClick={handleGenerate}
-                                disabled={loading}
-                                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors disabled:opacity-40"
+                                disabled={loading || selectedAdIds.length === 0}
+                                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium bg-blue-600 hover:bg-blue-500 text-white transition-colors disabled:opacity-40"
                             >
-                                Pular e gerar
+                                Gerar Diagnóstico
                             </button>
                         )}
 
