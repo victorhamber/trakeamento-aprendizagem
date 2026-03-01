@@ -861,6 +861,7 @@ async function handleTrkSubmit(e) {
   // Prevent duplicates by generating a single event ID for both Tracker (browser) and API (server)
   var eventId = 'evt_' + Math.floor(Date.now() / 1000) + '_' + Math.random().toString(36).slice(2);
   data.event_id = eventId;
+  data.tracked_by_frontend = !!window.tracker;
 
   // 1. Client-side tracking
   if (window.tracker) {

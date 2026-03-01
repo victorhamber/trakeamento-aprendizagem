@@ -139,20 +139,32 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
         }
       }
 
-      // Send Event (async)
-      capiService.sendEventDetailed(siteKey, {
-        event_name: eventName,
-        event_time: Math.floor(Date.now() / 1000),
-        event_id: body.event_id || `${eventName.toLowerCase()}_${Date.now()}_${Math.random().toString(36).slice(2)}`,
-        event_source_url: req.headers.referer || `https://form-submit.trakeamento.com/${publicId}`,
-        action_source: 'website',
-        user_data: userData,
-        custom_data: {
-          form_name: form.name,
-          form_id: publicId,
-          ...(({ event_id, ...rest }) => rest)(body)
-        }
-      }).catch(err => console.error(`CAPI failed for form ${publicId}:`, err));
+      // ── CAPI INTEGRATION (Fallback if frontend tracking failed or blocked) ──
+      // Se o formulário enviou a flag `tracked_by_frontend`, significa que o sdk.ts já
+      // enviou o evento para a rota /ingest com máxima qualidade (fbc, fbp, user_agent).
+      // Disparar outro CAPI aqui criaria redundância e derrubaria o Score por falta de cookies.
+      if (!body.tracked_by_frontend) {
+        // Remove raw PII from custom_data to avoid Hash Warnings from Meta
+        const piiKeys = ['email', 'mail', 'e_mail', 'phone', 'tel', 'telefone', 'celular', 'whatsapp', 'fn', 'firstname', 'first_name', 'primeironome', 'primeiro_nome', 'ln', 'lastname', 'last_name', 'sobrenome', 'ultimo_nome', 'name', 'nome', 'fullname', 'full_name', 'nomecompleto'];
+        const safeCustomData = Object.fromEntries(
+          Object.entries(body).filter(([k]) => !piiKeys.includes(k.toLowerCase().replace(/[^a-z0-9]/g, '')) && k !== 'event_id' && k !== 'tracked_by_frontend')
+        );
+
+        // Send Event (async)
+        capiService.sendEventDetailed(siteKey, {
+          event_name: eventName,
+          event_time: Math.floor(Date.now() / 1000),
+          event_id: body.event_id || `${eventName.toLowerCase()}_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+          event_source_url: req.headers.referer || `https://form-submit.trakeamento.com/${publicId}`,
+          action_source: 'website',
+          user_data: userData,
+          custom_data: {
+            form_name: form.name,
+            form_id: publicId,
+            ...safeCustomData
+          }
+        }).catch(err => console.error(`CAPI failed for form ${publicId}:`, err));
+      }
     }
 
     // Trigger Webhook if configured
