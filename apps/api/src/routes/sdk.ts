@@ -247,6 +247,26 @@ router.get('/tracker.js', async (req, res) => {
     sha256Hex(getDeviceFingerprint(), safeCb);
   }
 
+  // ─── Traffic Source Persistence ───────────────────────────────────────────
+  function getTrafficSource() {
+    var cookieName = '_ta_ts';
+    try {
+      if (document.referrer) {
+        var refUrl = new URL(document.referrer);
+        // Se a origem for externa (não for o próprio site)
+        if (refUrl.hostname !== location.hostname) {
+          setCookie(cookieName, document.referrer, COOKIE_TTL_90D);
+          return document.referrer;
+        }
+      }
+    } catch(_e) {}
+
+    var savedTs = getCookie(cookieName);
+    if (savedTs) return savedTs;
+
+    return '';
+  }
+
   // ─── Attribution params ───────────────────────────────────────────────────
   function getAttributionParams() {
     var out  = {};
@@ -685,6 +705,7 @@ router.get('/tracker.js', async (req, res) => {
         custom_data:       Object.assign({
           page_title:    document.title,
           referrer:      document.referrer,
+          traffic_source: getTrafficSource(),
           page_path:     location.pathname
         }, attrs),
         telemetry: telemetry
@@ -706,7 +727,7 @@ router.get('/tracker.js', async (req, res) => {
         if (cfg.metaPixelId || hasFbq()) {
           trackMeta('PageView', Object.assign(
             { event_url: location.origin + location.pathname,
-              traffic_source: document.referrer || '' },
+              traffic_source: getTrafficSource() || document.referrer || '' },
             getTimeFields(eventTime),
             payload.custom_data
           ), eventId, false);
@@ -744,7 +765,8 @@ router.get('/tracker.js', async (req, res) => {
         telemetry:        telemetry,
         custom_data:      Object.assign({
           page_title:   document.title,
-          page_path:    location.pathname
+          page_path:    location.pathname,
+          traffic_source: getTrafficSource()
         }, attrs)
       };
 
@@ -788,7 +810,8 @@ router.get('/tracker.js', async (req, res) => {
       var baseCustom = {
         page_title:       document.title,
         page_path:        location.pathname,
-        event_url:        location.origin + location.pathname
+        event_url:        location.origin + location.pathname,
+        traffic_source:   getTrafficSource()
       };
       var telemetry = buildTelemetry({ page_path: location.pathname, page_title: document.title });
 
