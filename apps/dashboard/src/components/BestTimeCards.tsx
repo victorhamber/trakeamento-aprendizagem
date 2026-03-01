@@ -12,6 +12,7 @@ type DailyPeak = {
 type PeakData = {
   daily_peaks: DailyPeak[];
   total_volume: number;
+  top_sources?: { source: string; count: number }[];
 };
 
 type BestTimesData = {
@@ -35,6 +36,20 @@ const PERIOD_LABELS: Record<string, string> = {
   'maximum': 'Máximo'
 };
 
+function formatSource(source: string) {
+  if (!source || source.toLowerCase().includes('direct') || source.toLowerCase().includes('unknown')) return 'Direto / Orgânico';
+  try {
+    const url = new URL(source.startsWith('http') ? source : `https://${source}`);
+    let host = url.hostname.replace(/^www\./, '');
+    if (host === 'l.instagram.com' || host === 'instagram.com') return 'Instagram';
+    if (host === 'l.facebook.com' || host === 'm.facebook.com' || host === 'facebook.com') return 'Facebook';
+    if (host === 'youtube.com' || host === 'm.youtube.com') return 'YouTube';
+    return host;
+  } catch {
+    return source;
+  }
+}
+
 const Card = ({ title, data, color, textColor }: { title: string; data: PeakData; color: string; textColor: string }) => {
   const hasData = data.daily_peaks.some(d => d.count > 0);
 
@@ -44,7 +59,7 @@ const Card = ({ title, data, color, textColor }: { title: string; data: PeakData
         <div className={`w-2 h-2 rounded-full ${color}`} />
         <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{title}</h3>
       </div>
-      
+
       {hasData ? (
         <div className="flex-1 flex flex-col justify-between">
           <div className="overflow-x-auto">
@@ -57,8 +72,8 @@ const Card = ({ title, data, color, textColor }: { title: string; data: PeakData
               </thead>
               <tbody>
                 {data.daily_peaks.map((day) => (
-                  <tr 
-                    key={day.dow} 
+                  <tr
+                    key={day.dow}
                     className={twMerge(
                       "border-b border-zinc-50 dark:border-zinc-800/30 last:border-0",
                       day.is_best_day ? "bg-zinc-50/80 dark:bg-zinc-800/40 font-medium" : ""
@@ -79,6 +94,26 @@ const Card = ({ title, data, color, textColor }: { title: string; data: PeakData
               </tbody>
             </table>
           </div>
+
+          {data.top_sources && data.top_sources.length > 0 && (
+            <div className="mt-4 pt-4 border-t border-zinc-100 dark:border-zinc-800/50">
+              <h4 className="text-[10px] font-semibold tracking-wider uppercase text-zinc-500 mb-2">
+                Top Origens
+              </h4>
+              <div className="space-y-1.5">
+                {data.top_sources.map((src, idx) => (
+                  <div key={idx} className="flex items-center justify-between text-xs">
+                    <span className="text-zinc-600 dark:text-zinc-400 truncate max-w-[70%]">
+                      {formatSource(src.source)}
+                    </span>
+                    <span className="text-zinc-900 dark:text-zinc-100 font-medium tabular-nums">
+                      {src.count}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       ) : (
         <div className="flex-1 flex items-center justify-center min-h-[200px] text-xs text-zinc-500 italic">
@@ -141,24 +176,24 @@ export function BestTimeCards({ siteId, period = 'last_30d' }: BestTimeCardsProp
           </p>
         </div>
       </div>
-      
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-stretch">
-        <Card 
-          title="Leads (Cadastro)" 
-          data={data?.lead || emptyData} 
+        <Card
+          title="Leads (Cadastro)"
+          data={data?.lead || emptyData}
           color="bg-blue-500"
           textColor="text-blue-600 dark:text-blue-400"
         />
-        <Card 
-          title="Checkout (IC)" 
-          data={data?.checkout || emptyData} 
-          color="bg-amber-500" 
+        <Card
+          title="Checkout (IC)"
+          data={data?.checkout || emptyData}
+          color="bg-amber-500"
           textColor="text-amber-600 dark:text-amber-400"
         />
-        <Card 
-          title="Compras (Sales)" 
-          data={data?.purchase || emptyData} 
-          color="bg-emerald-500" 
+        <Card
+          title="Compras (Sales)"
+          data={data?.purchase || emptyData}
+          color="bg-emerald-500"
           textColor="text-emerald-600 dark:text-emerald-400"
         />
       </div>

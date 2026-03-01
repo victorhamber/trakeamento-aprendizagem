@@ -24,10 +24,10 @@ router.get('/debug', async (req, res) => {
       ORDER BY created_at DESC 
       LIMIT 5
     `);
-    
-    res.json({ 
+
+    res.json({
       time_check: timeCheck.rows[0],
-      events_sample: evts.rows 
+      events_sample: evts.rows
     });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
@@ -275,7 +275,7 @@ router.get('/best-times', requireAuth, async (req, res) => {
   const auth = req.auth!;
   const siteId = req.query.siteId ? Number(req.query.siteId) : null;
   const period = (req.query.period as string) || 'last_30d';
-  
+
   const now = new Date();
   let start: Date;
   let end: Date = now;
@@ -283,8 +283,8 @@ router.get('/best-times', requireAuth, async (req, res) => {
 
   switch (period) {
     case 'today': start = todayStart; break;
-    case 'yesterday': 
-      start = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000); 
+    case 'yesterday':
+      start = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000);
       end = todayStart;
       break;
     case 'last_7d': start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000); break;
@@ -312,17 +312,33 @@ router.get('/best-times', requireAuth, async (req, res) => {
         ORDER BY 3 DESC
       `;
 
-      const result = await pool.query(query, [auth.accountId, siteId, eventNames, start, end]);
-      
+      const topSourcesQuery = `
+        SELECT 
+          COALESCE(e.custom_data->>'traffic_source', 'Direct / Unknown') as source,
+          COUNT(*)::int as count
+        FROM web_events e
+        JOIN sites s ON s.site_key = e.site_key
+        WHERE s.account_id = $1 AND ($2::int IS NULL OR s.id = $2::int)
+          AND e.event_name = ANY($3) AND e.event_time >= $4 AND e.event_time <= $5
+        GROUP BY 1
+        ORDER BY 2 DESC
+        LIMIT 3
+      `;
+
+      const [peakResult, sourceResult] = await Promise.all([
+        pool.query(query, [auth.accountId, siteId, eventNames, start, end]),
+        pool.query(topSourcesQuery, [auth.accountId, siteId, eventNames, start, end])
+      ]);
+
       // Encontra o melhor horário para cada dia da semana
       const bestByDay = new Map<number, { hour: number; count: number }>();
       let globalBestDay = -1;
       let maxCount = -1;
 
-      result.rows.forEach(row => {
+      peakResult.rows.forEach(row => {
         const dow = row.dow;
         const count = row.count;
-        
+
         // Atualiza melhor dia global
         if (count > maxCount) {
           maxCount = count;
@@ -349,7 +365,8 @@ router.get('/best-times', requireAuth, async (req, res) => {
 
       return {
         daily_peaks: dailyPeaks,
-        total_volume: maxCount // apenas para referência de escala
+        total_volume: maxCount, // apenas para referência de escala
+        top_sources: sourceResult.rows.map(r => ({ source: r.source, count: r.count }))
       };
     };
 
