@@ -888,7 +888,9 @@ export class DiagnosisService {
           `SELECT EXTRACT(HOUR FROM event_time) AS hour, COUNT(*)::int AS c
            FROM web_events
            WHERE site_key = $1 AND event_name = 'PageView'
-             AND event_time >= $2 AND event_time < $3 ${utmWhere.clause}
+             AND event_time >= $2 AND event_time < $3
+             AND (event_time < CURRENT_DATE OR $2::timestamp >= CURRENT_DATE)
+             ${utmWhere.clause}
            GROUP BY 1 ORDER BY 1`,
           lpParams
         ),
@@ -896,7 +898,9 @@ export class DiagnosisService {
           `SELECT EXTRACT(DOW FROM event_time) AS dow, COUNT(*)::int AS c
            FROM web_events
            WHERE site_key = $1 AND event_name = 'PageView'
-             AND event_time >= $2 AND event_time < $3 ${utmWhere.clause}
+             AND event_time >= $2 AND event_time < $3
+             AND (event_time < CURRENT_DATE OR $2::timestamp >= CURRENT_DATE)
+             ${utmWhere.clause}
            GROUP BY 1 ORDER BY 1`,
           lpParams
         ),

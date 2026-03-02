@@ -647,10 +647,15 @@ router.get('/tracker.js', async (req, res) => {
 
   function buildTelemetry(extra) {
     var dwellMs = Math.max(0, Date.now() - startMs);
+    var nav = performance && performance.timing ? performance.timing : null;
+    var lt = nav && nav.loadEventEnd > 0 ? (nav.loadEventEnd - nav.navigationStart) : 
+             (nav && nav.domContentLoadedEventEnd > 0 ? (nav.domContentLoadedEventEnd - nav.navigationStart) : 0);
+
     var base = Object.assign({
       dwell_time_ms:   dwellMs,
       visible_time_ms: visibleMs + (hiddenSince ? 0 : (Date.now() - startMs)),
       max_scroll_pct:  Math.round(maxScroll),
+      load_time_ms:    lt > 0 ? lt : undefined,
       clicks_total:    totalClicks,
       clicks_cta:      ctaClicks,
       lcp:             Math.round(webVitals.lcp),
