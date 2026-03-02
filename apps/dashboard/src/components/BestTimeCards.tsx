@@ -36,9 +36,10 @@ const PERIOD_LABELS: Record<string, string> = {
   'maximum': 'Máximo'
 };
 
-function formatSource(source: string) {
-  if (!source || source.toLowerCase().includes('direct') || source.toLowerCase().includes('unknown')) return 'Direto / Orgânico';
+function formatSource(rawSource: string) {
+  if (!rawSource || rawSource.toLowerCase().includes('direct') || rawSource.toLowerCase().includes('unknown')) return 'Direto / Orgânico';
   try {
+    const source = decodeURIComponent(rawSource);
     const url = new URL(source.startsWith('http') ? source : `https://${source}`);
     let host = url.hostname.replace(/^www\./, '');
     if (host === 'l.instagram.com' || host === 'instagram.com') return 'Instagram';
@@ -46,7 +47,11 @@ function formatSource(source: string) {
     if (host === 'youtube.com' || host === 'm.youtube.com') return 'YouTube';
     return host;
   } catch {
-    return source;
+    try {
+      return decodeURIComponent(rawSource);
+    } catch {
+      return rawSource;
+    }
   }
 }
 
