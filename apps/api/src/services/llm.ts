@@ -420,21 +420,24 @@ Se o evento otimizado NAO for Purchase, escreva: "Evento otimizado nao e Purchas
 
 **OBRIGATORIO**: Se user_context.creatives existir, analise CADA um abaixo. NAO pule esta secao.
 
+**MUITO IMPORTANTE:** A IA NÃO assiste nem transcreve os vídeos. A análise do vídeo (se houver) baseia-se unicamente nas descrições, copys e métricas (como Hook Rate). Deixe isso claro se os dados do vídeo forem rasos.
+
 Para cada criativo em user_context.creatives:
 
 #### [ad_name]
 
-**Copy**: [avaliacao detalhada — clareza, proposta de valor, CTA, gatilhos mentais, alinhamento com LP]
+**Copy Atual**: [analise critica focada em clareza, objeções, gatilhos e adequação ao público]
+**Estrutura & Hook**: [avaliacao focada no gancho inicial (os primeiros 3s), elementos visuais descritos e CTA]
+**Nota de Potencial**: [X/10] — [justificativa em 1 frase curta]
 
-**Midia**: [avaliacao detalhada da imagem/video — elementos visuais, emocao, hook, CTA visual/verbal]
-
-**Nota**: [X/10] — [justificativa em 1 frase]
-
-**Sugestao de melhoria**: [1 sugestao especifica e acionavel]
+**🔥 Sugestao Pronta de Copy (Reescrita)**:
+- **Hook (Gancho)**: [Escreva 1 nova frase de impacto ou gancho visual]
+- **Corpo**: [Reescreva o texto do anuncio sendo mais persuasivo e alinhado aos dados]
+- **CTA**: [Escreva uma chamada para acao clara e urgente]
 
 *(Repita para cada criativo)*
 
-**Ranking Geral**: [Qual criativo tem maior potencial e por que. Se houver 2+, compare diretamente.]
+**Veredito dos Criativos**: [Qual criativo tem o melhor gancho/estrutura e qual deve ter maior alocação de verba]
 
 ---
 
@@ -481,13 +484,16 @@ Se segments.hourly ou segments.day_of_week tiverem dados:
 ## Analise da Landing Page
 
 Se landing_page.content existir:
-- URL: [landing_page.url]
-- Headline alinhada com anuncio? [Sim/Nao — motivo]
-- CTA visivel? [Sim/Nao]
-- Proposta de valor clara? [Sim/Nao]
-- Sugestao: [1 melhoria especifica para conversao]
+- **URL Limitada**: [landing_page.url]
+- **Diagnostico de Estrutura**: [A Landing Page esta congruente com a Copy dos Anuncios? O formulário/compra está visivel?]
+- **Analise Comportamental**: [Se Dwell Time < 5s ou Scroll < 20%, o problema e a Headline ou lentidao. Explique o impacto do comportamento no design atual.]
 
-*Se landing_page.content for null, escreva: "Conteudo da LP nao disponivel para analise."*
+**🔥 Otimizacao Acionavel (Variaveis para Teste A/B)**:
+1. **Nova Headline Sugerida**: "[Escreva um titulo principal focado na dor do cliente]"
+2. **Nova Sub-Headline**: "[Escreva uma frase de suporte focada no beneficio]"
+3. **Mudanca de Estrutura**: [O que o cliente deve mudar visualmente? Ex: Subir o botao, reduzir texto, usar bullet points]
+
+*Se landing_page.content for null, escreva: "Conteudo da LP nao disponivel para analise aprofundada. Verifique se a URL enviada esta acessivel."*
 
 ---
 
