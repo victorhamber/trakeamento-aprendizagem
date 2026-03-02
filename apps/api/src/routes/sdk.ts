@@ -251,9 +251,25 @@ router.get('/tracker.js', async (req, res) => {
   function getTrafficSource() {
     var cookieName = '_ta_ts';
     try {
+      var url = new URL(location.href);
+      
+      // 1. Cross-domain forwarding via URL param (Highest priority for cross-domain jumps)
+      var tsParam = url.searchParams.get('ta_ts');
+      if (tsParam) {
+        setCookie(cookieName, tsParam, COOKIE_TTL_90D);
+        return tsParam;
+      }
+
+      // 2. Override with UTM Source if present
+      var utmSource = url.searchParams.get('utm_source');
+      if (utmSource) {
+        setCookie(cookieName, utmSource, COOKIE_TTL_90D);
+        return utmSource;
+      }
+
+      // 3. New external referrer
       if (document.referrer) {
         var refUrl = new URL(document.referrer);
-        // Se a origem for externa (não for o próprio site)
         if (refUrl.hostname !== location.hostname) {
           setCookie(cookieName, document.referrer, COOKIE_TTL_90D);
           return document.referrer;
@@ -261,6 +277,7 @@ router.get('/tracker.js', async (req, res) => {
       }
     } catch(_e) {}
 
+    // 4. Fallback to existing cookie
     var savedTs = getCookie(cookieName);
     if (savedTs) return savedTs;
 
@@ -408,9 +425,11 @@ router.get('/tracker.js', async (req, res) => {
       var fbp = getFbp();
       var fbc = getFbc();
       var eid = getOrCreateExternalId();
+      var ts  = getTrafficSource();
       if (fbp) url.searchParams.set('fbp', fbp);
       if (fbc) url.searchParams.set('fbc', fbc);
       if (eid) url.searchParams.set('external_id', eid);
+      if (ts)  url.searchParams.set('ta_ts', ts);
       var attrs = getAttributionParams();
       for (var k in attrs) { if (attrs[k]) url.searchParams.set(k, attrs[k]); }
       el.href = url.toString();
