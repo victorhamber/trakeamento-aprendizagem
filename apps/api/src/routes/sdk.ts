@@ -999,7 +999,31 @@ router.get('/tracker.js', async (req, res) => {
 
     if (window.TA_IDENTIFY) window.taIdentify(window.TA_IDENTIFY);
 
-    window.tracker = { identify: window.taIdentify, track: track };
+    window.taDecorateUrl = function(targetUrl) {
+      try {
+        if (!targetUrl) return targetUrl;
+        var url = new URL(targetUrl, location.href);
+        var fbp = getFbp();
+        var fbc = getFbc();
+        var eid = getOrCreateExternalId();
+        var ts  = getTrafficSource();
+        if (fbp) url.searchParams.set('fbp', fbp);
+        if (fbc) url.searchParams.set('fbc', fbc);
+        if (eid) url.searchParams.set('external_id', eid);
+        if (ts)  url.searchParams.set('ta_ts', ts);
+        var attrs = getAttributionParams();
+        for (var k in attrs) { if (attrs[k]) url.searchParams.set(k, attrs[k]); }
+        return url.toString();
+      } catch(_e) {
+        return targetUrl; // Fallback to raw string if invalid URL
+      }
+    };
+
+    window.tracker = { 
+      identify: window.taIdentify, 
+      track: track,
+      decorateUrl: window.taDecorateUrl 
+    };
   } catch(_e) {}
 
   // ─── Auto-Tagging Checkout Links ──────────────────────────────────────────
