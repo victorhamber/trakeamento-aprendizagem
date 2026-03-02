@@ -194,15 +194,6 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
                     </div>
 
                     <div className="flex gap-2">
-                        {step === 3 && (
-                            <button
-                                onClick={handleGenerate}
-                                disabled={loading || selectedAdIds.length === 0}
-                                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium bg-blue-600 hover:bg-blue-500 text-white transition-colors disabled:opacity-40"
-                            >
-                                Gerar Diagnóstico
-                            </button>
-                        )}
 
                         {step < 3 ? (
                             <button
