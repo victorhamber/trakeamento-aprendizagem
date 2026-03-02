@@ -883,7 +883,11 @@ async function handleTrkSubmit(e) {
 
     if (json.action === 'redirect' && json.redirect_url) {
       setTimeout(function() {
-        window.location.href = json.redirect_url;
+        if (window.taDecorateUrl) {
+          window.location.href = window.taDecorateUrl(json.redirect_url);
+        } else {
+          window.location.href = json.redirect_url;
+        }
       }, 400); // Dá tempo (400ms) para o Meta Pixel/FBQ disparar antes de matar a página atual
     } else if (json.message) {
       form.innerHTML = '<div style="padding:20px; text-align:center; color:${isDark ? '#fff' : '#000'};">' + json.message + '</div>';
