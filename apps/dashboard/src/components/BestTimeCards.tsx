@@ -106,16 +106,25 @@ const Card = ({ title, data, color, textColor }: { title: string; data: PeakData
                 Top Origens
               </h4>
               <div className="space-y-1.5">
-                {data.top_sources.map((src, idx) => (
-                  <div key={idx} className="flex items-center justify-between text-xs">
-                    <span className="text-zinc-600 dark:text-zinc-400 truncate max-w-[70%]">
-                      {formatSource(src.source)}
-                    </span>
-                    <span className="text-zinc-900 dark:text-zinc-100 font-medium tabular-nums">
-                      {src.count}
-                    </span>
-                  </div>
-                ))}
+                {Object.entries(
+                  data.top_sources.reduce((acc, src) => {
+                    const name = formatSource(src.source);
+                    acc[name] = (acc[name] || 0) + Number(src.count);
+                    return acc;
+                  }, {} as Record<string, number>)
+                )
+                  .sort((a, b) => b[1] - a[1])
+                  .slice(0, 5)
+                  .map(([name, count], idx) => (
+                    <div key={idx} className="flex items-center justify-between text-xs">
+                      <span className="text-zinc-600 dark:text-zinc-400 truncate max-w-[70%]">
+                        {name}
+                      </span>
+                      <span className="text-zinc-900 dark:text-zinc-100 font-medium tabular-nums">
+                        {count}
+                      </span>
+                    </div>
+                  ))}
               </div>
             </div>
           )}
