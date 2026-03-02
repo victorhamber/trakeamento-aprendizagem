@@ -62,12 +62,13 @@ export class DiagnosisService {
       }
 
       const token = decryptString(meta.fb_user_token_enc);
-      const adAccountId = meta.ad_account_id;
+      const adAccountId = meta.ad_account_id.trim();
       const fbApiVersion = 'v19.0';
+      const actId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
 
       // Fetch ads for this campaign with creative details
       const adsRes = await axios.get(
-        `https://graph.facebook.com/${fbApiVersion}/${encodeURIComponent(adAccountId)}/ads`,
+        `https://graph.facebook.com/${fbApiVersion}/${encodeURIComponent(actId)}/ads`,
         {
           params: {
             fields: 'id,name,status,effective_status,creative{id,name,body,title,thumbnail_url,image_url,object_story_spec}',
