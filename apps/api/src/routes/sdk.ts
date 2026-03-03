@@ -78,9 +78,10 @@ router.get('/tracker.js', async (req, res) => {
 
   // ─── Cookie helpers ───────────────────────────────────────────────────────
   function getCookie(name) {
-    var value = '; ' + document.cookie;
-    var parts = value.split('; ' + name + '=');
-    if (parts.length === 2) return parts.pop().split(';').shift();
+    try {
+      var match = document.cookie.match(new RegExp('(^|; )' + name + '=([^;]*)'));
+      if (match) return decodeURIComponent(match[2]);
+    } catch (_e) {}
     return undefined;
   }
 
