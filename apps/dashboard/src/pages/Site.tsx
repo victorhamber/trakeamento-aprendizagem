@@ -863,13 +863,9 @@ async function handleTrkSubmit(e) {
   data.event_id = eventId;
   data.tracked_by_frontend = !!window.tracker;
 
-  // 1. Client-side tracking
+  // 1. Identify client
   if (window.tracker) {
     window.tracker.identify(data);
-    var evtData = { event_id: eventId };
-    ${(event_value && !isNaN(parseFloat(event_value))) ? `evtData.value = ${parseFloat(event_value)};` : ''}
-    ${(event_currency) ? `evtData.currency = '${event_currency}';` : ''}
-    window.tracker.track('${evtName}', evtData);
   }
 
   // 2. Server-side submission
@@ -882,6 +878,12 @@ async function handleTrkSubmit(e) {
     var json = await res.json();
 
     if (json.action === 'redirect' && json.redirect_url) {
+      if (window.tracker) {
+        var evtData = { event_id: eventId };
+        ${(event_value && !isNaN(parseFloat(event_value))) ? `evtData.value = ${parseFloat(event_value)};` : ''}
+        ${(event_currency) ? `evtData.currency = '${event_currency}';` : ''}
+        window.tracker.track('${evtName}', evtData);
+      }
       setTimeout(function() {
         if (window.taDecorateUrl) {
           window.location.href = window.taDecorateUrl(json.redirect_url);
@@ -892,6 +894,12 @@ async function handleTrkSubmit(e) {
     } else if (json.message) {
       form.innerHTML = '<div style="padding:20px; text-align:center; color:${isDark ? '#fff' : '#000'};">' + json.message + '</div>';
     } else {
+       if (window.tracker) {
+         var evtData = { event_id: eventId };
+         ${(event_value && !isNaN(parseFloat(event_value))) ? `evtData.value = ${parseFloat(event_value)};` : ''}
+         ${(event_currency) ? `evtData.currency = '${event_currency}';` : ''}
+         window.tracker.track('${evtName}', evtData);
+       }
        form.reset();
        alert('Enviado com sucesso!');
        btn.disabled = false;
@@ -932,7 +940,15 @@ function handleTrkSubmit(e) {
 
   if (window.tracker) {
     window.tracker.identify(data);
-    window.tracker.track('${evtName}');
+  }
+  
+  // Como não há 'fetch' backend na versão manual do form, 
+  // assume-se sucesso ao clicar no submit se houvesse lógica manual acoplada.
+  if (window.tracker) {
+    var evtData = {};
+    ${(event_value && !isNaN(parseFloat(event_value))) ? `evtData.value = ${parseFloat(event_value)};` : ''}
+    ${(event_currency) ? `evtData.currency = '${event_currency}';` : ''}
+    window.tracker.track('${evtName}', evtData);
   }
   
   form.reset();
