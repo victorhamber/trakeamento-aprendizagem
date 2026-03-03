@@ -35,8 +35,13 @@ const createTables = async () => {
       );
 
       CREATE INDEX IF NOT EXISTS idx_web_events_time ON web_events(event_time);
-      CREATE INDEX IF NOT EXISTS idx_web_events_name ON web_events(event_name);
       CREATE INDEX IF NOT EXISTS idx_purchases_site_time ON purchases(site_key, created_at);
+
+      -- Expand Limit constraints for Aggregation (Hotfix)
+      ALTER TABLE site_visitors 
+      ALTER COLUMN external_id TYPE VARCHAR(255),
+      ALTER COLUMN fbc TYPE VARCHAR(255),
+      ALTER COLUMN fbp TYPE VARCHAR(255);
     `);
     console.log('Migrations run successfully');
     process.exit(0);
