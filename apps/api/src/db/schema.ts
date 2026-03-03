@@ -227,11 +227,30 @@ const schemaSql = `
     created_at TIMESTAMP DEFAULT NOW()
   );
 
+  CREATE TABLE IF NOT EXISTS site_visitors (
+    id SERIAL PRIMARY KEY,
+    site_key VARCHAR(50) NOT NULL REFERENCES sites(site_key) ON DELETE CASCADE,
+    external_id VARCHAR(100) NOT NULL,
+    fbc VARCHAR(100),
+    fbp VARCHAR(100),
+    email_hash VARCHAR(64),
+    phone_hash VARCHAR(64),
+    first_name_hash VARCHAR(64),
+    last_name_hash VARCHAR(64),
+    last_traffic_source TEXT,
+    total_events INTEGER DEFAULT 1,
+    last_event_name VARCHAR(100),
+    last_seen_at TIMESTAMP DEFAULT NOW(),
+    created_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(site_key, external_id)
+  );
+
   CREATE INDEX IF NOT EXISTS idx_sites_account ON sites(account_id);
   CREATE INDEX IF NOT EXISTS idx_web_events_time ON web_events(event_time);
   CREATE INDEX IF NOT EXISTS idx_web_events_name ON web_events(event_name);
   CREATE INDEX IF NOT EXISTS idx_purchases_site_time ON purchases(site_key, created_at);
   CREATE INDEX IF NOT EXISTS idx_notifications_account ON notifications(account_id);
+  CREATE INDEX IF NOT EXISTS idx_site_visitors_last_seen ON site_visitors(site_key, last_seen_at DESC);
 `;
 
 export const ensureSchema = async (pool: Pool) => {

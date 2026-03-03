@@ -440,11 +440,50 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
       ]);
     }
 
-    // ── 2. Envio CAPI (assíncrono com retry) ─────────────────────────────
-    if ((result.rowCount ?? 0) > 0) {
+    // ── 1.75. Atualizar ou Criar Perfil de Visitante (Agregação) ─────────
+    if ((result?.rowCount ?? 0) > 0) {
       const userData = event.user_data ?? {};
       const capiUser = buildCapiUserData(req, userData, siteKey, event.custom_data ?? {});
 
+      const fbc = capiUser.fbc;
+      const fbp = capiUser.fbp;
+      const em = capiUser.em;
+      const ph = capiUser.ph;
+      const fn = capiUser.fn;
+      const ln = capiUser.ln;
+      // external_id from capiUser is an array of hashes, or undefined
+      let extId = Array.isArray(capiUser.external_id) && capiUser.external_id.length > 0
+        ? capiUser.external_id[0]
+        : `anon_${eventId}`;
+
+      const ts = event.custom_data?.ta_ts ? String(event.custom_data.ta_ts) : undefined;
+
+      try {
+        await pool.query(`
+          INSERT INTO site_visitors (
+            site_key, external_id, fbc, fbp, email_hash, phone_hash, first_name_hash, last_name_hash, last_traffic_source, total_events, last_event_name
+          ) VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, 1, $10
+          )
+          ON CONFLICT (site_key, external_id) DO UPDATE SET
+            fbc = COALESCE(EXCLUDED.fbc, site_visitors.fbc),
+            fbp = COALESCE(EXCLUDED.fbp, site_visitors.fbp),
+            email_hash = COALESCE(EXCLUDED.email_hash, site_visitors.email_hash),
+            phone_hash = COALESCE(EXCLUDED.phone_hash, site_visitors.phone_hash),
+            first_name_hash = COALESCE(EXCLUDED.first_name_hash, site_visitors.first_name_hash),
+            last_name_hash = COALESCE(EXCLUDED.last_name_hash, site_visitors.last_name_hash),
+            last_traffic_source = COALESCE(EXCLUDED.last_traffic_source, site_visitors.last_traffic_source),
+            last_event_name = EXCLUDED.last_event_name,
+            total_events = site_visitors.total_events + 1,
+            last_seen_at = NOW()
+        `, [
+          siteKey, extId, fbc, fbp, em, ph, fn, ln, ts, eventName
+        ]);
+      } catch (err) {
+        console.error('[Ingest] Fallback User Profile UPSERT error:', err);
+      }
+
+      // ── 2. Envio CAPI (assíncrono com retry) ─────────────────────────────
       // custom_data: campos padrão do Meta + dados de atribuição enriquecidos
       // Ref: https://developers.facebook.com/docs/marketing-api/conversions-api/parameters/custom-data
       const cd = event.custom_data ?? {};

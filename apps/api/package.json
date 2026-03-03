@@ -7,7 +7,9 @@
     "start": "node dist/main.js",
     "migrate": "ts-node src/scripts/migrate.ts",
     "migrate:prod": "node dist/scripts/migrate.js",
-    "migrate:all": "ts-node src/scripts/migrate_all.ts"
+    "migrate:all": "ts-node src/scripts/migrate_all.ts",
+    "backfill": "ts-node src/backfill.ts",
+    "cleanup": "ts-node src/scripts/cleanup.ts"
   },
   "dependencies": {
     "@types/geoip-lite": "^1.4.4",
