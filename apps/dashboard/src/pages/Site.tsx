@@ -3998,23 +3998,49 @@ ${scriptContent}
                                     {children}
                                   </td>
                                 ),
+                                h3: ({ children }) => (
+                                  <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100 mt-8 mb-4 flex items-center gap-2">
+                                    {children}
+                                  </h3>
+                                ),
+                                h4: ({ children }) => (
+                                  <h4 className="text-sm font-bold text-blue-600 dark:text-blue-400 mt-6 mb-3 bg-blue-50 dark:bg-blue-500/10 px-3 py-1.5 rounded-md inline-flex items-center gap-2">
+                                    {children}
+                                  </h4>
+                                ),
+                                p: ({ children }) => (
+                                  <p className="text-sm text-zinc-600 dark:text-zinc-400 mb-3 leading-relaxed">
+                                    {children}
+                                  </p>
+                                ),
+                                strong: ({ children }) => (
+                                  <strong className="font-semibold text-zinc-800 dark:text-zinc-200">
+                                    {children}
+                                  </strong>
+                                ),
                                 blockquote: ({ children }) => (
-                                  <blockquote className="border-l-2 border-blue-500/50 bg-blue-500/8 rounded-r-lg px-4 py-3 text-zinc-700 dark:text-zinc-300 not-italic my-4">
+                                  <blockquote className="border-l-4 border-amber-500/50 bg-gradient-to-r from-amber-500/10 to-transparent rounded-r-lg px-4 py-3 my-5 text-zinc-700 dark:text-zinc-300 not-italic">
                                     {children}
                                   </blockquote>
                                 ),
                                 ul: ({ children }) => (
-                                  <ul className="list-disc list-inside space-y-1 text-zinc-600 dark:text-zinc-400">
+                                  <ul className="list-none space-y-2 my-3 text-zinc-600 dark:text-zinc-400">
                                     {children}
                                   </ul>
                                 ),
+                                li: ({ children }) => (
+                                  <li className="flex gap-2">
+                                    <span className="text-amber-500 mt-0.5">•</span>
+                                    <span>{children}</span>
+                                  </li>
+                                ),
                                 ol: ({ children }) => (
-                                  <ol className="list-decimal list-inside space-y-1 text-zinc-600 dark:text-zinc-400">
+                                  <ol className="list-decimal list-inside space-y-2 my-3 text-zinc-600 dark:text-zinc-400">
                                     {children}
                                   </ol>
                                 ),
                                 hr: () => (
-                                  <div className="my-5 h-px w-full bg-zinc-200 dark:bg-zinc-800/60" />
+                                  <div className="my-8 h-px w-full bg-zinc-200 dark:bg-zinc-800/80" />
                                 ),
                               }}
                             >

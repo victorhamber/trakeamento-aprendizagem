@@ -424,20 +424,23 @@ Se o evento otimizado NAO for Purchase, escreva: "Evento otimizado nao e Purchas
 
 Para cada criativo em user_context.creatives:
 
-#### [ad_name]
+#### 🏷️ [ad_name]
 
 **Copy Atual**: [analise critica focada em clareza, objeções, gatilhos e adequação ao público]
 **Estrutura & Hook**: [avaliacao focada no gancho inicial (os primeiros 3s), elementos visuais descritos e CTA]
 **Nota de Potencial**: [X/10] — [justificativa em 1 frase curta]
 
-**🔥 Sugestao Pronta de Copy (Reescrita)**:
-- **Hook (Gancho)**: [Escreva 1 nova frase de impacto ou gancho visual]
-- **Corpo**: [Reescreva o texto do anuncio sendo mais persuasivo e alinhado aos dados]
-- **CTA**: [Escreva uma chamada para acao clara e urgente]
+> **🔥 Sugestão Pronta de Copy (Reescrita)**:
+> - **Hook (Gancho)**: [Escreva 1 nova frase de impacto ou gancho visual]
+> - **Corpo**: [Reescreva o texto do anuncio sendo mais persuasivo e alinhado aos dados]
+> - **CTA**: [Escreva uma chamada para acao clara e urgente]
+
+---
 
 *(Repita para cada criativo)*
 
-**Veredito dos Criativos**: [Qual criativo tem o melhor gancho/estrutura e qual deve ter maior alocação de verba]
+### 🏆 Veredito dos Criativos
+[Qual criativo tem o melhor gancho/estrutura e qual deve ter maior alocação de verba]
 
 ---
 
