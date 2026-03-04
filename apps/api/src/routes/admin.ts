@@ -1,13 +1,14 @@
 import { Router } from 'express';
 import { pool } from '../db/pool';
+import { requireAuth } from '../middleware/auth';
 
 const router = Router();
 
 // Middleware to ensure the user is a Super Admin
 const requireSuperAdmin = async (req: any, res: any, next: any) => {
-    if (!req.user || !req.user.id) return res.status(401).json({ error: 'Unauthorized' });
+    if (!req.auth || !req.auth.userId) return res.status(401).json({ error: 'Unauthorized' });
     try {
-        const { rows } = await pool.query('SELECT is_super_admin FROM users WHERE id = $1', [req.user.id]);
+        const { rows } = await pool.query('SELECT is_super_admin FROM users WHERE id = $1', [req.auth.userId]);
         if (rows.length === 0 || !rows[0].is_super_admin) {
             return res.status(403).json({ error: 'Forbidden: Super Admin only' });
         }
@@ -18,6 +19,7 @@ const requireSuperAdmin = async (req: any, res: any, next: any) => {
     }
 };
 
+router.use(requireAuth);
 router.use(requireSuperAdmin);
 
 // === Accounts Management ===
