@@ -570,4 +570,85 @@ router.post('/custom/:id', async (req, res) => {
   return res.json({ received: true });
 });
 
+// ─── SaaS Webhook (Hotmart) ──────────────────────────────────────────────────
+router.post('/saas/hotmart', async (req, res) => {
+  const { hottok } = req.body || {};
+  if (!hottok) return res.status(400).json({ error: 'Missing hottok' });
+
+  // 1. Verify Hotmart Token if you configured one (Replace with actual env var)
+  if (process.env.HOTMART_SAAS_TOKEN && hottok !== process.env.HOTMART_SAAS_TOKEN) {
+    return res.status(401).json({ error: 'Invalid hottok' });
+  }
+
+  const payload = req.body.data || req.body;
+  const buyer = payload.buyer || req.body.buyer || {};
+  const purchase = payload.purchase || req.body.purchase || {};
+  const product = payload.product || req.body.product || {};
+
+  const email = buyer.email;
+  const status = (purchase.status || req.body.status || '').toUpperCase();
+  const productId = product.id || req.body.product_id;
+
+  if (!email) return res.status(400).json({ error: 'Missing buyer email' });
+
+  console.log(`[SaaS Webhook] Received ${status} for ${email} (Product: ${productId})`);
+
+  try {
+    // Check if user exists
+    const userRow = await pool.query('SELECT account_id FROM users WHERE email = $1', [email]);
+    if (!userRow.rowCount) {
+      console.warn(`[SaaS Webhook] User ${email} not found. Ignored.`);
+      return res.status(200).json({ received: true, note: 'User not found yet.' });
+    }
+    const accountId = userRow.rows[0].account_id;
+
+    const isApproved = ['APPROVED', 'COMPLETED', 'PROCESSED'].includes(status);
+    const isRevoked = ['CANCELED', 'CHARGEBACK', 'REFUNDED', 'DELAYED'].includes(status);
+
+    if (isApproved) {
+      // Find the mapped plan or default to the most expensive one
+      // For now, if we match the word "Adicional" or "Add-on", we treat it as Add-on
+      const planNameCheck = (product.name || '').toLowerCase();
+
+      if (planNameCheck.includes('site adicional') || planNameCheck.includes('add-on') || planNameCheck.includes('extra')) {
+        // It's an Add-on
+        await pool.query(`
+          UPDATE accounts 
+          SET bonus_site_limit = bonus_site_limit + 1
+          WHERE id = $1
+        `, [accountId]);
+        console.log(`[SaaS Webhook] Add-on Site applied to ${email}.`);
+      } else {
+        // It's a Base Plan. Assign the first available plan or lookup by provider_id later
+        const planRow = await pool.query("SELECT id FROM plans WHERE type = 'SUBSCRIPTION' ORDER BY price DESC LIMIT 1");
+        const activePlanId = planRow.rowCount ? planRow.rows[0].id : null;
+
+        await pool.query(`
+          UPDATE accounts 
+          SET is_active = true, active_plan_id = COALESCE($1, active_plan_id)
+          WHERE id = $2
+        `, [activePlanId, accountId]);
+        console.log(`[SaaS Webhook] Base Plan Activated for ${email}.`);
+      }
+    } else if (isRevoked) {
+      // Suspend Account
+      await pool.query(`
+        UPDATE accounts SET is_active = false WHERE id = $1
+      `, [accountId]);
+      console.log(`[SaaS Webhook] Account Suspended for ${email}.`);
+    }
+
+    // Log the subscription event
+    await pool.query(`
+      INSERT INTO subscriptions (account_id, plan_id, status, provider_subscription_id)
+      VALUES ($1, null, $2, $3)
+    `, [accountId, status, purchase.transaction || '']);
+
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('[SaaS Webhook] Error processing:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;
