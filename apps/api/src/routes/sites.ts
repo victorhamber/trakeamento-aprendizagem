@@ -59,7 +59,17 @@ router.get('/', requireAuth, async (req, res) => {
     'SELECT id, name, domain, site_key, created_at FROM sites WHERE account_id = $1 ORDER BY id DESC',
     [auth.accountId]
   );
-  return res.json({ sites: result.rows });
+
+  const accountRes = await pool.query(`
+    SELECT a.bonus_site_limit, COALESCE(p.max_sites, 1) as plan_max_sites
+    FROM accounts a
+    LEFT JOIN plans p ON a.active_plan_id = p.id
+    WHERE a.id = $1
+  `, [auth.accountId]);
+
+  const maxSites = (accountRes.rows[0]?.plan_max_sites || 1) + (accountRes.rows[0]?.bonus_site_limit || 0);
+
+  return res.json({ sites: result.rows, max_sites: maxSites });
 });
 
 router.get('/:siteId', requireAuth, async (req, res) => {
@@ -412,6 +422,22 @@ router.post('/', requireAuth, async (req, res) => {
   const auth = req.auth!;
   const { name, domain } = req.body || {};
   if (!name || typeof name !== 'string') return res.status(400).json({ error: 'Missing name' });
+
+  const accountRes = await pool.query(`
+    SELECT a.bonus_site_limit, COALESCE(p.max_sites, 1) as plan_max_sites
+    FROM accounts a
+    LEFT JOIN plans p ON a.active_plan_id = p.id
+    WHERE a.id = $1
+  `, [auth.accountId]);
+
+  const maxSites = (accountRes.rows[0]?.plan_max_sites || 1) + (accountRes.rows[0]?.bonus_site_limit || 0);
+
+  const siteCountRes = await pool.query('SELECT COUNT(*) as count FROM sites WHERE account_id = $1', [auth.accountId]);
+  const siteCount = parseInt(siteCountRes.rows[0].count, 10);
+
+  if (siteCount >= maxSites) {
+    return res.status(403).json({ error: `Você atingiu o limite de ${maxSites} sites do seu plano.` });
+  }
 
   const siteKey = `site_${randomKey(18)}`;
   const webhookSecretPlain = `whsec_${randomKey(24)}`;

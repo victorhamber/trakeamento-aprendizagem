@@ -13,6 +13,7 @@ type Site = {
 
 export const SitesPage = () => {
   const [sites, setSites] = useState<Site[]>([]);
+  const [maxSites, setMaxSites] = useState<number>(1);
   const [name, setName] = useState('');
   const [domain, setDomain] = useState('');
   const [loading, setLoading] = useState(false);
@@ -22,6 +23,7 @@ export const SitesPage = () => {
   const load = async () => {
     const res = await api.get('/sites');
     setSites(res.data.sites);
+    if (res.data.max_sites) setMaxSites(res.data.max_sites);
   };
 
   useEffect(() => {
@@ -92,11 +94,19 @@ export const SitesPage = () => {
               </div>
             )}
             <button
-              disabled={loading}
-              className="w-full bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 hover:from-blue-500 hover:via-indigo-500 hover:to-violet-500 text-white px-4 py-2.5 rounded-xl disabled:opacity-50 text-sm font-semibold shadow-[0_8px_25px_rgba(59,130,246,0.25)] hover:shadow-[0_8px_35px_rgba(59,130,246,0.4)] transition-all"
+              disabled={loading || sites.length >= maxSites}
+              className="w-full bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 hover:from-blue-500 hover:via-indigo-500 hover:to-violet-500 text-white px-4 py-2.5 rounded-xl disabled:opacity-50 disabled:grayscale text-sm font-semibold shadow-[0_8px_25px_rgba(59,130,246,0.25)] hover:shadow-[0_8px_35px_rgba(59,130,246,0.4)] transition-all"
             >
               {loading ? 'Criando…' : 'Criar site'}
             </button>
+            {sites.length >= maxSites && (
+              <div className="mt-3 text-center">
+                <p className="text-[11px] text-red-500/90 font-medium">Você atingiu o limite de {maxSites} site{maxSites !== 1 ? 's' : ''} do seu plano atual.</p>
+                <div className="mt-1">
+                  <a href="#" className="text-[11px] text-indigo-500 hover:underline">Fazer upgrade ou comprar +1 Site.</a>
+                </div>
+              </div>
+            )}
           </form>
           {createdSecret && (
             <div className="mt-4 text-sm animate-in fade-in" style={{ animationDuration: '300ms' }}>
