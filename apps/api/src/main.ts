@@ -19,6 +19,7 @@ import notificationRoutes from './routes/notifications';
 import uploadRoutes from './routes/upload';
 import { formsRouter } from './routes/forms';
 import publicRoutes from './routes/public';
+import adminRoutes from './routes/admin';
 import { ensureSchema } from './db/schema';
 import { capiService } from './services/capi';
 
@@ -91,6 +92,7 @@ app.use('/recommendations', recommendationRoutes);
 app.use('/notifications', notificationRoutes);
 app.use('/upload', uploadRoutes);
 app.use('/public', publicRoutes);
+app.use('/admin', adminRoutes);
 app.use('/', formsRouter);
 
 app.get('/', (req, res) => {
