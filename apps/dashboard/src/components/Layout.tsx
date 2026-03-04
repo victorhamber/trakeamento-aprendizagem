@@ -78,7 +78,7 @@ const NavItem = ({ to, label, icon: IconComp }: { to: string; label: string; ico
 // ─── Notification Type ────────────────────────────────────────────────────────
 
 type Notification = {
-  id: number;
+  id: string | number;
   title: string;
   message: string;
   is_read: boolean;
@@ -111,7 +111,7 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
 
   const unreadCount = notifications.filter(n => !n.is_read).length;
 
-  const markAsRead = async (id: number) => {
+  const markAsRead = async (id: string | number) => {
     try {
       await api.put(`/notifications/${id}/read`);
       setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
