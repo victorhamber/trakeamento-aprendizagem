@@ -246,9 +246,9 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
                               <div className="flex items-start gap-2">
                                 {!n.is_read && <div className="mt-1.5 w-2 h-2 rounded-full bg-blue-500 shrink-0" />}
                                 <div className="min-w-0">
-                                  <div className={`text-xs font-semibold ${isDark ? 'text-zinc-200' : 'text-zinc-800'}`}>{n.title}</div>
-                                  <div className={`text-[11px] mt-0.5 ${isDark ? 'text-zinc-500' : 'text-zinc-500'}`}>{n.message}</div>
-                                  <div className={`text-[10px] mt-1 ${isDark ? 'text-zinc-600' : 'text-zinc-400'}`}>{new Date(n.created_at).toLocaleDateString('pt-BR')}</div>
+                                  <div className={`text-sm font-semibold ${isDark ? 'text-white' : 'text-zinc-900'}`}>{n.title}</div>
+                                  <div className={`text-xs mt-1 leading-snug ${isDark ? 'text-zinc-300' : 'text-zinc-600'}`}>{n.message}</div>
+                                  <div className={`text-[11px] mt-2 font-medium ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>{new Date(n.created_at).toLocaleDateString('pt-BR')}</div>
                                 </div>
                               </div>
                             </button>
