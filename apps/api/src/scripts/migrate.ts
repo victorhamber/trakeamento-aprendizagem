@@ -3,6 +3,38 @@ import { pool } from '../db/pool';
 const createTables = async () => {
   try {
     await pool.query(`
+      CREATE TABLE IF NOT EXISTS plans (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(100) NOT NULL,
+        type VARCHAR(20) DEFAULT 'SUBSCRIPTION',
+        price NUMERIC NOT NULL,
+        billing_cycle VARCHAR(20) DEFAULT 'MONTHLY',
+        max_sites INTEGER DEFAULT 1,
+        max_events INTEGER DEFAULT 10000,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS subscriptions (
+        id SERIAL PRIMARY KEY,
+        account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        plan_id INTEGER NOT NULL REFERENCES plans(id),
+        status VARCHAR(20) DEFAULT 'ACTIVE',
+        provider_subscription_id VARCHAR(100),
+        current_period_end TIMESTAMP,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS global_notifications (
+        id SERIAL PRIMARY KEY,
+        title VARCHAR(200) NOT NULL,
+        message TEXT NOT NULL,
+        type VARCHAR(20) DEFAULT 'info',
+        is_active BOOLEAN DEFAULT true,
+        expires_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+
       CREATE TABLE IF NOT EXISTS web_events (
         id SERIAL PRIMARY KEY,
         site_key VARCHAR(50) NOT NULL,
@@ -42,6 +74,13 @@ const createTables = async () => {
       ALTER COLUMN external_id TYPE VARCHAR(255),
       ALTER COLUMN fbc TYPE VARCHAR(255),
       ALTER COLUMN fbp TYPE VARCHAR(255);
+
+      -- SaaS Schema Additions
+      ALTER TABLE accounts ADD COLUMN IF NOT EXISTS active_plan_id INTEGER;
+      ALTER TABLE accounts ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
+      ALTER TABLE accounts ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP;
+      ALTER TABLE accounts ADD COLUMN IF NOT EXISTS bonus_site_limit INTEGER DEFAULT 0;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS is_super_admin BOOLEAN DEFAULT false;
     `);
     console.log('Migrations run successfully');
     process.exit(0);

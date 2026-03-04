@@ -11,7 +11,9 @@
     "backfill": "ts-node src/backfill.ts",
     "backfill:prod": "node dist/backfill.js",
     "cleanup": "ts-node src/scripts/cleanup.ts",
-    "cleanup:prod": "node dist/scripts/cleanup.js"
+    "cleanup:prod": "node dist/scripts/cleanup.js",
+    "make:admin": "ts-node src/scripts/make_admin.ts",
+    "make:admin:prod": "node dist/scripts/make_admin.js"
   },
   "dependencies": {
     "@types/geoip-lite": "^1.4.4",

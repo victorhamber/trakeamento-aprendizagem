@@ -2,9 +2,24 @@ import { Pool } from 'pg';
 import bcrypt from 'bcryptjs';
 
 const schemaSql = `
+  CREATE TABLE IF NOT EXISTS plans (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    type VARCHAR(20) DEFAULT 'SUBSCRIPTION',
+    price NUMERIC NOT NULL,
+    billing_cycle VARCHAR(20) DEFAULT 'MONTHLY',
+    max_sites INTEGER DEFAULT 1,
+    max_events INTEGER DEFAULT 10000,
+    created_at TIMESTAMP DEFAULT NOW()
+  );
+
   CREATE TABLE IF NOT EXISTS accounts (
     id SERIAL PRIMARY KEY,
     name VARCHAR(120) NOT NULL,
+    active_plan_id INTEGER REFERENCES plans(id),
+    is_active BOOLEAN DEFAULT true,
+    expires_at TIMESTAMP,
+    bonus_site_limit INTEGER DEFAULT 0,
     created_at TIMESTAMP DEFAULT NOW()
   );
 
@@ -13,6 +28,28 @@ const schemaSql = `
     account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
     email VARCHAR(190) NOT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
+    is_super_admin BOOLEAN DEFAULT false,
+    created_at TIMESTAMP DEFAULT NOW()
+  );
+
+  CREATE TABLE IF NOT EXISTS subscriptions (
+    id SERIAL PRIMARY KEY,
+    account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    plan_id INTEGER NOT NULL REFERENCES plans(id),
+    status VARCHAR(20) DEFAULT 'ACTIVE',
+    provider_subscription_id VARCHAR(100),
+    current_period_end TIMESTAMP,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+  );
+
+  CREATE TABLE IF NOT EXISTS global_notifications (
+    id SERIAL PRIMARY KEY,
+    title VARCHAR(200) NOT NULL,
+    message TEXT NOT NULL,
+    type VARCHAR(20) DEFAULT 'info',
+    is_active BOOLEAN DEFAULT true,
+    expires_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT NOW()
   );
 
@@ -230,9 +267,9 @@ const schemaSql = `
   CREATE TABLE IF NOT EXISTS site_visitors (
     id SERIAL PRIMARY KEY,
     site_key VARCHAR(50) NOT NULL REFERENCES sites(site_key) ON DELETE CASCADE,
-    external_id VARCHAR(100) NOT NULL,
-    fbc VARCHAR(100),
-    fbp VARCHAR(100),
+    external_id VARCHAR(255) NOT NULL,
+    fbc VARCHAR(255),
+    fbp VARCHAR(255),
     email_hash VARCHAR(64),
     phone_hash VARCHAR(64),
     first_name_hash VARCHAR(64),
@@ -372,6 +409,18 @@ export const ensureSchema = async (pool: Pool) => {
       `);
     } catch (migErr) {
       console.warn('Migration for flexible meta insights skipped/failed:', migErr);
+    }
+
+    // Migracao SaaS
+    try {
+      await pool.query('ALTER TABLE accounts ADD COLUMN IF NOT EXISTS active_plan_id INTEGER REFERENCES plans(id)');
+      await pool.query('ALTER TABLE accounts ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true');
+      await pool.query('ALTER TABLE accounts ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP');
+      await pool.query('ALTER TABLE accounts ADD COLUMN IF NOT EXISTS bonus_site_limit INTEGER DEFAULT 0');
+
+      await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS is_super_admin BOOLEAN DEFAULT false');
+    } catch (saasErr) {
+      console.warn('SaaS migration for accounts/users skipped/failed:', saasErr);
     }
   } catch (err) {
     console.warn('Schema extension skipped:', err);
