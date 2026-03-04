@@ -93,6 +93,7 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
   const [mobileOpen, setMobileOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [selectedNotification, setSelectedNotification] = useState<Notification | null>(null);
 
   const loadNotifications = useCallback(async () => {
     if (!auth?.token) return;
@@ -237,7 +238,11 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
                           {notifications.map(n => (
                             <button
                               key={n.id}
-                              onClick={() => { markAsRead(n.id); }}
+                              onClick={() => {
+                                markAsRead(n.id);
+                                setSelectedNotification(n);
+                                setNotifOpen(false);
+                              }}
                               className={`w-full text-left px-4 py-3 border-b transition-colors ${isDark
                                 ? `border-zinc-800/50 ${n.is_read ? 'opacity-50' : 'hover:bg-white/5'}`
                                 : `border-zinc-50 ${n.is_read ? 'opacity-50' : 'hover:bg-zinc-50'}`
@@ -303,6 +308,58 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
                 className={`mt-3 w-full text-sm rounded-xl px-3 py-2 transition-colors ${isDark ? 'bg-white/5 hover:bg-white/10 border border-white/10' : 'bg-zinc-100 hover:bg-zinc-200 border border-zinc-200'}`}
               >
                 Sair
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Notification Detail Modal ── */}
+      {selectedNotification && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm cursor-default"
+            onClick={() => setSelectedNotification(null)}
+          />
+          <div
+            className={`relative w-full max-w-lg rounded-3xl shadow-2xl p-6 sm:p-8 animate-in fade-in zoom-in-95 duration-200 ${isDark ? 'bg-zinc-900 border border-zinc-800' : 'bg-white border border-zinc-200'
+              }`}
+          >
+            <div className="flex items-start justify-between gap-4 mb-6">
+              <div className="flex-1 min-w-0">
+                <div className={`text-xs font-bold tracking-wider mb-2 ${isDark ? 'text-indigo-400' : 'text-indigo-600'}`}>
+                  {new Date(selectedNotification.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                </div>
+                <h3 className={`text-xl sm:text-2xl font-bold leading-tight ${isDark ? 'text-white' : 'text-zinc-900'}`}>
+                  {selectedNotification.title}
+                </h3>
+              </div>
+              <button
+                onClick={() => setSelectedNotification(null)}
+                className={`flex-shrink-0 h-10 w-10 flex items-center justify-center rounded-xl transition-colors ${isDark ? 'bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white' : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-500 hover:text-zinc-900'
+                  }`}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5">
+                  <path d="M18 6L6 18M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className={`prose prose-sm sm:prose-base max-w-none ${isDark ? 'prose-invert text-zinc-300' : 'text-zinc-700'}`}>
+              {selectedNotification.message.split('\n').map((paragraph, idx) => (
+                <p key={idx} className="mb-4 last:mb-0 leading-relaxed">
+                  {paragraph}
+                </p>
+              ))}
+            </div>
+
+            <div className={`mt-8 pt-6 border-t ${isDark ? 'border-zinc-800' : 'border-zinc-100'} flex justify-end`}>
+              <button
+                onClick={() => setSelectedNotification(null)}
+                className="px-6 py-2.5 rounded-xl text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white transition-colors"
+              >
+                Fechar Mensagem
               </button>
             </div>
           </div>
