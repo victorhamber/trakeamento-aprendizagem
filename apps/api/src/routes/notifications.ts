@@ -11,7 +11,17 @@ router.get('/', requireAuth, async (req, res) => {
     try {
         // Fetch account-specific notifications
         const result = await pool.query(
-            `SELECT id::text, title, message, is_read, created_at, 'personal' as type 
+            `SELECT 
+                id::text, 
+                title, 
+                message, 
+                null as image_url,
+                null as image_link,
+                null as action_text,
+                null as action_url,
+                is_read, 
+                created_at, 
+                'personal' as type 
              FROM notifications 
              WHERE account_id = $1 OR account_id IS NULL
              ORDER BY created_at DESC
@@ -25,6 +35,10 @@ router.get('/', requireAuth, async (req, res) => {
                 'global_' || g.id as id, 
                 g.title, 
                 g.message, 
+                g.image_url,
+                g.image_link,
+                g.action_text,
+                g.action_url,
                 CASE WHEN r.account_id IS NOT NULL THEN true ELSE false END as is_read,
                 g.created_at,
                 'global' as type

@@ -47,7 +47,10 @@ const schemaSql = `
     id SERIAL PRIMARY KEY,
     title VARCHAR(200) NOT NULL,
     message TEXT NOT NULL,
-    type VARCHAR(20) DEFAULT 'info',
+    image_url TEXT,
+    image_link TEXT,
+    action_text VARCHAR(100),
+    action_url TEXT,
     is_active BOOLEAN DEFAULT true,
     expires_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT NOW()
@@ -416,6 +419,20 @@ export const ensureSchema = async (pool: Pool) => {
       `);
     } catch (migErr) {
       console.warn('Migration for flexible meta insights skipped/failed:', migErr);
+    }
+
+    // --- Dynamic Schema Migrations for V2 Features ---
+    try {
+      await pool.query(`ALTER TABLE accounts ADD COLUMN IF NOT EXISTS active_plan_id INTEGER REFERENCES plans(id)`);
+      await pool.query(`ALTER TABLE accounts ADD COLUMN IF NOT EXISTS bonus_site_limit INTEGER DEFAULT 0`);
+
+      // Global Notifications Image/Button additions
+      await pool.query(`ALTER TABLE global_notifications ADD COLUMN IF NOT EXISTS image_url TEXT`);
+      await pool.query(`ALTER TABLE global_notifications ADD COLUMN IF NOT EXISTS image_link TEXT`);
+      await pool.query(`ALTER TABLE global_notifications ADD COLUMN IF NOT EXISTS action_text VARCHAR(100)`);
+      await pool.query(`ALTER TABLE global_notifications ADD COLUMN IF NOT EXISTS action_url TEXT`);
+    } catch (migErr) {
+      console.warn('V2 Features migration skipped/failed:', migErr);
     }
 
     // Migracao SaaS

@@ -81,6 +81,10 @@ type Notification = {
   id: string | number;
   title: string;
   message: string;
+  image_url?: string;
+  image_link?: string;
+  action_text?: string;
+  action_url?: string;
   is_read: boolean;
   created_at: string;
 };
@@ -346,21 +350,42 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
               </button>
             </div>
 
-            <div className={`prose prose-sm sm:prose-base max-w-none ${isDark ? 'prose-invert text-zinc-300' : 'text-zinc-700'}`}>
-              {selectedNotification.message.split('\n').map((paragraph, idx) => (
-                <p key={idx} className="mb-4 last:mb-0 leading-relaxed">
-                  {paragraph}
-                </p>
-              ))}
-            </div>
+            {/* Default gap adjustments based on whether image is present */}
+            <div className={`-mt-2 ${selectedNotification.image_url ? 'mb-6' : 'mb-6'}`}>
+              {selectedNotification.image_url && (
+                <div className="mb-6 -mx-6 sm:-mx-8 overflow-hidden rounded-none border-y border-zinc-200 dark:border-zinc-800">
+                  {selectedNotification.image_link ? (
+                    <a href={selectedNotification.image_link} target="_blank" rel="noopener noreferrer" className="block w-full bg-black/5">
+                      <img src={selectedNotification.image_url} alt="Cover" className="w-full h-auto max-h-[250px] object-cover" />
+                    </a>
+                  ) : (
+                    <div className="w-full bg-black/5">
+                      <img src={selectedNotification.image_url} alt="Cover" className="w-full h-auto max-h-[250px] object-cover" />
+                    </div>
+                  )}
+                </div>
+              )}
 
-            <div className={`mt-8 pt-6 border-t ${isDark ? 'border-zinc-800' : 'border-zinc-100'} flex justify-end`}>
-              <button
-                onClick={() => setSelectedNotification(null)}
-                className="px-6 py-2.5 rounded-xl text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white transition-colors"
-              >
-                Fechar Mensagem
-              </button>
+              <div className={`prose prose-sm sm:prose-base max-w-none ${isDark ? 'prose-invert text-zinc-300' : 'text-zinc-700'}`}>
+                {selectedNotification.message.split('\n').map((paragraph, idx) => (
+                  <p key={idx} className="mb-4 last:mb-0 leading-relaxed">
+                    {paragraph}
+                  </p>
+                ))}
+              </div>
+
+              {selectedNotification.action_url && (
+                <div className="mt-8">
+                  <a
+                    href={selectedNotification.action_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block w-full text-center py-3.5 rounded-xl text-sm font-bold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-[0_8px_25px_rgba(79,70,229,0.25)] transition-all"
+                  >
+                    {selectedNotification.action_text || 'Acessar Link'}
+                  </a>
+                </div>
+              )}
             </div>
           </div>
         </div>

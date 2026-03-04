@@ -5,7 +5,10 @@ import { Layout } from '../components/Layout';
 export const NotificationsPage = () => {
     const [title, setTitle] = useState('');
     const [message, setMessage] = useState('');
-    const [type, setType] = useState('info');
+    const [imageUrl, setImageUrl] = useState('');
+    const [imageLink, setImageLink] = useState('');
+    const [actionText, setActionText] = useState('');
+    const [actionUrl, setActionUrl] = useState('');
     const [loading, setLoading] = useState(false);
 
     const submit = async (e: React.FormEvent) => {
@@ -14,10 +17,22 @@ export const NotificationsPage = () => {
         try {
             // 7 days expiration by default
             const expires_at = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-            await api.post('/admin/notifications', { title, message, type, expires_at });
+            await api.post('/admin/notifications', {
+                title,
+                message,
+                image_url: imageUrl,
+                image_link: imageLink,
+                action_text: actionText,
+                action_url: actionUrl,
+                expires_at
+            });
             alert('Notificação enviada para todos os clientes!');
             setTitle('');
             setMessage('');
+            setImageUrl('');
+            setImageLink('');
+            setActionText('');
+            setActionUrl('');
         } catch (err: any) {
             alert(err?.response?.data?.error || 'Erro ao enviar');
         } finally {
@@ -48,15 +63,41 @@ export const NotificationsPage = () => {
                             placeholder="Detalhes sobre a novidade ou manutenção..."
                         />
                     </div>
-                    <div>
-                        <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">Tipo / Cor</label>
-                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-                            {['info', 'success', 'warning', 'error'].map(t => (
-                                <label key={t} className={`flex items-center justify-center p-3 rounded-xl border cursor-pointer transition-colors ${type === t ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-400' : 'border-zinc-200 dark:border-white/10 text-zinc-500'}`}>
-                                    <input type="radio" value={t} checked={type === t} onChange={() => setType(t)} className="hidden" />
-                                    <span className="text-xs uppercase font-bold">{t}</span>
-                                </label>
-                            ))}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">URL da Imagem (Opcional)</label>
+                            <input
+                                value={imageUrl} onChange={e => setImageUrl(e.target.value)}
+                                className="w-full rounded-xl bg-zinc-50 dark:bg-black/20 border border-zinc-200 dark:border-white/10 px-4 py-3 text-sm outline-none focus:border-indigo-500 transition-colors"
+                                placeholder="http://.../banner.png"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">Link ao clicar na Imagem (Opcional)</label>
+                            <input
+                                value={imageLink} onChange={e => setImageLink(e.target.value)}
+                                className="w-full rounded-xl bg-zinc-50 dark:bg-black/20 border border-zinc-200 dark:border-white/10 px-4 py-3 text-sm outline-none focus:border-indigo-500 transition-colors"
+                                placeholder="http://... (Ao clicar no banner)"
+                            />
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">Texto do Botão (Opcional)</label>
+                            <input
+                                value={actionText} onChange={e => setActionText(e.target.value)}
+                                className="w-full rounded-xl bg-zinc-50 dark:bg-black/20 border border-zinc-200 dark:border-white/10 px-4 py-3 text-sm outline-none focus:border-indigo-500 transition-colors"
+                                placeholder="Ex: Assistir Aula"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">URL do Botão (Opcional)</label>
+                            <input
+                                value={actionUrl} onChange={e => setActionUrl(e.target.value)}
+                                className="w-full rounded-xl bg-zinc-50 dark:bg-black/20 border border-zinc-200 dark:border-white/10 px-4 py-3 text-sm outline-none focus:border-indigo-500 transition-colors"
+                                placeholder="http://..."
+                            />
                         </div>
                     </div>
                     <button disabled={loading} className="w-full mt-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-semibold text-sm py-3.5 rounded-xl shadow-[0_8px_25px_rgba(79,70,229,0.25)] transition-all">

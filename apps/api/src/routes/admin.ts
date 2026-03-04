@@ -101,13 +101,13 @@ router.post('/plans', async (req, res) => {
 
 // POST /admin/notifications - Broadcast a new message to all Dashboards
 router.post('/notifications', async (req, res) => {
-    const { title, message, type, expires_at } = req.body;
+    const { title, message, image_url, image_link, action_text, action_url, expires_at } = req.body;
     try {
         const { rows } = await pool.query(`
-      INSERT INTO global_notifications (title, message, type, is_active, expires_at)
-      VALUES ($1, $2, $3, true, $4)
+      INSERT INTO global_notifications (title, message, image_url, image_link, action_text, action_url, is_active, expires_at)
+      VALUES ($1, $2, $3, $4, $5, $6, true, $7)
       RETURNING *
-    `, [title, message, type || 'info', expires_at || null]);
+    `, [title, message, image_url || null, image_link || null, action_text || null, action_url || null, expires_at || null]);
         res.status(201).json(rows[0]);
     } catch (error) {
         console.error('Create Notification Error:', error);
