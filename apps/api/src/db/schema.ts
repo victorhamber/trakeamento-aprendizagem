@@ -53,6 +53,13 @@ const schemaSql = `
     created_at TIMESTAMP DEFAULT NOW()
   );
 
+  CREATE TABLE IF NOT EXISTS global_notification_reads (
+    account_id INTEGER REFERENCES accounts(id) ON DELETE CASCADE,
+    global_notification_id INTEGER REFERENCES global_notifications(id) ON DELETE CASCADE,
+    created_at TIMESTAMP DEFAULT NOW(),
+    PRIMARY KEY (account_id, global_notification_id)
+  );
+
   CREATE TABLE IF NOT EXISTS account_settings (
     id SERIAL PRIMARY KEY,
     account_id INTEGER NOT NULL UNIQUE REFERENCES accounts(id) ON DELETE CASCADE,
