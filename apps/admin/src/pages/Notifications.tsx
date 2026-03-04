@@ -40,6 +40,28 @@ export const NotificationsPage = () => {
         }
     };
 
+    const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setLoading(true);
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            const res = await api.post('/upload/image', formData, {
+                headers: { 'Content-Type': 'multipart/form-data' }
+            });
+            setImageUrl(res.data.url);
+        } catch (err: any) {
+            alert(err?.response?.data?.error || 'Erro ao enviar imagem');
+        } finally {
+            setLoading(false);
+            // Reset the input value so the same file could be uploaded again if needed
+            e.target.value = '';
+        }
+    };
+
     return (
         <Layout title="Avisos Globais (Broadcast)">
             <div className="max-w-xl mx-auto bg-white dark:bg-zinc-900/50 rounded-2xl border border-zinc-200 dark:border-white/10 p-6 shadow-sm mt-8">
@@ -66,11 +88,17 @@ export const NotificationsPage = () => {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                             <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">URL da Imagem (Opcional)</label>
-                            <input
-                                value={imageUrl} onChange={e => setImageUrl(e.target.value)}
-                                className="w-full rounded-xl bg-zinc-50 dark:bg-black/20 border border-zinc-200 dark:border-white/10 px-4 py-3 text-sm outline-none focus:border-indigo-500 transition-colors"
-                                placeholder="http://.../banner.png"
-                            />
+                            <div className="flex gap-2">
+                                <input
+                                    value={imageUrl} onChange={e => setImageUrl(e.target.value)}
+                                    className="flex-1 min-w-0 w-full rounded-xl bg-zinc-50 dark:bg-black/20 border border-zinc-200 dark:border-white/10 px-4 py-3 text-sm outline-none focus:border-indigo-500 transition-colors"
+                                    placeholder="http://.../banner.png"
+                                />
+                                <label className="flex items-center justify-center px-4 py-2 bg-zinc-100 hover:bg-zinc-200 dark:bg-white/5 dark:hover:bg-white/10 border border-zinc-200 dark:border-white/10 rounded-xl cursor-pointer transition-colors shrink-0">
+                                    <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">Upload</span>
+                                    <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+                                </label>
+                            </div>
                         </div>
                         <div>
                             <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">Link ao clicar na Imagem (Opcional)</label>

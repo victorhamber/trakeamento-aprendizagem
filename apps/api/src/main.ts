@@ -79,6 +79,12 @@ app.use('/ingest', bodyParser.text({ type: 'text/plain' }));
 app.use(bodyParser.json());
 app.use(cookieParser());
 
+import path from 'path';
+const uploadsPath = path.join(process.cwd(), 'uploads');
+import fs from 'fs';
+if (!fs.existsSync(uploadsPath)) fs.mkdirSync(uploadsPath, { recursive: true });
+app.use('/uploads', express.static(uploadsPath));
+
 app.use('/auth', authRoutes);
 app.use('/sites', sitesRoutes);
 app.use('/integrations', integrationsRoutes);

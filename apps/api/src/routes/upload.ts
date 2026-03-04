@@ -46,6 +46,44 @@ async function getOpenAIKey(siteKey: string): Promise<string> {
     return process.env.OPENAI_API_KEY || '';
 }
 
+// Config for persistent image uploads (Banners, Logos, etc)
+const publicUploadDir = path.join(process.cwd(), 'uploads');
+try { fs.mkdirSync(publicUploadDir, { recursive: true }); } catch { /* ignore */ }
+
+const publicUpload = multer({
+    storage: multer.diskStorage({
+        destination: publicUploadDir,
+        filename: (_req, file, cb) => {
+            const ext = path.extname(file.originalname) || '';
+            const uniqueName = Date.now() + '-' + Math.round(Math.random() * 1E9) + ext;
+            cb(null, uniqueName);
+        }
+    }),
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB limit for banners
+    fileFilter: (_req, file, cb) => {
+        if (file.mimetype.startsWith('image/')) {
+            cb(null, true);
+        } else {
+            cb(new Error(`Apenas imagens são permitidas.`));
+        }
+    }
+});
+
+/**
+ * POST /upload/image
+ * Uploads an image permanently to the API's local storage to be served statically
+ * Returns the public URL.
+ */
+router.post('/image', requireAuth, publicUpload.single('file'), (req, res) => {
+    if (!req.file) return res.status(400).json({ error: 'Nenhum arquivo enviado.' });
+
+    // Construct public URL leveraging the container/env URL
+    const baseUrl = process.env.PUBLIC_API_BASE_URL || 'https://api.trajettu.com';
+    const imageUrl = `${baseUrl}/uploads/${req.file.filename}`;
+
+    res.json({ url: imageUrl });
+});
+
 /**
  * POST /upload/creative
  * Uploads a creative file (image or video) and returns a text description.
