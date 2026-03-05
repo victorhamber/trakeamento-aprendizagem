@@ -134,7 +134,7 @@ export class CapiService {
     );
   }
 
-  private async saveToOutbox(siteKey: string, event: CapiEvent, errorStr: string) {
+  public async saveToOutbox(siteKey: string, event: CapiEvent, errorStr: string) {
     try {
       await pool.query(
         `INSERT INTO capi_outbox (site_key, payload, last_error, next_attempt_at)
@@ -216,12 +216,10 @@ export class CapiService {
         }
         const result = { ok: false, error: message || 'Erro ao enviar para o Meta', details: error.response?.data } as const;
         await this.updateLastStatus(siteKey, result);
-        await this.saveToOutbox(siteKey, event, result.error);
         return result;
       }
       const result = { ok: false, error: error instanceof Error ? error.message : 'Erro desconhecido' } as const;
       await this.updateLastStatus(siteKey, result);
-      await this.saveToOutbox(siteKey, event, result.error);
       return result;
     }
   }
@@ -267,11 +265,11 @@ export class CapiService {
         }
         console.error('CAPI Error:', error.response?.data || error.message);
         await this.updateLastStatus(siteKey, { ok: false, error: message || 'Erro ao enviar para o Meta', details: error.response?.data });
-        await this.saveToOutbox(siteKey, event, message || 'Erro ao enviar para o Meta');
+        return { ok: false, error: message || 'Erro ao enviar para o Meta' };
       } else {
         console.error('CAPI Error:', error instanceof Error ? error.message : 'unknown_error');
         await this.updateLastStatus(siteKey, { ok: false, error: error instanceof Error ? error.message : 'Erro desconhecido' });
-        await this.saveToOutbox(siteKey, event, error instanceof Error ? error.message : 'Erro desconhecido');
+        return { ok: false, error: error instanceof Error ? error.message : 'Erro desconhecido' };
       }
     }
   }

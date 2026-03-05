@@ -298,13 +298,25 @@ async function sendCapiWithRetry(
   payload: CapiEvent,
   maxAttempts = 3
 ): Promise<void> {
+  let lastErrorStr = 'Unknown error';
+
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      await capiService.sendEvent(siteKey, payload);
+      const res = await capiService.sendEvent(siteKey, payload);
+
+      // Since we changed sendEvent to return the error object instead of throwing:
+      if (res && typeof res === 'object' && ('ok' in res) && !res.ok) {
+        lastErrorStr = res.error || 'API Error';
+        throw new Error(lastErrorStr);
+      }
+
+      // Success
       return;
-    } catch (err) {
+    } catch (err: any) {
       if (attempt === maxAttempts) {
-        console.error(`[CAPI] Falha após ${maxAttempts} tentativas para site = ${siteKey}: `, err);
+        console.error(`[CAPI] Final failure after ${maxAttempts} attempts for site = ${siteKey}: `, err.message || err);
+        // Save exactly ONCE to outbox
+        await capiService.saveToOutbox(siteKey, payload, err.message || String(err));
         return;
       }
       const delayMs = Math.min(1000 * 2 ** attempt, 10_000); // 2s, 4s, 8s (max 10s)
