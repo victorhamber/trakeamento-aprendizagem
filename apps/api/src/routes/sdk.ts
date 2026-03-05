@@ -75,6 +75,8 @@ router.get('/tracker.js', async (req, res) => {
   var RULE_DEDUP_MS = 5000; // 5s cooldown for same event name
   var pendingQueue = []; // batch queue para beforeunload
   var webVitals    = { lcp: 0, fid: 0, cls: 0, fcp: 0 };
+  var lastPageViewMs = 0;
+  var lastPageViewUrl = '';
 
   // ─── Cookie helpers ───────────────────────────────────────────────────────
   function getCookie(name) {
@@ -706,6 +708,15 @@ router.get('/tracker.js', async (req, res) => {
       var cfg = window.TRACKING_CONFIG;
       if (!cfg || !cfg.apiUrl || !cfg.siteKey) return;
       
+      var nowMs = Date.now();
+      var currentHref = location.href;
+      if ((nowMs - lastPageViewMs < 2000) && currentHref === lastPageViewUrl) {
+          // Prevent SPA rapid duplicate fires within 2 seconds for the exact same URL
+          return;
+      }
+      lastPageViewMs = nowMs;
+      lastPageViewUrl = currentHref;
+
       // console.log('[TRK] PageView init', location.href);
 
       var nav         = performance && performance.timing ? performance.timing : null;
