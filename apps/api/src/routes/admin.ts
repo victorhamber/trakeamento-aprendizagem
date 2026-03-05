@@ -97,6 +97,51 @@ router.post('/plans', async (req, res) => {
     }
 });
 
+// PUT /admin/plans/:id - Update an existing Plan
+router.put('/plans/:id', async (req, res) => {
+    const planId = req.params.id;
+    const { name, type, price, billing_cycle, max_sites, max_events } = req.body;
+    try {
+        const { rows } = await pool.query(`
+      UPDATE plans 
+      SET name = COALESCE($1, name),
+          type = COALESCE($2, type),
+          price = COALESCE($3, price),
+          billing_cycle = COALESCE($4, billing_cycle),
+          max_sites = COALESCE($5, max_sites),
+          max_events = COALESCE($6, max_events)
+      WHERE id = $7
+      RETURNING *
+    `, [name, type, price, billing_cycle, max_sites, max_events, planId]);
+
+        if (rows.length === 0) return res.status(404).json({ error: 'Plan not found' });
+        res.json(rows[0]);
+    } catch (error) {
+        console.error('Update Plan Error:', error);
+        res.status(500).json({ error: 'Failed to update plan' });
+    }
+});
+
+// DELETE /admin/plans/:id - Delete a Plan
+router.delete('/plans/:id', async (req, res) => {
+    const planId = req.params.id;
+    try {
+        // Optionally, check if any accounts are using this plan before deleting, 
+        // or let the database foreign key constraints handle it. 
+        // Assuming ON DELETE SET NULL or we just let it fail if in use.
+        const { rowCount } = await pool.query('DELETE FROM plans WHERE id = $1', [planId]);
+
+        if (rowCount === 0) return res.status(404).json({ error: 'Plan not found' });
+        res.status(204).send();
+    } catch (error: any) {
+        console.error('Delete Plan Error:', error);
+        if (error.code === '23503') { // Postgres foreign key violation code
+            return res.status(400).json({ error: 'Não é possível excluir este plano pois existem contas atreladas a ele.' });
+        }
+        res.status(500).json({ error: 'Failed to delete plan' });
+    }
+});
+
 // === Global Notifications Management ===
 
 // POST /admin/notifications - Broadcast a new message to all Dashboards

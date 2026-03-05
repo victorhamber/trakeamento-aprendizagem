@@ -12,15 +12,28 @@ type AccountRow = {
     base_max_sites: number | null;
     sites_count: number;
 };
+type Plan = {
+    id: number;
+    name: string;
+};
 
 export const AccountsPage = () => {
     const [accounts, setAccounts] = useState<AccountRow[]>([]);
+    const [plans, setPlans] = useState<Plan[]>([]);
     const [loading, setLoading] = useState(true);
+
+    // Modal states
+    const [planModalAccId, setPlanModalAccId] = useState<number | null>(null);
+    const [selectedPlanId, setSelectedPlanId] = useState<string>('0');
 
     const load = async () => {
         try {
-            const res = await api.get('/admin/accounts');
-            setAccounts(res.data);
+            const [accRes, plansRes] = await Promise.all([
+                api.get('/admin/accounts'),
+                api.get('/admin/plans')
+            ]);
+            setAccounts(accRes.data);
+            setPlans(plansRes.data);
         } catch (e) {
             console.error(e);
         } finally {
@@ -31,6 +44,25 @@ export const AccountsPage = () => {
     useEffect(() => {
         load();
     }, []);
+
+    const openPlanModal = (acc: AccountRow) => {
+        setPlanModalAccId(acc.id);
+        const currentPlan = plans.find(p => p.name === acc.plan_name);
+        setSelectedPlanId(currentPlan ? String(currentPlan.id) : '0');
+    };
+
+    const assignPlan = async () => {
+        if (!planModalAccId) return;
+        try {
+            await api.put(`/admin/accounts/${planModalAccId}`, {
+                active_plan_id: selectedPlanId === '0' ? null : parseInt(selectedPlanId, 10)
+            });
+            setPlanModalAccId(null);
+            await load();
+        } catch (e) {
+            alert('Erro ao atualizar plano');
+        }
+    };
 
     const toggleActive = async (id: number, currentStatus: boolean) => {
         if (!confirm(`Deseja ${currentStatus ? 'desativar' : 'ativar'} esta conta?`)) return;
@@ -109,12 +141,20 @@ export const AccountsPage = () => {
                                             </button>
                                         </td>
                                         <td className="px-5 py-4 text-right">
-                                            <button
-                                                onClick={() => updateBonus(acc.id, acc.bonus_site_limit)}
-                                                className="text-xs text-indigo-600 hover:text-indigo-500 dark:text-indigo-400 dark:hover:text-indigo-300 font-medium"
-                                            >
-                                                Editar limites
-                                            </button>
+                                            <div className="flex flex-col items-end gap-2">
+                                                <button
+                                                    onClick={() => updateBonus(acc.id, acc.bonus_site_limit)}
+                                                    className="text-[11px] font-bold uppercase tracking-wider text-amber-600 hover:text-amber-500 dark:text-amber-400 dark:hover:text-amber-300"
+                                                >
+                                                    Editar Limites
+                                                </button>
+                                                <button
+                                                    onClick={() => openPlanModal(acc)}
+                                                    className="text-[11px] font-bold uppercase tracking-wider text-indigo-600 hover:text-indigo-500 dark:text-indigo-400 dark:hover:text-indigo-300"
+                                                >
+                                                    Alterar Plano
+                                                </button>
+                                            </div>
                                         </td>
                                     </tr>
                                 );
@@ -123,6 +163,44 @@ export const AccountsPage = () => {
                     </table>
                 </div>
             </div>
+
+            {/* Plan Assignment Modal */}
+            {planModalAccId && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-zinc-900 rounded-2xl p-6 w-full max-w-sm shadow-2xl border border-zinc-200 dark:border-white/10">
+                        <h3 className="text-lg font-bold mb-4">Atribuir Plano</h3>
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-xs text-zinc-500 mb-1">Selecione o Plano</label>
+                                <select
+                                    value={selectedPlanId}
+                                    onChange={e => setSelectedPlanId(e.target.value)}
+                                    className="w-full rounded-xl bg-zinc-50 dark:bg-black/20 border border-zinc-200 dark:border-white/10 px-3 py-2 text-sm outline-none focus:border-indigo-500"
+                                >
+                                    <option value="0">Free / Sem Plano</option>
+                                    {plans.map(p => (
+                                        <option key={p.id} value={p.id}>{p.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div className="flex gap-3 pt-2">
+                                <button
+                                    onClick={() => setPlanModalAccId(null)}
+                                    className="flex-1 bg-zinc-100 dark:bg-white/5 hover:bg-zinc-200 dark:hover:bg-white/10 text-zinc-900 dark:text-white font-semibold text-sm py-2 rounded-xl transition-colors"
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    onClick={assignPlan}
+                                    className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm py-2 rounded-xl transition-colors"
+                                >
+                                    Confirmar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </Layout>
     );
 };
