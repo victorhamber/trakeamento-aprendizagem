@@ -847,6 +847,16 @@ router.get('/tracker.js', async (req, res) => {
         console.log('[TRK] Dedup skip: ' + eventName + ' fired ' + (nowMs - _lastRuleFire[evKey]) + 'ms ago');
         return;
       }
+
+      // Hard dedup for manual PageView rules to prevent duplicating native pageView() 
+      if (eventName === 'PageView') {
+        try {
+          var visited = window.sessionStorage.getItem('_ta_visited_paths') || '';
+          if (visited.indexOf(location.pathname) > -1) return;
+          window.sessionStorage.setItem('_ta_visited_paths', visited + '|' + location.pathname);
+        } catch(_e) {}
+      }
+
       _lastRuleFire[evKey] = nowMs;
 
       var eventTime = Math.floor(Date.now() / 1000);
