@@ -54,8 +54,8 @@ export function RevenueChart({ data, currency, isDark }: { data: DailyPoint[]; c
             width={60}
           />
           <Tooltip 
-            formatter={(value: number) => [fmtCurrency(value), 'Receita']}
-            labelFormatter={(label) => fmtDate(label)}
+            formatter={(value: any) => [fmtCurrency(Number(value)), 'Receita']}
+            labelFormatter={(label: any) => fmtDate(String(label))}
             contentStyle={{ 
               backgroundColor: isDark ? '#18181b' : '#fff', 
               borderColor: isDark ? '#27272a' : '#e4e4e7',
