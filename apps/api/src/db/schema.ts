@@ -287,7 +287,9 @@ const schemaSql = `
     last_traffic_source TEXT,
     total_events INTEGER DEFAULT 1,
     last_event_name VARCHAR(100),
-    last_seen_at TIMESTAMP DEFAULT NOW(),
+  last_ip VARCHAR(45),
+  last_user_agent TEXT,
+  last_seen_at TIMESTAMP DEFAULT NOW(),
     created_at TIMESTAMP DEFAULT NOW(),
     UNIQUE(site_key, external_id)
   );
@@ -437,6 +439,9 @@ export const ensureSchema = async (pool: Pool) => {
 
     // Migracao SaaS
     try {
+      await pool.query('ALTER TABLE site_visitors ADD COLUMN IF NOT EXISTS last_ip VARCHAR(45)');
+      await pool.query('ALTER TABLE site_visitors ADD COLUMN IF NOT EXISTS last_user_agent TEXT');
+
       await pool.query('ALTER TABLE accounts ADD COLUMN IF NOT EXISTS active_plan_id INTEGER REFERENCES plans(id)');
       await pool.query('ALTER TABLE accounts ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true');
       await pool.query('ALTER TABLE accounts ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP');

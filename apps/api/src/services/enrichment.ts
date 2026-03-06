@@ -30,7 +30,7 @@ export class EnrichmentService {
     // 1. Tentar buscar em site_visitors (Perfil consolidado)
     // Busca por email_hash OU phone_hash
     const visitorQuery = `
-      SELECT fbp, fbc, external_id, last_traffic_source
+      SELECT fbp, fbc, external_id, last_traffic_source, last_ip, last_user_agent
       FROM site_visitors
       WHERE site_key = $1
         AND (
@@ -44,8 +44,6 @@ export class EnrichmentService {
     try {
       const visitorRes = await pool.query(visitorQuery, [siteKey, emailHash, phoneHash]);
       
-      // Mesmo se achar visitor, precisamos pegar IP/UA recentes da tabela de eventos
-      // pois site_visitors pode não ter IP/UA explícitos ou atualizados
       let visitorData: any = {};
       
       if (visitorRes.rowCount && visitorRes.rowCount > 0) {
@@ -55,19 +53,24 @@ export class EnrichmentService {
           fbp: row.fbp,
           fbc: row.fbc,
           externalId: row.external_id,
+          clientIp: row.last_ip,
+          clientUa: row.last_user_agent,
           ...utms
         };
       }
 
-      // Buscar metadados (IP/UA) mais recentes independente se achou visitor ou não
-      // Usando FBP do visitor ou o hash de email/phone para encontrar eventos
-      const metadata = await this.findLatestMetadata(siteKey, visitorData.fbp, visitorData.externalId, emailHash, phoneHash);
+      // Buscar metadados (IP/UA) mais recentes em web_events APENAS se não tiver no visitorData
+      // Isso permite limpar web_events antigo sem perder dados do perfil
+      let metadata: any = null;
+      if (!visitorData.clientIp || !visitorData.clientUa) {
+         metadata = await this.findLatestMetadata(siteKey, visitorData.fbp, visitorData.externalId, emailHash, phoneHash);
+      }
 
       if (Object.keys(visitorData).length > 0 || metadata) {
         return {
           ...visitorData,
-          clientIp: metadata?.ip,
-          clientUa: metadata?.ua
+          clientIp: visitorData.clientIp || metadata?.ip,
+          clientUa: visitorData.clientUa || metadata?.ua
         };
       }
 

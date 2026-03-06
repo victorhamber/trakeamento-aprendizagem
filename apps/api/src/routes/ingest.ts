@@ -472,9 +472,9 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
       try {
         await pool.query(`
           INSERT INTO site_visitors (
-            site_key, external_id, fbc, fbp, email_hash, phone_hash, first_name_hash, last_name_hash, last_traffic_source, total_events, last_event_name
+            site_key, external_id, fbc, fbp, email_hash, phone_hash, first_name_hash, last_name_hash, last_traffic_source, total_events, last_event_name, last_ip, last_user_agent
           ) VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8, $9, 1, $10
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, 1, $10, $11, $12
           )
           ON CONFLICT (site_key, external_id) DO UPDATE SET
             fbc = COALESCE(EXCLUDED.fbc, site_visitors.fbc),
@@ -485,10 +485,12 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
             last_name_hash = COALESCE(EXCLUDED.last_name_hash, site_visitors.last_name_hash),
             last_traffic_source = COALESCE(EXCLUDED.last_traffic_source, site_visitors.last_traffic_source),
             last_event_name = EXCLUDED.last_event_name,
+            last_ip = COALESCE(EXCLUDED.last_ip, site_visitors.last_ip),
+            last_user_agent = COALESCE(EXCLUDED.last_user_agent, site_visitors.last_user_agent),
             total_events = site_visitors.total_events + 1,
             last_seen_at = NOW()
         `, [
-          siteKey, extId, fbc, fbp, em, ph, fn, ln, ts, eventName
+          siteKey, extId, fbc, fbp, em, ph, fn, ln, ts, eventName, capiUser.client_ip_address, capiUser.client_user_agent
         ]);
       } catch (err) {
         console.error('[Ingest] Fallback User Profile UPSERT error:', err);
@@ -707,9 +709,9 @@ router.post('/batch', cors(), ingestLimiter, async (req, res) => {
       try {
         await pool.query(`
           INSERT INTO site_visitors (
-            site_key, external_id, fbc, fbp, email_hash, phone_hash, first_name_hash, last_name_hash, last_traffic_source, total_events, last_event_name
+            site_key, external_id, fbc, fbp, email_hash, phone_hash, first_name_hash, last_name_hash, last_traffic_source, total_events, last_event_name, last_ip, last_user_agent
           ) VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8, $9, 1, $10
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, 1, $10, $11, $12
           )
           ON CONFLICT (site_key, external_id) DO UPDATE SET
             fbc = COALESCE(EXCLUDED.fbc, site_visitors.fbc),
@@ -720,10 +722,12 @@ router.post('/batch', cors(), ingestLimiter, async (req, res) => {
             last_name_hash = COALESCE(EXCLUDED.last_name_hash, site_visitors.last_name_hash),
             last_traffic_source = COALESCE(EXCLUDED.last_traffic_source, site_visitors.last_traffic_source),
             last_event_name = EXCLUDED.last_event_name,
+            last_ip = COALESCE(EXCLUDED.last_ip, site_visitors.last_ip),
+            last_user_agent = COALESCE(EXCLUDED.last_user_agent, site_visitors.last_user_agent),
             total_events = site_visitors.total_events + 1,
             last_seen_at = NOW()
         `, [
-          siteKey, extId, fbc, fbp, em, ph, fn, ln, ts, eventName
+          siteKey, extId, fbc, fbp, em, ph, fn, ln, ts, eventName, capiUser.client_ip_address, capiUser.client_user_agent
         ]);
       } catch (err) {
         console.error('[Ingest/Batch] User Profile UPSERT error:', err);
