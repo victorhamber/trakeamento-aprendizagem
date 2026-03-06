@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { Layout } from '../components/Layout';
 import { BestTimeCards } from '../components/BestTimeCards';
+import { RevenueChart } from '../components/charts/RevenueChart';
+import { FunnelChart } from '../components/charts/FunnelChart';
 
 type Overview = {
   sites: number;
@@ -165,217 +167,6 @@ const StatusRow = ({ label, status, badge }: StatusRowProps) => (
   </div>
 );
 
-// ─── Sales Chart ─────────────────────────────────────────────────────────────
-
-type TooltipState = {
-  x: number;
-  y: number;
-  point: DailyPoint;
-  side: 'left' | 'right';
-} | null;
-
-const SalesChart = ({ data, currency, isDark }: { data: DailyPoint[]; currency: string; isDark: boolean }) => {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const svgRef = useRef<SVGSVGElement>(null);
-  const [tooltip, setTooltip] = useState<TooltipState>(null);
-  const [W, setW] = useState(800);
-  const H = 180;
-  const PAD = { top: 16, right: 16, bottom: 48, left: 56 };
-
-  useEffect(() => {
-    if (!containerRef.current) return;
-    const observer = new ResizeObserver((entries) => {
-      for (let entry of entries) {
-        setW(Math.max(300, entry.contentRect.width));
-      }
-    });
-    observer.observe(containerRef.current);
-    // Initial width
-    setW(Math.max(300, containerRef.current.clientWidth));
-    return () => observer.disconnect();
-  }, []);
-
-  const iW = W - PAD.left - PAD.right;
-  const iH = H - PAD.top - PAD.bottom;
-
-  const hasData = data && data.length > 0;
-  const revenues = hasData ? data.map(d => Number(d.revenue)) : [];
-  const maxRev = hasData ? Math.max(...revenues, 1) : 1;
-
-  const xStep = hasData ? iW / Math.max(data.length - 1, 1) : 0;
-  const pts = hasData ? data.map((d, i) => ({
-    x: PAD.left + i * xStep,
-    y: PAD.top + iH - (Number(d.revenue) / maxRev) * iH,
-    d,
-  })) : [];
-
-  const polyline = pts.map(p => `${p.x},${p.y}`).join(' ');
-
-  // Build fill area path
-  const fillPath = pts.length > 1
-    ? `M${pts[0].x},${PAD.top + iH} L${polyline.replace(/(\d+\.?\d*),(\d+\.?\d*)/g, '$1,$2')} L${pts[pts.length - 1].x},${PAD.top + iH} Z`
-    : '';
-
-  const fmtCurrency = (v: number) => new Intl.NumberFormat(
-    currency === 'BRL' ? 'pt-BR' : 'en-US',
-    { style: 'currency', currency, notation: 'compact', maximumFractionDigits: 1 }
-  ).format(v);
-
-  const fmtDate = (dateStr: string) => {
-    const d = new Date(dateStr + 'T12:00:00');
-    return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
-  };
-
-  // Y-axis ticks
-  const yTicks = [0, 0.25, 0.5, 0.75, 1].map(pct => ({
-    val: maxRev * pct,
-    y: PAD.top + iH - pct * iH,
-  }));
-
-  // X-axis labels (max 7 evenly spaced)
-  const xLabelIdxs: number[] = [];
-  if (hasData) {
-    if (data.length <= 7) {
-      data.forEach((_, i) => xLabelIdxs.push(i));
-    } else {
-      const step = Math.floor((data.length - 1) / 6);
-      for (let i = 0; i <= 6; i++) xLabelIdxs.push(Math.min(i * step, data.length - 1));
-    }
-  }
-
-  const lineColor = isDark ? '#34d399' : '#059669';
-  const fillColor = isDark ? 'url(#gradDark)' : 'url(#gradLight)';
-  const gridColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
-  const textColor = isDark ? '#71717a' : '#6b7280';
-
-  const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
-    if (!hasData) return;
-    const svgEl = svgRef.current;
-    if (!svgEl) return;
-    const rect = svgEl.getBoundingClientRect();
-    const rawX = ((e.clientX - rect.left) / rect.width) * W;
-    const localX = rawX - PAD.left;
-    const idx = Math.round(localX / xStep);
-    const clampedIdx = Math.max(0, Math.min(data.length - 1, idx));
-    const pt = pts[clampedIdx];
-    const side = clampedIdx > data.length / 2 ? 'right' : 'left';
-    setTooltip({ x: pt.x, y: pt.y, point: pt.d, side });
-  };
-
-  return (
-    <div className="relative select-none w-full" ref={containerRef}>
-      {!hasData ? (
-        <div className="flex items-center justify-center h-[180px] text-xs text-zinc-400 dark:text-zinc-600">
-          Sem dados no período selecionado
-        </div>
-      ) : (
-        <>
-          <svg
-            ref={svgRef}
-            viewBox={`0 0 ${W} ${H}`}
-            className="w-full h-[180px] overflow-visible"
-            onMouseMove={handleMouseMove}
-            onMouseLeave={() => setTooltip(null)}
-          >
-            <defs>
-              <linearGradient id="gradDark" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#34d399" stopOpacity="0.25" />
-                <stop offset="100%" stopColor="#34d399" stopOpacity="0" />
-              </linearGradient>
-              <linearGradient id="gradLight" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#059669" stopOpacity="0.15" />
-                <stop offset="100%" stopColor="#059669" stopOpacity="0" />
-              </linearGradient>
-            </defs>
-
-            {/* Grid lines */}
-            {yTicks.map((t, i) => (
-              <g key={i}>
-                <line x1={PAD.left} y1={t.y} x2={W - PAD.right} y2={t.y} stroke={gridColor} strokeWidth="1" />
-                <text x={PAD.left - 6} y={t.y + 4} textAnchor="end" fontSize="10" fill={textColor}>
-                  {fmtCurrency(t.val)}
-                </text>
-              </g>
-            ))}
-
-            {/* Fill area */}
-            {fillPath && <path d={fillPath} fill={fillColor} />}
-
-            {/* Line */}
-            <polyline
-              points={polyline}
-              fill="none"
-              stroke={lineColor}
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-
-            {/* Data points (dots) */}
-            {pts.map((p, i) => (
-              <circle key={i} cx={p.x} cy={p.y} r="3" fill={isDark ? '#18181b' : '#ffffff'} stroke={lineColor} strokeWidth="2" />
-            ))}
-
-            {/* X-axis labels */}
-            {xLabelIdxs.map(i => (
-              <text key={i} x={pts[i].x} y={H - 8} textAnchor="middle" fontSize="10" fill={textColor}>
-                {fmtDate(data[i].date)}
-              </text>
-            ))}
-
-            {/* Hover dot */}
-            {tooltip && (
-              <g className="pointer-events-none">
-                <line
-                  x1={tooltip.x} y1={PAD.top}
-                  x2={tooltip.x} y2={PAD.top + iH}
-                  stroke={lineColor} strokeWidth="1" strokeDasharray="4 3" strokeOpacity="0.5"
-                />
-                <circle cx={tooltip.x} cy={tooltip.y} r="5" fill={lineColor} />
-                <circle cx={tooltip.x} cy={tooltip.y} r="10" fill={lineColor} fillOpacity="0.25" className="animate-pulse" />
-              </g>
-            )}
-          </svg>
-
-          {/* Tooltip */}
-          {tooltip && (
-            <div
-              className="absolute pointer-events-none z-10"
-              style={{
-                top: `${(tooltip.y / H) * 100}%`,
-                left: tooltip.side === 'left' ? `calc(${(tooltip.x / W) * 100}% + 14px)` : undefined,
-                right: tooltip.side === 'right' ? `calc(${100 - (tooltip.x / W) * 100}% + 14px)` : undefined,
-                transform: 'translateY(-50%)',
-              }}
-            >
-              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl shadow-xl px-3.5 py-2.5 min-w-[140px]">
-                <div className="text-[11px] font-semibold text-zinc-800 dark:text-zinc-200 mb-1.5">
-                  {new Date(tooltip.point.date + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })}
-                </div>
-                <div className="flex items-center gap-2 text-[11px]">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
-                  <span className="text-zinc-500 dark:text-zinc-400">Faturamento</span>
-                  <span className="font-semibold text-zinc-900 dark:text-zinc-100 ml-auto tabular-nums">
-                    {new Intl.NumberFormat(currency === 'BRL' ? 'pt-BR' : 'en-US', { style: 'currency', currency, maximumFractionDigits: 2 }).format(Number(tooltip.point.revenue))}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 text-[11px] mt-1">
-                  <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
-                  <span className="text-zinc-500 dark:text-zinc-400">Vendas</span>
-                  <span className="font-semibold text-zinc-900 dark:text-zinc-100 ml-auto tabular-nums">
-                    {tooltip.point.count}
-                  </span>
-                </div>
-              </div>
-            </div>
-          )}
-        </>
-      )}
-    </div>
-  );
-};
-
-
 // ─── Select styles shared ─────────────────────────────────────────────────────
 
 const selectCls =
@@ -386,6 +177,7 @@ const selectCls =
 export const DashboardPage = () => {
   const [data, setData] = useState<Overview | null>(null);
   const [salesData, setSalesData] = useState<DailyPoint[]>([]);
+  const [funnelData, setFunnelData] = useState<any>(null);
   const [hasOpenAiKey, setHasOpenAiKey] = useState<boolean | null>(null);
   const [sites, setSites] = useState<Array<{ id: number; name: string }>>([]);
   const [selectedSiteId, setSelectedSiteId] = useState('');
@@ -414,9 +206,16 @@ export const DashboardPage = () => {
     api.get('/stats/overview', { params })
       .then((res) => setData(res.data))
       .catch(() => setData(null));
+
     api.get('/stats/sales-daily', { params })
       .then((res) => setSalesData(res.data?.data || []))
       .catch(() => setSalesData([]));
+
+    // Fetch Funnel Data (sempre 30 dias por enquanto, ou adaptar endpoint para aceitar period)
+    api.get('/dashboard/funnel', { params: { siteId: selectedSiteId } })
+      .then((res) => setFunnelData(res.data))
+      .catch(() => setFunnelData(null));
+
   }, [period, currency, selectedSiteId]);
 
   useEffect(() => {
@@ -557,25 +356,29 @@ export const DashboardPage = () => {
         />
       </div>
 
-      {/* ── Sales Chart ── */}
-      <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 p-5 mb-6 shadow-sm dark:shadow-none">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100">Desempenho de Vendas</div>
-            <div className="text-[11px] text-zinc-500 mt-0.5">{getPeriodLabel(period)}</div>
+      {/* ── Charts Section ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+        {/* Revenue Chart (Span 2) */}
+        <div className="lg:col-span-2 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 p-5 shadow-sm dark:shadow-none">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100">Desempenho de Vendas</div>
+              <div className="text-[11px] text-zinc-500 mt-0.5">{getPeriodLabel(period)}</div>
+            </div>
           </div>
-          <div className="flex items-center gap-4 text-[11px] text-zinc-500 dark:text-zinc-400">
-            <span className="flex items-center gap-1.5">
-              <span className="w-2.5 h-0.5 rounded-full bg-emerald-500 inline-block" />
-              Faturamento
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-blue-500 inline-block" />
-              Vendas
-            </span>
-          </div>
+          <RevenueChart data={salesData} currency={currency} isDark={isDark} />
         </div>
-        <SalesChart data={salesData} currency={currency} isDark={isDark} />
+
+        {/* Funnel Chart (Span 1) */}
+        <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 p-5 shadow-sm dark:shadow-none">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100">Funil de Conversão</div>
+              <div className="text-[11px] text-zinc-500 mt-0.5">Últimos 30 dias</div>
+            </div>
+          </div>
+          <FunnelChart data={funnelData} isDark={isDark} />
+        </div>
       </div>
 
       <BestTimeCards siteId={selectedSiteId ? Number(selectedSiteId) : undefined} period={period} />

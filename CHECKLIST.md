@@ -1,24 +1,44 @@
 # 📋 Checklist de Progresso
 
-- [x] PRD atualizado
-- [x] Mapeamento técnico atualizado
-- [x] Modelo de dados definido e migrado (PostgreSQL)
-- [x] Web SDK MVP (PageView + telemetria + event_id)
-- [x] Endpoint de ingestão com validação e persistência
-- [ ] Integração Meta CAPI com deduplicação (event_id)
-- [x] Webhook de compra (assinatura, normalização, Purchase via CAPI e Debug Visual)
-- [ ] Teste real de envio CAPI em produção
-- [ ] Sync de insights do Meta Ads (jobs agendados)
-- [ ] Integração GA4 (Reporting & Measurement)
-- [ ] Dashboard MVP (funil, páginas, anúncios)
-- [x] Tabela de campanhas com drilldown e métricas de funil
-- [x] Ações de status por campanha/conjunto/anúncio
-- [x] UX de filtros UTM (autocomplete/colar URL)
-- [x] Configuração de Eventos por URL e Gerador de Formulário
-- [ ] Diagnóstico heurístico (regras/score) para gargalos
-- [ ] Relatórios e recomendações via LLM (sem PII em claro)
-- [ ] Segurança e privacidade (LGPD/consentimento) validadas
-- [ ] Testes de integração (ingestão, webhook, CAPI, insights)
-- [ ] Observabilidade (auditoria de envios e falhas)
-- [ ] Revisão final (performance, segurança, manutenção)
-- [ ] Empacotamento e release (documentação + versão)
+## Fundação e Infraestrutura
+- [x] Estrutura Monorepo (Apps/API + Apps/Dashboard)
+- [x] Configuração TypeScript e ESLint
+- [x] Banco de Dados PostgreSQL configurado
+- [x] Sistema de Migrations (Scripts em `apps/api/scripts`)
+
+## Backend Core (API)
+- [x] **Ingestão de Eventos:** Endpoint `/ingest` otimizado e validado (Zod).
+- [x] **Deduplicação:** Sistema híbrido (LRU Cache + Verificação DB).
+- [x] **Meta CAPI:** Integração completa com tratamento de erros.
+- [x] **Resiliência CAPI:** Implementação de Tabela `capi_outbox` para retries.
+- [x] **GA4:** Integração Server-Side (Measurement Protocol).
+- [x] **Webhook:** Recepção e processamento de compras.
+
+## Integrações Externas
+- [x] **Meta Marketing API:** Sync de métricas (Campaign/AdSet/Ad).
+- [x] **Meta Creatives:** Fetch de imagens e copys dos anúncios.
+- [x] **Landing Page:** Crawler básico para extrair texto da LP.
+- [x] **OpenAI:** Serviço de geração de relatórios (`LlmService`).
+
+## Inteligência e Diagnóstico
+- [x] **Motor de Diagnóstico:** Agregação de dados para Snapshot.
+- [x] **Cálculo de Sinais:** Heurísticas automáticas.
+- [x] **Análise de Tendência:** Comparação Período Atual vs Anterior.
+- [x] **Relatórios IA:** Geração e Validação de Markdown.
+
+## Qualidade e Testes
+- [x] **Configuração de Testes:** Instalar Vitest no `apps/api`.
+- [x] **Testes Unitários:** Validar `IngestService` e `CapiService` (hashing/outbox).
+- [ ] **Testes de Integração:** Validar fluxo completo (API -> DB).
+
+## Frontend (Dashboard Real-time)
+- [x] Autenticação e Gestão de Contas.
+- [x] Configuração de Integrações.
+- [x] Relatórios de Diagnóstico (Texto).
+- [x] **Instalação de Gráficos:** Biblioteca Recharts configurada.
+- [x] **Endpoints de Analytics:** API `/dashboard/revenue` e `/dashboard/funnel` criada.
+- [x] **Widgets de Performance:** Gráficos de Receita e Funil implementados no Dashboard.
+
+## Pendências / Melhorias Futuras
+- [ ] Multi-usuário com permissões granulares (RBAC).
+- [ ] Suporte a outras redes (Google Ads, TikTok Ads) - **Adiado**.

@@ -1,180 +1,86 @@
 # 🧩 Mapeamento Técnico do Projeto
 
 ## 1) Visão Geral da Arquitetura
-Arquitetura recomendada em 3 camadas:
 
-1. **Coletor no Site (Web SDK)**
-   - Script leve para capturar eventos (PageView, ViewContent, Lead, AddToCart, InitiateCheckout) + telemetria (tempo, cliques, performance).
-   - Geração/propagação de `event_id` para deduplicação.
+O projeto é um Monorepo utilizando **Workspaces** (npm/yarn/pnpm), dividido em:
 
-2. **Gateway/Backend (API + Jobs)**
-   - Ingestão e persistência de eventos.
-   - Integração com Meta CAPI.
-   - Integração com Meta Marketing API (insights).
-   - Webhook de compra (checkout → backend).
-   - Motor de diagnóstico (regras) e geração de recomendações com LLM.
+*   **`apps/api`**: Backend Node.js/Express (Core do sistema).
+*   **`apps/dashboard`**: Frontend React/Vite (Interface do usuário).
+*   **`apps/admin`**: Frontend React/Vite (Interface administrativa).
 
-3. **Dashboard (Admin Web)**
-   - Visualizar funil, performance e diagnósticos.
-   - Configurar integrações (Meta, webhook) e políticas de dados.
+## 2) Backend (`apps/api`)
 
-## 2) Stack de Tecnologias (atual)
-
-### Backend
-- **Node.js + TypeScript** com **Express**.
-- Banco: **PostgreSQL** para eventos e insights.
-- HTTP: REST e Webhooks.
-- Autenticação: JWT para painel + chaves por site para ingestão.
-
-### Web SDK
-- JavaScript/TypeScript (bundle pequeno), envio via `sendBeacon`/`fetch` com retry básico.
-- Coleta de performance via Web Performance API (ex.: Navigation Timing / PerformanceObserver).
-
-### Dashboard
-- Web app **React + Vite** consumindo a API.
-- Gráficos (ex.: Recharts/ECharts), tabelas e filtros.
-
-### LLM
-- Integração com **OpenAI** para geração de diagnósticos e recomendações.
-
-## 3) Estrutura de Pastas (monorepo atual)
-
+### Estrutura de Diretórios
 ```
-/apps
-  /api
-    /src
-      /db
-      /lib
-      /middleware
-      /routes
-        sdk.ts        ← Smart Snippet (tracker servido dinamicamente)
-      /scripts
-      /services
-      main.ts
-  /dashboard
-    /src
-      /components
-      /lib
-      /pages
-      /state
-      App.tsx
-      main.tsx
-/infra
-  /docker
+/src
+  /db           -> Conexão Postgres (pool) e schemas.
+  /lib          -> Utilitários (crypto, jwt).
+  /middleware   -> Auth, Rate Limiting, CORS.
+  /routes       -> Definição de endpoints (ingest, meta, ai, etc).
+  /services     -> Lógica de negócios complexa.
+  /scripts      -> Migrations e Jobs manuais.
+  main.ts       -> Entry point.
 ```
 
-## 4) Componentes e Responsabilidades
+### Serviços Principais (`/services`)
 
-### 4.1 Ingestão (`/modules/ingest`)
-- Recebe eventos do Web SDK.
-- Valida schema e assinatura (chave do site).
-- Normaliza campos (ex.: `event_time`, `event_source_url`, `event_id`).
-- Persiste raw payload (JSONB) e colunas indexáveis.
+1.  **`CapiService` (`capi.ts`)**
+    *   Responsável pela comunicação com Meta Conversions API.
+    *   **Funcionalidades:** Normalização de PII, Hashing, Construção de Payload.
+    *   **Resiliência:** Implementa padrão **Outbox** (`capi_outbox` table) para garantir entrega mesmo em falhas momentâneas.
+    *   **Circuit Breaker:** Detecta tokens inválidos e pausa envios para evitar banimento.
 
-### 4.2 Integração Meta CAPI (`/modules/meta`)
-- Monta payload CAPI com `user_data` e `custom_data`.
-- Deduplicação: garante `event_id` consistente.
-- Retries e DLQ (fila de falhas) para reenvio.
+2.  **`IngestService` (via `routes/ingest.ts`)**
+    *   Endpoint de alta performance para receber eventos do Web SDK.
+    *   **Deduplicação:** Verifica `event_id` em cache (LRU) e no Banco.
+    *   **Enriquecimento:** Calcula `Engagement Score` baseado em telemetria.
+    *   **Dispatch:** Dispara processamento assíncrono para CAPI e GA4.
 
-### 4.3 Webhooks (`/modules/webhooks`)
-- Endpoint de compra autenticado (HMAC + timestamp).
-- Normaliza dados do comprador (hashing SHA-256) e produtos.
-- Dispara Purchase via CAPI e grava compra.
+3.  **`MetaMarketingService` (`meta-marketing.ts`)**
+    *   Sincroniza dados da API de Marketing do Facebook.
+    *   **Granularidade:** Campanhas, AdSets e Ads.
+    *   **Normalização:** Transforma arrays complexos de `actions` em colunas planas (leads, purchases, cost_per_x).
+    *   **Idempotência:** Remove dados do dia antes de reinserir para evitar duplicidade.
 
-### 4.4 Insights Meta Ads (services + routes)
-- Sync agendado para coletar:
-  - `campaign_id`, `adset_id`, `ad_id`, `spend`, `impressions`, `reach`, `clicks`, `ctr`, `cpc`, `cpm`, `actions`, `purchases` etc.
-- Armazena snapshots por dia.
- - Normaliza resultados por objetivo e eventos personalizados.
- - Calcula Hook Rate e métricas de LP View.
- - Permite alternar status de campanha, conjunto e anúncio.
+4.  **`Ga4Service` (`ga4.ts`)**
+    *   Envia eventos para Google Analytics 4 via Measurement Protocol.
+    *   Mapeia eventos padrão (Meta -> GA4).
+    *   Gerencia `client_id` e `user_properties`.
 
-### 4.5 Analytics e Diagnóstico (`/modules/analytics`)
-- Funis e métricas:
-  - Landing → ViewContent → Lead → Checkout → Purchase.
-- Segmentação por campanha/anúncio/URL/tempo.
-- Heurísticas de gargalo (regra/score) para alimentar o LLM.
+5.  **`DiagnosisService` (`diagnosis.ts`)**
+    *   Orquestrador da IA.
+    *   Coleta dados de todas as fontes (DB, Meta API, Crawler de LP).
+    *   Calcula heurísticas ("Sinais") para alimentar o prompt da IA.
+    *   Busca criativos (imagens/textos) na API do Meta para análise qualitativa.
 
-### 4.6 Integração Google Analytics 4 (GA4)
-- **Measurement Protocol**:
-  - Serviço `Ga4Service` para envio server-side.
-  - Payload padrão: `client_id`, `events` (name, params), `user_properties`.
-  - Tratamento de `debug_mode` para validação.
-- **Reporting API**:
-  - Serviço `Ga4ReportingService` para consulta de dados.
-  - Cache local (Redis/Banco) de relatórios diários para evitar cotas.
+6.  **`LlmService` (`llm.ts`)**
+    *   Cliente da OpenAI.
+    *   Gerencia System Prompts e Context Windows.
+    *   Valida se a resposta do GPT está completa e no formato Markdown esperado.
 
-### 4.7 Recomendações (LLM) (`/modules/recommendations`)
-- Monta contexto mínimo (sem PII em claro) e chama LLM.
-- Persiste relatório, evidências e ações sugeridas.
+### Banco de Dados (PostgreSQL)
 
-## 5) Modelo de Dados (PostgreSQL)
+**Tabelas Chave:**
+*   `web_events`: Tabela massiva com todos os eventos raw + telemetria.
+*   `meta_insights_daily`: Dados agregados de performance do Meta.
+*   `sites`: Configurações de cada projeto rastreado.
+*   `integrations_meta`: Tokens e configs do Pixel/CAPI.
+*   `recommendation_reports`: Histórico de diagnósticos gerados pela IA.
+*   `capi_outbox`: Fila de retentativa de eventos CAPI.
+*   `site_visitors`: Perfis unificados de visitantes (Identity Graph simples).
 
-### Tabelas principais
-- `accounts`: clientes/organizações.
-- `users`: usuários do dashboard.
-- `sites`: domínios/projetos (chave de ingestão).
-- `meta_connections`: tokens, pixel, configurações (armazenar token criptografado).
-- `ga4_connections`:
-  - `property_id`, `measurement_id`, `api_secret`, `service_account_credentials` (JSON criptografado).
-- `web_events`:
-  - colunas: `site_id`, `event_name`, `event_time`, `event_id`, `event_source_url`, `event_url`, `page_title`, `load_time_ms`, `fbp`, `fbc`, `external_id_hash`, `ip`, `ua`, `raw_payload` (JSONB).
-- `sessions` (opcional no MVP): agregação por `session_id`.
-- `purchases`:
-  - `order_id`, `value`, `currency`, `items` (JSONB), `buyer_hashes`, `event_time`, `raw_payload`.
-- `meta_insights_daily`:
-  - dimensões (campaign/adset/ad) + métricas + data.
-- `ga4_insights_daily`:
-  - dimensões (source/medium/device) + métricas (sessions, active_users, conversions) + data.
-- `recommendation_reports`:
-  - `site_id`, período, summary, detalhes (JSONB), status.
+## 3) Frontend (`apps/dashboard`)
 
-### Índices essenciais
-- `web_events(site_id, event_time)`
-- `web_events(event_id)` (dedupe)
-- `meta_insights_daily(account_id, day, campaign_id, adset_id, ad_id)`
-- JSONB GIN para `raw_payload` quando necessário.
+*   **Stack:** React, Vite, Tailwind CSS.
+*   **Principais Funcionalidades:**
+    *   Dashboard de Visão Geral.
+    *   Configuração de Sites e Integrações.
+    *   Visualização de Relatórios de IA (Markdown renderizado).
+    *   Gerador de UTMs e Scripts.
 
-## 6) APIs Necessárias (REST)
+## 4) Fluxo de Dados (Data Flow)
 
-### Ingestão (Site → Backend)
-- `POST /v1/ingest/events`
-  - Autenticação: `X-Site-Key` + assinatura opcional.
-
-### Webhook (Checkout → Backend)
-- `POST /v1/webhooks/purchase`
-  - Autenticação: `X-Signature`, `X-Timestamp`.
-
-### Configuração (Dashboard)
-- `POST /v1/sites`
-- `GET /v1/sites/:siteId`
-- `GET /v1/sites/:siteId/utms`
-- `GET /sites/:siteId/event-rules`
-- `POST /sites/:siteId/event-rules`
-- `DELETE /sites/:siteId/event-rules/:id`
-- `POST /v1/meta/connect`
-- `POST /v1/meta/test-event`
-- `GET /integrations/sites/:siteId/meta`
-- `GET /integrations/sites/:siteId/meta/campaigns`
-- `GET /integrations/sites/:siteId/meta/adsets`
-- `GET /integrations/sites/:siteId/meta/ads`
-- `PATCH /integrations/sites/:siteId/meta/campaigns/:campaignId`
-- `PATCH /integrations/sites/:siteId/meta/adsets/:adsetId`
-- `PATCH /integrations/sites/:siteId/meta/ads/:adId`
-
-### Analytics
-- `GET /v1/analytics/funnel`
-- `GET /v1/analytics/pages`
-- `GET /v1/analytics/ads`
-### Campanhas (Meta)
-- `GET /meta/campaigns/metrics`
-
-### Recomendações
-- `POST /v1/recommendations/generate`
-- `GET /v1/recommendations/reports/:id`
-
-## 7) Segurança e Privacidade (mínimo obrigatório)
-- Hashing SHA-256 para identificadores pessoais.
-- Criptografia em repouso para tokens (KMS ou chave de app).
-- Rate limiting na ingestão e webhook.
-- Consentimento: flag por sessão/evento para bloquear envio quando não consentido.
+1.  **Ingestão:** Browser -> `POST /ingest/events` -> `web_events` (DB).
+2.  **Processamento:** `web_events` -> `CapiService` -> Meta Graph API.
+3.  **Sync:** Cron/Job -> `MetaMarketingService` -> Meta Marketing API -> `meta_insights_daily`.
+4.  **Diagnóstico:** Usuário solicita -> `DiagnosisService` (agrupa dados) -> `LlmService` (OpenAI) -> Relatório.
