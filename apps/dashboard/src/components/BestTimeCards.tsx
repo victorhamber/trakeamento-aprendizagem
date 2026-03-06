@@ -38,17 +38,36 @@ const PERIOD_LABELS: Record<string, string> = {
 
 function formatSource(rawSource: string) {
   if (!rawSource || rawSource.toLowerCase().includes('direct') || rawSource.toLowerCase().includes('unknown')) return 'Direto / Orgânico';
+
   try {
-    const source = decodeURIComponent(rawSource);
+    const source = decodeURIComponent(rawSource).trim().toLowerCase();
+
+    // Tratamento direto de UTMs comuns dinâmicos (ig, fb, etc)
+    if (source === 'ig' || source === 'instagram') return 'Instagram';
+    if (source === 'fb' || source === 'facebook') return 'Facebook';
+    if (source === 'tk' || source === 'tiktok') return 'TikTok';
+    if (source === 'yt' || source === 'youtube') return 'YouTube';
+    if (source === 'google' || source === 'gads') return 'Google';
+
+    // Tratamento por Host/Referrer
     const url = new URL(source.startsWith('http') ? source : `https://${source}`);
     let host = url.hostname.replace(/^www\./, '');
-    if (host === 'l.instagram.com' || host === 'instagram.com') return 'Instagram';
-    if (host === 'l.facebook.com' || host === 'm.facebook.com' || host === 'facebook.com') return 'Facebook';
-    if (host === 'youtube.com' || host === 'm.youtube.com') return 'YouTube';
+
+    if (host.includes('instagram.com')) return 'Instagram';
+    if (host.includes('facebook.com')) return 'Facebook';
+    if (host.includes('youtube.com')) return 'YouTube';
+    if (host.includes('tiktok.com')) return 'TikTok';
+    if (host.includes('google.com')) return 'Google';
+
     return host;
   } catch {
     try {
-      return decodeURIComponent(rawSource);
+      const decodedFallback = decodeURIComponent(rawSource).trim();
+      // Fast fallback string checks
+      const lw = decodedFallback.toLowerCase();
+      if (lw === 'ig' || lw === 'instagram') return 'Instagram';
+      if (lw === 'fb' || lw === 'facebook') return 'Facebook';
+      return decodedFallback;
     } catch {
       return rawSource;
     }
