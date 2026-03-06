@@ -1,28 +1,40 @@
-import { FunnelChart as RechartsFunnelChart, Funnel, Tooltip, ResponsiveContainer, LabelList, Cell } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList } from 'recharts';
 
 export function FunnelChart({ data, isDark }: { data: any; isDark: boolean }) {
   if (!data) return null;
 
   const chartData = [
-    { name: 'Visitas', value: data.page_views || 0, fill: '#60a5fa' }, // Blue-400
-    { name: 'Engajamento', value: data.engagements || 0, fill: '#34d399' }, // Emerald-400
-    { name: 'Checkout', value: data.checkouts || 0, fill: '#fbbf24' }, // Amber-400
-    { name: 'Compras', value: data.purchases || 0, fill: '#f87171' }, // Red-400
+    { name: 'Visitas', value: data.page_views || 0, fill: '#60a5fa' }, // Blue
+    { name: 'Engajamento', value: data.engagements || 0, fill: '#34d399' }, // Emerald
+    { name: 'Checkout', value: data.checkouts || 0, fill: '#fbbf24' }, // Amber
+    { name: 'Compras', value: data.purchases || 0, fill: '#f87171' }, // Red
   ];
 
-  // Cores personalizadas para o Funil (Gradiente Visual)
-  const colors = [
-    '#60a5fa', // Blue
-    '#34d399', // Emerald
-    '#fbbf24', // Amber
-    '#f87171'  // Red
-  ];
+  const gridColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
+  const textColor = isDark ? '#71717a' : '#6b7280';
 
   return (
-    <div className="h-[300px] w-full flex items-center justify-center">
+    <div className="h-[300px] w-full">
       <ResponsiveContainer width="100%" height="100%">
-        <RechartsFunnelChart>
+        <BarChart 
+          data={chartData} 
+          layout="vertical" 
+          margin={{ top: 10, right: 50, left: 40, bottom: 0 }}
+          barCategoryGap={20}
+        >
+          <CartesianGrid strokeDasharray="3 3" stroke={gridColor} horizontal={false} />
+          <XAxis type="number" hide />
+          <YAxis 
+            dataKey="name" 
+            type="category" 
+            width={80} 
+            stroke={textColor}
+            tick={{ fontSize: 11 }}
+            tickLine={false}
+            axisLine={false}
+          />
           <Tooltip 
+            cursor={{ fill: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)' }}
             formatter={(value: any) => [value, 'Usuários']}
             contentStyle={{ 
               backgroundColor: isDark ? '#18181b' : '#fff', 
@@ -33,30 +45,18 @@ export function FunnelChart({ data, isDark }: { data: any; isDark: boolean }) {
             }}
             itemStyle={{ color: isDark ? '#e4e4e7' : '#18181b' }}
           />
-          <Funnel
-            dataKey="value"
-            data={chartData}
-            isAnimationActive
-          >
-            {chartData.map((_entry, index) => (
-              <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />
+          <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={32}>
+             {chartData.map((entry, index) => (
+              <Cell key={`cell-${index}`} fill={entry.fill} />
             ))}
             <LabelList 
+              dataKey="value" 
               position="right" 
               fill={isDark ? '#e4e4e7' : '#3f3f46'} 
-              stroke="none" 
-              dataKey="name" 
-              style={{ fontSize: '12px', fontWeight: 'bold' }}
+              style={{ fontSize: '12px', fontWeight: 'bold' }} 
             />
-            <LabelList 
-              position="center" 
-              fill="#fff" 
-              stroke="none" 
-              dataKey="value" 
-              style={{ fontSize: '14px', fontWeight: 'bold', textShadow: '0px 1px 2px rgba(0,0,0,0.5)' }}
-            />
-          </Funnel>
-        </RechartsFunnelChart>
+          </Bar>
+        </BarChart>
       </ResponsiveContainer>
     </div>
   );
