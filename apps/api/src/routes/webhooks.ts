@@ -87,12 +87,13 @@ async function processPurchaseWebhook({
 
   // [NEW] Enrichment Step: Try to find missing data in DB
   let enriched: any = {};
-  if (!finalFbp || !finalFbc || !clientIp || !payload.utm_source) {
-    console.log(`[Webhook] Missing critical data (fbp=${finalFbp}, ip=${clientIp}). Attempting enrichment for ${email || phone}...`);
+  // Verifica se faltam dados CRÍTICOS para qualidade do evento (IP, UA, FBC, FBP)
+  if (!finalFbp || !finalFbc || !clientIp || !clientUa || !payload.utm_source) {
+    console.log(`[Webhook] Missing critical data (fbp=${finalFbp}, ip=${clientIp}, ua=${clientUa}). Attempting enrichment for ${email || phone}...`);
     enriched = await EnrichmentService.findVisitorData(siteKey, email, phone);
     
     if (enriched) {
-      console.log(`[Webhook] Enrichment success: found fbp=${enriched.fbp}, source=${enriched.utmSource}`);
+      console.log(`[Webhook] Enrichment success: found fbp=${enriched.fbp}, ip=${enriched.clientIp}, ua=${enriched.clientUa}`);
     } else {
       console.log(`[Webhook] Enrichment failed: user not found in history.`);
     }

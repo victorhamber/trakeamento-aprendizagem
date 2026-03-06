@@ -44,20 +44,30 @@ export class EnrichmentService {
     try {
       const visitorRes = await pool.query(visitorQuery, [siteKey, emailHash, phoneHash]);
       
+      // Mesmo se achar visitor, precisamos pegar IP/UA recentes da tabela de eventos
+      // pois site_visitors pode não ter IP/UA explícitos ou atualizados
+      let visitorData: any = {};
+      
       if (visitorRes.rowCount && visitorRes.rowCount > 0) {
         const row = visitorRes.rows[0];
         const utms = this.parseUtmString(row.last_traffic_source);
-        
-        // Se achou visitor, tenta pegar IP/UA do último evento dele
-        const metadata = await this.findLatestMetadata(siteKey, row.fbp, row.external_id);
-
-        return {
-          fbp: row.fbp || undefined,
-          fbc: row.fbc || undefined,
-          externalId: row.external_id || undefined,
-          clientIp: metadata?.ip,
-          clientUa: metadata?.ua,
+        visitorData = {
+          fbp: row.fbp,
+          fbc: row.fbc,
+          externalId: row.external_id,
           ...utms
+        };
+      }
+
+      // Buscar metadados (IP/UA) mais recentes independente se achou visitor ou não
+      // Usando FBP do visitor ou o hash de email/phone para encontrar eventos
+      const metadata = await this.findLatestMetadata(siteKey, visitorData.fbp, visitorData.externalId, emailHash, phoneHash);
+
+      if (Object.keys(visitorData).length > 0 || metadata) {
+        return {
+          ...visitorData,
+          clientIp: metadata?.ip,
+          clientUa: metadata?.ua
         };
       }
 
@@ -103,23 +113,24 @@ export class EnrichmentService {
     return null;
   }
 
-  private static async findLatestMetadata(siteKey: string, fbp?: string, externalId?: string) {
-    if (!fbp && !externalId) return null;
-
+  private static async findLatestMetadata(siteKey: string, fbp?: string, externalId?: string, emailHash?: string | null, phoneHash?: string | null) {
+    // Busca IP/UA baseado em qualquer identificador disponível
     const query = `
       SELECT user_data->>'client_ip_address' as ip, user_data->>'client_user_agent' as ua
       FROM web_events
       WHERE site_key = $1
         AND (
           ($2::text IS NOT NULL AND user_data->>'fbp' = $2::text) OR
-          ($3::text IS NOT NULL AND user_data->>'external_id' = $3::text)
+          ($3::text IS NOT NULL AND user_data->>'external_id' = $3::text) OR
+          ($4::text IS NOT NULL AND user_data->>'em' = $4::text) OR
+          ($5::text IS NOT NULL AND user_data->>'ph' = $5::text)
         )
       ORDER BY event_time DESC
       LIMIT 1
     `;
 
     try {
-      const res = await pool.query(query, [siteKey, fbp, externalId]);
+      const res = await pool.query(query, [siteKey, fbp || null, externalId || null, emailHash || null, phoneHash || null]);
       if (res.rowCount && res.rowCount > 0) return res.rows[0];
     } catch (e) { /* ignore */ }
     return null;
