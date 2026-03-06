@@ -49,6 +49,8 @@ router.get('/tracker.js', async (req, res) => {
 
   const js = configJs + `
 (function(){
+  if (window.__TA_INITIALIZED) return;
+  window.__TA_INITIALIZED = true;
   'use strict';
 
   // ─── Constants ────────────────────────────────────────────────────────────
@@ -706,11 +708,21 @@ router.get('/tracker.js', async (req, res) => {
   }
 
   // ─── PageView ─────────────────────────────────────────────────────────────
+  var _lastPageViewUrl = '';
+  var _lastPageViewTime = 0;
+
   function pageView() {
     try {
       var cfg = window.TRACKING_CONFIG;
       if (!cfg || !cfg.apiUrl || !cfg.siteKey) return;
       
+      var now = Date.now();
+      // Dedup de Memória Rápida (Debounce): evita disparos duplos em < 1 segundo na mesma URL 
+      // (ex: Next.js hydration disparam history.pushState repetidas vezes rapidamente)
+      if (_lastPageViewUrl === location.href && (now - _lastPageViewTime) < 1000) return;
+      _lastPageViewUrl = location.href;
+      _lastPageViewTime = now;
+
       // Dedup por estado global e Sessão: 
       // 1. Evita disparos duplos no mesmo instante (ex: script duplicado gtm + hardcode)
       if (window.__TA_PAGE_VIEW_URL === location.href) return;
@@ -718,13 +730,14 @@ router.get('/tracker.js', async (req, res) => {
 
       // 2. Evita disparos no F5 (Refresh) ou retornando para a mesma página na mesma sessão
       try {
-        var visited = window.sessionStorage.getItem('_ta_visited_paths') || '';
-        // Usamos location.pathname para que UTMs diferentes não gerem pageviews fantasmas
-        if (visited.indexOf(location.pathname) > -1) {
+        var visited = window.sessionStorage.getItem('_ta_visited_paths');
+        var visitedArr = visited ? visited.split('|') : [];
+        if (visitedArr.indexOf(location.pathname) > -1) {
           // console.log('[TRK] Dedup: PageView já disparado nesta sessão para ' + location.pathname);
           return;
         }
-        window.sessionStorage.setItem('_ta_visited_paths', visited + '|' + location.pathname);
+        visitedArr.push(location.pathname);
+        window.sessionStorage.setItem('_ta_visited_paths', visitedArr.join('|'));
       } catch(_e) {}
 
       // console.log('[TRK] PageView init', location.href);
@@ -851,9 +864,11 @@ router.get('/tracker.js', async (req, res) => {
       // Hard dedup for manual PageView rules to prevent duplicating native pageView() 
       if (eventName === 'PageView') {
         try {
-          var visited = window.sessionStorage.getItem('_ta_visited_paths') || '';
-          if (visited.indexOf(location.pathname) > -1) return;
-          window.sessionStorage.setItem('_ta_visited_paths', visited + '|' + location.pathname);
+          var visited = window.sessionStorage.getItem('_ta_visited_paths');
+          var visitedArr = visited ? visited.split('|') : [];
+          if (visitedArr.indexOf(location.pathname) > -1) return;
+          visitedArr.push(location.pathname);
+          window.sessionStorage.setItem('_ta_visited_paths', visitedArr.join('|'));
         } catch(_e) {}
       }
 
@@ -1134,16 +1149,32 @@ router.get('/tracker.js', async (req, res) => {
   }
 
   // ─── Init ─────────────────────────────────────────────────────────────────
-  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+  function initTracker() {
     pageView();
     checkUrlRules();
     decorateCheckoutLinks();
+  }
+
+  function bootstrap() {
+    if (document.visibilityState === 'prerender') {
+      // O Chrome está pré-carregando a página em background (ex: autocompleting URL).
+      // Seguramos o disparo até o usuário realmente abrir a aba.
+      var onVisible = function() {
+        if (document.visibilityState !== 'prerender') {
+          document.removeEventListener('visibilitychange', onVisible);
+          initTracker();
+        }
+      };
+      document.addEventListener('visibilitychange', onVisible);
+    } else {
+      initTracker();
+    }
+  }
+
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    bootstrap();
   } else {
-    document.addEventListener('DOMContentLoaded', function() {
-      pageView();
-      checkUrlRules();
-      decorateCheckoutLinks();
-    });
+    document.addEventListener('DOMContentLoaded', bootstrap);
   }
 
   // Iniciando captura de Web Vitals de forma assíncrona
