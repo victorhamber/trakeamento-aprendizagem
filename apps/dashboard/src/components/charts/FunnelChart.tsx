@@ -37,7 +37,6 @@ export function FunnelChart({ data, isDark }: { data: any; isDark: boolean }) {
             dataKey="value"
             data={chartData}
             isAnimationActive
-            labelLine={false}
           >
             {chartData.map((entry, index) => (
               <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />
