@@ -75,8 +75,6 @@ router.get('/tracker.js', async (req, res) => {
   var RULE_DEDUP_MS = 5000; // 5s cooldown for same event name
   var pendingQueue = []; // batch queue para beforeunload
   var webVitals    = { lcp: 0, fid: 0, cls: 0, fcp: 0 };
-  var lastPageViewMs = 0;
-  var lastPageViewUrl = '';
 
   // ─── Cookie helpers ───────────────────────────────────────────────────────
   function getCookie(name) {
@@ -204,13 +202,17 @@ router.get('/tracker.js', async (req, res) => {
   }
 
   function getFbp() {
+    // 1. Prioridade: cookie oficial do Meta Pixel (_fbp)
     var fbp = getCookie('_fbp');
     if (fbp) return fbp;
-    // Gera _fbp no formato Meta quando o Pixel não está carregado (ex: adblocker)
-    // Formato: fb.{subdomainIndex}.{creationTime}.{random}
+    // 2. Fallback: nosso cookie próprio (_ta_fbp) para quando o Pixel
+    //    ainda não carregou ou está bloqueado por adblocker.
+    //    NÃO sobrescrevemos o _fbp oficial para não confundir a atribuição do Meta.
+    var taFbp = getCookie('_ta_fbp');
+    if (taFbp) return taFbp;
     try {
       var generated = 'fb.1.' + Date.now() + '.' + Math.floor(Math.random() * 1e10);
-      setCookie('_fbp', generated, COOKIE_TTL_2Y);
+      setCookie('_ta_fbp', generated, COOKIE_TTL_2Y);
       return generated;
     } catch(_e) {}
     return undefined;
@@ -353,15 +355,19 @@ router.get('/tracker.js', async (req, res) => {
   }
 
   // ─── Page visibility (dwell real) ────────────────────────────────────────
+  var lastVisibleAt = Date.now(); // timestamp de quando a aba ficou visível por último
   document.addEventListener('visibilitychange', function() {
     if (document.hidden) {
+      // Aba ficou escondida: acumula o tempo que estava visível
+      visibleMs += Math.max(0, Date.now() - lastVisibleAt);
       hiddenSince = Date.now();
     } else {
       if (hiddenSince) {
-        // não conta tempo com a aba escondida
+        // Aba voltou: ajusta startMs para não contar tempo escondido no dwell
         startMs += (Date.now() - hiddenSince);
         hiddenSince = null;
       }
+      lastVisibleAt = Date.now();
     }
   });
 
@@ -589,15 +595,10 @@ router.get('/tracker.js', async (req, res) => {
     try {
       if (!window.fbq) return;
       var opts = eventId ? { eventID: eventId } : {};
-      // Reinjetar advanced matching do cookie se vazio nos params
-      if (params && typeof params === 'object') {
-        var am = getMetaUserDataFromCookies();
-        var amKeys = ['em','ph','fn','ln','ct','st','zp','db','external_id'];
-        for (var i = 0; i < amKeys.length; i++) {
-          var k = amKeys[i];
-          if (!params[k] && am[k]) params[k] = am[k];
-        }
-      }
+      // NÃO injetar PII (em, ph, fn, ln...) nos params do evento.
+      // O advanced matching é feito corretamente via fbq('init', pixelId, am)
+      // na loadMetaPixel(). Colocar PII hashes dentro do custom_data do evento
+      // polui o payload e pode causar warnings no Meta.
       if (isCustom) window.fbq('trackCustom', eventName, params || {}, opts);
       else          window.fbq('track', eventName, params || {}, opts);
     } catch(_e) {}
@@ -688,9 +689,11 @@ router.get('/tracker.js', async (req, res) => {
           body: body,
           keepalive: true,
           mode: 'cors'
-        }).then(function(r){
-          if (!r.ok && navigator.sendBeacon) navigator.sendBeacon(url, new Blob([body], { type: 'text/plain' }));
         }).catch(function(){
+          // Fallback sendBeacon APENAS se o fetch falhar completamente (sem rede).
+          // NÃO fazemos retry no .then(!r.ok) — se o servidor recebeu o request
+          // e retornou erro HTTP (502/503), ele já tem o body. Reenviar via
+          // sendBeacon causaria duplicação pois geramos o mesmo event_id.
           if (navigator.sendBeacon) navigator.sendBeacon(url, new Blob([body], { type: 'text/plain' }));
         });
         ok = true;
@@ -708,14 +711,11 @@ router.get('/tracker.js', async (req, res) => {
       var cfg = window.TRACKING_CONFIG;
       if (!cfg || !cfg.apiUrl || !cfg.siteKey) return;
       
-      var nowMs = Date.now();
-      var currentHref = location.href;
-      if ((nowMs - lastPageViewMs < 2000) && currentHref === lastPageViewUrl) {
-          // Prevent SPA rapid duplicate fires within 2 seconds for the exact same URL
-          return;
-      }
-      lastPageViewMs = nowMs;
-      lastPageViewUrl = currentHref;
+      // Dedup por estado global: se já disparamos PageView para esta URL exata,
+      // ignorar. Funciona tanto para SPA pushState redundante quanto para
+      // inclusão dupla do script (ex: hardcoded + GTM).
+      if (window.__TA_PAGE_VIEW_URL === location.href) return;
+      window.__TA_PAGE_VIEW_URL = location.href;
 
       // console.log('[TRK] PageView init', location.href);
 
