@@ -31,10 +31,25 @@ export function RevenueChart({ data, currency, isDark }: { data: DailyPoint[]; c
     );
   }
 
+  // Se tiver apenas 1 ponto, adiciona um ponto anterior artificial (0,0) para desenhar a linha
+  // Útil para "Hoje" quando só teve 1 venda
+  const chartData = [...data];
+  if (chartData.length === 1) {
+    const originalDate = chartData[0].date;
+    // Tenta criar um ponto anterior no mesmo dia (00:00 visualmente, mas aqui usamos data string)
+    // Como o eixo X é data, não hora, duplicar a data pode ficar estranho, mas é melhor que nada.
+    // Melhor abordagem: se o gráfico for por DIA, e só tem 1 dia, Recharts renderiza ponto.
+    // Vamos adicionar o dia anterior zerado.
+    const d = new Date(originalDate);
+    d.setDate(d.getDate() - 1);
+    const prevDate = d.toISOString().split('T')[0];
+    chartData.unshift({ date: prevDate, count: 0, revenue: 0 });
+  }
+
   return (
     <div className="h-[300px] w-full">
       <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+        <LineChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
           <XAxis 
             dataKey="date" 

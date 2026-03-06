@@ -71,8 +71,6 @@ router.get('/overview', requireAuth, async (req, res) => {
       start = todayStart;
   }
 
-  const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-
   const sites = await pool.query('SELECT COUNT(*)::int as c FROM sites WHERE account_id = $1', [auth.accountId]);
 
   const eventsPeriod = await pool.query(
@@ -89,7 +87,7 @@ router.get('/overview', requireAuth, async (req, res) => {
   const purchasesPeriod = await pool.query(
     `SELECT 
        COUNT(*)::int as c, 
-       COALESCE(SUM(CASE WHEN p.status = 'approved' AND p.currency = $5 THEN p.amount ELSE 0 END), 0) as total_revenue
+       COALESCE(SUM(CASE WHEN p.status IN ('approved', 'paid', 'completed', 'active') AND p.currency = $5 THEN p.amount ELSE 0 END), 0) as total_revenue
      FROM purchases p
      JOIN sites s ON s.site_key = p.site_key
      WHERE s.account_id = $1
@@ -252,7 +250,7 @@ router.get('/sales-daily', requireAuth, async (req, res) => {
       `SELECT
          TO_CHAR(p.created_at AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD') as date,
          COUNT(*)::int as count,
-         COALESCE(SUM(CASE WHEN p.status = 'approved' AND p.currency = $5 THEN p.amount ELSE 0 END), 0)::float as revenue
+         COALESCE(SUM(CASE WHEN p.status IN ('approved', 'paid', 'completed', 'active') AND p.currency = $5 THEN p.amount ELSE 0 END), 0)::float as revenue
        FROM purchases p
        JOIN sites s ON s.site_key = p.site_key
        WHERE s.account_id = $1
@@ -297,37 +295,81 @@ router.get('/best-times', requireAuth, async (req, res) => {
   try {
     // Queries para encontrar picos por tipo de evento
     const getPeak = async (eventNames: string[]) => {
-      // Agrupa por Dia da Semana (0-6) e Hora (0-23)
-      // Ajustado para Horário de Brasília (America/Sao_Paulo)
-      const query = `
-        SELECT 
-          EXTRACT(DOW FROM (e.event_time AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo'))::int as dow,
-          EXTRACT(HOUR FROM (e.event_time AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo'))::int as hour,
-          COUNT(*)::int as count
-        FROM web_events e
-        JOIN sites s ON s.site_key = e.site_key
-        WHERE s.account_id = $1 AND ($2::int IS NULL OR s.id = $2::int)
-          AND e.event_name = ANY($3) AND e.event_time >= $4 AND e.event_time <= $5
-        GROUP BY 1, 2
-        ORDER BY 3 DESC
-      `;
+      const isPurchase = eventNames.includes('Purchase');
+      let query = '';
+      let topSourcesQuery = '';
 
-      const topSourcesQuery = `
-        SELECT 
-          COALESCE(e.custom_data->>'traffic_source', 'Direct / Unknown') as source,
-          COUNT(*)::int as count
-        FROM web_events e
-        JOIN sites s ON s.site_key = e.site_key
-        WHERE s.account_id = $1 AND ($2::int IS NULL OR s.id = $2::int)
-          AND e.event_name = ANY($3) AND e.event_time >= $4 AND e.event_time <= $5
-        GROUP BY 1
-        ORDER BY 2 DESC
-        LIMIT 3
-      `;
+      if (isPurchase) {
+        // Query na tabela purchases
+        query = `
+          SELECT 
+            EXTRACT(DOW FROM (p.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo'))::int as dow,
+            EXTRACT(HOUR FROM (p.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo'))::int as hour,
+            COUNT(*)::int as count
+          FROM purchases p
+          JOIN sites s ON s.site_key = p.site_key
+          WHERE s.account_id = $1 AND ($2::int IS NULL OR s.id = $2::int)
+            AND p.created_at >= $3 AND p.created_at <= $4
+            AND p.status IN ('approved', 'paid', 'completed', 'active')
+          GROUP BY 1, 2
+          ORDER BY 3 DESC
+        `;
+        
+        topSourcesQuery = `
+          SELECT 
+            COALESCE(
+              p.raw_payload->>'utm_source',
+              p.raw_payload->>'src',
+              p.raw_payload->>'sck',
+              p.raw_payload->'trackingParameters'->>'utm_source',
+              'Direct / Unknown'
+            ) as source,
+            COUNT(*)::int as count
+          FROM purchases p
+          JOIN sites s ON s.site_key = p.site_key
+          WHERE s.account_id = $1 AND ($2::int IS NULL OR s.id = $2::int)
+            AND p.created_at >= $3 AND p.created_at <= $4
+            AND p.status IN ('approved', 'paid', 'completed', 'active')
+          GROUP BY 1
+          ORDER BY 2 DESC
+          LIMIT 3
+        `;
+      } else {
+        // Query na tabela web_events (Padrão)
+        query = `
+          SELECT 
+            EXTRACT(DOW FROM (e.event_time AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo'))::int as dow,
+            EXTRACT(HOUR FROM (e.event_time AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo'))::int as hour,
+            COUNT(*)::int as count
+          FROM web_events e
+          JOIN sites s ON s.site_key = e.site_key
+          WHERE s.account_id = $1 AND ($2::int IS NULL OR s.id = $2::int)
+            AND e.event_name = ANY($5) AND e.event_time >= $3 AND e.event_time <= $4
+          GROUP BY 1, 2
+          ORDER BY 3 DESC
+        `;
+
+        topSourcesQuery = `
+          SELECT 
+            COALESCE(e.custom_data->>'traffic_source', 'Direct / Unknown') as source,
+            COUNT(*)::int as count
+          FROM web_events e
+          JOIN sites s ON s.site_key = e.site_key
+          WHERE s.account_id = $1 AND ($2::int IS NULL OR s.id = $2::int)
+            AND e.event_name = ANY($5) AND e.event_time >= $3 AND e.event_time <= $4
+          GROUP BY 1
+          ORDER BY 2 DESC
+          LIMIT 3
+        `;
+      }
+
+      const params = isPurchase 
+        ? [auth.accountId, siteId, start, end]
+        : [auth.accountId, siteId, start, end, eventNames];
 
       const [peakResult, sourceResult] = await Promise.all([
-        pool.query(query, [auth.accountId, siteId, eventNames, start, end]),
-        pool.query(topSourcesQuery, [auth.accountId, siteId, eventNames, start, end])
+        pool.query(query, params),
+        pool.query(topSourcesQuery, params)
       ]);
 
       // Encontra o melhor horário para cada dia da semana
