@@ -41,6 +41,25 @@ router.get('/revenue', async (req, res) => {
 router.get('/funnel', async (req, res) => {
   const auth = req.auth!;
   const siteId = req.query.siteId ? Number(req.query.siteId) : null;
+  const period = (req.query.period as string) || 'last_30d';
+
+  const now = new Date();
+  let start: Date;
+  let end: Date = now;
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  switch (period) {
+    case 'today': start = todayStart; break;
+    case 'yesterday':
+      start = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000);
+      end = todayStart;
+      break;
+    case 'last_7d': start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000); break;
+    case 'last_14d': start = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000); break;
+    case 'last_30d': start = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000); break;
+    case 'maximum': start = new Date(0); break;
+    default: start = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  }
 
   try {
     // Query 1: Web Events (Visitas, Engajamento, Checkout)
@@ -53,7 +72,8 @@ router.get('/funnel', async (req, res) => {
       JOIN sites s ON s.site_key = e.site_key
       WHERE s.account_id = $1
         AND ($2::int IS NULL OR s.id = $2::int)
-        AND e.event_time >= NOW() - INTERVAL '30 days'
+        AND e.event_time >= $3
+        AND e.event_time <= $4
     `;
 
     // Query 2: Purchases (Tabela dedicada de compras)
@@ -63,13 +83,14 @@ router.get('/funnel', async (req, res) => {
       JOIN sites s ON s.site_key = p.site_key
       WHERE s.account_id = $1
         AND ($2::int IS NULL OR s.id = $2::int)
-        AND p.created_at >= NOW() - INTERVAL '30 days'
+        AND p.created_at >= $3
+        AND p.created_at <= $4
         AND p.status IN ('approved', 'paid', 'completed', 'active')
     `;
 
     const [eventsRes, purchasesRes] = await Promise.all([
-      pool.query(eventsQuery, [auth.accountId, siteId]),
-      pool.query(purchasesQuery, [auth.accountId, siteId])
+      pool.query(eventsQuery, [auth.accountId, siteId, start, end]),
+      pool.query(purchasesQuery, [auth.accountId, siteId, start, end])
     ]);
 
     const events = eventsRes.rows[0] || {};

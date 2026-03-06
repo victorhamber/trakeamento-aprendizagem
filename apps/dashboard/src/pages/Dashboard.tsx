@@ -211,8 +211,8 @@ export const DashboardPage = () => {
       .then((res) => setSalesData(res.data?.data || []))
       .catch(() => setSalesData([]));
 
-    // Fetch Funnel Data (sempre 30 dias por enquanto, ou adaptar endpoint para aceitar period)
-    api.get('/dashboard/funnel', { params: { siteId: selectedSiteId } })
+    // Fetch Funnel Data
+    api.get('/dashboard/funnel', { params: { siteId: selectedSiteId, period } })
       .then((res) => setFunnelData(res.data))
       .catch(() => setFunnelData(null));
 
@@ -374,7 +374,7 @@ export const DashboardPage = () => {
           <div className="flex items-center justify-between mb-4">
             <div>
               <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100">Funil de Conversão</div>
-              <div className="text-[11px] text-zinc-500 mt-0.5">Últimos 30 dias</div>
+              <div className="text-[11px] text-zinc-500 mt-0.5">{getPeriodLabel(period)}</div>
             </div>
           </div>
           <FunnelChart data={funnelData} isDark={isDark} />
