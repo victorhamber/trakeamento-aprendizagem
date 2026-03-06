@@ -123,7 +123,7 @@ async function processPurchaseWebhook({
         return ids.length > 0 ? ids : undefined;
       })(),
     },
-    action_source: 'system_generated',
+    action_source: 'website',
     custom_data: {
       currency: currency,
       value: value,
@@ -160,10 +160,18 @@ async function processPurchaseWebhook({
       );
 
       if (metaEnabled && pixel_id && capi_token_enc) {
-        await pool.query(
-          `INSERT INTO capi_outbox (site_key, payload) VALUES ($1, $2)`,
-          [siteKey, JSON.stringify(capiPayload)]
-        );
+        // Enviar direto ao CAPI primeiro (sem esperar outbox de 5+ min)
+        const result = await capiService.sendEventDetailed(siteKey, capiPayload);
+        if (!result.ok) {
+          // Falha: salva no outbox para retry automático
+          console.warn(`[Webhook] Direct CAPI send failed, saving to outbox: ${result.error}`);
+          await pool.query(
+            `INSERT INTO capi_outbox (site_key, payload) VALUES ($1, $2)`,
+            [siteKey, JSON.stringify(capiPayload)]
+          );
+        } else {
+          console.log(`[Webhook] Purchase CAPI sent directly for order ${orderId}`);
+        }
       }
     } catch (e) {
       console.error('[Webhook] DB Error:', e);
@@ -425,7 +433,8 @@ router.post('/hotmart', async (req, res) => {
     fbp, fbc, externalId: d.user_id || buyer.document || buyer.id,
     clientIp: d.client_ip_address || payload.ip || undefined,
     clientUa: d.client_user_agent || payload.user_agent || undefined,
-    value, currency, status, orderId, platform
+    value, currency, status, orderId, platform,
+    contentName: d.product?.name || payload.product?.name
   });
 
   if (!result.success) return res.status(result.status || 500).json({ error: result.error });
