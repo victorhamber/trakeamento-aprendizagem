@@ -44,7 +44,7 @@ export class EnrichmentService {
     try {
       const visitorRes = await pool.query(visitorQuery, [siteKey, emailHash, phoneHash]);
       
-      if (visitorRes.rowCount > 0) {
+      if (visitorRes.rowCount && visitorRes.rowCount > 0) {
         const row = visitorRes.rows[0];
         const utms = this.parseUtmString(row.last_traffic_source);
         
@@ -77,7 +77,7 @@ export class EnrichmentService {
 
       const eventRes = await pool.query(eventQuery, [siteKey, emailHash, phoneHash]);
       
-      if (eventRes.rowCount > 0) {
+      if (eventRes.rowCount && eventRes.rowCount > 0) {
         const row = eventRes.rows[0];
         const ud = row.user_data || {};
         const cd = row.custom_data || {};
@@ -120,7 +120,7 @@ export class EnrichmentService {
 
     try {
       const res = await pool.query(query, [siteKey, fbp, externalId]);
-      if (res.rowCount > 0) return res.rows[0];
+      if (res.rowCount && res.rowCount > 0) return res.rows[0];
     } catch (e) { /* ignore */ }
     return null;
   }
