@@ -38,7 +38,7 @@ export function FunnelChart({ data, isDark }: { data: any; isDark: boolean }) {
             data={chartData}
             isAnimationActive
           >
-            {chartData.map((entry, index) => (
+            {chartData.map((_entry, index) => (
               <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />
             ))}
             <LabelList 
