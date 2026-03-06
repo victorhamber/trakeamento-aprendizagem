@@ -711,11 +711,21 @@ router.get('/tracker.js', async (req, res) => {
       var cfg = window.TRACKING_CONFIG;
       if (!cfg || !cfg.apiUrl || !cfg.siteKey) return;
       
-      // Dedup por estado global: se já disparamos PageView para esta URL exata,
-      // ignorar. Funciona tanto para SPA pushState redundante quanto para
-      // inclusão dupla do script (ex: hardcoded + GTM).
+      // Dedup por estado global e Sessão: 
+      // 1. Evita disparos duplos no mesmo instante (ex: script duplicado gtm + hardcode)
       if (window.__TA_PAGE_VIEW_URL === location.href) return;
       window.__TA_PAGE_VIEW_URL = location.href;
+
+      // 2. Evita disparos no F5 (Refresh) ou retornando para a mesma página na mesma sessão
+      try {
+        var visited = window.sessionStorage.getItem('_ta_visited_paths') || '';
+        // Usamos location.pathname para que UTMs diferentes não gerem pageviews fantasmas
+        if (visited.indexOf(location.pathname) > -1) {
+          // console.log('[TRK] Dedup: PageView já disparado nesta sessão para ' + location.pathname);
+          return;
+        }
+        window.sessionStorage.setItem('_ta_visited_paths', visited + '|' + location.pathname);
+      } catch(_e) {}
 
       // console.log('[TRK] PageView init', location.href);
 
