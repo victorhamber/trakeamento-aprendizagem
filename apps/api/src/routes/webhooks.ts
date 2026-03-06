@@ -2,6 +2,7 @@ import { Router } from 'express';
 import crypto from 'crypto';
 import { pool } from '../db/pool';
 import { capiService, CapiService } from '../services/capi';
+import { EnrichmentService } from '../services/enrichment';
 import { decryptString } from '../lib/crypto';
 
 const router = Router();
@@ -84,11 +85,39 @@ async function processPurchaseWebhook({
   const finalFbc = trkFbc || fbc;
   const finalFbp = trkFbp || fbp;
 
+  // [NEW] Enrichment Step: Try to find missing data in DB
+  let enriched: any = {};
+  if (!finalFbp || !finalFbc || !clientIp || !payload.utm_source) {
+    console.log(`[Webhook] Missing critical data (fbp=${finalFbp}, ip=${clientIp}). Attempting enrichment for ${email || phone}...`);
+    enriched = await EnrichmentService.findVisitorData(siteKey, email, phone);
+    
+    if (enriched) {
+      console.log(`[Webhook] Enrichment success: found fbp=${enriched.fbp}, source=${enriched.utmSource}`);
+    } else {
+      console.log(`[Webhook] Enrichment failed: user not found in history.`);
+    }
+  }
+
+  // Merge enriched data (prioritize payload/tracking, fallback to DB)
+  const mergedFbp = finalFbp || enriched?.fbp;
+  const mergedFbc = finalFbc || enriched?.fbc;
+  const mergedExternalId = finalExternalId || enriched?.externalId;
+  const mergedIp = clientIp || enriched?.clientIp;
+  const mergedUa = clientUa || enriched?.clientUa;
+  
+  // UTMs priority: Payload > Enriched
+  const utmSource = payload.utm_source || payload.trackingParameters?.utm_source || payload.tracking_parameters?.utm_source || (payload.sck && !String(payload.sck).startsWith('trk_') ? payload.sck : undefined) || (payload.src && !String(payload.src).startsWith('trk_') ? payload.src : undefined) || enriched?.utmSource || undefined;
+  const utmMedium = payload.utm_medium || payload.trackingParameters?.utm_medium || payload.tracking_parameters?.utm_medium || enriched?.utmMedium || undefined;
+  const utmCampaign = payload.utm_campaign || payload.trackingParameters?.utm_campaign || payload.tracking_parameters?.utm_campaign || enriched?.utmCampaign || undefined;
+  const utmTerm = payload.utm_term || payload.trackingParameters?.utm_term || payload.tracking_parameters?.utm_term || enriched?.utmTerm || undefined;
+  const utmContent = payload.utm_content || payload.trackingParameters?.utm_content || payload.tracking_parameters?.utm_content || enriched?.utmContent || undefined;
+
   // Enrich payload for UI visibility (so user sees what we extracted)
-  if (finalFbp) payload._extracted_fbp = finalFbp;
-  if (finalFbc) payload._extracted_fbc = finalFbc;
-  if (finalExternalId) payload._extracted_external_id = finalExternalId;
+  if (mergedFbp) payload._extracted_fbp = mergedFbp;
+  if (mergedFbc) payload._extracted_fbc = mergedFbc;
+  if (mergedExternalId) payload._extracted_external_id = mergedExternalId;
   if (sckRaw) payload._source_token = sckRaw;
+  if (enriched) payload._enrichment_source = 'db_history';
 
   // Build CAPI Payload for Debug & Future Use (even if not approved yet)
   const capiPayload: any = {
@@ -97,8 +126,8 @@ async function processPurchaseWebhook({
     event_id: `purchase_${orderId}`,
     event_source_url: payload.checkout_url || '',
     user_data: {
-      client_ip_address: clientIp,
-      client_user_agent: clientUa,
+      client_ip_address: mergedIp,
+      client_user_agent: mergedUa,
       em: email ? CapiService.hash(email) : undefined,
       ph: phone ? CapiService.hash((() => {
         let p = phone.replace(/[^0-9]/g, '');
@@ -114,12 +143,12 @@ async function processPurchaseWebhook({
       zp: zip ? CapiService.hash(zip.replace(/\s+/g, '').toLowerCase()) : undefined,
       country: country ? CapiService.hash(country.toLowerCase()) : undefined,
       db: dob ? CapiService.hash(dob.replace(/[^0-9]/g, '')) : undefined,
-      fbp: finalFbp,
-      fbc: finalFbc,
+      fbp: mergedFbp,
+      fbc: mergedFbc,
       external_id: (() => {
         const ids = [];
-        if (finalExternalId) ids.push(CapiService.hash(String(finalExternalId)));
-        if (externalId && String(externalId) !== String(finalExternalId)) ids.push(CapiService.hash(String(externalId)));
+        if (mergedExternalId) ids.push(CapiService.hash(String(mergedExternalId)));
+        if (externalId && String(externalId) !== String(mergedExternalId)) ids.push(CapiService.hash(String(externalId)));
         return ids.length > 0 ? ids : undefined;
       })(),
     },
@@ -129,11 +158,11 @@ async function processPurchaseWebhook({
       value: value,
       content_name: contentName || undefined,
       content_type: 'product',
-      utm_source: payload.utm_source || payload.trackingParameters?.utm_source || payload.tracking_parameters?.utm_source || (payload.sck && !String(payload.sck).startsWith('trk_') ? payload.sck : undefined) || (payload.src && !String(payload.src).startsWith('trk_') ? payload.src : undefined) || undefined,
-      utm_medium: payload.utm_medium || payload.trackingParameters?.utm_medium || payload.tracking_parameters?.utm_medium || undefined,
-      utm_campaign: payload.utm_campaign || payload.trackingParameters?.utm_campaign || payload.tracking_parameters?.utm_campaign || undefined,
-      utm_term: payload.utm_term || payload.trackingParameters?.utm_term || payload.tracking_parameters?.utm_term || undefined,
-      utm_content: payload.utm_content || payload.trackingParameters?.utm_content || payload.tracking_parameters?.utm_content || undefined,
+      utm_source: utmSource,
+      utm_medium: utmMedium,
+      utm_campaign: utmCampaign,
+      utm_term: utmTerm,
+      utm_content: utmContent,
     }
   };
 
@@ -159,7 +188,7 @@ async function processPurchaseWebhook({
            raw_payload = EXCLUDED.raw_payload,
            fbp = EXCLUDED.fbp,
            fbc = EXCLUDED.fbc`,
-        [siteKey, orderId, platform, value, currency, finalStatus, dbEmailHash, finalFbp, finalFbc, JSON.stringify(payload)]
+        [siteKey, orderId, platform, value, currency, finalStatus, dbEmailHash, mergedFbp, mergedFbc, JSON.stringify(payload)]
       );
 
       // Salvar no outbox dentro da transação (será removido se CAPI direto funcionar)
@@ -203,7 +232,7 @@ async function processPurchaseWebhook({
            raw_payload = EXCLUDED.raw_payload,
            fbp = EXCLUDED.fbp,
            fbc = EXCLUDED.fbc`,
-        [siteKey, orderId, platform, value, currency, finalStatus, dbEmailHash, finalFbp, finalFbc, JSON.stringify(payload)]
+        [siteKey, orderId, platform, value, currency, finalStatus, dbEmailHash, mergedFbp, mergedFbc, JSON.stringify(payload)]
       );
     } catch (e) {
       console.error('[Webhook] Refund DB DB Error:', e);

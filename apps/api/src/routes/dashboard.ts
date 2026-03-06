@@ -24,6 +24,7 @@ router.get('/revenue', async (req, res) => {
       WHERE s.account_id = $1
         AND ($2::int IS NULL OR s.id = $2::int)
         AND p.created_at >= NOW() - INTERVAL '30 days'
+        AND p.status IN ('approved', 'paid', 'completed', 'active')
       GROUP BY 1
       ORDER BY 1 ASC
     `;
@@ -48,7 +49,7 @@ router.get('/funnel', async (req, res) => {
         COUNT(CASE WHEN e.event_name = 'PageView' THEN 1 END)::int as page_views,
         COUNT(CASE WHEN e.event_name = 'PageEngagement' THEN 1 END)::int as engagements,
         COUNT(CASE WHEN e.event_name = 'InitiateCheckout' THEN 1 END)::int as checkouts,
-        COUNT(CASE WHEN e.event_name = 'Purchase' THEN 1 END)::int as purchases
+        (SELECT COUNT(*)::int FROM purchases p WHERE p.site_key = e.site_key AND p.created_at >= NOW() - INTERVAL '30 days' AND p.status IN ('approved', 'paid', 'completed', 'active')) as purchases
       FROM web_events e
       JOIN sites s ON s.site_key = e.site_key
       WHERE s.account_id = $1
