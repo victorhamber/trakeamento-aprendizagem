@@ -149,23 +149,34 @@ export class CapiService {
   public async processOutbox() {
     try {
       const { rows } = await pool.query(
-        `SELECT id, site_key, payload FROM capi_outbox 
+        `SELECT id, site_key, payload, last_error FROM capi_outbox 
          WHERE next_attempt_at <= NOW() AND attempts < 5 
          ORDER BY id ASC LIMIT 50`
       );
 
       for (const row of rows) {
+        // Se o último erro foi token inválido, não adianta re-enviar — deletar para não poluir
+        if (row.last_error && row.last_error.includes('Token inválido')) {
+          await pool.query('DELETE FROM capi_outbox WHERE id = $1', [row.id]);
+          continue;
+        }
+
         const event = row.payload as CapiEvent;
         const result = await this.sendEventDetailed(row.site_key, event);
         if (result.ok) {
           await pool.query('DELETE FROM capi_outbox WHERE id = $1', [row.id]);
         } else {
-          await pool.query(
-            `UPDATE capi_outbox 
-             SET attempts = attempts + 1, last_error = $1, next_attempt_at = NOW() + (INTERVAL '1 minutes' * POWER(2, attempts))
-             WHERE id = $2`,
-            [result.error, row.id]
-          );
+          // Se o erro é token inválido, deletar imediatamente (sem re-tentar)
+          if (result.error && result.error.includes('Token inválido')) {
+            await pool.query('DELETE FROM capi_outbox WHERE id = $1', [row.id]);
+          } else {
+            await pool.query(
+              `UPDATE capi_outbox 
+               SET attempts = attempts + 1, last_error = $1, next_attempt_at = NOW() + (INTERVAL '1 minutes' * POWER(2, attempts))
+               WHERE id = $2`,
+              [result.error, row.id]
+            );
+          }
         }
       }
     } catch (e) {
@@ -224,19 +235,21 @@ export class CapiService {
     }
   }
 
-  public async sendEvent(siteKey: string, event: CapiEvent) {
+  public async sendEvent(siteKey: string, event: CapiEvent): Promise<any> {
     const until = CapiService.disabledUntil.get(siteKey);
-    if (until && until > Date.now()) return;
+    if (until && until > Date.now()) {
+      return { ok: false, error: 'CAPI desativado temporariamente (token inválido)' };
+    }
     if (until && until <= Date.now()) CapiService.disabledUntil.delete(siteKey);
 
     const cfg = await this.getSiteMetaConfig(siteKey);
     if (!cfg) {
-      return;
+      return { ok: false, error: 'CAPI não configurado para este site' };
     }
     if (!this.isProbablyValidToken(cfg.capiToken)) {
       await this.updateLastStatus(siteKey, { ok: false, error: 'Token CAPI inválido (formato)' });
       console.error(`CAPI invalid token format for siteKey=${siteKey}`);
-      return;
+      return { ok: false, error: 'Token CAPI inválido (formato)' };
     }
 
     const payload = this.buildPayload(cfg, event);
@@ -246,7 +259,6 @@ export class CapiService {
         `https://graph.facebook.com/v21.0/${cfg.pixelId}/events`,
         payload
       );
-      // Log detalhado para debug de deduplicação e status
       console.log(`[CAPI] Success ${event.event_name} (ID: ${event.event_id}) - FB Trace: ${response.data?.fbtrace_id} - Messages: ${JSON.stringify(response.data?.messages || [])}`);
 
       await this.updateLastStatus(siteKey, { ok: true, data: response.data });
@@ -261,7 +273,7 @@ export class CapiService {
             `CAPI desativado temporariamente para siteKey=${siteKey} (token inválido). Atualize o CAPI Token no painel. ${message || ''}`.trim()
           );
           await this.updateLastStatus(siteKey, { ok: false, error: `Token inválido no Meta. ${message || ''}`.trim(), details: error.response?.data });
-          return;
+          return { ok: false, error: `Token inválido no Meta. ${message || ''}`.trim() };
         }
         console.error('CAPI Error:', error.response?.data || error.message);
         await this.updateLastStatus(siteKey, { ok: false, error: message || 'Erro ao enviar para o Meta', details: error.response?.data });
