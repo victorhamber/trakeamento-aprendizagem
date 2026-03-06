@@ -23,7 +23,7 @@ export function FunnelChart({ data, isDark }: { data: any; isDark: boolean }) {
       <ResponsiveContainer width="100%" height="100%">
         <RechartsFunnelChart>
           <Tooltip 
-            formatter={(value: number) => [value, 'Usuários']}
+            formatter={(value: any) => [value, 'Usuários']}
             contentStyle={{ 
               backgroundColor: isDark ? '#18181b' : '#fff', 
               borderColor: isDark ? '#27272a' : '#e4e4e7',
