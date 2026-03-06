@@ -2390,7 +2390,7 @@ ${scriptContent}
                     <button
                       type="button"
                       onClick={() => {
-                        setUtmSource('facebook');
+                        setUtmSource('{{site_source_name}}');
                         setUtmMedium('paid_social');
                         setUtmCampaign('{{campaign.name}}');
                         setUtmContent('{{ad.name}}');
