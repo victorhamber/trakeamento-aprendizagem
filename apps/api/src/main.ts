@@ -139,10 +139,17 @@ async function runDataRetentionCleanup() {
       console.log(`API running on port ${port}`);
     });
 
-    // Start background jobs
-    setInterval(() => {
-      capiService.processOutbox().catch((err) => console.error('Background CAPI worker error:', err));
-    }, 60 * 1000); // Check outbox every minute
+    // Start background jobs — recursive setTimeout prevents overlapping runs
+    const runOutboxWorker = async () => {
+      try {
+        await capiService.processOutbox();
+      } catch (err) {
+        console.error('Background CAPI worker error:', err);
+      } finally {
+        setTimeout(runOutboxWorker, 60 * 1000); // Schedule next run AFTER completion
+      }
+    };
+    setTimeout(runOutboxWorker, 60 * 1000); // First run 1 minute after boot
 
     // Start 30-Day Garbage Collector
     setTimeout(() => {

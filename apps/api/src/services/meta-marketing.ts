@@ -270,6 +270,29 @@ export class MetaMarketingService {
     return { since: fmt(addDays(today, -7)), until: todayStr };
   }
 
+  private async fetchAllPages(url: string, params: any): Promise<Record<string, unknown>[]> {
+    let allData: Record<string, unknown>[] = [];
+    let currentUrl: string | null = url;
+    let currentParams = params;
+
+    while (currentUrl) {
+      const apiRes: any = await axios.get(currentUrl, { params: currentParams });
+      const data = apiRes.data?.data;
+      if (Array.isArray(data)) {
+        allData = allData.concat(data);
+      }
+
+      const nextUrl: any = apiRes.data?.paging?.next;
+      if (nextUrl && typeof nextUrl === 'string') {
+        currentUrl = nextUrl;
+        currentParams = {}; // 'next' URL already contains all tokens and parameters
+      } else {
+        currentUrl = null;
+      }
+    }
+    return allData;
+  }
+
   public async syncDailyInsights(
     siteId: number,
     datePreset: string = 'last_7d',
@@ -299,21 +322,11 @@ export class MetaMarketingService {
 
       const campaignFields = [...MetaMarketingService.BASE_FIELDS].join(',');
 
-      const [adResponse, adSetResponse, campaignResponse] = await Promise.all([
-        axios.get(baseUrl, {
-          params: { access_token: cfg.token, level: 'ad', ...timeParams, time_increment: 1, fields: adFields, limit: 1000 },
-        }),
-        axios.get(baseUrl, {
-          params: { access_token: cfg.token, level: 'adset', ...timeParams, time_increment: 1, fields: adSetFields, limit: 1000 },
-        }),
-        axios.get(baseUrl, {
-          params: { access_token: cfg.token, level: 'campaign', ...timeParams, time_increment: 1, fields: campaignFields, limit: 1000 },
-        }),
+      const [adInsights, adSetInsights, campaignInsights] = await Promise.all([
+        this.fetchAllPages(baseUrl, { access_token: cfg.token, level: 'ad', ...timeParams, time_increment: 1, fields: adFields, limit: 500 }),
+        this.fetchAllPages(baseUrl, { access_token: cfg.token, level: 'adset', ...timeParams, time_increment: 1, fields: adSetFields, limit: 500 }),
+        this.fetchAllPages(baseUrl, { access_token: cfg.token, level: 'campaign', ...timeParams, time_increment: 1, fields: campaignFields, limit: 500 }),
       ]);
-
-      const adInsights: Record<string, unknown>[] = adResponse.data.data ?? [];
-      const adSetInsights: Record<string, unknown>[] = adSetResponse.data.data ?? [];
-      const campaignInsights: Record<string, unknown>[] = campaignResponse.data.data ?? [];
 
       console.log(
         `[MetaSync] site=${siteId} range=${range.since}→${range.until} ` +
@@ -333,7 +346,7 @@ export class MetaMarketingService {
 
       // ── Create Map of AdSet -> Objective/CustomEvent ──────────────────────
       const adSetMap = new Map<string, { objective: string | null; customName: string | null }>();
-      
+
       for (const row of adSetInsights) {
         const adsetId = MetaMarketingService.asString(row.adset_id);
         if (adsetId) {
@@ -344,7 +357,7 @@ export class MetaMarketingService {
           // ... leads(16), contacts(17), purchases(18), addsToCart(19), initiatesCheckout(20),
           // costPerLead(21), costPerPurchase(22), objective(23), results(24), resultRate(25),
           // dateStart(26), dateStop(27), rawPayload(28), customEventName(29), customEventCount(30)
-          
+
           adSetMap.set(adsetId, {
             objective: vals[23] as string | null,
             customName: vals[29] as string | null
@@ -383,19 +396,13 @@ export class MetaMarketingService {
     const fields = [...MetaMarketingService.BASE_FIELDS].join(',');
     const url = `https://graph.facebook.com/v19.0/${cfg.adAccountId}/insights`;
 
-    const response = await axios.get(url, {
-      params: {
-        access_token: cfg.token,
-        level: 'campaign',
-        ...(timeRange ? { time_range: timeRange } : { date_preset: datePreset }),
-        fields,
-        limit: 500,
-      },
+    const rows = await this.fetchAllPages(url, {
+      access_token: cfg.token,
+      level: 'campaign',
+      ...(timeRange ? { time_range: timeRange } : { date_preset: datePreset }),
+      fields,
+      limit: 500,
     });
-
-    const rows: Record<string, unknown>[] = Array.isArray(response.data?.data)
-      ? response.data.data
-      : [];
 
     return rows.map((row) => {
       const actions = row.actions;
@@ -607,42 +614,42 @@ export class MetaMarketingService {
   private async persistAdInsight(siteId: number, row: Record<string, unknown>, adSetMap?: Map<string, { objective: string | null; customName: string | null }>) {
     // syncDailyInsights deletes rows for this site+range before calling persist*,
     // so a plain INSERT is safe and avoids fragile partial-index ON CONFLICT logic.
-    
+
     const adsetId = MetaMarketingService.asString(row.adset_id);
     const parent = adsetId && adSetMap ? adSetMap.get(adsetId) : null;
     const values = this.getInsightValues(siteId, row);
-    
+
     // Override objective and custom_event_name/count if missing/mismatched but present in parent
     if (parent) {
       // values[23] = objective
       // values[29] = custom_event_name
       // values[30] = custom_event_count
-      
+
       if (!values[23] || (values[23] as string).includes('OUTCOME') || (values[23] as string).includes('CONVERSION')) {
-         if (parent.objective) values[23] = parent.objective;
+        if (parent.objective) values[23] = parent.objective;
       }
-      
+
       if (!values[29] && parent.customName) {
         values[29] = parent.customName;
         // Se temos o nome do custom event do pai, tentamos buscar nas actions do filho por esse nome específico
         const actions = row.actions;
         if (actions) {
-           // Procura nas actions do filho usando o nome do pai
-           // O prefixo pode ser offsite_conversion.custom. ou omni_custom.
-           // Mas o getCustomEvent já varreu tudo e não achou.
-           // Talvez seja um custom conversion pixel specific.
-           // Vamos tentar achar a action que corresponde a esse nome
-           const list = MetaMarketingService.asArray(actions);
-           for (const item of list) {
-             const type = MetaMarketingService.getActionType(item) || '';
-             if (type.endsWith(parent.customName)) {
-               const val = this.asInt(MetaMarketingService.getValueField(item));
-               if (val !== null) {
-                 values[30] = val; // Atualiza count
-                 break;
-               }
-             }
-           }
+          // Procura nas actions do filho usando o nome do pai
+          // O prefixo pode ser offsite_conversion.custom. ou omni_custom.
+          // Mas o getCustomEvent já varreu tudo e não achou.
+          // Talvez seja um custom conversion pixel specific.
+          // Vamos tentar achar a action que corresponde a esse nome
+          const list = MetaMarketingService.asArray(actions);
+          for (const item of list) {
+            const type = MetaMarketingService.getActionType(item) || '';
+            if (type.endsWith(parent.customName)) {
+              const val = this.asInt(MetaMarketingService.getValueField(item));
+              if (val !== null) {
+                values[30] = val; // Atualiza count
+                break;
+              }
+            }
+          }
         }
       }
     }

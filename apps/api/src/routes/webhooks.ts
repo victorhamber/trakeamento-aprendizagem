@@ -145,8 +145,11 @@ async function processPurchaseWebhook({
   payload._capi_debug = capiPayload;
 
   if (isApproved) {
+    const client = await pool.connect();
     try {
-      await pool.query(
+      await client.query('BEGIN');
+
+      await client.query(
         `INSERT INTO purchases (site_key, order_id, platform, amount, currency, status, buyer_email_hash, fbp, fbc, raw_payload)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
          ON CONFLICT (site_key, order_id) DO UPDATE SET
@@ -159,23 +162,34 @@ async function processPurchaseWebhook({
         [siteKey, orderId, platform, value, currency, finalStatus, dbEmailHash, finalFbp, finalFbc, JSON.stringify(payload)]
       );
 
+      // Salvar no outbox dentro da transação (será removido se CAPI direto funcionar)
+      let outboxId: number | null = null;
       if (metaEnabled && pixel_id && capi_token_enc) {
-        // Enviar direto ao CAPI primeiro (sem esperar outbox de 5+ min)
+        const outboxRes = await client.query(
+          `INSERT INTO capi_outbox (site_key, payload) VALUES ($1, $2) RETURNING id`,
+          [siteKey, JSON.stringify(capiPayload)]
+        );
+        outboxId = outboxRes.rows[0]?.id ?? null;
+      }
+
+      await client.query('COMMIT');
+
+      // Após COMMIT, tentar enviar direto ao CAPI (e remover do outbox se sucesso)
+      if (outboxId !== null) {
         const result = await capiService.sendEventDetailed(siteKey, capiPayload);
-        if (!result.ok) {
-          // Falha: salva no outbox para retry automático
-          console.warn(`[Webhook] Direct CAPI send failed, saving to outbox: ${result.error}`);
-          await pool.query(
-            `INSERT INTO capi_outbox (site_key, payload) VALUES ($1, $2)`,
-            [siteKey, JSON.stringify(capiPayload)]
-          );
-        } else {
+        if (result.ok) {
           console.log(`[Webhook] Purchase CAPI sent directly for order ${orderId}`);
+          await pool.query('DELETE FROM capi_outbox WHERE id = $1', [outboxId]);
+        } else {
+          console.warn(`[Webhook] Direct CAPI send failed, kept in outbox (id=${outboxId}): ${result.error}`);
         }
       }
     } catch (e) {
+      await client.query('ROLLBACK').catch(() => { });
       console.error('[Webhook] DB Error:', e);
       return { success: false, status: 500, error: 'DB insert failed' };
+    } finally {
+      client.release();
     }
   } else {
     try {
