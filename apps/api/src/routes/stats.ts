@@ -318,11 +318,11 @@ router.get('/best-times', requireAuth, async (req, res) => {
         topSourcesQuery = `
           SELECT 
             COALESCE(
+              NULLIF(p.raw_payload->'custom_data'->>'utm_source', ''),
               NULLIF(p.raw_payload->>'utm_source', ''),
               NULLIF(p.raw_payload->>'src', ''),
               NULLIF(p.raw_payload->>'sck', ''),
               NULLIF(p.raw_payload->'trackingParameters'->>'utm_source', ''),
-              NULLIF(p.raw_payload->'custom_data'->>'utm_source', ''),
               (
                 SELECT last_traffic_source 
                 FROM site_visitors sv 
