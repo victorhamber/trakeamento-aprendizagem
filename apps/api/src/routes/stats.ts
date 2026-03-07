@@ -317,7 +317,14 @@ router.get('/best-times', requireAuth, async (req, res) => {
         
         topSourcesQuery = `
           WITH purchases_base AS (
-            SELECT p.site_key, p.created_at, p.raw_payload, p.buyer_email_hash
+            SELECT
+              p.site_key,
+              p.created_at,
+              p.raw_payload,
+              p.buyer_email_hash,
+              p.fbp,
+              p.fbc,
+              p.raw_payload->>'_extracted_external_id' AS extracted_external_id
             FROM purchases p
             JOIN sites s ON s.site_key = p.site_key
             WHERE s.account_id = $1 AND ($2::int IS NULL OR s.id = $2::int)
@@ -328,6 +335,7 @@ router.get('/best-times', requireAuth, async (req, res) => {
             SELECT
               COALESCE(
                 sv_source.source,
+                ic_source.source,
                 ev_source.source,
                 NULLIF(pb.raw_payload->'custom_data'->>'traffic_source', ''),
                 NULLIF(pb.raw_payload->'custom_data'->>'utm_source', ''),
@@ -348,8 +356,11 @@ router.get('/best-times', requireAuth, async (req, res) => {
                 END as source
               FROM site_visitors sv
               WHERE sv.site_key = pb.site_key
-                AND pb.buyer_email_hash IS NOT NULL
-                AND sv.email_hash = pb.buyer_email_hash
+                AND (
+                  (pb.buyer_email_hash IS NOT NULL AND sv.email_hash = pb.buyer_email_hash)
+                  OR (pb.fbp IS NOT NULL AND sv.fbp = pb.fbp)
+                  OR (pb.fbc IS NOT NULL AND sv.fbc = pb.fbc)
+                )
               ORDER BY sv.last_seen_at DESC
               LIMIT 1
             ) sv_source ON TRUE
@@ -361,8 +372,35 @@ router.get('/best-times', requireAuth, async (req, res) => {
                 ) as source
               FROM web_events e
               WHERE e.site_key = pb.site_key
-                AND pb.buyer_email_hash IS NOT NULL
-                AND e.user_data->>'em' = pb.buyer_email_hash
+                AND e.event_name IN ('InitiateCheckout', 'AddToCart')
+                AND e.event_time <= pb.created_at
+                AND (
+                  (pb.buyer_email_hash IS NOT NULL AND e.user_data->>'em' = pb.buyer_email_hash)
+                  OR (pb.fbp IS NOT NULL AND e.user_data->>'fbp' = pb.fbp)
+                  OR (pb.fbc IS NOT NULL AND e.user_data->>'fbc' = pb.fbc)
+                  OR (pb.extracted_external_id IS NOT NULL AND e.user_data->>'external_id' = pb.extracted_external_id)
+                )
+                AND (
+                  NULLIF(e.custom_data->>'traffic_source', '') IS NOT NULL
+                  OR NULLIF(e.custom_data->>'utm_source', '') IS NOT NULL
+                )
+              ORDER BY e.event_time DESC
+              LIMIT 1
+            ) ic_source ON TRUE
+            LEFT JOIN LATERAL (
+              SELECT
+                COALESCE(
+                  NULLIF(e.custom_data->>'traffic_source', ''),
+                  NULLIF(e.custom_data->>'utm_source', '')
+                ) as source
+              FROM web_events e
+              WHERE e.site_key = pb.site_key
+                AND (
+                  (pb.buyer_email_hash IS NOT NULL AND e.user_data->>'em' = pb.buyer_email_hash)
+                  OR (pb.fbp IS NOT NULL AND e.user_data->>'fbp' = pb.fbp)
+                  OR (pb.fbc IS NOT NULL AND e.user_data->>'fbc' = pb.fbc)
+                  OR (pb.extracted_external_id IS NOT NULL AND e.user_data->>'external_id' = pb.extracted_external_id)
+                )
                 AND e.event_time <= pb.created_at
                 AND (
                   NULLIF(e.custom_data->>'traffic_source', '') IS NOT NULL

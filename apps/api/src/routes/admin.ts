@@ -19,27 +19,50 @@ router.post('/migrate-sources', requireAuth, async (req, res) => {
       SET last_traffic_source = src.source
       FROM LATERAL (
         SELECT
-          COALESCE(
-            NULLIF(e.custom_data->>'traffic_source', ''),
-            NULLIF(e.custom_data->>'utm_source', ''),
-            NULLIF(e.event_source_url, '')
-          ) as source
+          CASE
+            WHEN COALESCE(
+              NULLIF(e.custom_data->>'traffic_source', ''),
+              NULLIF(e.custom_data->>'utm_source', ''),
+              NULLIF(e.event_source_url, '')
+            ) ~* '(^|[?&])utm_source='
+              THEN NULLIF((regexp_match(COALESCE(
+                NULLIF(e.custom_data->>'traffic_source', ''),
+                NULLIF(e.custom_data->>'utm_source', ''),
+                NULLIF(e.event_source_url, '')
+              ), '(?:^|[?&])utm_source=([^&#]+)'))[1], '')
+            ELSE COALESCE(
+              NULLIF(e.custom_data->>'traffic_source', ''),
+              NULLIF(e.custom_data->>'utm_source', ''),
+              NULLIF(e.event_source_url, '')
+            )
+          END as source
         FROM web_events e
         WHERE e.site_key = sv.site_key
           AND (
             (sv.external_id IS NOT NULL AND e.user_data->>'external_id' = sv.external_id)
             OR (sv.email_hash IS NOT NULL AND e.user_data->>'em' = sv.email_hash)
             OR (sv.phone_hash IS NOT NULL AND e.user_data->>'ph' = sv.phone_hash)
+            OR (sv.fbp IS NOT NULL AND e.user_data->>'fbp' = sv.fbp)
+            OR (sv.fbc IS NOT NULL AND e.user_data->>'fbc' = sv.fbc)
           )
           AND (
             NULLIF(e.custom_data->>'traffic_source', '') IS NOT NULL
             OR NULLIF(e.custom_data->>'utm_source', '') IS NOT NULL
             OR NULLIF(e.event_source_url, '') IS NOT NULL
           )
+          AND lower(COALESCE(
+            NULLIF(e.custom_data->>'traffic_source', ''),
+            NULLIF(e.custom_data->>'utm_source', ''),
+            NULLIF(e.event_source_url, '')
+          )) NOT LIKE 'trk_%'
         ORDER BY e.event_time ASC
         LIMIT 1
       ) src
-      WHERE (sv.last_traffic_source IS NULL OR sv.last_traffic_source = '')
+      WHERE (
+          sv.last_traffic_source IS NULL
+          OR sv.last_traffic_source = ''
+          OR lower(sv.last_traffic_source) LIKE 'trk_%'
+        )
         AND src.source IS NOT NULL;
     `;
 
