@@ -318,19 +318,20 @@ router.get('/best-times', requireAuth, async (req, res) => {
         topSourcesQuery = `
           SELECT 
             COALESCE(
+              (
+                SELECT last_traffic_source 
+                FROM site_visitors sv 
+                WHERE sv.site_key = p.site_key 
+                  AND (sv.email_hash = p.buyer_email_hash OR sv.phone_hash = p.buyer_email_hash)
+                ORDER BY sv.last_seen_at DESC 
+                LIMIT 1
+              ),
+              NULLIF(p.raw_payload->'custom_data'->>'traffic_source', ''), -- Tenta pegar traffic_source explícito se houver
               NULLIF(p.raw_payload->'custom_data'->>'utm_source', ''),
               NULLIF(p.raw_payload->>'utm_source', ''),
               NULLIF(p.raw_payload->>'src', ''),
               NULLIF(p.raw_payload->>'sck', ''),
               NULLIF(p.raw_payload->'trackingParameters'->>'utm_source', ''),
-              (
-                SELECT last_traffic_source 
-                FROM site_visitors sv 
-                WHERE sv.site_key = p.site_key 
-                  AND (sv.email_hash = p.buyer_email_hash OR sv.phone_hash = p.buyer_email_hash) -- phone hash fallback in same column or separate logic
-                ORDER BY sv.last_seen_at DESC 
-                LIMIT 1
-              ),
               'Direct / Unknown'
             ) as source,
             COUNT(*)::int as count
