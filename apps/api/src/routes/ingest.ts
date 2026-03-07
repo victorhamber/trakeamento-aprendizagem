@@ -136,6 +136,39 @@ function toNumber(value: unknown): number {
   return 0;
 }
 
+function pickStringField(data: Record<string, unknown> | undefined, key: string): string | undefined {
+  const value = data?.[key];
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function buildTrafficSourceValue(customData: Record<string, unknown> | undefined): string | undefined {
+  if (!customData) return undefined;
+
+  const trafficSource = pickStringField(customData, 'traffic_source');
+  if (trafficSource && !trafficSource.toLowerCase().startsWith('trk_')) return trafficSource;
+
+  const params = new URLSearchParams();
+  const utmSource = pickStringField(customData, 'utm_source');
+  const utmMedium = pickStringField(customData, 'utm_medium');
+  const utmCampaign = pickStringField(customData, 'utm_campaign');
+  const utmTerm = pickStringField(customData, 'utm_term');
+  const utmContent = pickStringField(customData, 'utm_content');
+  if (utmSource) params.set('utm_source', utmSource);
+  if (utmMedium) params.set('utm_medium', utmMedium);
+  if (utmCampaign) params.set('utm_campaign', utmCampaign);
+  if (utmTerm) params.set('utm_term', utmTerm);
+  if (utmContent) params.set('utm_content', utmContent);
+  const utmString = params.toString();
+  if (utmString) return utmString;
+
+  const taTs = pickStringField(customData, 'ta_ts');
+  if (taTs && !taTs.toLowerCase().startsWith('trk_')) return taTs;
+
+  return undefined;
+}
+
 function computeEngagement(event: IngestEvent): { score: number; bucket: EngagementBucket } | null {
   if (!event?.telemetry) return null;
   if (event.event_name !== 'PageEngagement' && event.event_name !== 'PageView') return null;
@@ -467,7 +500,7 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
         ? capiUser.external_id[0]
         : `anon_${eventId}`;
 
-      const ts = event.custom_data?.ta_ts ? String(event.custom_data.ta_ts) : undefined;
+      const trafficSourceValue = buildTrafficSourceValue(event.custom_data);
 
       try {
         await pool.query(`
@@ -490,7 +523,7 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
             total_events = site_visitors.total_events + 1,
             last_seen_at = NOW()
         `, [
-          siteKey, extId, fbc, fbp, em, ph, fn, ln, ts, eventName, capiUser.client_ip_address, capiUser.client_user_agent
+          siteKey, extId, fbc, fbp, em, ph, fn, ln, trafficSourceValue, eventName, capiUser.client_ip_address, capiUser.client_user_agent
         ]);
       } catch (err) {
         console.error('[Ingest] Fallback User Profile UPSERT error:', err);
@@ -704,7 +737,7 @@ router.post('/batch', cors(), ingestLimiter, async (req, res) => {
       let extId = Array.isArray(capiUser.external_id) && capiUser.external_id.length > 0
         ? capiUser.external_id[0]
         : `anon_${eventId}`;
-      const ts = event.custom_data?.ta_ts ? String(event.custom_data.ta_ts) : undefined;
+      const trafficSourceValue = buildTrafficSourceValue(event.custom_data);
 
       try {
         await pool.query(`
@@ -727,7 +760,7 @@ router.post('/batch', cors(), ingestLimiter, async (req, res) => {
             total_events = site_visitors.total_events + 1,
             last_seen_at = NOW()
         `, [
-          siteKey, extId, fbc, fbp, em, ph, fn, ln, ts, eventName, capiUser.client_ip_address, capiUser.client_user_agent
+          siteKey, extId, fbc, fbp, em, ph, fn, ln, trafficSourceValue, eventName, capiUser.client_ip_address, capiUser.client_user_agent
         ]);
       } catch (err) {
         console.error('[Ingest/Batch] User Profile UPSERT error:', err);

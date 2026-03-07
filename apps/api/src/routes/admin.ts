@@ -15,31 +15,32 @@ router.post('/migrate-sources', requireAuth, async (req, res) => {
     // Query otimizada para pegar a primeira fonte de tráfego válida de cada visitante
     // e atualizar a tabela site_visitors se o campo estiver vazio
     const query = `
-      WITH first_sources AS (
-        SELECT DISTINCT ON (user_data->>'external_id', site_key)
-          user_data->>'external_id' as eid,
-          site_key as sk,
-          COALESCE(
-            NULLIF(custom_data->>'traffic_source', ''),
-            NULLIF(custom_data->>'utm_source', ''),
-            NULLIF(event_source_url, '')
-          ) as source
-        FROM web_events
-        WHERE 
-          user_data->>'external_id' IS NOT NULL
-          AND (
-            (custom_data->>'traffic_source' IS NOT NULL AND custom_data->>'traffic_source' != '')
-            OR (custom_data->>'utm_source' IS NOT NULL AND custom_data->>'utm_source' != '')
-            OR (event_source_url IS NOT NULL AND event_source_url != '')
-          )
-        ORDER BY user_data->>'external_id', site_key, event_time ASC
-      )
       UPDATE site_visitors sv
-      SET last_traffic_source = fs.source
-      FROM first_sources fs
-      WHERE sv.external_id = fs.eid 
-        AND sv.site_key = fs.sk
-        AND (sv.last_traffic_source IS NULL OR sv.last_traffic_source = '');
+      SET last_traffic_source = src.source
+      FROM LATERAL (
+        SELECT
+          COALESCE(
+            NULLIF(e.custom_data->>'traffic_source', ''),
+            NULLIF(e.custom_data->>'utm_source', ''),
+            NULLIF(e.event_source_url, '')
+          ) as source
+        FROM web_events e
+        WHERE e.site_key = sv.site_key
+          AND (
+            (sv.external_id IS NOT NULL AND e.user_data->>'external_id' = sv.external_id)
+            OR (sv.email_hash IS NOT NULL AND e.user_data->>'em' = sv.email_hash)
+            OR (sv.phone_hash IS NOT NULL AND e.user_data->>'ph' = sv.phone_hash)
+          )
+          AND (
+            NULLIF(e.custom_data->>'traffic_source', '') IS NOT NULL
+            OR NULLIF(e.custom_data->>'utm_source', '') IS NOT NULL
+            OR NULLIF(e.event_source_url, '') IS NOT NULL
+          )
+        ORDER BY e.event_time ASC
+        LIMIT 1
+      ) src
+      WHERE (sv.last_traffic_source IS NULL OR sv.last_traffic_source = '')
+        AND src.source IS NOT NULL;
     `;
 
     const result = await pool.query(query);

@@ -316,30 +316,73 @@ router.get('/best-times', requireAuth, async (req, res) => {
         `;
         
         topSourcesQuery = `
-          SELECT 
+          WITH purchases_base AS (
+            SELECT p.site_key, p.created_at, p.raw_payload, p.buyer_email_hash
+            FROM purchases p
+            JOIN sites s ON s.site_key = p.site_key
+            WHERE s.account_id = $1 AND ($2::int IS NULL OR s.id = $2::int)
+              AND p.created_at >= $3 AND p.created_at <= $4
+              AND p.status IN ('approved', 'paid', 'completed', 'active')
+          ),
+          attributed AS (
+            SELECT
+              COALESCE(
+                sv_source.source,
+                ev_source.source,
+                NULLIF(pb.raw_payload->'custom_data'->>'traffic_source', ''),
+                NULLIF(pb.raw_payload->'custom_data'->>'utm_source', ''),
+                NULLIF(pb.raw_payload->>'utm_source', ''),
+                NULLIF(pb.raw_payload->>'src', ''),
+                NULLIF(pb.raw_payload->>'sck', ''),
+                NULLIF(pb.raw_payload->'trackingParameters'->>'utm_source', '')
+              ) as source
+            FROM purchases_base pb
+            LEFT JOIN LATERAL (
+              SELECT
+                CASE
+                  WHEN sv.last_traffic_source IS NULL OR btrim(sv.last_traffic_source) = '' THEN NULL
+                  WHEN lower(sv.last_traffic_source) LIKE 'trk_%' THEN NULL
+                  WHEN sv.last_traffic_source ~* '(^|[?&])utm_source=' THEN
+                    NULLIF((regexp_match(sv.last_traffic_source, '(?:^|[?&])utm_source=([^&#]+)'))[1], '')
+                  ELSE sv.last_traffic_source
+                END as source
+              FROM site_visitors sv
+              WHERE sv.site_key = pb.site_key
+                AND pb.buyer_email_hash IS NOT NULL
+                AND sv.email_hash = pb.buyer_email_hash
+              ORDER BY sv.last_seen_at DESC
+              LIMIT 1
+            ) sv_source ON TRUE
+            LEFT JOIN LATERAL (
+              SELECT
+                COALESCE(
+                  NULLIF(e.custom_data->>'traffic_source', ''),
+                  NULLIF(e.custom_data->>'utm_source', '')
+                ) as source
+              FROM web_events e
+              WHERE e.site_key = pb.site_key
+                AND pb.buyer_email_hash IS NOT NULL
+                AND e.user_data->>'em' = pb.buyer_email_hash
+                AND e.event_time <= pb.created_at
+                AND (
+                  NULLIF(e.custom_data->>'traffic_source', '') IS NOT NULL
+                  OR NULLIF(e.custom_data->>'utm_source', '') IS NOT NULL
+                )
+              ORDER BY e.event_time DESC
+              LIMIT 1
+            ) ev_source ON TRUE
+          )
+          SELECT
             COALESCE(
-              (
-                SELECT last_traffic_source 
-                FROM site_visitors sv 
-                WHERE sv.site_key = p.site_key 
-                  AND (sv.email_hash = p.buyer_email_hash OR sv.phone_hash = p.buyer_email_hash)
-                ORDER BY sv.last_seen_at DESC 
-                LIMIT 1
-              ),
-              NULLIF(p.raw_payload->'custom_data'->>'traffic_source', ''), -- Tenta pegar traffic_source explícito se houver
-              NULLIF(p.raw_payload->'custom_data'->>'utm_source', ''),
-              NULLIF(p.raw_payload->>'utm_source', ''),
-              NULLIF(p.raw_payload->>'src', ''),
-              NULLIF(p.raw_payload->>'sck', ''),
-              NULLIF(p.raw_payload->'trackingParameters'->>'utm_source', ''),
+              CASE
+                WHEN source IS NULL OR btrim(source) = '' THEN NULL
+                WHEN lower(source) LIKE 'trk_%' THEN NULL
+                ELSE source
+              END,
               'Direct / Unknown'
             ) as source,
             COUNT(*)::int as count
-          FROM purchases p
-          JOIN sites s ON s.site_key = p.site_key
-          WHERE s.account_id = $1 AND ($2::int IS NULL OR s.id = $2::int)
-            AND p.created_at >= $3 AND p.created_at <= $4
-            AND p.status IN ('approved', 'paid', 'completed', 'active')
+          FROM attributed
           GROUP BY 1
           ORDER BY 2 DESC
           LIMIT 3
