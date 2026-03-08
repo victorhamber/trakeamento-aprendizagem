@@ -337,6 +337,7 @@ router.get('/best-times', requireAuth, async (req, res) => {
                 sv_source.source,
                 ic_source.source,
                 ev_source.source,
+                ic_site_source.source,
                 NULLIF(pb.raw_payload->'custom_data'->>'traffic_source', ''),
                 NULLIF(pb.raw_payload->'custom_data'->>'utm_source', ''),
                 NULLIF(pb.raw_payload->>'utm_source', ''),
@@ -409,6 +410,24 @@ router.get('/best-times', requireAuth, async (req, res) => {
               ORDER BY e.event_time DESC
               LIMIT 1
             ) ev_source ON TRUE
+            LEFT JOIN LATERAL (
+              SELECT
+                COALESCE(
+                  NULLIF(e.custom_data->>'traffic_source', ''),
+                  NULLIF(e.custom_data->>'utm_source', '')
+                ) as source
+              FROM web_events e
+              WHERE e.site_key = pb.site_key
+                AND e.event_name IN ('InitiateCheckout', 'AddToCart')
+                AND e.event_time <= pb.created_at
+                AND e.event_time >= pb.created_at - INTERVAL '24 hours'
+                AND (
+                  NULLIF(e.custom_data->>'traffic_source', '') IS NOT NULL
+                  OR NULLIF(e.custom_data->>'utm_source', '') IS NOT NULL
+                )
+              ORDER BY e.event_time DESC
+              LIMIT 1
+            ) ic_site_source ON TRUE
           )
           SELECT
             COALESCE(
@@ -441,13 +460,55 @@ router.get('/best-times', requireAuth, async (req, res) => {
         `;
 
         topSourcesQuery = `
-          SELECT 
-            COALESCE(e.custom_data->>'traffic_source', 'Direct / Unknown') as source,
+          WITH events_base AS (
+            SELECT e.site_key, e.event_time, e.user_data, e.custom_data, e.event_source_url
+            FROM web_events e
+            JOIN sites s ON s.site_key = e.site_key
+            WHERE s.account_id = $1 AND ($2::int IS NULL OR s.id = $2::int)
+              AND e.event_name = ANY($5) AND e.event_time >= $3 AND e.event_time <= $4
+          ),
+          attributed AS (
+            SELECT
+              COALESCE(
+                sv_source.source,
+                NULLIF(eb.custom_data->>'traffic_source', ''),
+                NULLIF(eb.custom_data->>'utm_source', ''),
+                NULLIF(eb.event_source_url, '')
+              ) as source
+            FROM events_base eb
+            LEFT JOIN LATERAL (
+              SELECT
+                CASE
+                  WHEN sv.last_traffic_source IS NULL OR btrim(sv.last_traffic_source) = '' THEN NULL
+                  WHEN lower(sv.last_traffic_source) LIKE 'trk_%' THEN NULL
+                  WHEN sv.last_traffic_source ~* '(^|[?&])utm_source=' THEN
+                    NULLIF((regexp_match(sv.last_traffic_source, '(?:^|[?&])utm_source=([^&#]+)'))[1], '')
+                  ELSE sv.last_traffic_source
+                END as source
+              FROM site_visitors sv
+              WHERE sv.site_key = eb.site_key
+                AND (
+                  (eb.user_data->>'external_id' IS NOT NULL AND sv.external_id = eb.user_data->>'external_id')
+                  OR (eb.user_data->>'em' IS NOT NULL AND sv.email_hash = eb.user_data->>'em')
+                  OR (eb.user_data->>'ph' IS NOT NULL AND sv.phone_hash = eb.user_data->>'ph')
+                  OR (eb.user_data->>'fbp' IS NOT NULL AND sv.fbp = eb.user_data->>'fbp')
+                  OR (eb.user_data->>'fbc' IS NOT NULL AND sv.fbc = eb.user_data->>'fbc')
+                )
+              ORDER BY sv.last_seen_at DESC
+              LIMIT 1
+            ) sv_source ON TRUE
+          )
+          SELECT
+            COALESCE(
+              CASE
+                WHEN source IS NULL OR btrim(source) = '' THEN NULL
+                WHEN lower(source) LIKE 'trk_%' THEN NULL
+                ELSE source
+              END,
+              'Direct / Unknown'
+            ) as source,
             COUNT(*)::int as count
-          FROM web_events e
-          JOIN sites s ON s.site_key = e.site_key
-          WHERE s.account_id = $1 AND ($2::int IS NULL OR s.id = $2::int)
-            AND e.event_name = ANY($5) AND e.event_time >= $3 AND e.event_time <= $4
+          FROM attributed
           GROUP BY 1
           ORDER BY 2 DESC
           LIMIT 3

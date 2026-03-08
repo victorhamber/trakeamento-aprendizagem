@@ -274,13 +274,16 @@ router.get('/tracker.js', async (req, res) => {
         return utmSource;
       }
 
-      // 3. New external referrer
+      // 3. New external referrer (ONLY if not from same domain)
       if (document.referrer) {
-        var refUrl = new URL(document.referrer);
-        if (refUrl.hostname !== location.hostname) {
-          setCookie(cookieName, document.referrer, COOKIE_TTL_90D);
-          return document.referrer;
-        }
+        try {
+          var refUrl = new URL(document.referrer);
+          // Se vier de fora (ex: google.com, instagram.com) e não for o próprio site
+          if (refUrl.hostname !== location.hostname) {
+            setCookie(cookieName, document.referrer, COOKIE_TTL_90D);
+            return document.referrer;
+          }
+        } catch(_e) {}
       }
     } catch(_e) {}
 
