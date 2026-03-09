@@ -37,17 +37,17 @@ export const LoginPage = () => {
       <div className="relative w-full max-w-md animate-in fade-in" style={{ animationDuration: '400ms' }}>
         <div className="rounded-3xl border border-white/[0.08] bg-zinc-950/80 backdrop-blur-xl p-8 shadow-[0_25px_60px_rgba(0,0,0,0.5)]">
           {/* Logo */}
-          <div className="flex flex-col items-center mb-2">
+          <div className="flex flex-col items-center mb-6">
             <img 
               src="/logo-full.png" 
               alt="Trajettu AI Analytics" 
-              className="h-80 w-auto object-contain animate-in fade-in zoom-in duration-500 pointer-events-none select-none" 
+              className="h-24 w-auto object-contain animate-in fade-in zoom-in duration-500 pointer-events-none select-none" 
             />
           </div>
 
-          <div className="text-center mb-6">
-            <h2 className="text-lg font-semibold text-zinc-200">Bem-vindo de volta</h2>
-            <p className="text-sm text-zinc-500 mt-1">Acesse seu painel</p>
+          <div className="text-center mb-6 select-none">
+            <h2 className="text-xl font-bold tracking-tight text-white">Bem-vindo de volta!</h2>
+            <p className="text-sm text-zinc-500 mt-1">Acesse seu painel para continuar</p>
           </div>
 
           <form onSubmit={submit} className="space-y-4">
