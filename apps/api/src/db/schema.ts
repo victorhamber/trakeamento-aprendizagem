@@ -53,7 +53,7 @@ const schemaSql = `
 
   CREATE INDEX IF NOT EXISTS idx_password_resets_token ON password_resets(token);
   CREATE INDEX IF NOT EXISTS idx_password_resets_email ON password_resets(email);
-`;
+
   CREATE TABLE IF NOT EXISTS global_notifications (
     id SERIAL PRIMARY KEY,
     title VARCHAR(200) NOT NULL,
@@ -317,6 +317,10 @@ export const ensureSchema = async (pool: Pool) => {
   await pool.query(schemaSql);
 
   try {
+    await pool.query('CREATE TABLE IF NOT EXISTS password_resets (id SERIAL PRIMARY KEY, email VARCHAR(190) NOT NULL, token VARCHAR(100) NOT NULL UNIQUE, expires_at TIMESTAMP NOT NULL, created_at TIMESTAMP DEFAULT NOW())');
+    await pool.query('CREATE INDEX IF NOT EXISTS idx_password_resets_token ON password_resets(token)');
+    await pool.query('CREATE INDEX IF NOT EXISTS idx_password_resets_email ON password_resets(email)');
+    
     await pool.query('ALTER TABLE sites ADD COLUMN IF NOT EXISTS tracking_domain VARCHAR(255)');
     await pool.query('ALTER TABLE custom_webhooks ADD COLUMN IF NOT EXISTS site_key VARCHAR(100)');
     await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS enabled BOOLEAN DEFAULT TRUE');
