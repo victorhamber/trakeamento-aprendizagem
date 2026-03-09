@@ -43,6 +43,17 @@ const schemaSql = `
     updated_at TIMESTAMP DEFAULT NOW()
   );
 
+  CREATE TABLE IF NOT EXISTS password_resets (
+    id SERIAL PRIMARY KEY,
+    email VARCHAR(190) NOT NULL,
+    token VARCHAR(100) NOT NULL UNIQUE,
+    expires_at TIMESTAMP NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW()
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_password_resets_token ON password_resets(token);
+  CREATE INDEX IF NOT EXISTS idx_password_resets_email ON password_resets(email);
+`;
   CREATE TABLE IF NOT EXISTS global_notifications (
     id SERIAL PRIMARY KEY,
     title VARCHAR(200) NOT NULL,
