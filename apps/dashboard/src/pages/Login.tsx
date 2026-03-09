@@ -113,9 +113,9 @@ export const LoginPage = () => {
           </form>
 
           <div className="text-sm text-zinc-500 mt-6 text-center">
-            Não tem conta?{' '}
-            <Link className="text-indigo-400 hover:text-indigo-300 font-medium transition-colors" to="/register">
-              Criar agora
+            Esqueceu sua senha?{' '}
+            <Link className="text-indigo-400 hover:text-indigo-300 font-medium transition-colors" to="/forgot-password">
+              Recuperar senha
             </Link>
           </div>
         </div>
