@@ -5,6 +5,8 @@ import { pool } from '../db/pool';
 import { requireAuth } from '../middleware/auth';
 import { getJwtSecret } from '../lib/jwt';
 import rateLimit from 'express-rate-limit';
+import { sendWelcomeEmail, sendPasswordResetEmail } from '../services/email';
+import { v4 as uuidv4 } from 'uuid';
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -44,10 +46,78 @@ router.post('/register', authLimiter, async (req, res) => {
     );
     const userId = userResult.rows[0].id as number;
 
+    // Send welcome email asynchronously
+    sendWelcomeEmail(email.toLowerCase(), account_name.trim()).catch(console.error);
+
     const token = signToken({ userId, accountId, email: email.toLowerCase() });
     return res.json({ token, user: { id: userId, email: email.toLowerCase() }, account: { id: accountId } });
   } catch (err: any) {
     return res.status(500).json({ error: err.message || 'Internal server error' });
+  }
+});
+
+router.post('/forgot-password', authLimiter, async (req, res) => {
+  const { email } = req.body || {};
+  if (!email || typeof email !== 'string') {
+    return res.status(400).json({ error: 'Email is required' });
+  }
+
+  try {
+    const userResult = await pool.query('SELECT id FROM users WHERE email = $1', [email.toLowerCase()]);
+    if (!userResult.rowCount) {
+      // Don't reveal user existence
+      return res.json({ message: 'If the email exists, a reset link will be sent.' });
+    }
+
+    const token = uuidv4();
+    const expiresAt = new Date(Date.now() + 3600000); // 1 hour
+
+    await pool.query(
+      'INSERT INTO password_resets (email, token, expires_at) VALUES ($1, $2, $3)',
+      [email.toLowerCase(), token, expiresAt]
+    );
+
+    const resetLink = `${process.env.VITE_DASHBOARD_URL || 'https://app.trajettu.com'}/reset-password?token=${token}`;
+    
+    // Send email asynchronously
+    sendPasswordResetEmail(email.toLowerCase(), resetLink).catch(console.error);
+
+    return res.json({ message: 'If the email exists, a reset link will be sent.' });
+  } catch (err: any) {
+    console.error('Forgot password error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.post('/reset-password', authLimiter, async (req, res) => {
+  const { token, password } = req.body || {};
+  if (!token || !password || typeof token !== 'string' || typeof password !== 'string') {
+    return res.status(400).json({ error: 'Token and new password are required' });
+  }
+  if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
+
+  try {
+    const tokenResult = await pool.query(
+      'SELECT email, expires_at FROM password_resets WHERE token = $1 AND expires_at > NOW() ORDER BY created_at DESC LIMIT 1',
+      [token]
+    );
+
+    if (!tokenResult.rowCount) {
+      return res.status(400).json({ error: 'Invalid or expired token' });
+    }
+
+    const email = tokenResult.rows[0].email;
+    const hash = await bcrypt.hash(password, 12);
+
+    await pool.query('UPDATE users SET password_hash = $1 WHERE email = $2', [hash, email]);
+    
+    // Delete used token (and potentially older ones for this email)
+    await pool.query('DELETE FROM password_resets WHERE email = $1', [email]);
+
+    return res.json({ message: 'Password updated successfully' });
+  } catch (err: any) {
+    console.error('Reset password error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
 

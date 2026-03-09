@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 
+import { api } from '../lib/api';
+
 export const ForgotPasswordPage = () => {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
@@ -12,11 +14,12 @@ export const ForgotPasswordPage = () => {
     setLoading(true);
     setError(null);
     try {
-      // Tentativa de envio para um endpoint padrão, se não existir apenas simula
-      // await api.post('/auth/forgot-password', { email });
-      await new Promise(r => setTimeout(r, 1500)); 
+      await api.post('/auth/forgot-password', { email });
       setSent(true);
     } catch (err: any) {
+      // Mesmo com erro, às vezes é melhor mostrar sucesso para não revelar e-mails cadastrados,
+      // mas aqui vamos mostrar o erro genérico ou específico dependendo da política.
+      // O backend retorna 200 mesmo se não achar o email, então se cair aqui é erro de servidor/rede.
       setError(err?.response?.data?.error || 'Falha ao enviar email');
     } finally {
       setLoading(false);
