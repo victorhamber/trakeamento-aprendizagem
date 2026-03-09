@@ -73,6 +73,18 @@
   .dark body {
     font-weight: 400;
   }
+
+  /* Global focus outline removal for recharts and general elements to mimic app behavior */
+  .recharts-wrapper,
+  .recharts-surface,
+  .recharts-cartesian-grid,
+  .recharts-layer {
+    outline: none !important;
+  }
+  
+  *:focus {
+    outline: none !important;
+  }
 }
 
 /* ─── Scrollbar ───────────────────────────────────────────────────────────── */

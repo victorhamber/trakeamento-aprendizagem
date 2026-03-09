@@ -85,7 +85,8 @@ export function RevenueChart({ data, currency, isDark }: { data: DailyPoint[]; c
             stroke={lineColor} 
             strokeWidth={2} 
             dot={{ r: 4, fill: lineColor, strokeWidth: 2, stroke: isDark ? '#18181b' : '#fff' }} 
-            activeDot={{ r: 6, fill: lineColor, stroke: isDark ? '#fff' : '#000', strokeWidth: 2 }} 
+            activeDot={{ r: 6, fill: lineColor, stroke: isDark ? '#fff' : '#000', strokeWidth: 2, outline: 'none' }} 
+            isAnimationActive={true}
           />
         </LineChart>
       </ResponsiveContainer>
