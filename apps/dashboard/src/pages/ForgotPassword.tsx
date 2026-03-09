@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api } from '../lib/api';
 
 export const ForgotPasswordPage = () => {
   const [email, setEmail] = useState('');
