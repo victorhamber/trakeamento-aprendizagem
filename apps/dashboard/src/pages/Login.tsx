@@ -25,7 +25,7 @@ export const LoginPage = () => {
   };
 
   return (
-    <div className="min-h-screen relative flex items-center justify-center p-6 overflow-hidden bg-[#05070a]">
+    <div className="min-h-screen relative flex items-center justify-center p-6 overflow-hidden bg-[#05070a] select-none">
       {/* Ambient gradient blobs */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute -top-32 -left-32 w-96 h-96 rounded-full bg-indigo-600/15 blur-[100px] animate-float" />
@@ -41,7 +41,8 @@ export const LoginPage = () => {
             <img 
               src="/logo-full.png" 
               alt="Trajettu AI Analytics" 
-              className="h-80 w-auto object-contain animate-in fade-in zoom-in duration-500 pointer-events-none select-none" 
+              className="h-80 w-auto object-contain animate-in fade-in zoom-in duration-500 pointer-events-none select-none outline-none" 
+              draggable={false}
             />
           </div>
 
