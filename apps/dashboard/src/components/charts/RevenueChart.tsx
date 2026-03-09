@@ -47,7 +47,7 @@ export function RevenueChart({ data, currency, isDark }: { data: DailyPoint[]; c
   }
 
   return (
-    <div className="h-[300px] w-full">
+    <div className="h-[300px] w-full select-none outline-none focus:outline-none">
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />

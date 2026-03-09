@@ -85,7 +85,7 @@ type KpiProps = {
 
 const KpiCard = ({ label, value, hint, icon, color, glow, delay = 0 }: KpiProps) => (
   <div
-    className="group relative rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 p-4 sm:p-5 hover:border-zinc-300 dark:hover:border-zinc-700 transition-all duration-200 overflow-hidden animate-in fade-in shadow-sm dark:shadow-none"
+    className="group relative rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 p-4 sm:p-5 hover:border-zinc-300 dark:hover:border-zinc-700 transition-all duration-200 overflow-hidden animate-in fade-in shadow-sm dark:shadow-none select-none outline-none focus:outline-none"
     style={{ animationDelay: `${delay}ms`, animationDuration: '400ms' }}
   >
     <div className={`absolute -top-8 -right-8 w-24 h-24 rounded-full blur-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 ${glow}`} />
@@ -121,7 +121,7 @@ type ShortcutProps = {
 const ShortcutCard = ({ to, icon, iconColor, iconBg, title, description }: ShortcutProps) => (
   <Link
     to={to}
-    className="group flex items-start gap-4 p-5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/30 hover:bg-zinc-100 dark:hover:bg-zinc-900/60 hover:border-zinc-300 dark:hover:border-zinc-700 transition-all duration-200"
+    className="group flex items-start gap-4 p-5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/30 hover:bg-zinc-100 dark:hover:bg-zinc-900/60 hover:border-zinc-300 dark:hover:border-zinc-700 transition-all duration-200 select-none"
   >
     <div
       className={`shrink-0 rounded-xl p-2.5 border border-zinc-200 dark:border-zinc-800 ${iconBg} ${iconColor} group-hover:scale-105 transition-transform duration-200 bg-white/50 dark:bg-transparent`}
@@ -239,7 +239,7 @@ export const DashboardPage = () => {
   return (
     <Layout title="Dashboard">
       {/* ── Hero banner ── */}
-      <div className="relative rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 overflow-hidden px-6 py-7 mb-6 shadow-sm dark:shadow-none">
+      <div className="relative rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 overflow-hidden px-6 py-7 mb-6 shadow-sm dark:shadow-none select-none">
         {/* ambient glow */}
         <div className="pointer-events-none absolute inset-0 hidden dark:block">
           <div className="absolute -top-16 -right-16 w-72 h-72 bg-blue-500/8 rounded-full blur-3xl" />
@@ -359,7 +359,7 @@ export const DashboardPage = () => {
       {/* ── Charts Section ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
         {/* Revenue Chart (Span 2) */}
-        <div className="lg:col-span-2 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 p-5 shadow-sm dark:shadow-none">
+        <div className="lg:col-span-2 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 p-5 shadow-sm dark:shadow-none select-none">
           <div className="flex items-center justify-between mb-4">
             <div>
               <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100">Desempenho de Vendas</div>
@@ -370,7 +370,7 @@ export const DashboardPage = () => {
         </div>
 
         {/* Funnel Chart (Span 1) */}
-        <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 p-5 shadow-sm dark:shadow-none">
+        <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 p-5 shadow-sm dark:shadow-none select-none">
           <div className="flex items-center justify-between mb-4">
             <div>
               <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100">Funil de Conversão</div>
@@ -386,7 +386,7 @@ export const DashboardPage = () => {
       {/* ── Bottom grid ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Shortcuts */}
-        <div className="lg:col-span-2 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 p-5 shadow-sm dark:shadow-none">
+        <div className="lg:col-span-2 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 p-5 shadow-sm dark:shadow-none select-none">
           <div className="text-xs font-semibold uppercase tracking-widest text-zinc-500 dark:text-zinc-500 mb-4">
             Atalhos
           </div>
@@ -427,7 +427,7 @@ export const DashboardPage = () => {
         </div>
 
         {/* Status */}
-        <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 p-5 shadow-sm dark:shadow-none">
+        <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 p-5 shadow-sm dark:shadow-none select-none">
           <div className="text-xs font-semibold uppercase tracking-widest text-zinc-500 dark:text-zinc-500 mb-4">
             Status do sistema
           </div>

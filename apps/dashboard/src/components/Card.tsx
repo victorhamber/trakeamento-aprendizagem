@@ -16,7 +16,7 @@ export const Card = ({
   accent?: 'zinc' | 'blue' | 'emerald' | 'violet' | 'amber';
 }) => (
   <div
-    className={`rounded-2xl bg-gradient-to-br from-zinc-950/80 via-zinc-950/60 to-zinc-900/40 border p-5 shadow-[0_12px_30px_rgba(0,0,0,0.35)] transition-all ${
+    className={`rounded-2xl bg-gradient-to-br from-zinc-950/80 via-zinc-950/60 to-zinc-900/40 border p-5 shadow-[0_12px_30px_rgba(0,0,0,0.35)] transition-all select-none ${
       accent === 'blue'
         ? 'border-blue-500/25 hover:border-blue-500/45'
         : accent === 'emerald'

@@ -78,7 +78,7 @@ const Card = ({ title, data, color, textColor }: { title: string; data: PeakData
   const hasData = data.daily_peaks.some(d => d.count > 0);
 
   return (
-    <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 p-5 shadow-sm h-full flex flex-col">
+    <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 p-5 shadow-sm h-full flex flex-col select-none">
       <div className="flex items-center gap-2 mb-4 shrink-0">
         <div className={`w-2 h-2 rounded-full ${color}`} />
         <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{title}</h3>

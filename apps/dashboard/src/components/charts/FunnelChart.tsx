@@ -14,7 +14,7 @@ export function FunnelChart({ data, isDark }: { data: any; isDark: boolean }) {
   const textColor = isDark ? '#71717a' : '#6b7280';
 
   return (
-    <div className="h-[300px] w-full">
+    <div className="h-[300px] w-full select-none outline-none focus:outline-none">
       <ResponsiveContainer width="100%" height="100%">
         <BarChart 
           data={chartData} 
