@@ -4,6 +4,7 @@ import { useAuth } from './state/auth';
 import { LoginPage } from './pages/Login';
 import { RegisterPage } from './pages/Register';
 import { ForgotPasswordPage } from './pages/ForgotPassword';
+import { ResetPasswordPage } from './pages/ResetPassword';
 import { DashboardPage } from './pages/Dashboard';
 import { AiSettingsPage } from './pages/AiSettings';
 import { SitesPage } from './pages/Sites';
@@ -21,6 +22,7 @@ function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route
         path="/dashboard"
         element={
