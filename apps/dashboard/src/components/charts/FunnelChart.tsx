@@ -47,7 +47,7 @@ export function FunnelChart({ data, isDark }: { data: any; isDark: boolean }) {
           />
           <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={32} isAnimationActive={true}>
              {chartData.map((entry, index) => (
-              <Cell key={`cell-${index}`} fill={entry.fill} style={{ outline: 'none' }} />
+              <Cell key={`cell-${index}`} fill={entry.fill} />
             ))}
             <LabelList 
               dataKey="value" 
