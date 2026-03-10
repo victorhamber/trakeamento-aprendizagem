@@ -521,6 +521,9 @@ export class DiagnosisService {
     }
 
     // ── CAPI metrics (server-side — source of truth for site behavior) ─────────
+    // NOTE: No UTM filter here — PageEngagement/PageView telemetry events
+    // don't reliably store UTM params in custom_data (URL may be cleaned by the
+    // time visibilitychange fires). Filtering by UTM would return zero rows.
     let capiMetrics: Record<string, unknown> = {};
     try {
       const capiRes = await pool.query(
@@ -540,9 +543,8 @@ export class DiagnosisService {
         FROM web_events
         WHERE site_key = $1
           AND event_time >= $2
-          AND event_time < $3
-          ${utmWhere.clause}`,
-        [siteKey, since, until, ...utmWhere.params]
+          AND event_time < $3`,
+        [siteKey, since, until]
       );
       capiMetrics = capiRes.rows[0] || {};
     } catch (err) {
@@ -609,6 +611,7 @@ export class DiagnosisService {
     ]);
 
     // ── Site engagement metrics ────────────────────────────────────────────────
+    // NOTE: No UTM filter — same reason as CAPI metrics above.
     const siteEngagement = await pool.query(
       `SELECT
         COUNT(*)::bigint                                                         AS engagement_events,
@@ -626,9 +629,8 @@ export class DiagnosisService {
       WHERE site_key = $1
         AND event_name = 'PageEngagement'
         AND event_time >= $2
-        AND event_time < $3
-        ${utmWhere.clause}`,
-      [siteKey, since, until, ...utmWhere.params]
+        AND event_time < $3`,
+      [siteKey, since, until]
     );
 
     // ── Sales data ─────────────────────────────────────────────────────────────

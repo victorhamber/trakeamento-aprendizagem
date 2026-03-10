@@ -451,11 +451,17 @@ Se o evento otimizado NAO for Purchase, escreva: "Evento otimizado nao e Purchas
 
 ### Performance por Anuncio (dados Meta)
 
+REGRA CRITICA PARA ESTA TABELA:
+Para cada ad em meta_breakdown.ads, verifique o campo hook_rate_pct desse ad ESPECIFICAMENTE:
+- hook_rate_pct != null E video_3s_views > 0 → mostre o valor (ex: "12.5%").
+- hook_rate_pct == null OU video_3s_views == 0 → escreva "N/A (imagem)". NAO invente valor.
+NUNCA mencione hook rate ruim/bom para anuncios de imagem. Isso e FACTUALMENTE ERRADO.
+
 | Anuncio | Resultados | Custo | CPA | CTR | Hook Rate | Diagnostico |
 |:---|---:|---:|---:|---:|---:|:---|
-| [nome] | X | R$X | R$X | X% | X% ou N/A | [Vencedor/Otimizar/Fadiga] — [motivo curto] |
+| [nome] | X | R$X | R$X | X% | X% ou N/A (imagem) | [Vencedor/Otimizar/Fadiga] — [motivo curto] |
 
-*Nota: Hook Rate apenas para videos (3s plays).*
+*Nota: Hook Rate = video_3s_views/impressions. Apenas para anuncios de VIDEO.*
 
 ### Avaliacao Qualitativa dos Criativos
 
