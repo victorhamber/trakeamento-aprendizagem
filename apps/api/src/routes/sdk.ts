@@ -77,6 +77,7 @@ router.get('/tracker.js', async (req, res) => {
   var RULE_DEDUP_MS = 5000; // 5s cooldown for same event name
   var pendingQueue = []; // batch queue para beforeunload
   var webVitals    = { lcp: 0, fid: 0, cls: 0, fcp: 0 };
+  var pageEngagementEventId = null;
 
   // ─── Cookie helpers ───────────────────────────────────────────────────────
   function getCookie(name) {
@@ -811,8 +812,9 @@ router.get('/tracker.js', async (req, res) => {
       var cfg = window.TRACKING_CONFIG;
       if (!cfg || !cfg.apiUrl || !cfg.siteKey) return;
 
+      if (!pageEngagementEventId) pageEngagementEventId = genEventId();
       var eventTime = Math.floor(Date.now() / 1000);
-      var eventId   = genEventId();
+      var eventId   = pageEngagementEventId;
       var attrs     = getAttributionParams();
       var telemetry = buildTelemetry();
 
@@ -988,7 +990,7 @@ router.get('/tracker.js', async (req, res) => {
         if (el.tagName === 'BODY' || el.tagName === 'HTML') break;
         el = el.parentElement;
       }
-      if (!el) return;
+      if (!el || (el.tagName !== 'A' && el.tagName !== 'BUTTON' && el.tagName !== 'INPUT')) return;
 
       var clickedText = (el.innerText || el.value || el.textContent || '').toString().trim().toLowerCase();
       if (!clickedText && el.getAttribute) clickedText = (el.getAttribute('aria-label') || el.getAttribute('title') || '').toLowerCase();
@@ -1019,6 +1021,13 @@ router.get('/tracker.js', async (req, res) => {
     var _pushState    = history.pushState;
     var _replaceState = history.replaceState;
     history.pushState = function() {
+      pageEngagement();
+      pageEngagementEventId = null;
+      startMs = Date.now();
+      visibleMs = 0;
+      maxScroll = 0;
+      totalClicks = 0;
+      ctaClicks = 0;
       _pushState.apply(history, arguments);
       setTimeout(function() { pageView(); checkUrlRules(); }, 0);
     };
@@ -1027,6 +1036,12 @@ router.get('/tracker.js', async (req, res) => {
       setTimeout(checkUrlRules, 0);
     };
     window.addEventListener('popstate', function() {
+      pageEngagementEventId = null;
+      startMs = Date.now();
+      visibleMs = 0;
+      maxScroll = 0;
+      totalClicks = 0;
+      ctaClicks = 0;
       setTimeout(function() { pageView(); checkUrlRules(); }, 0);
     });
   } catch(_e) {}
@@ -1200,7 +1215,17 @@ router.get('/tracker.js', async (req, res) => {
     }
   } catch(_e) {}
 
-  window.addEventListener('beforeunload', pageEngagement);
+  var _pageEngagementSent = false;
+  function sendPageEngagement() {
+    if (_pageEngagementSent) return;
+    _pageEngagementSent = true;
+    pageEngagement();
+  }
+
+  window.addEventListener('beforeunload', sendPageEngagement);
+  document.addEventListener('visibilitychange', function() {
+    if (document.visibilityState === 'hidden') pageEngagement();
+  });
 
 })();
 `;
