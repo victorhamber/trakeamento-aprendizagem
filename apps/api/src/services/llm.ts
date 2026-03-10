@@ -376,16 +376,16 @@ meta.purchases = 0 com objetivo CADASTRO_GRUPO ou LEAD: NORMAL. Nao mencione.
 
 ## Analise do Funil
 
-*(Funil adaptado ao evento otimizado: [nome do evento])*
+*(Funil adaptado ao objetivo: [user_context.stated_objective se existir, senao o evento otimizado])*
 
 | Etapa | Metrica | Valor | Status | Diagnostico |
 |:---|:---|:---|:---:|:---|
 | Atracao | CTR | X% | ok/alerta/critico | [1 linha com numero] |
 | Retencao criativo | Hook Rate | X% ou N/A (imagem) | ok/alerta/critico/sem dados | [1 linha ou "Anuncio de imagem — N/A"] |
 | Conexao | Taxa LP View | X% | ok/alerta/critico | [1 linha] |
-| Velocidade | Load time | Xms ou Sem dados | ok/alerta/critico/sem dados | [1 linha] |
-| Interesse | Dwell Time | Xms ou Sem dados | ok/alerta/critico/sem dados | [1 linha ou "Dados nao capturados"] |
-| Intencao | Scroll medio | X% ou Sem dados | ok/alerta/critico/sem dados | [1 linha ou "Dados nao capturados"] |
+| Velocidade | Load time | [Use site.effective_load_ms]Xms ou Sem dados | ok/alerta/critico/sem dados | [1 linha] |
+| Interesse | Dwell Time | [Use site.effective_dwell_ms]Xms ou Sem dados | ok/alerta/critico/sem dados | [1 linha ou "Dados nao capturados"] |
+| Intencao | Scroll medio | [Use site.effective_scroll_pct]X% ou Sem dados | ok/alerta/critico/sem dados | [1 linha ou "Dados nao capturados"] |
 | Conversao | CPA | R$X | ok/alerta/critico | [baseado no evento otimizado] |
 
 **Insight:** [comentario analitico de 2 linhas sobre o padrao do funil]
@@ -516,6 +516,7 @@ Se landing_page.content existir:
     const snap = this.asRecord(snapshot);
     const m = this.asRecord(snap.meta);
     const capi = this.asRecord(snap.capi);
+    const site = this.asRecord(snap.site);
     const sales = this.asRecord(snap.sales);
     const d = this.asRecord(snap.derived);
     const signals = Array.isArray(snap.signals) ? snap.signals as Record<string, unknown>[] : [];
@@ -636,14 +637,15 @@ Se landing_page.content existir:
     lines.push(`| Rastreamento | Funil de Dados | — | Meta: ${this.fmtInt(m.unique_link_clicks)} | Pixel: ${this.fmtInt(m.landing_page_views)} | CAPI: ${this.fmtInt(capi.page_views)} |`);
 
     // Comportamento
-    const loadTime = capi.avg_load_time_ms != null ? this.fmtMs(capi.avg_load_time_ms) : 'N/A';
-    const loadStatus = capi.avg_load_time_ms && Number(capi.avg_load_time_ms) > 3500 ? 'CRITICO' : 'OK';
+    const loadMs = site.effective_load_ms != null ? Number(site.effective_load_ms) : null;
+    const loadTime = loadMs != null ? this.fmtMs(loadMs) : 'N/A';
+    const loadStatus = loadMs && loadMs > 3500 ? 'CRITICO' : 'OK';
     lines.push(`| Comportamento | Load Time | ${loadStatus} | ${loadTime} |`);
 
-    const scroll = capi.avg_scroll_pct != null ? this.fmtPct(capi.avg_scroll_pct) : 'N/A';
+    const scroll = site.effective_scroll_pct != null ? this.fmtPct(site.effective_scroll_pct) : 'N/A';
     lines.push(`| Comportamento | Scroll Medio | — | ${scroll} |`);
 
-    const dwell = capi.avg_dwell_time_ms != null ? this.fmtMs(capi.avg_dwell_time_ms) : 'N/A';
+    const dwell = site.effective_dwell_ms != null ? this.fmtMs(site.effective_dwell_ms) : 'N/A';
     lines.push(`| Comportamento | Dwell Time | — | ${dwell} |`);
     lines.push('');
     lines.push('---');
