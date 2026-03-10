@@ -160,6 +160,7 @@ export class LlmService {
     '## Vendas e ROAS',
     '## Analise de Criativos',
     '## Auditoria Tecnica',
+    '## Diagnostico de 3 Camadas',
   ];
 
   private validateOutput(content: string): { valid: boolean; missing: string[]; truncated: boolean } {
@@ -301,6 +302,46 @@ Se landing_page.content existir (nao null), analise brevemente:
 - Existe call-to-action visivel?
 - O conteudo reforca a proposta de valor?
 Se landing_page.content for null, diga "Conteudo da LP nao disponivel para analise".
+
+=== REGRA: DIAGNOSTICO EM 3 CAMADAS ===
+
+Analise o funil em tres camadas cruzadas (esta e a parte MAIS VALIOSA do relatorio):
+
+**Camada 1 — ORIGEM (Meta Ads):** Como o anuncio performa?
+- CTR, Hook Rate, Frequencia, CPM. O criativo esta atraindo cliques?
+- Se CTR alto + Hook Rate alto → anuncio esta bom. Problema esta DEPOIS do clique.
+- Se CTR baixo → problema esta NO criativo (copy, gancho ou segmentacao).
+
+**Camada 2 — PONTE (Atribuicao UTM / Click-to-LP):**
+- connect_rate_pct (cliques que viraram LP Views). Se < 60%, ha perda entre o clique e a pagina.
+- click_to_lp_discrepancy_pct > 30% → possivel site lento, redirect, pixel falhando.
+- utm_filters_skipped → dados de UTM nao segmentaram corretamente.
+
+**Camada 3 — DESTINO (Comportamento no Site):**
+- Load Time, Dwell Time, Scroll Depth, Bounce Rate estimado.
+- Se Dwell < 8s E Scroll < 20% → usuario nao leu a oferta. Problema na headline ou lentidao.
+- Se Dwell > 30s E Scroll > 60% MAS sem conversao → problema no CTA ou no preco.
+
+CRUZAMENTO CRITICO (faça SEMPRE):
+- CTR alto + Dwell baixo = Promessa do anuncio NAO esta alinhada com a pagina (Message Mismatch).
+- CTR alto + Dwell alto + Sem conversao = Oferta fraca ou CTA ruim.
+- CTR baixo + Dwell alto = Criativo fraco mas pagina boa. Foco em melhorar anuncio.
+
+=== REGRA: MESSAGE MATCH (COERENCIA ANUNCIO vs PAGINA) ===
+
+Se message_match existir no snapshot:
+
+1. message_match.lp_headline = primeira frase proeminente da LP.
+2. message_match.creatives_vs_lp = array com ad_headline e ad_promise_keywords de cada criativo.
+
+Para CADA criativo, compare:
+- O ad_headline promete o mesmo que o lp_headline entrega?
+- As ad_promise_keywords aparecem no conteudo da LP (landing_page.content)?
+- Se ha INCONGRUENCIA (ex.: anuncio fala de "desconto" mas LP fala de "exclusividade"),
+  sinalize como 🔴 MESSAGE MISMATCH e explique o impacto no bounce rate.
+- Se ha CONGRUENCIA, sinalize como 🟢 MESSAGE MATCH e elogie.
+
+Se message_match nao existir ou for null, omita esta analise.
 
 === REGRA: CONTEXTO DO USUARIO ===
 
@@ -497,6 +538,61 @@ Se landing_page.content existir:
 3. **Mudanca de Estrutura**: [O que o cliente deve mudar visualmente? Ex: Subir o botao, reduzir texto, usar bullet points]
 
 *Se landing_page.content for null, escreva: "Conteudo da LP nao disponivel para analise aprofundada. Verifique se a URL enviada esta acessivel."*
+
+---
+
+## Diagnostico de 3 Camadas
+
+*(Secao OBRIGATORIA — esta e a analise mais valiosa do relatorio)*
+
+### 🔵 Camada 1 — Origem (Meta Ads)
+| Metrica | Valor | Veredicto |
+|:---|:---|:---|
+| CTR | X% | [Criativo atrai ou nao?] |
+| Hook Rate | X% ou N/A | [Retem atencao?] |
+| Frequencia | X | [Publico saturado? >3.5 = alerta] |
+| CPM | R$X | [Leilao competitivo?] |
+
+**Diagnostico da Origem**: [1-2 frases: o anuncio esta gerando demanda qualificada ou nao?]
+
+### 🟡 Camada 2 — Ponte (Clique → Pagina)
+| Metrica | Valor | Veredicto |
+|:---|:---|:---|
+| Taxa LP View | X% | [Quantos cliques chegam?] |
+| Discrepancia Clique-LP | X% | [Perda entre clique e carregamento] |
+| UTMs | [aplicados/ignorados] | [Atribuicao confiavel?] |
+
+**Diagnostico da Ponte**: [1-2 frases: ha perda significativa entre o clique e a pagina?]
+
+### 🟢 Camada 3 — Destino (Comportamento no Site)
+| Metrica | Valor | Veredicto |
+|:---|:---|:---|
+| Load Time | Xms | [Site rapido ou lento?] |
+| Dwell Time | Xms | [Leu a oferta?] |
+| Scroll Depth | X% | [Consumiu o conteudo?] |
+| Bounce Est | X% | [Rejeitou rapido?] |
+
+**Diagnostico do Destino**: [1-2 frases: a pagina esta convertendo o trafego recebido?]
+
+### 🔗 Cruzamento das 3 Camadas
+[Analise cruzada obrigatoria: compare as 3 camadas para identificar EXATAMENTE onde esta o gargalo.]
+[Use o padrao: "CTR [alto/baixo] + Dwell [alto/baixo] + Conversao [sim/nao] = [diagnostico preciso]"]
+[Exemplo: "CTR de 2.3% (bom) + Dwell de 4s (ruim) = Promessa do anuncio nao esta alinhada com a pagina"]
+
+---
+
+## Message Match (Coerencia Anuncio ↔ Pagina)
+
+Se message_match existir no snapshot:
+
+Para cada criativo:
+| Criativo | Promessa do Anuncio | Headline da LP | Veredicto |
+|:---|:---|:---|:---:|
+| [ad_name] | "[ad_headline resumido]" | "[lp_headline resumido]" | 🟢 Match / 🔴 Mismatch |
+
+**Analise de Coerencia**: [Explicar se as palavras-chave da promessa do anuncio (ad_promise_keywords) aparecem no conteudo da LP. Se nao, sinalize incongruencia e sugira como alinhar.]
+
+*Se message_match nao existir, omita esta secao.*
 
 ---
 

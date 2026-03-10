@@ -175,6 +175,56 @@ export class DiagnosisService {
     return { since: addDays(today, -days), until: addDays(today, 1), days };
   }
 
+  /**
+   * Build a "Message Match" comparison object.
+   * Extracts the headline/first sentence from landing page text
+   * and pairs it with each creative's copy headline so the LLM can
+   * evaluate coherence between ad promise and page delivery.
+   */
+  private buildMessageMatch(
+    creatives: Array<{ ad_name: string; copy: string; media_description: string }>,
+    landingPageContent: string | null
+  ): {
+    lp_headline: string | null;
+    creatives_vs_lp: Array<{ ad_name: string; ad_headline: string; ad_promise_keywords: string[] }>;
+  } | null {
+    if (!creatives || creatives.length === 0) return null;
+
+    // Extract landing page headline: first meaningful sentence (> 10 chars)
+    let lpHeadline: string | null = null;
+    if (landingPageContent) {
+      const sentences = landingPageContent
+        .split(/[.!?\n]/)
+        .map(s => s.trim())
+        .filter(s => s.length > 10);
+      lpHeadline = sentences.length > 0 ? sentences[0].slice(0, 200) : null;
+    }
+
+    // Extract each creative's headline/promise
+    const creativesVsLp = creatives.map(c => {
+      // Parse "Título: ..." line from the copy
+      const titleMatch = c.copy.match(/Título:\s*(.+)/i);
+      const adHeadline = titleMatch ? titleMatch[1].trim().slice(0, 200) : '';
+
+      // Extract promise keywords from the full copy (nouns/verbs > 4 chars)
+      const words = c.copy
+        .toLowerCase()
+        .replace(/[^a-záàâãéèêíïóôõúüç\s]/gi, ' ')
+        .split(/\s+/)
+        .filter(w => w.length > 4);
+      // Deduplicate and take top keywords
+      const uniqueWords = [...new Set(words)].slice(0, 15);
+
+      return {
+        ad_name: c.ad_name,
+        ad_headline: adHeadline,
+        ad_promise_keywords: uniqueWords,
+      };
+    });
+
+    return { lp_headline: lpHeadline, creatives_vs_lp: creativesVsLp };
+  }
+
   private safeDiv(a: number, b: number) {
     return b > 0 ? a / b : 0;
   }
@@ -1109,6 +1159,7 @@ export class DiagnosisService {
         url: options?.userContext?.landing_page_url || landingPageUrl,
         content: landingPageContent,
       },
+      message_match: this.buildMessageMatch(finalCreatives, landingPageContent),
       segments: {
         hourly: hourlyDistribution,
         day_of_week: dayOfWeekDistribution,
