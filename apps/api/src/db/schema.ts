@@ -10,6 +10,7 @@ const schemaSql = `
     billing_cycle VARCHAR(20) DEFAULT 'MONTHLY',
     max_sites INTEGER DEFAULT 1,
     max_events INTEGER DEFAULT 10000,
+    offer_codes TEXT,
     created_at TIMESTAMP DEFAULT NOW()
   );
 
@@ -320,7 +321,7 @@ export const ensureSchema = async (pool: Pool) => {
     await pool.query('CREATE TABLE IF NOT EXISTS password_resets (id SERIAL PRIMARY KEY, email VARCHAR(190) NOT NULL, token VARCHAR(100) NOT NULL UNIQUE, expires_at TIMESTAMP NOT NULL, created_at TIMESTAMP DEFAULT NOW())');
     await pool.query('CREATE INDEX IF NOT EXISTS idx_password_resets_token ON password_resets(token)');
     await pool.query('CREATE INDEX IF NOT EXISTS idx_password_resets_email ON password_resets(email)');
-    
+
     await pool.query('ALTER TABLE sites ADD COLUMN IF NOT EXISTS tracking_domain VARCHAR(255)');
     await pool.query('ALTER TABLE custom_webhooks ADD COLUMN IF NOT EXISTS site_key VARCHAR(100)');
     await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS enabled BOOLEAN DEFAULT TRUE');
@@ -440,6 +441,7 @@ export const ensureSchema = async (pool: Pool) => {
 
     // --- Dynamic Schema Migrations for V2 Features ---
     try {
+      await pool.query(`ALTER TABLE plans ADD COLUMN IF NOT EXISTS offer_codes TEXT`);
       await pool.query(`ALTER TABLE accounts ADD COLUMN IF NOT EXISTS active_plan_id INTEGER REFERENCES plans(id)`);
       await pool.query(`ALTER TABLE accounts ADD COLUMN IF NOT EXISTS bonus_site_limit INTEGER DEFAULT 0`);
 

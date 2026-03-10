@@ -10,6 +10,7 @@ type Plan = {
     billing_cycle: string;
     max_sites: number;
     max_events: number;
+    offer_codes?: string;
 };
 
 export const PlansPage = () => {
@@ -23,6 +24,7 @@ export const PlansPage = () => {
     const [type, setType] = useState('SUBSCRIPTION');
     const [cycle, setCycle] = useState('MONTHLY');
     const [sites, setSites] = useState('1');
+    const [offerCodes, setOfferCodes] = useState('');
 
     const load = async () => {
         try {
@@ -48,7 +50,8 @@ export const PlansPage = () => {
                 price,
                 billing_cycle: cycle,
                 max_sites: parseInt(sites, 10),
-                max_events: 10000 // default for now
+                max_events: 10000, // default for now
+                offer_codes: offerCodes.trim() || null
             };
 
             if (editingId) {
@@ -63,6 +66,7 @@ export const PlansPage = () => {
             setSites('1');
             setType('SUBSCRIPTION');
             setCycle('MONTHLY');
+            setOfferCodes('');
             await load();
         } catch (e: any) {
             alert(e?.response?.data?.error || 'Erro ao salvar plano');
@@ -76,6 +80,7 @@ export const PlansPage = () => {
         setType(p.type);
         setCycle(p.billing_cycle);
         setSites(p.max_sites.toString());
+        setOfferCodes(p.offer_codes || '');
         // Scroll to top
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
@@ -97,10 +102,28 @@ export const PlansPage = () => {
         setSites('1');
         setType('SUBSCRIPTION');
         setCycle('MONTHLY');
+        setOfferCodes('');
     };
 
     return (
         <Layout title="Planos de Assinatura">
+
+            <div className="mb-6 p-4 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/20 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                <div className="h-10 w-10 shrink-0 rounded-xl bg-indigo-100 dark:bg-indigo-500/20 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
+                </div>
+                <div className="flex-1 min-w-0">
+                    <h3 className="text-sm font-bold text-indigo-900 dark:text-indigo-300">Webhook de Integração Mestre</h3>
+                    <p className="text-xs text-indigo-700 dark:text-indigo-400 mt-0.5">Configure este link genérico na <b>Hotmart, Kiwify ou Eduzz</b>. A plataforma ativará/desativará os planos automaticamente com base nos Códigos de Oferta.</p>
+                </div>
+                <div className="w-full sm:w-auto mt-2 sm:mt-0">
+                    <div className="flex bg-white dark:bg-black/40 border border-indigo-200 dark:border-indigo-500/30 rounded-lg overflow-hidden">
+                        <input readOnly value="https://api.trajettu.com/admin/provision?secret=WEBHOOK_ADMIN_SECRET" className="text-xs font-mono px-3 py-2 bg-transparent text-zinc-600 dark:text-zinc-400 outline-none min-w-[300px]" />
+                        <button onClick={() => { navigator.clipboard.writeText('https://api.trajettu.com/admin/provision?secret=WEBHOOK_ADMIN_SECRET'); alert('Link de Webhook Copiado!'); }} className="px-3 bg-indigo-100 hover:bg-indigo-200 dark:bg-indigo-500/20 dark:hover:bg-indigo-500/40 text-indigo-700 dark:text-indigo-300 font-medium text-xs transition-colors">Copiar</button>
+                    </div>
+                </div>
+            </div>
+
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
                 {/* Create form */}
@@ -111,6 +134,10 @@ export const PlansPage = () => {
                             <div>
                                 <label className="block text-xs text-zinc-500 mb-1">Nome (ex: Pro Mensal)</label>
                                 <input required value={name} onChange={e => setName(e.target.value)} className="w-full rounded-xl bg-zinc-50 dark:bg-black/20 border border-zinc-200 dark:border-white/10 px-3 py-2 text-sm outline-none focus:border-indigo-500" />
+                            </div>
+                            <div>
+                                <label className="block text-xs text-zinc-500 mb-1">Códigos da Oferta (Hotmart/Kiwify/Eduzz) <span className="text-zinc-400 font-normal ml-1">Para Webhook de Provisão. Separe por vírgulas.</span></label>
+                                <input value={offerCodes} onChange={e => setOfferCodes(e.target.value)} placeholder="ex: test, plano_anual, prod_x" className="w-full rounded-xl bg-zinc-50 dark:bg-black/20 border border-zinc-200 dark:border-white/10 px-3 py-2 text-sm outline-none focus:border-indigo-500" />
                             </div>
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
@@ -170,6 +197,16 @@ export const PlansPage = () => {
                                         <div className="text-xs text-zinc-500">{p.billing_cycle === 'MONTHLY' ? '/mês' : p.billing_cycle === 'YEARLY' ? '/ano' : 'único'}</div>
                                     </div>
                                 </div>
+                                {p.offer_codes && (
+                                    <div className="mb-4">
+                                        <div className="text-[10px] text-zinc-500 font-medium mb-1 uppercase tracking-wider">Códigos da Oferta</div>
+                                        <div className="flex flex-wrap gap-1">
+                                            {p.offer_codes.split(',').map(c => c.trim()).filter(Boolean).map(c => (
+                                                <span key={c} className="bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-400 px-2 py-0.5 rounded textxs font-mono text-[10px] break-all border border-indigo-100 dark:border-indigo-500/20">{c}</span>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
                                 <div className="mt-auto space-y-2 pt-4 border-t border-zinc-100 dark:border-white/5 text-sm text-zinc-600 dark:text-zinc-400">
                                     <div className="flex items-center gap-2">
                                         <svg className="h-4 w-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>

@@ -1,9 +1,11 @@
 import { Router } from 'express';
 import crypto from 'crypto';
+import bcrypt from 'bcryptjs';
 import { pool } from '../db/pool';
 import { capiService, CapiService } from '../services/capi';
 import { EnrichmentService } from '../services/enrichment';
 import { decryptString } from '../lib/crypto';
+
 
 const router = Router();
 
@@ -91,7 +93,7 @@ async function processPurchaseWebhook({
   if (!finalFbp || !finalFbc || !clientIp || !clientUa || !payload.utm_source) {
     console.log(`[Webhook] Missing critical data (fbp=${finalFbp}, ip=${clientIp}, ua=${clientUa}). Attempting enrichment for ${email || phone}...`);
     enriched = await EnrichmentService.findVisitorData(siteKey, email, phone);
-    
+
     if (enriched) {
       console.log(`[Webhook] Enrichment success: found fbp=${enriched.fbp}, ip=${enriched.clientIp}, ua=${enriched.clientUa}`);
     } else {
@@ -105,7 +107,7 @@ async function processPurchaseWebhook({
   const mergedExternalId = finalExternalId || enriched?.externalId;
   const mergedIp = clientIp || enriched?.clientIp;
   const mergedUa = clientUa || enriched?.clientUa;
-  
+
   // UTMs priority: Payload > Enriched
   const utmSource = payload.utm_source || payload.trackingParameters?.utm_source || payload.tracking_parameters?.utm_source || (payload.sck && !String(payload.sck).startsWith('trk_') ? payload.sck : undefined) || (payload.src && !String(payload.src).startsWith('trk_') ? payload.src : undefined) || enriched?.utmSource || undefined;
   const utmMedium = payload.utm_medium || payload.trackingParameters?.utm_medium || payload.tracking_parameters?.utm_medium || enriched?.utmMedium || undefined;
@@ -623,84 +625,150 @@ router.post('/custom/:id', async (req, res) => {
   return res.json({ received: true });
 });
 
-// ─── SaaS Webhook (Hotmart) ──────────────────────────────────────────────────
-router.post('/saas/hotmart', async (req, res) => {
-  const { hottok } = req.body || {};
-  if (!hottok) return res.status(400).json({ error: 'Missing hottok' });
+// ─── SaaS Webhook (Admin Provisioning from Hotmart, Kiwify, Eduzz) ──────────────────────────────────────────────────
+router.post('/admin/provision', async (req, res) => {
+  const secret = req.query.secret as string;
+  const expectedSecret = process.env.WEBHOOK_ADMIN_SECRET || 'WEBHOOK_ADMIN_SECRET';
 
-  // 1. Verify Hotmart Token if you configured one (Replace with actual env var)
-  if (process.env.HOTMART_SAAS_TOKEN && hottok !== process.env.HOTMART_SAAS_TOKEN) {
-    return res.status(401).json({ error: 'Invalid hottok' });
+  if (!secret || secret !== expectedSecret) {
+    return res.status(401).json({ error: 'Invalid or missing secret' });
   }
 
   const payload = req.body.data || req.body;
-  const buyer = payload.buyer || req.body.buyer || {};
-  const purchase = payload.purchase || req.body.purchase || {};
-  const product = payload.product || req.body.product || {};
+  if (!payload) return res.status(400).json({ error: 'Empty payload' });
 
-  const email = buyer.email;
-  const status = (purchase.status || req.body.status || '').toUpperCase();
-  const productId = product.id || req.body.product_id;
+  // Parsing logic for Multi-platform
+  let email = '';
+  let status = '';
+  let offerCode = '';
 
-  if (!email) return res.status(400).json({ error: 'Missing buyer email' });
+  // Hotmart Parsing
+  if (payload.hottok || payload.buyer || payload.purchase) {
+    const buyer = payload.buyer || {};
+    const purchase = payload.purchase || {};
+    const offer = purchase.offer || {};
+    email = buyer.email;
+    status = (purchase.status || '').toUpperCase();
+    offerCode = offer.code || '';
+  }
+  // Kiwify Parsing
+  else if (payload.webhook_event_type || payload.Customer) {
+    const customer = payload.Customer || {};
+    email = customer.email || payload.email;
+    status = (payload.order_status || '').toUpperCase();
+    // Kiwify might not have an "offer code" matching Hotmart, but maybe a product id or link
+    offerCode = payload.Product?.id || payload.product_id || '';
+  }
+  // Eduzz Parsing
+  else if (payload.transacao_id || payload.cus_email || payload.eduzz_id) {
+    email = payload.cus_email || payload.email;
+    status = (payload.transacao_statusName || payload.transacao_status || '').toUpperCase();
+    offerCode = payload.product_id || payload.produto_id || payload.contrato_id || '';
+  }
+  // Fallback (Generic custom webhook mapping)
+  else {
+    email = payload.email || payload.buyer_email;
+    status = (payload.status || payload.order_status || '').toUpperCase();
+    offerCode = payload.offer_code || payload.plan_code || payload.product_id || '';
+  }
 
-  console.log(`[SaaS Webhook] Received ${status} for ${email} (Product: ${productId})`);
+  if (!email) return res.status(400).json({ error: 'Missing buyer email in payload' });
+
+  console.log(`[Admin Provisioning] Received ${status} for ${email} (Offer Code: ${offerCode})`);
 
   try {
-    // Check if user exists
-    const userRow = await pool.query('SELECT account_id FROM users WHERE email = $1', [email]);
-    if (!userRow.rowCount) {
-      console.warn(`[SaaS Webhook] User ${email} not found. Ignored.`);
-      return res.status(200).json({ received: true, note: 'User not found yet.' });
-    }
-    const accountId = userRow.rows[0].account_id;
+    // 1. Identify which plan matches this Offer Code
+    let targetPlanId = null;
+    let targetBonusSites = 0;
 
-    const isApproved = ['APPROVED', 'COMPLETED', 'PROCESSED'].includes(status);
+    if (offerCode) {
+      // Find a plan where offer_codes contains the exact offer code (comma separated check)
+      // Since it's a comma separated TEXT field, we search carefully using a regex or ILIKE %code%
+      const plansRes = await pool.query(`SELECT id, type FROM plans WHERE offer_codes IS NOT NULL`);
+      for (const row of plansRes.rows) {
+        const codes = (row.offer_codes || '').split(',').map((c: string) => c.trim().toLowerCase());
+        if (codes.includes(offerCode.trim().toLowerCase())) {
+          if (row.type === 'ADDON') {
+            targetBonusSites = 1; // It's an extra
+          } else {
+            targetPlanId = row.id;
+          }
+          break;
+        }
+      }
+    }
+
+    const isApproved = ['APPROVED', 'COMPLETED', 'PROCESSED', 'PAID'].includes(status);
     const isRevoked = ['CANCELED', 'CHARGEBACK', 'REFUNDED', 'DELAYED'].includes(status);
 
+    // 2. Lookup existing user
+    const userRow = await pool.query('SELECT account_id FROM users WHERE email = $1', [email]);
+    let accountId = userRow.rowCount ? userRow.rows[0].account_id : null;
+
     if (isApproved) {
-      // Find the mapped plan or default to the most expensive one
-      // For now, if we match the word "Adicional" or "Add-on", we treat it as Add-on
-      const planNameCheck = (product.name || '').toLowerCase();
+      if (!accountId) {
+        // Create new account and user
+        const accountRes = await pool.query(`
+          INSERT INTO accounts (name, active_plan_id, is_active, bonus_site_limit)
+          VALUES ($1, $2, true, $3)
+          RETURNING id
+        `, [email.split('@')[0], targetPlanId, targetBonusSites]);
+        accountId = accountRes.rows[0].id;
 
-      if (planNameCheck.includes('site adicional') || planNameCheck.includes('add-on') || planNameCheck.includes('extra')) {
-        // It's an Add-on
+        // Auto-generate strong secure password for the newly created user
+        const randomPass = crypto.randomBytes(8).toString('hex');
+        const hash = await bcrypt.hash(randomPass, 12);
+
         await pool.query(`
-          UPDATE accounts 
-          SET bonus_site_limit = bonus_site_limit + 1
-          WHERE id = $1
-        `, [accountId]);
-        console.log(`[SaaS Webhook] Add-on Site applied to ${email}.`);
+          INSERT INTO users (account_id, email, password_hash)
+          VALUES ($1, $2, $3)
+        `, [accountId, email, hash]);
+
+        console.log(`[Admin Provisioning] Created new Account/User for ${email}. Plan: ${targetPlanId}`);
+
+        // TODO: Enviar email automático de "Conta Criada" usando Resend se desejar, com a randomPass.
       } else {
-        // It's a Base Plan. Assign the first available plan or lookup by provider_id later
-        const planRow = await pool.query("SELECT id FROM plans WHERE type = 'SUBSCRIPTION' ORDER BY price DESC LIMIT 1");
-        const activePlanId = planRow.rowCount ? planRow.rows[0].id : null;
-
-        await pool.query(`
-          UPDATE accounts 
-          SET is_active = true, active_plan_id = COALESCE($1, active_plan_id)
-          WHERE id = $2
-        `, [activePlanId, accountId]);
-        console.log(`[SaaS Webhook] Base Plan Activated for ${email}.`);
+        // Update existing account
+        if (targetBonusSites > 0) {
+          await pool.query(`
+            UPDATE accounts 
+            SET bonus_site_limit = bonus_site_limit + $1
+            WHERE id = $2
+          `, [targetBonusSites, accountId]);
+          console.log(`[Admin Provisioning] Applied Add-on to ${email}.`);
+        } else if (targetPlanId) {
+          await pool.query(`
+            UPDATE accounts 
+            SET is_active = true, active_plan_id = $1
+            WHERE id = $2
+          `, [targetPlanId, accountId]);
+          console.log(`[Admin Provisioning] Updated Base Plan for ${email}.`);
+        } else {
+          await pool.query(`UPDATE accounts SET is_active = true WHERE id = $1`, [accountId]);
+          console.log(`[Admin Provisioning] Re-activated account for ${email} without changing plan.`);
+        }
       }
     } else if (isRevoked) {
-      // Suspend Account
-      await pool.query(`
-        UPDATE accounts SET is_active = false WHERE id = $1
-      `, [accountId]);
-      console.log(`[SaaS Webhook] Account Suspended for ${email}.`);
+      if (accountId) {
+        await pool.query(`UPDATE accounts SET is_active = false WHERE id = $1`, [accountId]);
+        console.log(`[Admin Provisioning] Suspended account ${email} due to refund/chargeback.`);
+      }
+    } else {
+      console.log(`[Admin Provisioning] Status ${status} ignored for ${email}`);
     }
 
-    // Log the subscription event
-    await pool.query(`
-      INSERT INTO subscriptions (account_id, plan_id, status, provider_subscription_id)
-      VALUES ($1, null, $2, $3)
-    `, [accountId, status, purchase.transaction || '']);
+    // Attempt to log the subscription interaction
+    if (accountId) {
+      await pool.query(`
+        INSERT INTO subscriptions (account_id, plan_id, status, provider_subscription_id)
+        VALUES ($1, $2, $3, $4)
+      `, [accountId, targetPlanId, status, payload.transaction || payload.order_id || 'webhook']);
+    }
 
-    return res.json({ success: true });
+    return res.json({ success: true, provisioned: true, email, targetPlanId, isApproved });
   } catch (error) {
-    console.error('[SaaS Webhook] Error processing:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+    console.error('[Admin Provisioning] Error processing:', error);
+    return res.status(500).json({ error: 'Internal server error processing provisioning' });
   }
 });
 
