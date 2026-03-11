@@ -130,8 +130,9 @@ export class LlmService {
       return content;
     } catch (error) {
       const isRetryable = axios.isAxiosError(error) &&
-        ((error as AxiosError).response?.status === 429 ||
-          ((error as AxiosError).response?.status ?? 0) >= 500);
+        (!error.response ||
+          error.response.status === 429 ||
+          error.response.status >= 500);
       if (isRetryable && attempt < MAX_RETRY_ATTEMPTS) {
         const delay = attempt * 2000;
         this.log('warn', `Retrying in ${delay}ms (attempt ${attempt})...`);
@@ -140,8 +141,10 @@ export class LlmService {
       }
       if (axios.isAxiosError(error)) {
         this.log('error', 'OpenAI Axios error', {
-          status: (error as AxiosError).response?.status,
-          data: (error as AxiosError).response?.data,
+          status: error.response?.status,
+          data: error.response?.data,
+          message: error.message,
+          code: error.code,
         });
       } else if (error instanceof Error) {
         this.log('error', 'OpenAI error', error.message);
