@@ -165,6 +165,7 @@ export class LlmService {
     '## Auditoria Tecnica',
     '## Diagnostico de 3 Camadas',
     '## Analise Avancada: Copy, Frameworks e 80/20',
+    '## Distribuicao Temporal',
   ];
   // Note: '## Retencao de VSL' is conditional (only when vsl_sessions > 0), so not in EXPECTED_SECTIONS
 
@@ -694,6 +695,12 @@ Se site.vsl_sessions > 0:
 | **Hoje (Cortar Sangramento)** | [ex: Pausar Anúncio X, que tem CPA de R$80 e 0 vendas / Meta: Cortar R$Y perdidos dia] | [ex: Desligar o anuncio no BM. A meta de CPA alvo ideal e de MAX R$35 para ser 80/20] |
 | **Esta Semana (Alavanca HSO/PAS)** | [ex: Ajustar Hook do Anuncio Y / Meta: Subir o CTR de 0.8% p/ 2.5%] | [ex: Trocar de: "Venha conhecer nosso plano" Para: "Cansado de tentar X e perder Y?"] |
 | **Proximo Ciclo (Estrategia)** | [mudanca estrategica] | [Acao clara de reestruturacao] |
+
+### ✅ Checklist Final de Execução
+[Resuma todas as acoes acima em uma unica checklist final com boxes. Exemplo:]
+- [ ] Pausar o anuncio "X" no Gerenciador de Anuncios.
+- [ ] Trocar a headline da Landing Page para "Nova Headline".
+- [ ] Ajustar orcamento para focar nas terca-feiras às 19h.
 
 ---
 *Diagnostico gerado por Analista IA (Frameworks: PAS, HSO, Pareto, Schwartz) — Meta Ads + CAPI + DB.*`;

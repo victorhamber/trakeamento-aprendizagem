@@ -292,6 +292,18 @@ export class DiagnosisService {
       let value = options?.[key]?.trim();
       if (!value) continue;
 
+      // Special case for {{site_source_name}} which resolves dynamically to fb, ig, msg, an
+      if (value === '{{site_source_name}}') {
+        resolved.push(`${key}: "${value}" → "fb, ig, msg, an, facebook, instagram"`);
+        console.log(`[DiagnosisService] Resolved macro: ${key}="${value}" → "(Meta sources)"`);
+        
+        // Add parameter array elements manually or use a direct JSON extraction approach
+        params.push('fb', 'ig', 'facebook', 'instagram', 'msg', 'an', 'meta');
+        const offset = baseIndex + params.length - 7;
+        clauses.push(`AND (custom_data->>'${key}') IN ($${offset}, $${offset+1}, $${offset+2}, $${offset+3}, $${offset+4}, $${offset+5}, $${offset+6})`);
+        continue;
+      }
+
       // Try to resolve Meta macros using campaign data
       if (this.isUnresolvedMacro(value) && metaEntities) {
         const original = value;
@@ -310,7 +322,7 @@ export class DiagnosisService {
       }
 
       params.push(value);
-      clauses.push(`AND (custom_data->>'${key}') = $${baseIndex + params.length}`);
+      clauses.push(`AND (custom_data->>'${key}') = $${baseIndex + params.length - 1}`);
     }
 
     return { clause: clauses.join('\n        '), params, skipped, resolved };

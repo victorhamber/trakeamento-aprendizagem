@@ -55,7 +55,7 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
     setCheckoutExternalId(`lead_${ts}`);
     setCheckoutFbp(`fb.1.${Math.floor(ts / 1000)}.${random}`);
     setCheckoutFbc(`fb.1.${Math.floor(ts / 1000)}.${random}`);
-    setCheckoutUtmSource('facebook');
+    setCheckoutUtmSource('{{site_source_name}}');
     setCheckoutUtmMedium('cpc');
     setCheckoutUtmCampaign('verao_2024');
     setCheckoutUtmContent('video_review');
