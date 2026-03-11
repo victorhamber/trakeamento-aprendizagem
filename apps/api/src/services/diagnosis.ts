@@ -721,6 +721,36 @@ export class DiagnosisService {
     const internalRevenue = Number(s.revenue || 0);
     const roas = spend > 0 && internalRevenue > 0 ? internalRevenue / spend : null;
 
+    // ── Meta ROAS fallback: extract purchase_value from raw_payload->action_values ──
+    // When bank has no sales (webhook not configured), use Meta's reported purchase value
+    let metaRevenue: number | null = null;
+    let metaRoas: number | null = null;
+    if (roas === null && purchases > 0 && spend > 0 && siteId) {
+      try {
+        const metaRevResult = await pool.query(
+          `SELECT COALESCE(SUM(
+            (SELECT SUM((av->>'value')::numeric)
+             FROM jsonb_array_elements(raw_payload->'action_values') av
+             WHERE av->>'action_type' IN ('purchase', 'omni_purchase'))
+          ), 0)::numeric AS meta_revenue
+          FROM meta_insights_daily
+          WHERE site_id = $1
+            AND date_start >= $2
+            AND date_start < $3
+            AND ad_id IS NOT NULL
+            ${campaignId ? 'AND campaign_id = $4' : ''}`,
+          campaignId ? [siteId, since, until, campaignId] : [siteId, since, until]
+        );
+        const rev = Number(metaRevResult.rows[0]?.meta_revenue || 0);
+        if (rev > 0) {
+          metaRevenue = rev;
+          metaRoas = rev / spend;
+        }
+      } catch {
+        // raw_payload may not have action_values yet (before next sync), skip silently
+      }
+    }
+
     const capiPageViews = Number(capiMetrics.pv_count || 0);
     const capiLeads = Number(capiMetrics.lead_count || 0);
     const capiAvgLoadMs = Number(capiMetrics.avg_load_time || 0) || null;
@@ -1161,6 +1191,8 @@ export class DiagnosisService {
         purchases: internalSales,
         revenue: internalRevenue,
         roas,
+        meta_revenue: metaRevenue,
+        meta_roas: metaRoas != null ? Math.round(metaRoas * 100) / 100 : null,
       },
 
       meta_breakdown: {

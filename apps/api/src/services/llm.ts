@@ -427,7 +427,7 @@ Se site.vsl_sessions = 0 ou null, NAO mencione VSL na analise.
 | Objetivo | [meta.objective] |
 | Evento otimizado | [o que meta.results representa — ex: CADASTRO_GRUPO] |
 | Resultado | [meta.results] conversoes ao custo de [meta.cost_per_result] cada |
-| ROAS Real | [sales.roas]x ou N/A |
+| ROAS Real | [sales.roas]x. Se null E sales.meta_roas existir: "ROAS Meta: [meta_roas]x (receita reportada pelo pixel: R$[meta_revenue])". Se ambos null: "N/A — webhook nao configurado" |
 | Tendencia | [↑/↓/→] [resumo de 1 frase se trend existir, ou "Sem dados de comparacao"] |
 | Veredito | [1 frase direta sobre a saude da campanha] |
 | Principal Gargalo | [onde esta o problema, ou "Sem gargalo critico identificado"] |
@@ -457,12 +457,15 @@ Se site.vsl_sessions = 0 ou null, NAO mencione VSL na analise.
 
 | Fonte | Compras | Receita | ROAS |
 |:---|---:|---:|---:|
-| Meta (Pixel/CAPI) | [meta.purchases] | — | — |
+| Meta (Pixel/CAPI) | [meta.purchases] | R$[sales.meta_revenue] ou — | [sales.meta_roas]x ou — |
 | **Banco (real)** | **[sales.purchases]** | **R$[sales.revenue]** | **[sales.roas]x** |
 | Discrepancia | [diferenca] | — | — |
 
 *[Comentario sobre discrepancia se houver, ou "Dados consistentes."]*
 
+Se sales.roas = null E sales.meta_roas != null:
+  - Escreva: "⚠️ ROAS calculado com dados do Pixel Meta (R$[meta_revenue]). Para ROAS real, configure o webhook de vendas."
+Se ambos null: "Webhook de vendas nao configurado e Pixel nao reportou valor. ROAS indisponivel."
 Se o evento otimizado NAO for Purchase, escreva: "Evento otimizado nao e Purchase — ROAS informativo apenas."
 
 ---
@@ -619,6 +622,13 @@ Para cada criativo:
 **Analise de Coerencia**: [Explicar se as palavras-chave da promessa do anuncio (ad_promise_keywords) aparecem no conteudo da LP. Se nao, sinalize incongruencia e sugira como alinhar.]
 
 *Se message_match nao existir, omita esta secao.*
+
+REGRA CRITICA PARA MESSAGE MATCH:
+Quando houver Mismatch (🔴), voce DEVE OBRIGATORIAMENTE fornecer solucoes praticas:
+1. **Nova Headline sugerida para o Anuncio**: Reescreva o titulo do anuncio usando palavras que existem na LP.
+2. **OU Nova Headline sugerida para a LP**: Reescreva a headline da LP para refletir a promessa do anuncio.
+3. **Palavras-chave em comum**: liste quais termos devem aparecer em AMBOS para gerar coerencia.
+NUNCA diga apenas "as promessas nao estao alinhadas" sem dar a solucao concreta de como alinhar.
 
 ---
 

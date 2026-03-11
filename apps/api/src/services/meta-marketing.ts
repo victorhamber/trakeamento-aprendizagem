@@ -225,6 +225,7 @@ export class MetaMarketingService {
     'inline_link_clicks',
     'outbound_clicks',     // returned as array [{action_type, value}]
     'actions',
+    'action_values',       // returned as array [{action_type, value}] — purchase revenue
     'cost_per_action_type',
     'date_start',
     'date_stop',
