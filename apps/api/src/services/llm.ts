@@ -162,6 +162,7 @@ export class LlmService {
     '## Auditoria Tecnica',
     '## Diagnostico de 3 Camadas',
   ];
+  // Note: '## Retencao de VSL' is conditional (only when vsl_sessions > 0), so not in EXPECTED_SECTIONS
 
   private validateOutput(content: string): { valid: boolean; missing: string[]; truncated: boolean } {
     const missing = this.REQUIRED_SECTIONS.filter(
@@ -397,6 +398,25 @@ site.effective_dwell_ms = null ou 0 E site.effective_scroll_pct = null ou 0:
 
 meta.purchases = 0 com objetivo CADASTRO_GRUPO ou LEAD: NORMAL. Nao mencione.
 
+=== REGRA: RETENCAO DE VSL (VIDEO SALES LETTER) ===
+
+Se site.vsl_sessions > 0, analise a retencao do video:
+- site.avg_vsl_retention_pct = media percentual assistida.
+- site.vsl_milestones = quantos usuarios atingiram cada marco (25%, 50%, 75%, 100%).
+
+Interpretacao:
+- Retencao < 25%: Video muito longo, abertura fraca, ou audiencia errada.
+- Retencao 25-50%: O gancho funciona, mas o conteudo perde o publico no meio.
+- Retencao 50-75%: Bom engajamento, mas falta urgencia ou CTA claro antes da saida.
+- Retencao > 75%: Excelente. O video esta retendo a audiencia ate o pitch/CTA.
+
+Cruzamentos obrigatorios:
+- vsl_retention alto + dwell_time baixo = usuario assiste rapido e sai (sem scrollar/clicar apos o video)
+- vsl_retention baixo + dwell_time alto = usuario pula o video e le a pagina (video pode ser dispensavel)
+- vsl_retention baixo + bounce alto = video espanta o usuario
+
+Se site.vsl_sessions = 0 ou null, NAO mencione VSL na analise.
+
 === ESTRUTURA DE RESPOSTA (MARKDOWN OBRIGATORIO) ===
 
 ## Diagnostico Executivo
@@ -599,6 +619,26 @@ Para cada criativo:
 **Analise de Coerencia**: [Explicar se as palavras-chave da promessa do anuncio (ad_promise_keywords) aparecem no conteudo da LP. Se nao, sinalize incongruencia e sugira como alinhar.]
 
 *Se message_match nao existir, omita esta secao.*
+
+---
+
+## Retencao de VSL
+
+Se site.vsl_sessions > 0:
+
+**Video detectado**: Duracao media [vsl_duration_s]s | Retencao media: [avg_vsl_retention_pct]%
+
+| Marco | Sessoes que atingiram | % do Total | Diagnostico |
+|:---|---:|---:|:---|
+| 25% | X | X% | [Gancho funciona?] |
+| 50% | X | X% | [Conteudo reteve?] |
+| 75% | X | X% | [Chegou perto do CTA?] |
+| 100% | X | X% | [Assistiu ate o fim?] |
+
+**Drop-off principal**: [Entre X% e Y% — perda de Z% dos espectadores]
+**Recomendacao**: [Ajuste especifico baseado no ponto de abandono]
+
+*Se site.vsl_sessions = 0 ou null, omita esta secao inteiramente.*
 
 ---
 

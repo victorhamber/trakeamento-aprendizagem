@@ -79,6 +79,16 @@ router.get('/tracker.js', async (req, res) => {
   var webVitals    = { lcp: 0, fid: 0, cls: 0, fcp: 0 };
   var pageEngagementEventId = null;
 
+  // ─── VSL Retention State ──────────────────────────────────────────────────
+  var vslState = {
+    found: false,
+    duration: 0,       // seconds
+    currentTime: 0,    // seconds
+    maxPct: 0,         // highest % watched
+    milestones: { 25: false, 50: false, 75: false, 100: false },
+    videoElement: null  // reference to the tracked <video>
+  };
+
   // ─── Cookie helpers ───────────────────────────────────────────────────────
   function getCookie(name) {
     try {
@@ -676,6 +686,11 @@ router.get('/tracker.js', async (req, res) => {
       pixel_id_present: !!(window.TRACKING_CONFIG && window.TRACKING_CONFIG.metaPixelId),
       page_path:       location.pathname || '',
       page_title:      document.title   || '',
+      // VSL Retention fields
+      vsl_found:       vslState.found,
+      vsl_duration_s:  vslState.found ? Math.round(vslState.duration) : undefined,
+      vsl_max_pct:     vslState.found ? Math.round(vslState.maxPct) : undefined,
+      vsl_milestones:  vslState.found ? vslState.milestones : undefined,
     }, getDeviceInfo());
     return Object.assign(base, extra || {});
   }
@@ -1166,11 +1181,106 @@ router.get('/tracker.js', async (req, res) => {
     }
   }
 
+  // ─── VSL Retention Observer ──────────────────────────────────────────────
+  function observeVSL() {
+    try {
+      // Skip if already tracking a video
+      if (vslState.found) return;
+
+      function attachVideoListeners(video) {
+        if (!video || vslState.found) return;
+        // Wait until metadata is loaded to get duration
+        function onReady() {
+          if (!video.duration || !isFinite(video.duration) || video.duration < 5) return;
+          vslState.found = true;
+          vslState.duration = video.duration;
+          vslState.videoElement = video;
+          console.log('[TRK] VSL detected: ' + Math.round(video.duration) + 's');
+        }
+
+        if (video.readyState >= 1 && video.duration > 0) {
+          onReady();
+        } else {
+          video.addEventListener('loadedmetadata', onReady);
+        }
+
+        video.addEventListener('timeupdate', function() {
+          if (!vslState.found || !vslState.duration) return;
+          vslState.currentTime = video.currentTime;
+          var pct = (video.currentTime / vslState.duration) * 100;
+          if (pct > vslState.maxPct) vslState.maxPct = pct;
+
+          var thresholds = [25, 50, 75, 100];
+          for (var t = 0; t < thresholds.length; t++) {
+            var milestone = thresholds[t];
+            if (pct >= milestone && !vslState.milestones[milestone]) {
+              vslState.milestones[milestone] = true;
+              console.log('[TRK] VSL milestone: ' + milestone + '%');
+              track('VideoMilestone', {
+                milestone: milestone,
+                video_duration_s: Math.round(vslState.duration),
+                current_time_s: Math.round(video.currentTime),
+                page_path: location.pathname
+              });
+            }
+          }
+        });
+
+        video.addEventListener('ended', function() {
+          if (!vslState.found) return;
+          vslState.maxPct = 100;
+          if (!vslState.milestones[100]) {
+            vslState.milestones[100] = true;
+            console.log('[TRK] VSL milestone: 100% (ended)');
+            track('VideoMilestone', {
+              milestone: 100,
+              video_duration_s: Math.round(vslState.duration),
+              current_time_s: Math.round(vslState.duration),
+              page_path: location.pathname
+            });
+          }
+        });
+      }
+
+      // Scan existing <video> elements
+      var videos = document.querySelectorAll('video');
+      for (var i = 0; i < videos.length; i++) {
+        attachVideoListeners(videos[i]);
+        if (vslState.found) break;
+      }
+
+      // Watch for dynamically added videos (SPAs, lazy-load players)
+      if (window.MutationObserver && !vslState.found) {
+        var vslObserver = new MutationObserver(function(mutations) {
+          if (vslState.found) return;
+          for (var m = 0; m < mutations.length; m++) {
+            if (!mutations[m].addedNodes) continue;
+            for (var n = 0; n < mutations[m].addedNodes.length; n++) {
+              var node = mutations[m].addedNodes[n];
+              if (node.nodeName === 'VIDEO') {
+                attachVideoListeners(node);
+              } else if (node.querySelectorAll) {
+                var innerVideos = node.querySelectorAll('video');
+                for (var j = 0; j < innerVideos.length; j++) {
+                  attachVideoListeners(innerVideos[j]);
+                  if (vslState.found) break;
+                }
+              }
+              if (vslState.found) { vslObserver.disconnect(); return; }
+            }
+          }
+        });
+        vslObserver.observe(document.body, { childList: true, subtree: true });
+      }
+    } catch(_e) { console.error('[TRK] VSL observer error', _e); }
+  }
+
   // ─── Init ─────────────────────────────────────────────────────────────────
   function initTracker() {
     pageView();
     checkUrlRules();
     decorateCheckoutLinks();
+    observeVSL();
   }
 
   function bootstrap() {

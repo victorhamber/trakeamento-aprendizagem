@@ -624,7 +624,14 @@ export class DiagnosisService {
           WHEN (telemetry->>'dwell_time_ms')::numeric < 5000
             AND COALESCE((telemetry->>'max_scroll_pct')::numeric, 0) < 10
             AND COALESCE((telemetry->>'clicks_total')::int, 0) = 0
-          THEN 1 ELSE 0 END), 0)::bigint                                         AS bounces_est
+          THEN 1 ELSE 0 END), 0)::bigint                                         AS bounces_est,
+        -- VSL Retention metrics
+        AVG(NULLIF((telemetry->>'vsl_max_pct')::numeric, 0))::numeric            AS avg_vsl_retention_pct,
+        COUNT(CASE WHEN (telemetry->>'vsl_found')::text = 'true' THEN 1 END)::bigint AS vsl_sessions,
+        COUNT(CASE WHEN telemetry->'vsl_milestones'->>'25' = 'true' THEN 1 END)::bigint AS vsl_milestone_25,
+        COUNT(CASE WHEN telemetry->'vsl_milestones'->>'50' = 'true' THEN 1 END)::bigint AS vsl_milestone_50,
+        COUNT(CASE WHEN telemetry->'vsl_milestones'->>'75' = 'true' THEN 1 END)::bigint AS vsl_milestone_75,
+        COUNT(CASE WHEN telemetry->'vsl_milestones'->>'100' = 'true' THEN 1 END)::bigint AS vsl_milestone_100
       FROM web_events
       WHERE site_key = $1
         AND event_name = 'PageEngagement'
@@ -1134,6 +1141,15 @@ export class DiagnosisService {
         clicks_total: Number(se.clicks_total || 0),
         clicks_cta: Number(se.clicks_cta || 0),
         bounces_est: Number(se.bounces_est || 0),
+        // VSL Retention data
+        vsl_sessions: Number(se.vsl_sessions || 0),
+        avg_vsl_retention_pct: se.avg_vsl_retention_pct != null ? Math.round(Number(se.avg_vsl_retention_pct)) : null,
+        vsl_milestones: Number(se.vsl_sessions || 0) > 0 ? {
+          '25%': Number(se.vsl_milestone_25 || 0),
+          '50%': Number(se.vsl_milestone_50 || 0),
+          '75%': Number(se.vsl_milestone_75 || 0),
+          '100%': Number(se.vsl_milestone_100 || 0),
+        } : null,
         // Effective = best available value (CAPI preferred, PageEngagement as fallback)
         // null = no data from either source
         effective_dwell_ms: effectiveDwellMs,
