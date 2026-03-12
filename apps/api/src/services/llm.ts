@@ -9,7 +9,7 @@ interface LlmConfig {
 
 const DEFAULT_MODEL = 'gpt-4o';
 const DEFAULT_TEMPERATURE = 0.2;
-const DEFAULT_MAX_TOKENS = 8000;
+const DEFAULT_MAX_TOKENS = 12000;
 const REQUEST_TIMEOUT_MS = 90_000;
 const MAX_RETRY_ATTEMPTS = 2;
 const MAX_SNAPSHOT_CHARS = 60_000;
@@ -159,29 +159,57 @@ export class LlmService {
     '## Plano de Acao',
   ];
 
-  private readonly EXPECTED_SECTIONS = [
-    '## Vendas e ROAS',
-    '## Analise de Criativos',
-    '## Auditoria Tecnica',
-    '## Diagnostico de 3 Camadas',
-    '## Analise Avancada: Copy, Frameworks e 80/20',
-    '## Distribuicao Temporal',
-  ];
+  private getExpectedSections(snapshot: Record<string, unknown>): string[] {
+    const sections: string[] = [
+      '## Auditoria Tecnica',
+      '## Diagnostico de 3 Camadas',
+    ];
 
-  private validateOutput(content: string): { valid: boolean; missing: string[]; truncated: boolean } {
+    const meta = this.asRecord(snapshot.meta);
+    const sales = this.asRecord(snapshot.sales);
+    if (Number(meta.spend || 0) > 0) {
+      sections.push('## Vendas e ROAS');
+    }
+
+    const mb = this.asRecord(snapshot.meta_breakdown);
+    const ads = Array.isArray(mb.ads) ? mb.ads : [];
+    if (ads.length > 0) {
+      sections.push('## Analise de Criativos');
+    }
+
+    const uc = this.asRecord(snapshot.user_context);
+    const creatives = Array.isArray(uc.creatives) ? uc.creatives : [];
+    const lp = this.asRecord(snapshot.landing_page);
+    if (creatives.length > 0 || (lp.content && ads.length > 1)) {
+      sections.push('## Analise Avancada: Copy, Frameworks e 80/20');
+    }
+
+    const segments = this.asRecord(snapshot.segments);
+    const hourly = this.asRecord(segments.hourly);
+    const dow = this.asRecord(segments.day_of_week);
+    if (Object.keys(hourly).length > 0 || Object.keys(dow).length > 0) {
+      sections.push('## Distribuicao Temporal');
+    }
+
+    return sections;
+  }
+
+  private validateOutput(content: string, snapshot?: Record<string, unknown>): { valid: boolean; missing: string[]; missingExpected: string[]; truncated: boolean } {
     const missing = this.REQUIRED_SECTIONS.filter(
       section => !content.includes(section)
     );
-    // Check if output appears truncated (no natural ending)
     const trimmed = content.trimEnd();
     const truncated = !trimmed.endsWith('*') && !trimmed.endsWith('---') && !trimmed.endsWith('|')
       && !trimmed.endsWith('.') && !trimmed.endsWith(')')
       && trimmed.length > 2000;
 
-    return { valid: missing.length === 0, missing, truncated };
+    const expected = snapshot ? this.getExpectedSections(snapshot) : [];
+    const missingExpected = expected.filter(s => !content.includes(s));
+
+    return { valid: missing.length === 0, missing, missingExpected, truncated };
   }
 
-  private appendValidationWarnings(content: string, missing: string[], truncated: boolean): string {
+  private appendValidationWarnings(content: string, missing: string[], missingExpected: string[], truncated: boolean): string {
     const warnings: string[] = [];
     if (truncated) {
       warnings.push('> ⚠️ **Aviso:** Este relatório pode estar incompleto (resposta truncada pelo modelo).');
@@ -189,9 +217,8 @@ export class LlmService {
     if (missing.length > 0) {
       warnings.push(`> ⚠️ **Seções ausentes:** ${missing.join(', ')}. O modelo não seguiu a estrutura completa.`);
     }
-    const missingExpected = this.EXPECTED_SECTIONS.filter(s => !content.includes(s));
     if (missingExpected.length > 0) {
-      warnings.push(`> ℹ️ **Seções opcionais não incluídas:** ${missingExpected.join(', ')}.`);
+      warnings.push(`> ⚠️ **Seções esperadas não incluídas:** ${missingExpected.join(', ')}. Dados disponíveis não foram utilizados.`);
     }
     if (warnings.length === 0) return content;
     return content + '\n\n---\n\n' + warnings.join('\n\n');
@@ -205,27 +232,27 @@ export class LlmService {
       this.log('warn', 'No OpenAI key — returning fallback report');
       return this.fallbackReport(snapshot);
     }
-    const systemPrompt = this.buildSystemPrompt();
+    const snapRecord = snapshot && typeof snapshot === 'object' ? snapshot as Record<string, unknown> : {};
+    const systemPrompt = this.buildSystemPrompt(snapRecord);
     const snapshotJson = this.sanitizeSnapshot(snapshot);
-    const userContent = `Dados estruturados do periodo (JSON):\n\n${snapshotJson}`;
+    const userBriefing = this.buildUserBriefing(snapRecord);
+    const userContent = `${userBriefing}\n\n---\n\nDados completos (JSON):\n\n${snapshotJson}`;
     try {
       let content = await this.callOpenAI(apiKey, model, systemPrompt, userContent);
-      const validation = this.validateOutput(content);
+      const validation = this.validateOutput(content, snapRecord);
 
-      // If critical sections are missing, retry once with a corrective prompt
       if (!validation.valid) {
         this.log('warn', `Output missing sections: ${validation.missing.join(', ')}. Retrying...`);
         try {
           const retryPrompt = `Voce gerou um relatorio incompleto. As seguintes secoes OBRIGATORIAS estao faltando: ${validation.missing.join(', ')}.\n\nPor favor, gere o relatorio COMPLETO seguindo a estrutura exata do system prompt. Inclua TODAS as secoes obrigatorias.\n\nDados:\n\n${snapshotJson}`;
           content = await this.callOpenAI(apiKey, model, systemPrompt, retryPrompt);
-          const revalidation = this.validateOutput(content);
-          content = this.appendValidationWarnings(content, revalidation.missing, revalidation.truncated);
+          const revalidation = this.validateOutput(content, snapRecord);
+          content = this.appendValidationWarnings(content, revalidation.missing, revalidation.missingExpected, revalidation.truncated);
         } catch {
-          // If retry fails, use original content with warnings
-          content = this.appendValidationWarnings(content, validation.missing, validation.truncated);
+          content = this.appendValidationWarnings(content, validation.missing, validation.missingExpected, validation.truncated);
         }
       } else {
-        content = this.appendValidationWarnings(content, [], validation.truncated);
+        content = this.appendValidationWarnings(content, [], validation.missingExpected, validation.truncated);
       }
 
       return content;
@@ -235,191 +262,222 @@ export class LlmService {
     }
   }
 
-  private buildSystemPrompt(): string {
-    return `Voce e um Estrategista de Performance e CRO Senior especializado em Meta Ads.
-Sua missao e diagnosticar dados de performance como um consultor sênior (firme, direto, focado em vendas reais) e produzir um relatorio estruturado em Markdown. Seu tom de voz deve ser educativo mas assertivo, como um mentor do mercado. Nunca use linguagem corporativa burocratica; fale em termos praticos, de dor e conversao.
+  private buildUserBriefing(snap: Record<string, unknown>): string {
+    const meta = this.asRecord(snap.meta);
+    const capi = this.asRecord(snap.capi);
+    const site = this.asRecord(snap.site);
+    const sales = this.asRecord(snap.sales);
+    const derived = this.asRecord(snap.derived);
+    const trend = snap.trend ? this.asRecord(snap.trend) : null;
+    const uc = this.asRecord(snap.user_context);
+    const signals = Array.isArray(snap.signals) ? snap.signals as Record<string, unknown>[] : [];
+    const mb = this.asRecord(snap.meta_breakdown);
+    const ads = Array.isArray(mb.ads) ? mb.ads as Record<string, unknown>[] : [];
+    const adsets = Array.isArray(mb.adsets) ? mb.adsets as Record<string, unknown>[] : [];
 
-Sempre que analisar metricas, considere Benchmarks Brasileiros estimados: CTR (1-2%), CPC (R$0.50-2.50), CPM (R$15-40), Tx Conversao LP (1-3%), Taxa LP View (>70%).
+    const lines: string[] = [];
+    lines.push(`# Briefing Estruturado\n`);
+    lines.push(`**Periodo:** ${snap.period_days} dias (${snap.since} ate ${snap.until})`);
+    lines.push(`**Objetivo da campanha:** ${meta.objective || 'Nao informado'}`);
+    if (uc.stated_objective) lines.push(`**Objetivo declarado pelo usuario:** ${uc.stated_objective}`);
+    lines.push('');
 
-=== PASSO 0 — LEIA ANTES DE ESCREVER QUALQUER COISA ===
+    lines.push(`## Metricas Meta Ads`);
+    lines.push(`- Investimento: ${this.fmtMoney(meta.spend)}`);
+    lines.push(`- Resultados (evento otimizado): ${this.fmtInt(meta.results)} | CPA: ${this.fmtMoney(meta.cost_per_result)}`);
+    lines.push(`- Impressoes: ${this.fmtInt(meta.impressions)} | Alcance: ${this.fmtInt(meta.reach)} | Frequencia: ${this.fmt(meta.frequency_avg)}`);
+    lines.push(`- Cliques: ${this.fmtInt(meta.clicks)} | Link Clicks Unicos: ${this.fmtInt(meta.unique_link_clicks)}`);
+    lines.push(`- CTR: ${this.fmtPct(derived.ctr_calc_pct)} | CPC: ${this.fmtMoney(derived.cpc_calc)} | CPM: ${this.fmtMoney(derived.cpm_calc)}`);
+    lines.push(`- LP Views: ${this.fmtInt(meta.landing_page_views)} | Taxa LP View: ${this.fmtPct(meta.connect_rate_pct)}`);
+    lines.push(`- Hook Rate: ${meta.hook_rate_pct != null ? this.fmtPct(meta.hook_rate_pct) : 'N/A (sem video)'}`);
+    lines.push(`- Video 3s Views: ${this.fmtInt(meta.video_3s_views)}`);
+    lines.push(`- Leads: ${this.fmtInt(meta.leads)} | Checkouts: ${this.fmtInt(meta.initiates_checkout)} | Compras Meta: ${this.fmtInt(meta.purchases)}`);
+    lines.push('');
 
-Execute este checklist mentalmente:
+    lines.push(`## Comportamento no Site`);
+    lines.push(`- Page Views (CAPI): ${this.fmtInt(capi.page_views)}`);
+    lines.push(`- Load Time: ${site.effective_load_ms != null ? this.fmtMs(site.effective_load_ms) : 'Sem dados'}`);
+    lines.push(`- Dwell Time: ${site.effective_dwell_ms != null ? this.fmtMs(site.effective_dwell_ms) : 'Sem dados'}`);
+    lines.push(`- Scroll Medio: ${site.effective_scroll_pct != null ? this.fmtPct(site.effective_scroll_pct) : 'Sem dados'}`);
+    lines.push(`- Bounces Estimados: ${this.fmtInt(site.bounces_est)} de ${this.fmtInt(site.engagement_events)} sessoes`);
+    lines.push(`- Cliques CTA: ${this.fmtInt(site.clicks_cta)}`);
+    lines.push(`- Discrepancia Cliques→LP: ${derived.click_to_lp_discrepancy_pct != null ? this.fmtPct(derived.click_to_lp_discrepancy_pct) : 'N/A'}`);
+    lines.push('');
 
-1. Leia meta.objective — qual e o objetivo macro da campanha?
-2. Leia meta.results — quantos resultados foram gerados pelo evento de otimizacao?
-3. meta.results > 0? Se SIM, a campanha esta convertendo. NAO escreva "falta de conversoes" ou "problema no checkout".
-4. O evento de otimizacao pode ser DIFERENTE do objetivo macro.
-   Exemplo: objetivo=OUTCOME_SALES, otimizacao=CADASTRO_GRUPO — sucesso = cadastros, nao compras.
-   Julgue sempre pelo meta.results, nunca por meta.purchases se esse nao for o evento otimizado.
-5. utm_filters_skipped nao e null? Isso significa que filtros UTM com macros como {{campaign.name}} foram IGNORADOS.
-   Os dados de CAPI/site cobrem TODO o trafego do site, sem segmentacao por campanha.
-   Mencione isso na auditoria tecnica e considere ao interpretar os dados de comportamento.
-6. site.effective_dwell_ms e null ou 0 E site.effective_scroll_pct e null ou 0?
-   Significa que nao ha dados de comportamento (PageEngagement nao capturado).
-   Diga "Dados de comportamento nao capturados (verificar script)". NAO invente nada sobre o usuario.
-7. Confira sales.purchases e sales.revenue — esses sao dados REAIS do banco, nao do Meta.
-   Compare com meta.purchases para detectar discrepancias de rastreamento.
-8. Confira trend — se existir, compare metricas do periodo atual vs anterior para detectar tendencias.
+    lines.push(`## Vendas Reais (Banco)`);
+    lines.push(`- Compras: ${this.fmtInt(sales.purchases)} | Receita: ${this.fmtMoney(sales.revenue)}`);
+    lines.push(`- ROAS Real: ${sales.roas != null ? this.fmt(sales.roas) + 'x' : 'N/A'}`);
+    if (sales.meta_roas != null) lines.push(`- ROAS Meta (pixel): ${this.fmt(sales.meta_roas)}x (Receita Meta: ${this.fmtMoney(sales.meta_revenue)})`);
+    lines.push('');
 
-=== REGRA CRITICA: OBJETIVO vs EVENTO DE OTIMIZACAO ===
+    if (signals.length > 0) {
+      lines.push(`## Sinais Detectados (pre-calculados)`);
+      for (const sig of signals) {
+        lines.push(`- [${sig.area}] ${sig.signal}: ${sig.evidence}`);
+      }
+      lines.push('');
+    }
 
-meta.objective = objetivo macro (ex: OUTCOME_SALES, OUTCOME_LEADS)
-meta.results   = evento pelo qual o pixel foi otimizado (ex: CADASTRO_GRUPO, LEAD, PURCHASE)
+    if (ads.length > 0) {
+      lines.push(`## Top Anuncios (por gasto)`);
+      for (const ad of ads.slice(0, 8)) {
+        const a = ad as Record<string, unknown>;
+        const hookStr = a.hook_rate_pct != null ? this.fmtPct(a.hook_rate_pct) : 'N/A(img)';
+        lines.push(`- ${a.name}: Gasto=${this.fmtMoney(a.spend)} | Resultados=${this.fmtInt(a.results)} | CPA=${this.fmtMoney(a.cost_per_result)} | CTR=${this.fmtPct(a.ctr_calc_pct)} | Hook=${hookStr}`);
+      }
+      lines.push('');
+    }
 
-Estes podem ser DIFERENTES. O sucesso e SEMPRE medido por meta.results.
+    if (trend) {
+      lines.push(`## Tendencia vs Periodo Anterior`);
+      const tSpend = this.asRecord(trend.spend);
+      const tResults = this.asRecord(trend.results);
+      const tCPA = this.asRecord(trend.cpa);
+      const tCTR = this.asRecord(trend.ctr);
+      const tROAS = this.asRecord(trend.roas);
+      lines.push(`- Spend: ${this.fmtMoney(tSpend.previous)} → ${this.fmtMoney(tSpend.current)} (${tSpend.change_pct != null ? tSpend.change_pct + '%' : '—'})`);
+      lines.push(`- Results: ${this.fmtInt(tResults.previous)} → ${this.fmtInt(tResults.current)} (${tResults.change_pct != null ? tResults.change_pct + '%' : '—'})`);
+      lines.push(`- CPA: ${this.fmtMoney(tCPA.previous)} → ${this.fmtMoney(tCPA.current)} (${tCPA.change_pct != null ? tCPA.change_pct + '%' : '—'})`);
+      lines.push(`- CTR: ${this.fmtPct(tCTR.previous)} → ${this.fmtPct(tCTR.current)}`);
+      if (tROAS.current != null) lines.push(`- ROAS: ${this.fmt(tROAS.previous)}x → ${this.fmt(tROAS.current)}x`);
+      lines.push('');
+    }
 
-Tabela de interpretacao:
-| meta.results representa | Sucesso = | Ignorar completamente |
-|-------------------------|-----------|----------------------|
-| CADASTRO_GRUPO | results count + CPA | purchases, initiates_checkout |
-| LEAD / COMPLETE_REGISTRATION | results count + CPA | purchases |
-| PURCHASE | results count + ROAS | leads, contacts |
-| LINK_CLICKS | landing_page_views | purchases, leads |
+    return lines.join('\n');
+  }
 
-=== REGRA: ROAS E VENDAS REAIS ===
+  private buildSystemPrompt(snapshot?: Record<string, unknown>): string {
+    const snap = snapshot || {};
+    const meta = this.asRecord(snap.meta);
+    const site = this.asRecord(snap.site);
+    const sales = this.asRecord(snap.sales);
+    const uc = this.asRecord(snap.user_context);
+    const lp = this.asRecord(snap.landing_page);
+    const mb = this.asRecord(snap.meta_breakdown);
+    const segments = this.asRecord(snap.segments);
+    const ads = Array.isArray(mb.ads) ? mb.ads : [];
+    const creatives = Array.isArray(uc.creatives) ? uc.creatives : [];
+    const hasMessageMatch = !!snap.message_match;
+    const hasTrend = !!snap.trend;
+    const hasLPContent = typeof lp.content === 'string' && lp.content.length > 0;
+    const hasCreatives = creatives.length > 0;
+    const hasTemporalData = Object.keys(this.asRecord(segments.hourly)).length > 0 || Object.keys(this.asRecord(segments.day_of_week)).length > 0;
+    const hasMetaSpend = Number(meta.spend || 0) > 0;
 
-sales.purchases = compras REAIS registradas no banco de dados (fonte absoluta de verdade).
-sales.revenue = receita REAL.
-sales.roas = receita real / investimento Meta.
+    const sections: string[] = [];
 
-Interpretacao:
+    // ── Core identity ──
+    sections.push(`Voce e um Consultor Senior de Performance e CRO especializado em Meta Ads para o mercado brasileiro.
+Voce cobra caro pela sua consultoria. Cada relatorio que voce produz deve justificar esse valor: diagnostico preciso, linguagem direta, acoes concretas e nenhuma frase generica.
+
+Seu tom: firme, educativo, assertivo. Como um mentor que ja gastou milhoes em ads e sabe exatamente onde o dinheiro esta vazando. Nunca use linguagem corporativa vazia. Fale de dor, conversao e dinheiro.
+
+Benchmarks BR de referencia: CTR (1-2%), CPC (R$0.50-2.50), CPM (R$15-40), Tx Conversao LP (1-3%), Taxa LP View (>70%).`);
+
+    // ── Pre-analysis checklist ──
+    sections.push(`
+=== CHECKLIST PRE-ANALISE (execute mentalmente antes de escrever) ===
+
+1. meta.results = quantidade de conversoes do EVENTO OTIMIZADO. Este e o KPI principal.
+2. O evento de otimizacao PODE SER DIFERENTE do objetivo macro (meta.objective).
+   Ex: objetivo=OUTCOME_SALES mas otimizado para CADASTRO_GRUPO → sucesso = cadastros.
+   JULGUE SEMPRE por meta.results. Se results > 0, a campanha esta convertendo.
+3. sales.purchases e sales.revenue = dados REAIS do banco. Compare com meta.purchases para discrepancias.
+4. hook_rate_pct = null → anuncio de IMAGEM. NUNCA mencione hook rate para imagens.
+5. site.effective_dwell_ms = null → dados de comportamento NAO capturados. Diga isso. NAO invente.
+6. utm_filters_skipped != null → dados de CAPI/site cobrem TODO o trafego, nao so a campanha.`);
+
+    // ── ROAS interpretation ──
+    sections.push(`
+=== ROAS E VENDAS ===
+
 | ROAS | Status | Acao |
 |------|--------|------|
-| > 3.0 | Excelente | Escalar investimento |
-| 2.0 - 3.0 | Saudavel | Otimizar para crescer |
-| 1.0 - 2.0 | Marginal | Avaliar margem — pode nao ser lucrativo |
-| < 1.0 | Prejuizo | Acao urgente — investimento maior que receita |
-| null / N/A | Sem dados | Evento otimizado nao e Purchase, ou sem vendas no periodo |
+| > 3.0 | Excelente | Escalar |
+| 2.0-3.0 | Saudavel | Otimizar |
+| 1.0-2.0 | Marginal | Avaliar margem |
+| < 1.0 | Prejuizo | Acao urgente |
+| null | Sem dados | Sem vendas ou evento nao e Purchase |
 
-Se meta.purchases != sales.purchases, sinalize DISCREPANCIA. Possiveis causas:
-- Compra sem parametros de tracking (atribuicao perdida)
-- Webhook nao configurado para todas as plataformas
-- Compra atribuida a outra campanha
+Se meta.purchases != sales.purchases → sinalize DISCREPANCIA com possiveis causas.`);
 
-=== REGRA: HOOK RATE ===
+    // ── 3-layer diagnostic rules ──
+    sections.push(`
+=== DIAGNOSTICO EM 3 CAMADAS (parte MAIS VALIOSA) ===
 
-hook_rate_pct = null OU video_3s_views = 0 -> anuncio e IMAGEM. NAO mencione hook rate para esse anuncio.
-Nunca diga que um anuncio tem "hook ruim" se nao ha dados de video.
-Mencione hook rate apenas para anuncios onde video_3s_views > 0.
+Camada 1 — ORIGEM: CTR, Hook Rate, Frequencia, CPM
+Camada 2 — PONTE: connect_rate (LP Views / Link Clicks), discrepancia clique-LP, UTMs
+Camada 3 — DESTINO: Load Time, Dwell, Scroll, Bounce
 
-=== REGRA: LANDING PAGE ===
+CRUZAMENTO OBRIGATORIO:
+- CTR alto + Dwell baixo = Message Mismatch (promessa do ad ≠ pagina)
+- CTR alto + Dwell alto + 0 conversao = Oferta/CTA fraco
+- CTR baixo + Dwell alto = Criativo fraco, pagina boa → foco no anuncio`);
 
-Se landing_page.content existir (nao null), analise brevemente:
-- O titulo/headline esta claro e alinhado com o anuncio?
-- Existe call-to-action visivel?
-- O conteudo reforca a proposta de valor?
-Se landing_page.content for null, diga "Conteudo da LP nao disponivel para analise".
+    // ── Conditional: Creatives HSO ──
+    if (hasCreatives) {
+      sections.push(`
+=== ANALISE DE CRIATIVOS (HSO — Russell Brunson) ===
 
-=== REGRA: DIAGNOSTICO EM 3 CAMADAS ===
+Para CADA criativo em user_context.creatives, analise:
+- HOOK: O gancho para o scroll? Gera curiosidade imediata?
+- STORY: Constroi narrativa, empatia, prova social?
+- OFFER: CTA clara e irresistivel? Vende o CLIQUE (nao o produto)?
+De notas de 1-10 para cada. Forneca REESCRITA COMPLETA de copy para cada criativo.
+A IA NAO assiste videos — analise baseada em copy/descricao/metricas.`);
+    }
 
-Analise o funil em tres camadas cruzadas (esta e a parte MAIS VALIOSA do relatorio):
+    // ── Conditional: Message Match ──
+    if (hasMessageMatch) {
+      sections.push(`
+=== MESSAGE MATCH (Coerencia Anuncio ↔ Pagina) ===
 
-**Camada 1 — ORIGEM (Meta Ads):** Como o anuncio performa?
-- CTR, Hook Rate, Frequencia, CPM. O criativo esta atraindo cliques?
-- Se CTR alto + Hook Rate alto → anuncio esta bom. Problema esta DEPOIS do clique.
-- Se CTR baixo → problema esta NO criativo (copy, gancho ou segmentacao).
+Compare ad_headline vs lp_headline. Se incongruente (🔴 MISMATCH), OBRIGATORIAMENTE forneca:
+1. Nova headline para o anuncio OU para a LP
+2. Palavras-chave que devem aparecer em AMBOS
+NUNCA sinalize mismatch sem dar a solucao concreta.`);
+    }
 
-**Camada 2 — PONTE (Atribuicao UTM / Click-to-LP):**
-- connect_rate_pct (cliques que viraram LP Views). Se < 60%, ha perda entre o clique e a pagina.
-- click_to_lp_discrepancy_pct > 30% → possivel site lento, redirect, pixel falhando.
-- utm_filters_skipped → dados de UTM nao segmentaram corretamente.
+    // ── Conditional: Landing Page frameworks ──
+    if (hasLPContent) {
+      sections.push(`
+=== FRAMEWORKS DA LANDING PAGE ===
 
-**Camada 3 — DESTINO (Comportamento no Site):**
-- Load Time, Dwell Time, Scroll Depth, Bounce Rate estimado.
-- Se Dwell < 8s E Scroll < 20% → usuario nao leu a oferta. Problema na headline ou lentidao.
-- Se Dwell > 30s E Scroll > 60% MAS sem conversao → problema no CTA ou no preco.
+A. Nivel de Consciencia (Eugene Schwartz): Em qual dos 5 niveis a oferta opera? Comunicacao alinhada?
+B. Estrutura PAS (Dan Kennedy): A LP segue Problem-Agitation-Solution de forma visceral?
+Se falhar, sugira copy especifica usando PAS no Plano de Acao.`);
+    }
 
-CRUZAMENTO CRITICO (faça SEMPRE):
-- CTR alto + Dwell baixo = Promessa do anuncio NAO esta alinhada com a pagina (Message Mismatch).
-- CTR alto + Dwell alto + Sem conversao = Oferta fraca ou CTA ruim.
-- CTR baixo + Dwell alto = Criativo fraco mas pagina boa. Foco em melhorar anuncio.
+    // ── Conditional: Pareto ──
+    if (ads.length > 1) {
+      sections.push(`
+=== PARETO 80/20 (Perry Marshall) ===
 
-=== REGRA: MESSAGE MATCH (COERENCIA ANUNCIO vs PAGINA) ===
+Identifique quais 20% dos anuncios/adsets geram 80% dos resultados.
+Identifique quais sao os "sanguessugas" gastando sem converter.
+Recomende: CORTAR os perdedores, REALOCAR para os vencedores. Com numeros concretos.`);
+    }
 
-Se message_match existir no snapshot:
+    // ── Conditional: Trend ──
+    if (hasTrend) {
+      sections.push(`
+=== TENDENCIA ===
 
-1. message_match.lp_headline = primeira frase proeminente da LP.
-2. message_match.creatives_vs_lp = array com ad_headline e ad_promise_keywords de cada criativo.
+Compare periodo atual vs anterior. Use setas: ↑ (melhora), ↓ (piora), → (estavel, < 5%).
+Destaque se CPA esta piorando, CTR caindo (fadiga), ou ROAS deteriorando.`);
+    }
 
-Para CADA criativo, compare:
-- O ad_headline promete o mesmo que o lp_headline entrega?
-- As ad_promise_keywords aparecem no conteudo da LP (landing_page.content)?
-- Se ha INCONGRUENCIA (ex.: anuncio fala de "desconto" mas LP fala de "exclusividade"),
-  sinalize como 🔴 MESSAGE MISMATCH e explique o impacto no bounce rate.
-- Se ha CONGRUENCIA, sinalize como 🟢 MESSAGE MATCH e elogie.
+    // ── Conditional: User context ──
+    if (uc.stated_objective) {
+      sections.push(`
+=== CONTEXTO DO USUARIO ===
 
-=== REGRA OBRIGATORIA: FRAMEWORK DA LANDING PAGE E CONSCIENCIA ===
+O usuario declarou objetivo: "${uc.stated_objective}". Use como REFERENCIA PRINCIPAL.
+Se conflitar com meta.objective, priorize o que o usuario declarou.`);
+    }
 
-Se landing_page.content existir, responda mentalmente:
-A. Nivel de Consciencia (Eugene Schwartz):
-   Identifique em qual dos 5 Niveis (Inconsciente, Consciente do Problema, Consciente da Solucao, Consciente do Produto, Totalmente Consciente) o funil esta focado. A oferta esta adequada a esse nivel?
-
-B. Estrutura PAS (Dan Kennedy):
-   A LP segue Problem-Agitation-Solution? A headline toca na DOR real? O corpo AGITA o problema antes de apresentar o produto como a UNICA SOLUCAO?
-
-Se a pagina falhar nestes frameworks, suas recomendacoes na Auditoria e no Plano de Acao DEVERAO sugerir copy específica usando PAS.
-
-Se message_match nao existir ou for null, omita esta analise.
-
-=== REGRA: CONTEXTO DO USUARIO ===
-
-Se user_context existir no snapshot:
-
-1. user_context.stated_objective: O usuario informou manualmente o objetivo real da campanha.
-   Use como REFERENCIA PRINCIPAL para avaliar sucesso. Se conflitar com meta.objective, priorize
-   o que o usuario declarou e mencione a divergencia.
-
-2. user_context.landing_page_url: URL da LP informada pelo usuario. Mais confiavel que auto-detect.
-
-3. user_context.creatives: Array de criativos com copy e descricao de midia.
-   OBRIGATORIO: Se user_context.creatives existir, voce DEVE analisar CADA criativo usando a estrutura HSO (Hook, Story, Offer - Russell Brunson).
-   Para cada criativo:
-   - HOOK: O gancho (headline ou 3s inciais do video) para o scroll e gera curiosidade imediata?
-   - STORY: A copy constroi narrativa, empatia, ou prova social validando a dor?
-   - OFFER: A chamada para acao (CTA) e clara, irresistivel e vende o clique (nao o produto)?
-   - De notas de 1-10 para Hook, Story e Offer e justifique falhas.
-   NUNCA omita esta analise quando creatives forem fornecidos.
-
-Se user_context nao existir, ignore esta regra completamente.
-
-=== REGRA OBRIGATORIA: 80/20 PARETO (PERRY MARSHALL) ===
-
-Ao olhar meta_breakdown (ads, adsets), aplique mentalmente a Regra 80/20:
-- Quais sao os exatos 20% de criativos/adsets que estao gerando 80% dos Resultados?
-- Quais sao os 80% de anuncios ou campanhas "sanguessugas" que gastam verba com CPA inflado ou sem conversoes?
-Voce DEVE destacar isso nas observacoes. Recomendacoes devem focar implacavelmente em cortar os perdedores e realocar pros 20% vencedores.
-
-=== REGRA: TENDENCIA (TREND) ===
-
-Se o objeto trend existir no snapshot, compare periodo atual vs anterior:
-- Spend subiu/desceu X%? Resultados acompanharam?
-- CPA melhorou ou piorou?
-- CTR esta subindo (criativo bom) ou caindo (fadiga)?
-- ROAS esta melhorando ou deteriorando?
-
-Use setas para indicar tendencia: ↑ (melhora), ↓ (piora), → (estavel, variacao < 5%).
-Se trend nao existir, omita a secao de tendencia.
-
-=== REGRA: DISTRIBUICAO TEMPORAL ===
-
-Se segments.hourly ou segments.day_of_week existirem com dados, analise:
-- Qual horario tem mais visitas? E o melhor horario para anunciar?
-- Quais dias da semana tem mais trafego? Ha oportunidade de ajustar orcamento?
-- Ha concentracao excessiva em um unico horario/dia?
-
-=== REGRA: DADOS AUSENTES ===
-
-capi.page_views = 0:
-  - Se utm_filters_skipped != null: filtros tinham macros, CAPI nao foi segmentado. Dados podem existir sem segmentacao.
-  - Se utm_filters_applied tem filtros: eventos nao tem esse UTM no custom_data (gap de tracking).
-  - NAO interprete como "ninguem visitou a pagina".
-
-site.effective_dwell_ms = null ou 0 E site.effective_scroll_pct = null ou 0:
-  - Evento PageEngagement nao capturado. Diga exatamente isso.
-  - NAO diga "usuarios nao interagem com a pagina".
-
-meta.purchases = 0 com objetivo CADASTRO_GRUPO ou LEAD: NORMAL. Nao mencione.
-
+    // ── Response structure ──
+    sections.push(`
 === ESTRUTURA DE RESPOSTA (MARKDOWN OBRIGATORIO) ===
 
 ## Diagnostico Executivo
@@ -428,240 +486,176 @@ meta.purchases = 0 com objetivo CADASTRO_GRUPO ou LEAD: NORMAL. Nao mencione.
 |---|---|
 | Status | Excelente / Estavel / Em Risco / Critico |
 | Objetivo | [meta.objective] |
-| Evento otimizado | [o que meta.results representa — ex: CADASTRO_GRUPO] |
-| Resultado | [meta.results] conversoes ao custo de [meta.cost_per_result] cada |
-| ROAS Real | [sales.roas]x. Se null E sales.meta_roas existir: "ROAS Meta: [meta_roas]x (receita reportada pelo pixel: R$[meta_revenue])". Se ambos null: "N/A — webhook nao configurado" |
-| Tendencia | [↑/↓/→] [resumo de 1 frase se trend existir, ou "Sem dados de comparacao"] |
-| Veredito | [1 frase direta sobre a saude da campanha] |
-| Principal Gargalo | [onde esta o problema, ou "Sem gargalo critico identificado"] |
-| Oportunidade | [alavanca mais facil para melhorar resultados] |
+| Evento otimizado | [o que meta.results representa] |
+| Resultado | [meta.results] conversoes ao custo de [CPA] cada |
+| ROAS Real | [sales.roas]x ou "N/A" com explicacao |
+| Tendencia | ↑/↓/→ + resumo (ou "Sem dados de comparacao") |
+| Veredito | 1 frase direta sobre a saude da campanha |
+| Principal Gargalo | Onde esta o problema (ou "Sem gargalo critico") |
+| Oportunidade | Alavanca mais facil para melhorar |
 
 ---
 
 ## Analise do Funil
 
-*(Funil adaptado ao objetivo: [user_context.stated_objective se existir, senao o evento otimizado])*
-
 | Etapa | Metrica | Valor | Status | Diagnostico |
 |:---|:---|:---|:---:|:---|
-| Atracao | CTR | X% | ok/alerta/critico | [1 linha com numero] |
-| Retencao criativo | Hook Rate | X% ou N/A (imagem) | ok/alerta/critico/sem dados | [1 linha ou "Anuncio de imagem — N/A"] |
-| Conexao | Taxa LP View | X% | ok/alerta/critico | [1 linha] |
-| Velocidade | Load time | [Use site.effective_load_ms]Xms ou Sem dados | ok/alerta/critico/sem dados | [1 linha] |
-| Interesse | Dwell Time | [Use site.effective_dwell_ms]Xms ou Sem dados | ok/alerta/critico/sem dados | [1 linha ou "Dados nao capturados"] |
-| Intencao | Scroll medio | [Use site.effective_scroll_pct]X% ou Sem dados | ok/alerta/critico/sem dados | [1 linha ou "Dados nao capturados"] |
-| Conversao | CPA | R$X | ok/alerta/critico | [baseado no evento otimizado] |
+| Atracao | CTR | X% | ok/alerta/critico | [analise] |
+| Retencao criativo | Hook Rate | X% ou N/A (imagem) | — | [analise] |
+| Conexao | Taxa LP View | X% | — | [analise] |
+| Velocidade | Load time | Xms ou Sem dados | — | [analise] |
+| Interesse | Dwell Time | Xms ou Sem dados | — | [analise] |
+| Intencao | Scroll medio | X% ou Sem dados | — | [analise] |
+| Conversao | CPA | R$X | — | [baseado no evento otimizado] |
 
-**Insight:** [comentario analitico de 2 linhas sobre o padrao do funil]
+**Insight:** [2 linhas sobre o padrao do funil]`);
 
+    if (hasMetaSpend) {
+      sections.push(`
 ---
 
 ## Vendas e ROAS
 
 | Fonte | Compras | Receita | ROAS |
 |:---|---:|---:|---:|
-| Meta (Pixel/CAPI) | [meta.purchases] | R$[sales.meta_revenue] ou — | [sales.meta_roas]x ou — |
+| Meta (Pixel/CAPI) | [meta.purchases] | — | — |
 | **Banco (real)** | **[sales.purchases]** | **R$[sales.revenue]** | **[sales.roas]x** |
-| Discrepancia | [diferenca] | — | — |
 
-*[Comentario sobre discrepancia se houver, ou "Dados consistentes."]*
+*Comente discrepancia ou ausencia de dados. Se webhook nao configurado, mencione.*`);
+    }
 
-Se sales.roas = null E sales.meta_roas != null:
-  - Escreva: "⚠️ ROAS calculado com dados do Pixel Meta (R$[meta_revenue]). Para ROAS real, configure o webhook de vendas."
-Se ambos null: "Webhook de vendas nao configurado e Pixel nao reportou valor. ROAS indisponivel."
-Se o evento otimizado NAO for Purchase, escreva: "Evento otimizado nao e Purchase — ROAS informativo apenas."
-
+    if (ads.length > 0) {
+      sections.push(`
 ---
 
 ## Analise de Criativos
 
 ### Performance por Anuncio (dados Meta)
 
-REGRA CRITICA PARA ESTA TABELA:
-Para cada ad em meta_breakdown.ads, verifique o campo hook_rate_pct desse ad ESPECIFICAMENTE:
-- hook_rate_pct != null E video_3s_views > 0 → mostre o valor (ex: "12.5%").
-- hook_rate_pct == null OU video_3s_views == 0 → escreva "N/A (imagem)". NAO invente valor.
-NUNCA mencione hook rate ruim/bom para anuncios de imagem. Isso e FACTUALMENTE ERRADO.
-
 | Anuncio | Resultados | Custo | CPA | CTR | Hook Rate | Diagnostico |
 |:---|---:|---:|---:|---:|---:|:---|
-| [nome] | X | R$X | R$X | X% | X% ou N/A (imagem) | [Vencedor/Otimizar/Fadiga] — [motivo curto] |
+| [nome] | X | R$X | R$X | X% | X% ou N/A(img) | [Vencedor/Otimizar/Fadiga] |
 
-*Nota: Hook Rate = video_3s_views/impressions. Apenas para anuncios de VIDEO.*
+*Hook Rate: so para VIDEO (video_3s_views > 0). N/A para imagem.*`);
+    }
 
+    if (hasCreatives) {
+      sections.push(`
 ### Avaliacao Qualitativa dos Criativos
 
-**OBRIGATORIO**: Se user_context.creatives existir, analise CADA um abaixo. NAO pule esta secao.
-
-**MUITO IMPORTANTE:** A IA NÃO assiste nem transcreve os vídeos. A análise do vídeo (se houver) baseia-se unicamente nas descrições, copys e métricas (como Hook Rate). Deixe isso claro se os dados do vídeo forem rasos.
-
-Para cada criativo em user_context.creatives:
+Para CADA criativo:
 
 #### 🏷️ [ad_name]
+**Copy Atual**: [analise critica]
+**Estrutura & Hook**: [avaliacao do gancho e CTA]
+**Nota de Potencial**: [X/10] — [justificativa]
 
-**Copy Atual**: [analise critica focada em clareza, objeções, gatilhos e adequação ao público]
-**Estrutura & Hook**: [avaliacao focada no gancho inicial (os primeiros 3s), elementos visuais descritos e CTA]
-**Nota de Potencial**: [X/10] — [justificativa em 1 frase curta]
-
-> **🔥 Sugestão Pronta de Copy (Reescrita)**:
-> - **Hook (Gancho)**: [Escreva 1 nova frase de impacto ou gancho visual]
-> - **Corpo**: [Reescreva o texto do anuncio sendo mais persuasivo e alinhado aos dados]
-> - **CTA**: [Escreva uma chamada para acao clara e urgente]
-
----
-
-*(Repita para cada criativo)*
+> **🔥 Sugestao Pronta de Copy (Reescrita)**:
+> - **Hook**: [nova frase de impacto]
+> - **Corpo**: [reescrita persuasiva]
+> - **CTA**: [chamada urgente]
 
 ### 🏆 Veredito dos Criativos
-[Qual criativo tem o melhor gancho/estrutura e qual deve ter maior alocação de verba]
+[Qual tem melhor estrutura e deve receber mais verba]`);
+    }
 
+    if (hasTrend) {
+      sections.push(`
 ---
 
-## Tendência
+## Tendencia
 
-| Metrica | Periodo Anterior | Periodo Atual | Variacao | Tendencia |
+| Metrica | Anterior | Atual | Variacao | Tendencia |
 |:---|---:|---:|---:|:---:|
-| Spend | R$X | R$X | +X% | ↑/↓/→ |
-| Results | X | X | +X% | ↑/↓/→ |
-| CPA | R$X | R$X | +X% | ↑/↓/→ |
-| CTR | X% | X% | +X% | ↑/↓/→ |
-| ROAS Real | Xx | Xx | +X% | ↑/↓/→ |
+| Spend/Results/CPA/CTR/ROAS | — | — | — | ↑/↓/→ |`);
+    }
 
-*Se trend nao existir no snapshot, omita esta secao inteiramente.*
-
+    if (hasTemporalData) {
+      sections.push(`
 ---
 
 ## Distribuicao Temporal
+- Melhores horarios (top 3) e melhores dias
+- Recomendacao de ajuste de orcamento por horario/dia`);
+    }
 
-Se segments.hourly ou segments.day_of_week tiverem dados:
-- Melhores horarios para anunciar: [top 3 horarios]
-- Melhores dias: [top dias]
-- Recomendacao: [ajuste de orcamento por horario/dia se aplicavel]
-
-*Se nao houver dados temporais, omita esta secao.*
-
+    sections.push(`
 ---
 
 ## Auditoria Tecnica
 
 | Area | Item | Status | Detalhes |
 |:---|:---|:---:|:---|
-| Rastreamento | Filtros UTM | OK/Alert | [utm_filters_applied] |
-| Rastreamento | Macros nao resolvidas | OK/Alert | [Se resolvidas: mostrar valores resolvidos. Se ignoradas: listar quais e por que] |
-| Rastreamento | Discrepancia | X% | Cliques vs LP Views |
-| Rastreamento | Funil de Dados | OK/Alert | Meta: [impressions] impressoes, [clicks] cliques, [landing_page_views] LP Views | CAPI: [capi.page_views] PageViews |
-| Rastreamento | Vendas Meta vs Banco | OK/Alert | Meta: X vs Banco: X |
-| Comportamento | Load Time | Xms | [status] |
-| Comportamento | Scroll Medio | X% | [status] |
-| Comportamento | Dwell Time | Xms | [status] |
+| Rastreamento | UTMs, Macros, Discrepancia, Funil de dados, Vendas Meta vs Banco | OK/Alert | [dados] |
+| Comportamento | Load Time, Scroll, Dwell | OK/Alert | [dados] |`);
 
+    if (hasLPContent) {
+      sections.push(`
 ---
 
 ## Analise da Landing Page
+- Diagnostico de Estrutura e congruencia com anuncios
+- Analise Comportamental (Dwell/Scroll vs design)
+- **🔥 Otimizacao**: Nova Headline, Sub-Headline e Mudanca Estrutural sugeridas`);
+    }
 
-Se landing_page.content existir:
-- **URL Limitada**: [landing_page.url]
-- **Diagnostico de Estrutura**: [A Landing Page esta congruente com a Copy dos Anuncios? O formulário/compra está visivel?]
-- **Analise Comportamental**: [Se Dwell Time < 5s ou Scroll < 20%, o problema e a Headline ou lentidao. Explique o impacto do comportamento no design atual.]
-
-**🔥 Otimizacao Acionavel (Variaveis para Teste A/B)**:
-1. **Nova Headline Sugerida**: "[Escreva um titulo principal focado na dor do cliente]"
-2. **Nova Sub-Headline**: "[Escreva uma frase de suporte focada no beneficio]"
-3. **Mudanca de Estrutura**: [O que o cliente deve mudar visualmente? Ex: Subir o botao, reduzir texto, usar bullet points]
-
-*Se landing_page.content for null, escreva: "Conteudo da LP nao disponivel para analise aprofundada. Verifique se a URL enviada esta acessivel."*
-
+    sections.push(`
 ---
 
 ## Diagnostico de 3 Camadas
 
-*(Secao OBRIGATORIA — esta e a analise mais valiosa do relatorio)*
-
 ### 🔵 Camada 1 — Origem (Meta Ads)
-| Metrica | Valor | Veredicto |
-|:---|:---|:---|
-| CTR | X% | [Criativo atrai ou nao?] |
-| Hook Rate | X% ou N/A | [Retem atencao?] |
-| Frequencia | X | [Publico saturado? >3.5 = alerta] |
-| CPM | R$X | [Leilao competitivo?] |
-
-**Diagnostico da Origem**: [1-2 frases: o anuncio esta gerando demanda qualificada ou nao?]
+[CTR, Hook Rate, Frequencia, CPM + diagnostico]
 
 ### 🟡 Camada 2 — Ponte (Clique → Pagina)
-| Metrica | Valor | Veredicto |
-|:---|:---|:---|
-| Taxa LP View | X% | [Quantos cliques chegam?] |
-| Discrepancia Clique-LP | X% | [Perda entre clique e carregamento] |
-| UTMs | [aplicados/ignorados] | [Atribuicao confiavel?] |
+[Taxa LP View, Discrepancia, UTMs + diagnostico]
 
-**Diagnostico da Ponte**: [1-2 frases: ha perda significativa entre o clique e a pagina?]
-
-### 🟢 Camada 3 — Destino (Comportamento no Site)
-| Metrica | Valor | Veredicto |
-|:---|:---|:---|
-| Load Time | Xms | [Site rapido ou lento?] |
-| Dwell Time | Xms | [Leu a oferta?] |
-| Scroll Depth | X% | [Consumiu o conteudo?] |
-| Bounce Est | X% | [Rejeitou rapido?] |
-
-**Diagnostico do Destino**: [1-2 frases: a pagina esta convertendo o trafego recebido? Segue os frameworks PAS e Schwartz?]
+### 🟢 Camada 3 — Destino (Comportamento)
+[Load, Dwell, Scroll, Bounce + diagnostico]
 
 ### 🔗 Cruzamento das 3 Camadas
-[Analise cruzada obrigatoria: compare as 3 camadas para identificar EXATAMENTE onde esta o gargalo.]
-[Use o padrao: "CTR [alto/baixo] + Dwell [alto/baixo] + Conversao [sim/nao] = [diagnostico preciso]"]
-[Exemplo: "CTR de 2.3% (bom) + Dwell de 4s (ruim) = Promessa do anuncio nao esta alinhada com a pagina"]
+[Analise cruzada: "CTR [X] + Dwell [X] + Conversao [X] = [diagnostico preciso]"]`);
 
+    if (hasMessageMatch) {
+      sections.push(`
 ---
 
-## Message Match (Coerencia Anuncio ↔ Pagina)
-
-Se message_match existir no snapshot:
-
-Para cada criativo:
-| Criativo | Promessa do Anuncio | Headline da LP | Veredicto |
+## Message Match
+| Criativo | Promessa | Headline LP | Veredicto |
 |:---|:---|:---|:---:|
-| [ad_name] | "[ad_headline resumido]" | "[lp_headline resumido]" | 🟢 Match / 🔴 Mismatch |
+[Para cada criativo + analise de coerencia + solucoes se mismatch]`);
+    }
 
-**Analise de Coerencia**: [Explicar se as palavras-chave da promessa do anuncio (ad_promise_keywords) aparecem no conteudo da LP. Se nao, sinalize incongruencia e sugira como alinhar.]
-
-*Se message_match nao existir, omita esta secao.*
-
-REGRA CRITICA PARA MESSAGE MATCH:
-Quando houver Mismatch (🔴), voce DEVE OBRIGATORIAMENTE fornecer solucoes praticas:
-1. **Nova Headline sugerida para o Anuncio**: Reescreva o titulo do anuncio usando palavras que existem na LP.
-2. **OU Nova Headline sugerida para a LP**: Reescreva a headline da LP para refletir a promessa do anuncio.
-3. **Palavras-chave em comum**: liste quais termos devem aparecer em AMBOS para gerar coerencia.
-NUNCA diga apenas "as promessas nao estao alinhadas" sem dar a solucao concreta de como alinhar.
+    if ((hasCreatives || hasLPContent) && ads.length > 1) {
+      sections.push(`
+---
 
 ## Analise Avancada: Copy, Frameworks e 80/20
+1. **Schwartz** (5 niveis de consciencia)
+2. **PAS** (Problem-Agitation-Solution)
+3. **Pareto 80/20** (20% que gera 80% + sanguessugas para cortar)`);
+    }
 
-**1. Nivel de Consciencia do Funil (Eugene Schwartz)**:
-[Se as URls/LP/Ads foram informados, aponte em qual dos 5 niveis de consciencia a oferta opera e se a comunicação está alinhada.]
-
-**2. Diagnostico PAS (Problem, Agitation, Solution)**:
-[A Landing Page utiliza PAS de forma visceral? Qual dor real ta faltando agitar? De exemplos práticos.]
-
-**3. Lei de Pareto (80/20)**:
-[Identifique na tabela de Anuncios ou Conjuntos exatamente quais sao os 20% que trazem 80% do ROI, e quais sao os sanguessugas consumindo orcamento (e quando economizariamos pausando eles).]
+    sections.push(`
+---
 
 ## Plano de Acao 100% Pratico
 
-(Nao faca recomendacoes vagas. Seja direto, fornecendo o "O Que Fazer", o "Por Que", e uma "Melhoria Escrita" quando se tratar de copy).
-
-| Prazo | Acao OBRIGATORIA (O Que Fazer / Métrica Alvo) | Como Implementar / Referência Escrita |
+| Prazo | Acao (O Que + Metrica Alvo) | Como Implementar |
 |:---|:---|:---|
-| **Hoje (Cortar Sangramento)** | [ex: Pausar Anúncio X, que tem CPA de R$80 e 0 vendas / Meta: Cortar R$Y perdidos dia] | [ex: Desligar o anuncio no BM. A meta de CPA alvo ideal e de MAX R$35 para ser 80/20] |
-| **Esta Semana (Alavanca HSO/PAS)** | [ex: Ajustar Hook do Anuncio Y / Meta: Subir o CTR de 0.8% p/ 2.5%] | [ex: Trocar de: "Venha conhecer nosso plano" Para: "Cansado de tentar X e perder Y?"] |
-| **Proximo Ciclo (Estrategia)** | [mudanca estrategica] | [Acao clara de reestruturacao] |
+| **Hoje** | [cortar sangramento — ex: pausar anuncio X] | [passo a passo com numeros] |
+| **Esta Semana** | [alavanca HSO/PAS — ex: nova copy] | [antes/depois concreto] |
+| **Proximo Ciclo** | [mudanca estrategica] | [reestruturacao clara] |
 
-### ✅ Checklist Final de Execução
-[Resuma todas as acoes acima em uma unica checklist final com boxes. Exemplo:]
-- [ ] Pausar o anuncio "X" no Gerenciador de Anuncios.
-- [ ] Trocar a headline da Landing Page para "Nova Headline".
-- [ ] Ajustar orcamento para focar nas terca-feiras às 19h.
+### ✅ Checklist Final
+- [ ] [Acao 1]
+- [ ] [Acao 2]
+- [ ] [Acao 3]
 
 ---
-*Diagnostico gerado por Analista IA (Frameworks: PAS, HSO, Pareto, Schwartz) — Meta Ads + CAPI + DB.*`;
+*Diagnostico gerado por Analista IA (Frameworks: PAS, HSO, Pareto, Schwartz) — Meta Ads + CAPI + DB.*`);
+
+    return sections.join('\n');
   }
 
   private fallbackReport(snapshot: unknown): string {

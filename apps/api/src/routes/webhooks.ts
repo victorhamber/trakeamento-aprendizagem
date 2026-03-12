@@ -44,7 +44,8 @@ const normalizeStatus = (rawStatus: unknown) => {
 // â”€â”€â”€ Core Ingestion Engine for all Webhooks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function processPurchaseWebhook({
   siteKey, payload, email, phone, firstName, lastName, city, state, zip, country, dob,
-  fbp, fbc, externalId, clientIp, clientUa, value, currency, status, orderId, platform, contentName
+  fbp, fbc, externalId, clientIp, clientUa, value, currency, status, orderId, platform, contentName,
+  purchaseTimestamp,
 }: any) {
   const { finalStatus, isApproved } = normalizeStatus(status);
   console.log(`[Webhook] processPurchaseWebhook called: value=${value} currency=${currency} status=${finalStatus} orderId=${orderId} platform=${platform} siteKey=${siteKey}`);
@@ -122,10 +123,14 @@ async function processPurchaseWebhook({
   if (sckRaw) payload._source_token = sckRaw;
   if (enriched) payload._enrichment_source = 'db_history';
 
-  // Build CAPI Payload for Debug & Future Use (even if not approved yet)
+  // Use native purchase timestamp when available, fallback to now
+  const eventTimeSec = purchaseTimestamp
+    ? Math.floor(new Date(purchaseTimestamp).getTime() / 1000) || Math.floor(Date.now() / 1000)
+    : Math.floor(Date.now() / 1000);
+
   const capiPayload: any = {
     event_name: 'Purchase',
-    event_time: Math.floor(Date.now() / 1000),
+    event_time: eventTimeSec,
     event_id: `purchase_${orderId}`,
     event_source_url: payload.checkout_url || '',
     user_data: {
@@ -175,6 +180,60 @@ async function processPurchaseWebhook({
 
   // Inject Debug Info into Payload (saved to DB for UI inspection)
   payload._capi_debug = capiPayload;
+
+  // Enrichment audit trail for debugging match quality
+  payload._match_quality = {
+    has_email: !!email,
+    has_phone: !!phone,
+    has_fbp: !!mergedFbp,
+    has_fbc: !!mergedFbc,
+    has_external_id: !!mergedExternalId,
+    has_ip: !!mergedIp,
+    has_ua: !!mergedUa,
+    has_utms: !!utmSource,
+    enrichment_used: !!enriched?.fbp || !!enriched?.clientIp,
+    fbp_source: finalFbp ? 'webhook' : enriched?.fbp ? 'db_enrichment' : 'none',
+    fbc_source: finalFbc ? 'webhook' : enriched?.fbc ? 'db_enrichment' : 'none',
+    ip_source: clientIp ? 'webhook' : enriched?.clientIp ? 'db_enrichment' : 'none',
+    event_time_source: purchaseTimestamp ? 'platform_native' : 'server_now',
+  };
+
+  // Update site_visitors with buyer data (so future lookups can find this person)
+  if (dbEmailHash || mergedFbp) {
+    const visitorExtId = mergedExternalId ? CapiService.hash(String(mergedExternalId)) : (dbEmailHash || `buyer_${orderId}`);
+    const phoneHash = phone ? CapiService.hash((() => {
+      let p = phone.replace(/[^0-9]/g, '');
+      if (p.length <= 11) p = '55' + p;
+      return p;
+    })()) : null;
+
+    pool.query(`
+      INSERT INTO site_visitors (
+        site_key, external_id, fbc, fbp, email_hash, phone_hash,
+        first_name_hash, last_name_hash, last_traffic_source,
+        total_events, last_event_name, last_ip, last_user_agent
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,1,'Purchase',$10,$11)
+      ON CONFLICT (site_key, external_id) DO UPDATE SET
+        fbc = COALESCE(EXCLUDED.fbc, site_visitors.fbc),
+        fbp = COALESCE(EXCLUDED.fbp, site_visitors.fbp),
+        email_hash = COALESCE(EXCLUDED.email_hash, site_visitors.email_hash),
+        phone_hash = COALESCE(EXCLUDED.phone_hash, site_visitors.phone_hash),
+        first_name_hash = COALESCE(EXCLUDED.first_name_hash, site_visitors.first_name_hash),
+        last_name_hash = COALESCE(EXCLUDED.last_name_hash, site_visitors.last_name_hash),
+        last_traffic_source = COALESCE(EXCLUDED.last_traffic_source, site_visitors.last_traffic_source),
+        last_event_name = 'Purchase',
+        last_ip = COALESCE(EXCLUDED.last_ip, site_visitors.last_ip),
+        last_user_agent = COALESCE(EXCLUDED.last_user_agent, site_visitors.last_user_agent),
+        total_events = site_visitors.total_events + 1,
+        last_seen_at = NOW()
+    `, [
+      siteKey, visitorExtId, mergedFbc, mergedFbp, dbEmailHash, phoneHash,
+      firstName ? CapiService.hash(firstName.toLowerCase()) : null,
+      lastName ? CapiService.hash(lastName.toLowerCase()) : null,
+      utmSource ? `utm_source=${utmSource}${utmMedium ? '&utm_medium=' + utmMedium : ''}${utmCampaign ? '&utm_campaign=' + utmCampaign : ''}` : null,
+      mergedIp, mergedUa,
+    ]).catch(err => console.error('[Webhook] site_visitors UPSERT error:', err));
+  }
 
   if (isApproved) {
     const client = await pool.connect();
@@ -301,6 +360,7 @@ router.post('/purchase', async (req, res) => {
   // Multi-platform Parsers (Hotmart, Kiwify, Eduzz, Generic)
   let platform = 'generic';
   let email, firstName, lastName, phone, value, currency, status, orderId, city, state, zip, country, dob, contentName;
+  let purchaseTimestamp: string | undefined;
 
   if (payload.hottok || payload.product?.id || payload.buyer?.email) {
     platform = 'hotmart';
@@ -317,6 +377,7 @@ router.post('/purchase', async (req, res) => {
     zip = payload.buyer?.address?.zipCode || payload.buyer?.address?.zip_code;
     country = payload.buyer?.address?.country || payload.buyer?.address?.country_iso;
     contentName = payload.product?.name;
+    purchaseTimestamp = payload.purchase?.approved_date || payload.purchase?.order_date || payload.creation_date;
   } else if (payload.webhook_event_type || payload.Customer) {
     platform = 'kiwify';
     email = payload.Customer?.email || payload.email;
@@ -334,6 +395,7 @@ router.post('/purchase', async (req, res) => {
     zip = payload.Customer?.zipcode;
     country = 'BR'; // Kiwify is mainly BR
     contentName = payload.Product?.name || payload.product_name;
+    purchaseTimestamp = payload.order?.created_at || payload.created_at;
   } else if (payload.transacao_id || payload.cus_email || payload.eduzz_id) {
     platform = 'eduzz';
     email = payload.cus_email || payload.email;
@@ -349,6 +411,7 @@ router.post('/purchase', async (req, res) => {
     zip = payload.cus_cep;
     country = 'BR';
     contentName = payload.tit_nome || payload.product_name;
+    purchaseTimestamp = payload.transacao_data_criacao;
   } else {
     // Generic
     const pickStr = (keys: string[]): string | undefined => {
@@ -384,6 +447,7 @@ router.post('/purchase', async (req, res) => {
     status = payload.status;
     orderId = payload.id || payload.order_id || payload.transaction_id || payload.transaction || `webhook_${Date.now()}`;
     contentName = pickStr(['product_name', 'product', 'nome_produto', 'item_name', 'content_name']);
+    purchaseTimestamp = pickStr(['created_at', 'purchase_date', 'date', 'timestamp']);
   }
 
   const { finalStatus } = normalizeStatus(status);
@@ -393,7 +457,8 @@ router.post('/purchase', async (req, res) => {
     fbp, fbc, externalId: payload.user_id || payload.buyer?.id || payload.Customer?.id,
     clientIp: payload.client_ip_address || payload.ip || undefined,
     clientUa: payload.client_user_agent || payload.user_agent || undefined,
-    value, currency, status: finalStatus, orderId, platform, contentName
+    value, currency, status: finalStatus, orderId, platform, contentName,
+    purchaseTimestamp,
   });
 
   if (!result.success) return res.status(result.status || 500).json({ error: result.error });
@@ -480,7 +545,8 @@ router.post('/hotmart', async (req, res) => {
     clientIp: d.client_ip_address || payload.ip || undefined,
     clientUa: d.client_user_agent || payload.user_agent || undefined,
     value, currency, status, orderId, platform,
-    contentName: d.product?.name || payload.product?.name
+    contentName: d.product?.name || payload.product?.name,
+    purchaseTimestamp: purchase.approved_date || purchase.order_date || d.creation_date,
   });
 
   if (!result.success) return res.status(result.status || 500).json({ error: result.error });
@@ -544,7 +610,9 @@ router.post('/kiwify', async (req, res) => {
     fbp, fbc, externalId: payload.customer?.email,
     clientIp: payload.client_ip || undefined,
     clientUa: payload.client_user_agent || undefined,
-    value, currency, status, orderId, platform
+    value, currency, status, orderId, platform,
+    contentName: payload.Product?.name || payload.product_name,
+    purchaseTimestamp: payload.order?.created_at || payload.created_at,
   });
 
   if (!result.success) return res.status(result.status || 500).json({ error: result.error });
@@ -618,7 +686,9 @@ router.post('/custom/:id', async (req, res) => {
     externalId: getNested(payload, config.external_id),
     clientIp: getNested(payload, config.client_ip) || undefined,
     clientUa: getNested(payload, config.client_ua) || undefined,
-    value, currency, status, orderId, platform: 'custom'
+    value, currency, status, orderId, platform: 'custom',
+    contentName: getNested(payload, config.content_name) || getNested(payload, config.product_name),
+    purchaseTimestamp: getNested(payload, config.created_at) || getNested(payload, config.purchase_date),
   });
 
   if (!result.success) return res.status(result.status || 500).json({ error: result.error });
