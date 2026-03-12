@@ -990,7 +990,7 @@ export class DiagnosisService {
            FROM web_events
            WHERE site_key = $1 AND event_name = 'PageView'
              AND event_time >= $2 AND event_time < $3
-             AND (event_time < CURRENT_DATE OR $2::timestamp >= CURRENT_DATE)
+             AND (event_time < CURRENT_DATE OR $2::date >= CURRENT_DATE)
              ${utmWhere.clause}
            GROUP BY 1 ORDER BY 1`,
           lpParams
@@ -1000,7 +1000,7 @@ export class DiagnosisService {
            FROM web_events
            WHERE site_key = $1 AND event_name = 'PageView'
              AND event_time >= $2 AND event_time < $3
-             AND (event_time < CURRENT_DATE OR $2::timestamp >= CURRENT_DATE)
+             AND (event_time < CURRENT_DATE OR $2::date >= CURRENT_DATE)
              ${utmWhere.clause}
            GROUP BY 1 ORDER BY 1`,
           lpParams
