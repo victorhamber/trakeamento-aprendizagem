@@ -422,11 +422,11 @@ export class DiagnosisService {
         const cached = await pool.query(
           `SELECT * FROM recommendation_reports
            WHERE site_key = $1
-             AND COALESCE(campaign_id, '') = COALESCE($2, '')
-             AND COALESCE(date_preset, '') = $3
+             AND _ck_campaign = $2
+             AND _ck_preset = $3
              AND created_at > NOW() - INTERVAL '1 hour'
-           ORDER BY created_at DESC LIMIT 1`,
-          [siteKey, campaignId || null, cacheKey]
+           LIMIT 1`,
+          [siteKey, campaignId ?? '', cacheKey ?? '']
         );
         if (cached.rowCount && cached.rows[0]) {
           console.log(`[DiagnosisService] Cache hit — returning report from ${cached.rows[0].created_at}`);
@@ -1231,9 +1231,16 @@ export class DiagnosisService {
 
     const analysis = await llmService.generateAnalysisForSite(siteKey, snapshot);
 
+    const ckCampaign = campaignId ?? '';
+    const ckPreset = cacheKey ?? '';
+
     const reportResult = await pool.query(
-      `INSERT INTO recommendation_reports (site_key, campaign_id, date_preset, analysis_text) VALUES ($1, $2, $3, $4) RETURNING *`,
-      [siteKey, campaignId || null, cacheKey, analysis]
+      `INSERT INTO recommendation_reports (site_key, campaign_id, date_preset, analysis_text, _ck_campaign, _ck_preset)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (site_key, _ck_campaign, _ck_preset)
+       DO UPDATE SET analysis_text = EXCLUDED.analysis_text, campaign_id = EXCLUDED.campaign_id, date_preset = EXCLUDED.date_preset, created_at = NOW()
+       RETURNING *`,
+      [siteKey, campaignId || null, cacheKey, analysis, ckCampaign, ckPreset]
     );
 
     return {

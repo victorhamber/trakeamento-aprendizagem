@@ -131,7 +131,6 @@ const schemaSql = `
     user_data JSONB,
     custom_data JSONB,
     telemetry JSONB,
-    raw_payload JSONB,
     created_at TIMESTAMP DEFAULT NOW(),
     UNIQUE(site_key, event_id)
   );
@@ -200,7 +199,12 @@ const schemaSql = `
     id SERIAL PRIMARY KEY,
     site_key VARCHAR(50) NOT NULL,
     analysis_text TEXT,
-    created_at TIMESTAMP DEFAULT NOW()
+    campaign_id VARCHAR(50),
+    date_preset VARCHAR(50),
+    _ck_campaign VARCHAR(50) NOT NULL DEFAULT '',
+    _ck_preset VARCHAR(50) NOT NULL DEFAULT '',
+    created_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(site_key, _ck_campaign, _ck_preset)
   );
 
   CREATE TABLE IF NOT EXISTS capi_outbox (
@@ -365,6 +369,38 @@ export const ensureSchema = async (pool: Pool) => {
     // Cache columns for recommendation_reports
     await pool.query('ALTER TABLE recommendation_reports ADD COLUMN IF NOT EXISTS campaign_id VARCHAR(50)');
     await pool.query('ALTER TABLE recommendation_reports ADD COLUMN IF NOT EXISTS date_preset VARCHAR(50)');
+    await pool.query('ALTER TABLE recommendation_reports ADD COLUMN IF NOT EXISTS _ck_campaign VARCHAR(50) NOT NULL DEFAULT \'\'');
+    await pool.query('ALTER TABLE recommendation_reports ADD COLUMN IF NOT EXISTS _ck_preset VARCHAR(50) NOT NULL DEFAULT \'\'');
+
+    // recommendation_reports: one row per (site_key, campaign_id, date_preset) — backfill and dedupe before adding unique
+    try {
+      await pool.query(`
+        UPDATE recommendation_reports
+        SET _ck_campaign = COALESCE(campaign_id, ''), _ck_preset = COALESCE(date_preset, '')
+        WHERE _ck_campaign IS DISTINCT FROM COALESCE(campaign_id, '') OR _ck_preset IS DISTINCT FROM COALESCE(date_preset, '')
+      `);
+      await pool.query(`
+        DELETE FROM recommendation_reports a
+        USING recommendation_reports b
+        WHERE a.site_key = b.site_key AND a._ck_campaign = b._ck_campaign AND a._ck_preset = b._ck_preset AND a.id < b.id
+      `);
+      await pool.query(`
+        ALTER TABLE recommendation_reports DROP CONSTRAINT IF EXISTS recommendation_reports_site_key_ck_campaign_ck_preset_key;
+      `);
+      await pool.query(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_recommendation_reports_unique_context
+        ON recommendation_reports (site_key, _ck_campaign, _ck_preset);
+      `);
+    } catch (recErr) {
+      console.warn('recommendation_reports UPSERT migration skipped:', recErr);
+    }
+
+    // Drop raw_payload from web_events — data is already in user_data/custom_data/telemetry columns
+    try {
+      await pool.query('ALTER TABLE web_events DROP COLUMN IF EXISTS raw_payload');
+    } catch (rawErr) {
+      console.warn('web_events raw_payload drop skipped:', rawErr);
+    }
 
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS unique_clicks INTEGER');
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS link_clicks INTEGER');

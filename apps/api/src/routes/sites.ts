@@ -239,8 +239,8 @@ router.post('/:siteId/checkout-simulator/lead', requireAuth, async (req, res) =>
   await pool.query(
     `INSERT INTO web_events(
       site_key, event_id, event_name, event_time,
-      event_source_url, user_data, custom_data, telemetry, raw_payload
-    ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      event_source_url, user_data, custom_data, telemetry
+    ) VALUES($1, $2, $3, $4, $5, $6, $7, $8)
     ON CONFLICT(site_key, event_id) DO NOTHING`,
     [
       siteKey,
@@ -251,7 +251,6 @@ router.post('/:siteId/checkout-simulator/lead', requireAuth, async (req, res) =>
       userData,
       customData,
       null,
-      { event_name: 'Lead', event_id: eventId, event_time: eventTimeSec, event_source_url: eventSourceUrl, user_data: userData, custom_data: customData },
     ]
   );
 
@@ -563,7 +562,7 @@ router.get('/:siteId/event-rules', requireAuth, async (req, res) => {
   if (!site.rowCount) return res.status(404).json({ error: 'Site not found' });
 
   const result = await pool.query(
-    'SELECT * FROM site_url_rules WHERE site_id = $1 ORDER BY created_at DESC',
+    'SELECT id, site_id, rule_type, match_value, match_text, event_name, event_type, created_at FROM site_url_rules WHERE site_id = $1 ORDER BY created_at DESC',
     [siteId]
   );
   return res.json({ rules: result.rows });
@@ -688,7 +687,7 @@ router.get('/:siteId/saved-utms', requireAuth, async (req, res) => {
   if (!site.rowCount) return res.status(404).json({ error: 'Site not found' });
 
   const result = await pool.query(
-    'SELECT * FROM saved_utm_links WHERE site_id = $1 ORDER BY created_at DESC',
+    'SELECT id, site_id, name, url_base, utm_source, utm_medium, utm_campaign, utm_content, utm_term, click_id, created_at FROM saved_utm_links WHERE site_id = $1 ORDER BY created_at DESC',
     [siteId]
   );
   return res.json({ saved_utms: result.rows });
@@ -739,7 +738,7 @@ router.get('/:siteId/custom-webhooks', requireAuth, async (req, res) => {
   const site = await pool.query('SELECT site_key FROM sites WHERE id = $1 AND account_id = $2', [siteId, auth.accountId]);
   if (!site.rowCount) return res.status(404).json({ error: 'Site not found' });
 
-  const result = await pool.query('SELECT * FROM custom_webhooks WHERE site_id = $1 ORDER BY created_at DESC', [siteId]);
+  const result = await pool.query('SELECT id, site_id, site_key, name, secret_key, mapping_config, is_active, created_at, updated_at FROM custom_webhooks WHERE site_id = $1 ORDER BY created_at DESC', [siteId]);
   return res.json({ webhooks: result.rows });
 });
 

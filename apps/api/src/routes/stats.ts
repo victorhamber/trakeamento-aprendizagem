@@ -4,36 +4,6 @@ import { pool } from '../db/pool';
 
 const router = Router();
 
-router.get('/debug', async (req, res) => {
-  try {
-    const timeCheck = await pool.query(`
-      SELECT 
-        NOW() as db_now,
-        NOW() AT TIME ZONE 'UTC' as db_now_utc,
-        NOW() AT TIME ZONE 'America/Sao_Paulo' as db_now_sp,
-        current_setting('TIMEZONE') as db_timezone
-    `);
-
-    const evts = await pool.query(`
-      SELECT 
-        event_time, 
-        event_time AT TIME ZONE 'America/Sao_Paulo' as sp_time,
-        EXTRACT(HOUR FROM event_time) as h_raw,
-        EXTRACT(HOUR FROM (event_time AT TIME ZONE 'America/Sao_Paulo')) as h_sp
-      FROM web_events 
-      ORDER BY created_at DESC 
-      LIMIT 5
-    `);
-
-    res.json({
-      time_check: timeCheck.rows[0],
-      events_sample: evts.rows
-    });
-  } catch (e: any) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
 router.get('/overview', requireAuth, async (req, res) => {
   const auth = req.auth!;
   const period = (req.query.period as string) || 'today';
@@ -117,35 +87,6 @@ router.get('/overview', requireAuth, async (req, res) => {
   });
 });
 
-// ─── TEMPORARY DEBUG: remove after issue is resolved ────────────────────────
-router.get('/debug-purchases', requireAuth, async (req, res) => {
-  const auth = req.auth!;
-  const result = await pool.query(
-    `SELECT p.id, p.order_id, p.platform, p.amount, p.currency, p.status, p.created_at
-     FROM purchases p
-     JOIN sites s ON s.site_key = p.site_key
-     WHERE s.account_id = $1
-     ORDER BY p.created_at DESC
-     LIMIT 10`,
-    [auth.accountId]
-  );
-  return res.json({ purchases: result.rows });
-});
-
-router.get('/debug-events', requireAuth, async (req, res) => {
-  const auth = req.auth!;
-  const result = await pool.query(
-    `SELECT e.event_id, e.event_name, e.event_time, e.user_data, e.custom_data
-     FROM web_events e
-     JOIN sites s ON s.site_key = e.site_key
-     WHERE s.account_id = $1
-     ORDER BY e.event_time DESC
-     LIMIT 10`,
-    [auth.accountId]
-  );
-  return res.json({ events: result.rows });
-});
-
 router.get('/sites/:siteId/quality', requireAuth, async (req, res) => {
   const auth = req.auth!;
   const siteId = Number(req.params.siteId);
@@ -169,9 +110,10 @@ router.get('/sites/:siteId/quality', requireAuth, async (req, res) => {
   }
 
   try {
+    const QUALITY_SAMPLE_LIMIT = 50000;
     const query = `
       WITH combined_events AS (
-        SELECT user_data
+        (SELECT user_data
         FROM web_events
         WHERE site_key = $1 AND event_time >= $2 AND event_time <= $3
           AND (
@@ -180,12 +122,16 @@ router.get('/sites/:siteId/quality', requireAuth, async (req, res) => {
             (user_data->>'fn' IS NOT NULL AND user_data->>'fn' != '[]' AND user_data->>'fn' != '') OR 
             (user_data->>'ln' IS NOT NULL AND user_data->>'ln' != '[]' AND user_data->>'ln' != '')
           )
-          
+        ORDER BY event_time DESC
+        LIMIT ${QUALITY_SAMPLE_LIMIT})
+
         UNION ALL
-        
-        SELECT raw_payload->'_capi_debug'->'user_data' as user_data
+
+        (SELECT raw_payload->'_capi_debug'->'user_data' as user_data
         FROM purchases
         WHERE site_key = $1 AND created_at >= $2 AND created_at <= $3
+        ORDER BY created_at DESC
+        LIMIT ${QUALITY_SAMPLE_LIMIT})
       )
       SELECT 
         COUNT(*) as total_events,

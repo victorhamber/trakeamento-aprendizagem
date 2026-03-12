@@ -123,7 +123,7 @@ router.put('/accounts/:id', async (req, res) => {
 // GET /admin/plans - List all pricing plans
 router.get('/plans', async (req, res) => {
   try {
-    const { rows } = await pool.query('SELECT * FROM plans ORDER BY price ASC');
+    const { rows } = await pool.query('SELECT id, name, type, price, billing_cycle, max_sites, max_events, offer_codes, created_at FROM plans ORDER BY price ASC');
     res.json(rows);
   } catch (error) {
     res.status(500).json({ error: 'Failed to list plans' });

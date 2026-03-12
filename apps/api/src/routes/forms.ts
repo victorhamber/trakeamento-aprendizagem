@@ -25,7 +25,7 @@ router.get('/sites/:siteId/forms', requireAuth, async (req, res) => {
   const site = await pool.query('SELECT id FROM sites WHERE id = $1 AND account_id = $2', [siteId, auth.accountId]);
   if (!site.rowCount) return res.status(404).json({ error: 'Site not found' });
 
-  const result = await pool.query('SELECT * FROM site_forms WHERE site_id = $1 ORDER BY created_at DESC', [siteId]);
+  const result = await pool.query('SELECT id, public_id, site_id, name, config, created_at, updated_at FROM site_forms WHERE site_id = $1 ORDER BY created_at DESC', [siteId]);
   return res.json({ forms: result.rows });
 });
 
@@ -87,7 +87,7 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
   if (!publicId) return res.status(400).json({ error: 'Missing form ID' });
 
   try {
-    const formRes = await pool.query('SELECT * FROM site_forms WHERE public_id = $1', [publicId]);
+    const formRes = await pool.query('SELECT id, public_id, site_id, name, config, created_at, updated_at FROM site_forms WHERE public_id = $1', [publicId]);
     if (!formRes.rowCount) return res.status(404).json({ error: 'Form not found' });
     const form = formRes.rows[0];
     const config = form.config || {};

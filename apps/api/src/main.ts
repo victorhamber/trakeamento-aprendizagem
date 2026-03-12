@@ -120,12 +120,16 @@ app.get('/health', async (req, res) => {
 });
 
 // ─── Data Retention Garbage Collector ────────────────────────────────────────
-// Retention policy:
-//   web_events          → kept 30 days  (high volume, raw tracking data)
-//   capi_outbox         → kept 7 days   (short-lived delivery queue)
-//                         immediately remove entries that permanently failed (attempts >= 5)
-//   recommendation_reports → kept 90 days (lower volume, useful for trend analysis)
-//   purchases           → never deleted  (financial records, preserved indefinitely)
+// Policy (storage optimization, 30-day analytical window, no strict regulatory requirements):
+//   web_events             → 30 days   (high volume)
+//   capi_outbox            → 7 days    + remove permanently failed (attempts >= 5)
+//   recommendation_reports → no age delete; one row per (site_key, campaign_id, date_preset) via UPSERT
+//   purchases              → 12 months (commercial/financial history)
+//   meta_insights_daily     → 90 days   (aggregated metrics)
+//   site_visitors          → 90 days   (last_seen_at; limits growth)
+//   password_resets        → delete expired tokens
+//   notifications          → delete read notifications older than 90 days
+//   global_notifications   → delete expired (expires_at < NOW())
 async function runDataRetentionCleanup() {
   try {
     console.log('[GarbageCollector] Started retention cleanup routine...');
@@ -134,20 +138,40 @@ async function runDataRetentionCleanup() {
       `DELETE FROM web_events WHERE event_time < NOW() - INTERVAL '30 days'`
     );
 
-    // Remove permanently failed deliveries immediately; remove old entries after 7 days
     const resultOutbox = await pool.query(
       `DELETE FROM capi_outbox WHERE attempts >= 5 OR created_at < NOW() - INTERVAL '7 days'`
     );
 
-    const resultReports = await pool.query(
-      `DELETE FROM recommendation_reports WHERE created_at < NOW() - INTERVAL '90 days'`
+    const resultPurchases = await pool.query(
+      `DELETE FROM purchases WHERE created_at < NOW() - INTERVAL '12 months'`
+    );
+
+    const resultInsights = await pool.query(
+      `DELETE FROM meta_insights_daily WHERE date_start < CURRENT_DATE - INTERVAL '90 days'`
+    );
+
+    const resultVisitors = await pool.query(
+      `DELETE FROM site_visitors WHERE last_seen_at < NOW() - INTERVAL '90 days'`
+    );
+
+    const resultPasswordResets = await pool.query(
+      `DELETE FROM password_resets WHERE expires_at < NOW()`
+    );
+
+    const resultNotifications = await pool.query(
+      `DELETE FROM notifications WHERE is_read = true AND created_at < NOW() - INTERVAL '90 days'`
+    );
+
+    const resultGlobalNotif = await pool.query(
+      `DELETE FROM global_notifications WHERE expires_at IS NOT NULL AND expires_at < NOW()`
     );
 
     console.log(
       `[GarbageCollector] Cleanup finished. ` +
-      `Deleted ${resultEvents.rowCount} web_events, ` +
-      `${resultOutbox.rowCount} capi_outbox entries, ` +
-      `${resultReports.rowCount} recommendation_reports.`
+      `web_events=${resultEvents.rowCount} capi_outbox=${resultOutbox.rowCount} ` +
+      `purchases=${resultPurchases.rowCount} meta_insights_daily=${resultInsights.rowCount} ` +
+      `site_visitors=${resultVisitors.rowCount} password_resets=${resultPasswordResets.rowCount} ` +
+      `notifications=${resultNotifications.rowCount} global_notifications=${resultGlobalNotif.rowCount}`
     );
   } catch (e) {
     console.error('[GarbageCollector] Failed to execute cleanup query:', e);

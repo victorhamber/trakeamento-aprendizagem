@@ -406,86 +406,49 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
 
   // ─── 1. Deduplicação (In-Memory) ──────────────────────────────────
   if (isDuplicate(siteKey, eventId)) {
-    console.log(`[Ingest] Ignored duplicate event (memory): ${eventName} (${eventId})`);
     return res.status(202).json({ status: 'ignored_duplicate' });
   }
 
-  // ─── 1.5. Deduplicação (Banco de Dados - Robusta) ──────────────────
-  // Garante que se o servidor reiniciar, não perca o histórico recente
-  const existing = await pool.query(
-    'SELECT 1 FROM web_events WHERE site_key = $1 AND event_id = $2 LIMIT 1',
-    [siteKey, eventId]
-  );
-  if ((existing.rowCount || 0) > 0) {
-    console.log(`[Ingest] Ignored duplicate event (db): ${eventName} (${eventId})`);
-    return res.status(202).json({ status: 'ignored_duplicate' });
-  }
-
-  // ─── Atualiza último evento recebido (apenas para eventos não-duplicados) ──
-  await pool.query(
-    `UPDATE integrations_meta i
-     SET last_ingest_at = NOW(),
-  last_ingest_event_name = $1,
-  last_ingest_event_id = $2,
-  last_ingest_event_source_url = $3
-     FROM sites s
-     WHERE s.site_key = $4 AND i.site_id = s.id`,
-    [eventName, eventId, eventSourceUrl, siteKey]
-  );
-
+  // DB dedup is handled by ON CONFLICT — no need for a separate SELECT query
   try {
     let result;
     if (eventName === 'PageEngagement') {
-      const query = `
+      result = await pool.query(`
         INSERT INTO web_events (
           site_key, event_id, event_name, event_time, event_source_url,
-          user_data, custom_data, telemetry, raw_payload
+          user_data, custom_data, telemetry
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         ON CONFLICT (site_key, event_id)
         DO UPDATE SET
           telemetry = web_events.telemetry || EXCLUDED.telemetry,
-          event_time = EXCLUDED.event_time,
-          raw_payload = EXCLUDED.raw_payload
+          event_time = EXCLUDED.event_time
         RETURNING id
-      `;
-      result = await pool.query(query, [
-        siteKey,
-        eventId,
-        eventName,
-        new Date(eventTimeMs),
-        eventSourceUrl,
-        event.user_data ?? null,
-        event.custom_data ?? null,
-        event.telemetry ?? null,
-        event,
+      `, [
+        siteKey, eventId, eventName, new Date(eventTimeMs), eventSourceUrl,
+        event.user_data ?? null, event.custom_data ?? null, event.telemetry ?? null,
       ]);
     } else {
-      const query = `
-      INSERT INTO web_events (
-        site_key, event_id, event_name, event_time, event_source_url,
-        user_data, custom_data, telemetry, raw_payload
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-      ON CONFLICT(site_key, event_id) DO NOTHING
-      RETURNING id
-  `;
-
-      result = await pool.query(query, [
-        siteKey,
-        eventId,
-        eventName,
-        new Date(eventTimeMs),
-        eventSourceUrl,
-        event.user_data ?? null,
-        event.custom_data ?? null,
-        event.telemetry ?? null,
-        event,
+      result = await pool.query(`
+        INSERT INTO web_events (
+          site_key, event_id, event_name, event_time, event_source_url,
+          user_data, custom_data, telemetry
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        ON CONFLICT(site_key, event_id) DO NOTHING
+        RETURNING id
+      `, [
+        siteKey, eventId, eventName, new Date(eventTimeMs), eventSourceUrl,
+        event.user_data ?? null, event.custom_data ?? null, event.telemetry ?? null,
       ]);
     }
 
-    // ── 1.75. Atualizar ou Criar Perfil de Visitante (Agregação) ─────────
-    if ((result?.rowCount ?? 0) > 0) {
+    if ((result?.rowCount ?? 0) === 0) {
+      return res.status(202).json({ status: 'ignored_duplicate' });
+    }
+
+    // ── Visitor profile + integrations_meta update (parallel, non-blocking for response) ──
+    {
       const userData = event.user_data ?? {};
       const capiUser = buildCapiUserData(req, userData, siteKey, event.custom_data ?? {});
 
@@ -495,15 +458,15 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
       const ph = capiUser.ph;
       const fn = capiUser.fn;
       const ln = capiUser.ln;
-      // external_id from capiUser is an array of hashes, or undefined
       let extId = Array.isArray(capiUser.external_id) && capiUser.external_id.length > 0
         ? capiUser.external_id[0]
         : `anon_${eventId}`;
 
       const trafficSourceValue = buildTrafficSourceValue(event.custom_data);
 
-      try {
-        await pool.query(`
+      // Run visitor UPSERT and integrations_meta update in parallel
+      await Promise.all([
+        pool.query(`
           INSERT INTO site_visitors (
             site_key, external_id, fbc, fbp, email_hash, phone_hash, first_name_hash, last_name_hash, last_traffic_source, total_events, last_event_name, last_ip, last_user_agent
           ) VALUES (
@@ -524,10 +487,15 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
             last_seen_at = NOW()
         `, [
           siteKey, extId, fbc, fbp, em, ph, fn, ln, trafficSourceValue, eventName, capiUser.client_ip_address, capiUser.client_user_agent
-        ]);
-      } catch (err) {
-        console.error('[Ingest] Fallback User Profile UPSERT error:', err);
-      }
+        ]).catch(err => console.error('[Ingest] User Profile UPSERT error:', err)),
+
+        pool.query(
+          `UPDATE integrations_meta i
+           SET last_ingest_at = NOW(), last_ingest_event_name = $1, last_ingest_event_id = $2, last_ingest_event_source_url = $3
+           FROM sites s WHERE s.site_key = $4 AND i.site_id = s.id`,
+          [eventName, eventId, eventSourceUrl, siteKey]
+        ).catch(() => {}),
+      ]);
 
       // ── 2. Envio CAPI (assíncrono com retry) ─────────────────────────────
       // custom_data: campos padrão do Meta + dados de atribuição enriquecidos
@@ -638,7 +606,6 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
           external_id: Array.isArray(capiUser.external_id) ? capiUser.external_id[0] : capiUser.external_id
         }
       ).catch(err => console.error('[Ingest] GA4 error:', err));
-
     }
 
     return res.status(202).json({ status: 'received' });
@@ -656,96 +623,142 @@ router.post('/batch', cors(), ingestLimiter, async (req, res) => {
     return res.status(400).json({ error: 'Missing site key' });
   }
 
-  if (!Array.isArray(req.body)) {
+  let body = req.body;
+  if (typeof body === 'string') {
+    try { body = JSON.parse(body); } catch { return res.status(400).json({ error: 'Invalid JSON in text/plain body' }); }
+  }
+
+  if (!Array.isArray(body)) {
     return res.status(400).json({ error: 'Expected an array of events' });
   }
 
-  const results = [];
-  let successfulIngests = 0;
+  // ── Phase 1: Validate, dedup in-memory, and prepare all events ──
+  type PreparedEvent = {
+    event: IngestEvent;
+    eventId: string;
+    eventTimeSec: number;
+    eventTimeMs: number;
+    eventName: string;
+    eventSourceUrl: string;
+  };
 
-  for (const rawEvent of req.body) {
-    const parsed = IngestEventSchema.safeParse(rawEvent);
+  const prepared: PreparedEvent[] = [];
+  const results: Record<string, unknown>[] = [];
+  const indexMap: number[] = []; // maps prepared index → original body index
+
+  for (let i = 0; i < body.length; i++) {
+    const parsed = IngestEventSchema.safeParse(body[i]);
     if (!parsed.success) {
-      results.push({ status: 'error', details: parsed.error.flatten() });
+      results[i] = { status: 'error', details: parsed.error.flatten() };
       continue;
     }
     const event = parsed.data;
 
     if (event.telemetry?.is_bot === true) {
-      results.push({ status: 'ignored', reason: 'bot' });
+      results[i] = { status: 'ignored', reason: 'bot' };
       continue;
     }
 
     const engagement = computeEngagement(event);
     if (engagement) {
-      event.telemetry = {
-        ...event.telemetry,
-        engagement_score: engagement.score,
-        engagement_bucket: engagement.bucket,
-      };
+      event.telemetry = { ...event.telemetry, engagement_score: engagement.score, engagement_bucket: engagement.bucket };
     }
 
     const eventTimeSec = event.event_time ?? Math.floor(Date.now() / 1000);
     const eventTimeMs = eventTimeSec * 1000;
     const eventId = event.event_id || `evt_${eventTimeSec}_${Math.random().toString(36).slice(2, 8)}`;
-    const eventName = event.event_name;
-    const eventSourceUrl = event.event_source_url || '';
 
     if (isDuplicate(siteKey, eventId)) {
-      results.push({ status: 'duplicate', event_id: eventId });
+      results[i] = { status: 'duplicate', event_id: eventId };
       continue;
     }
 
-    try {
-      const query = `
-        INSERT INTO web_events(
-          site_key, event_id, event_name, event_time,
-          event_source_url, user_data, custom_data, telemetry, raw_payload
-        ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)
-        ON CONFLICT(site_key, event_id) DO NOTHING
-        RETURNING id
-      `;
+    prepared.push({
+      event,
+      eventId,
+      eventTimeSec,
+      eventTimeMs,
+      eventName: event.event_name,
+      eventSourceUrl: event.event_source_url || '',
+    });
+    indexMap.push(i);
+  }
 
-      const result = await pool.query(query, [
-        siteKey,
-        eventId,
-        eventName,
-        new Date(eventTimeMs),
-        eventSourceUrl,
-        event.user_data ?? null,
-        event.custom_data ?? null,
-        event.telemetry ?? null,
-        event,
-      ]);
+  if (prepared.length === 0) {
+    // Fill any remaining gaps
+    for (let i = 0; i < body.length; i++) { if (!results[i]) results[i] = { status: 'skipped' }; }
+    return res.status(202).json({ results });
+  }
 
-      if ((result.rowCount || 0) === 0) {
-        results.push({ status: 'duplicate', event_id: eventId });
-        continue;
+  try {
+    // ── Phase 2: Bulk INSERT via unnest ──
+    const siteKeys: string[] = [];
+    const eventIds: string[] = [];
+    const eventNames: string[] = [];
+    const eventTimes: Date[] = [];
+    const eventSourceUrls: string[] = [];
+    const userDatas: (object | null)[] = [];
+    const customDatas: (object | null)[] = [];
+    const telemetries: (object | null)[] = [];
+
+    for (const p of prepared) {
+      siteKeys.push(siteKey);
+      eventIds.push(p.eventId);
+      eventNames.push(p.eventName);
+      eventTimes.push(new Date(p.eventTimeMs));
+      eventSourceUrls.push(p.eventSourceUrl);
+      userDatas.push(p.event.user_data ?? null);
+      customDatas.push(p.event.custom_data ?? null);
+      telemetries.push(p.event.telemetry ?? null);
+    }
+
+    const bulkResult = await pool.query(`
+      INSERT INTO web_events (site_key, event_id, event_name, event_time, event_source_url, user_data, custom_data, telemetry)
+      SELECT * FROM unnest(
+        $1::varchar[], $2::varchar[], $3::varchar[], $4::timestamp[],
+        $5::text[], $6::jsonb[], $7::jsonb[], $8::jsonb[]
+      ) AS t(site_key, event_id, event_name, event_time, event_source_url, user_data, custom_data, telemetry)
+      ON CONFLICT(site_key, event_id) DO NOTHING
+      RETURNING event_id
+    `, [siteKeys, eventIds, eventNames, eventTimes, eventSourceUrls,
+      userDatas.map(d => d ? JSON.stringify(d) : null),
+      customDatas.map(d => d ? JSON.stringify(d) : null),
+      telemetries.map(d => d ? JSON.stringify(d) : null),
+    ]);
+
+    const insertedIds = new Set((bulkResult.rows as { event_id: string }[]).map(r => r.event_id));
+
+    // Mark results
+    for (let j = 0; j < prepared.length; j++) {
+      const origIdx = indexMap[j];
+      if (insertedIds.has(prepared[j].eventId)) {
+        results[origIdx] = { status: 'processed', event_id: prepared[j].eventId };
+      } else {
+        results[origIdx] = { status: 'duplicate', event_id: prepared[j].eventId };
       }
+    }
 
-      successfulIngests++;
+    // ── Phase 3: Fire-and-forget side effects for inserted events ──
+    const inserted = prepared.filter(p => insertedIds.has(p.eventId));
 
-      const capiUser = buildCapiUserData(req, event.user_data || {}, siteKey, event.custom_data ?? {});
+    if (inserted.length > 0) {
+      // Update integrations_meta once
+      pool.query(
+        `UPDATE integrations_meta i SET last_ingest_at = NOW() FROM sites s WHERE s.site_key = $1 AND i.site_id = s.id`,
+        [siteKey]
+      ).catch(() => {});
 
-      // ── site_visitors UPSERT (mesmo do endpoint principal) ──────────
-      const fbc = capiUser.fbc;
-      const fbp = capiUser.fbp;
-      const em = capiUser.em;
-      const ph = capiUser.ph;
-      const fn = capiUser.fn;
-      const ln = capiUser.ln;
-      let extId = Array.isArray(capiUser.external_id) && capiUser.external_id.length > 0
-        ? capiUser.external_id[0]
-        : `anon_${eventId}`;
-      const trafficSourceValue = buildTrafficSourceValue(event.custom_data);
+      // Visitor UPSERTs + CAPI + GA4 — all fire-and-forget per event
+      for (const p of inserted) {
+        const capiUser = buildCapiUserData(req, p.event.user_data || {}, siteKey, p.event.custom_data ?? {});
+        const extId = Array.isArray(capiUser.external_id) && capiUser.external_id.length > 0
+          ? capiUser.external_id[0] : `anon_${p.eventId}`;
+        const trafficSourceValue = buildTrafficSourceValue(p.event.custom_data);
 
-      try {
-        await pool.query(`
+        pool.query(`
           INSERT INTO site_visitors (
             site_key, external_id, fbc, fbp, email_hash, phone_hash, first_name_hash, last_name_hash, last_traffic_source, total_events, last_event_name, last_ip, last_user_agent
-          ) VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8, $9, 1, $10, $11, $12
-          )
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,1,$10,$11,$12)
           ON CONFLICT (site_key, external_id) DO UPDATE SET
             fbc = COALESCE(EXCLUDED.fbc, site_visitors.fbc),
             fbp = COALESCE(EXCLUDED.fbp, site_visitors.fbp),
@@ -760,102 +773,64 @@ router.post('/batch', cors(), ingestLimiter, async (req, res) => {
             total_events = site_visitors.total_events + 1,
             last_seen_at = NOW()
         `, [
-          siteKey, extId, fbc, fbp, em, ph, fn, ln, trafficSourceValue, eventName, capiUser.client_ip_address, capiUser.client_user_agent
-        ]);
-      } catch (err) {
-        console.error('[Ingest/Batch] User Profile UPSERT error:', err);
-      }
+          siteKey, extId, capiUser.fbc, capiUser.fbp, capiUser.em, capiUser.ph,
+          capiUser.fn, capiUser.ln, trafficSourceValue, p.eventName,
+          capiUser.client_ip_address, capiUser.client_user_agent,
+        ]).catch(err => console.error('[Ingest/Batch] User Profile UPSERT error:', err));
 
-      // ── Filtar custom_data para CAPI (mesma lógica do endpoint /events) ──
-      const cd = event.custom_data ?? {};
-      const tl = event.telemetry ?? {} as Record<string, unknown>;
-      const metaCustomData: Record<string, unknown> = {};
-
-      const metaCustomFields = [
-        'value', 'currency', 'content_name', 'content_category',
-        'content_ids', 'content_type', 'contents', 'num_items',
-        'order_id', 'predicted_ltv', 'search_string', 'status',
-        'delivery_category',
-      ];
-      for (const f of metaCustomFields) {
-        if (cd[f] !== undefined && cd[f] !== null && cd[f] !== '') {
-          if (f === 'value') {
-            const val = parseFloat(cd[f] as string);
-            if (!isNaN(val)) metaCustomData[f] = val;
-          } else {
-            metaCustomData[f] = cd[f];
+        // CAPI payload
+        const cd = p.event.custom_data ?? {};
+        const tl = p.event.telemetry ?? {} as Record<string, unknown>;
+        const metaCustomData: Record<string, unknown> = {};
+        const metaCustomFields = [
+          'value', 'currency', 'content_name', 'content_category',
+          'content_ids', 'content_type', 'contents', 'num_items',
+          'order_id', 'predicted_ltv', 'search_string', 'status', 'delivery_category',
+        ];
+        for (const f of metaCustomFields) {
+          if (cd[f] !== undefined && cd[f] !== null && cd[f] !== '') {
+            if (f === 'value') { const val = parseFloat(cd[f] as string); if (!isNaN(val)) metaCustomData[f] = val; }
+            else metaCustomData[f] = cd[f];
           }
         }
-      }
-      if (metaCustomData['value'] !== undefined) {
-        if (!metaCustomData['currency']) metaCustomData['currency'] = 'BRL';
-      } else {
-        delete metaCustomData['currency'];
-      }
-      if (!metaCustomData['content_name']) {
-        if (cd['page_title'] && cd['page_title'] !== '') metaCustomData['content_name'] = cd['page_title'];
-        else if (tl['page_title'] && tl['page_title'] !== '') metaCustomData['content_name'] = tl['page_title'];
-      }
-
-      const attributionFields: [string, unknown][] = [
-        ['utm_source', cd['utm_source'] || tl['utm_source']],
-        ['utm_medium', cd['utm_medium'] || tl['utm_medium']],
-        ['utm_campaign', cd['utm_campaign'] || tl['utm_campaign']],
-        ['utm_term', cd['utm_term'] || tl['utm_term']],
-        ['utm_content', cd['utm_content'] || tl['utm_content']],
-        ['page_path', cd['page_path'] || tl['page_path']],
-        ['page_title', cd['page_title'] || tl['page_title']],
-        ['referrer', cd['referrer'] || tl['referrer']],
-        ['traffic_source', cd['traffic_source']],
-      ];
-      for (const [key, val] of attributionFields) {
-        if (val !== undefined && val !== null && val !== '') metaCustomData[key] = val;
-      }
-
-      const capiPayload: CapiEvent = {
-        event_name: eventName,
-        event_time: eventTimeSec,
-        event_id: eventId,
-        event_source_url: eventSourceUrl,
-        user_data: capiUser,
-        ...(Object.keys(metaCustomData).length > 0
-          ? { custom_data: metaCustomData }
-          : {}),
-      };
-
-      sendCapiWithRetry(siteKey, capiPayload).catch(() => { });
-
-      // ── GA4 Server-side (mesmo do endpoint principal) ──────────────
-      ga4Service.sendEvent(
-        siteKey,
-        eventName,
-        { ...event.custom_data, ...event.telemetry },
-        {
-          client_id: event.user_data?.external_id || undefined,
-          user_id: undefined,
-          ip_address: capiUser.client_ip_address,
-          user_agent: capiUser.client_user_agent,
-          fbp: capiUser.fbp,
-          fbc: capiUser.fbc,
-          external_id: Array.isArray(capiUser.external_id) ? capiUser.external_id[0] : capiUser.external_id
+        if (metaCustomData['value'] !== undefined) { if (!metaCustomData['currency']) metaCustomData['currency'] = 'BRL'; }
+        else delete metaCustomData['currency'];
+        if (!metaCustomData['content_name']) {
+          if (cd['page_title'] && cd['page_title'] !== '') metaCustomData['content_name'] = cd['page_title'];
+          else if (tl['page_title'] && tl['page_title'] !== '') metaCustomData['content_name'] = tl['page_title'];
         }
-      ).catch(err => console.error('[Ingest/Batch] GA4 error:', err));
+        const attributionFields: [string, unknown][] = [
+          ['utm_source', cd['utm_source'] || tl['utm_source']], ['utm_medium', cd['utm_medium'] || tl['utm_medium']],
+          ['utm_campaign', cd['utm_campaign'] || tl['utm_campaign']], ['utm_term', cd['utm_term'] || tl['utm_term']],
+          ['utm_content', cd['utm_content'] || tl['utm_content']], ['page_path', cd['page_path'] || tl['page_path']],
+          ['page_title', cd['page_title'] || tl['page_title']], ['referrer', cd['referrer'] || tl['referrer']],
+          ['traffic_source', cd['traffic_source']],
+        ];
+        for (const [key, val] of attributionFields) {
+          if (val !== undefined && val !== null && val !== '') metaCustomData[key] = val;
+        }
 
-      results.push({ status: 'processed', event_id: eventId });
+        sendCapiWithRetry(siteKey, {
+          event_name: p.eventName, event_time: p.eventTimeSec, event_id: p.eventId,
+          event_source_url: p.eventSourceUrl, user_data: capiUser,
+          ...(Object.keys(metaCustomData).length > 0 ? { custom_data: metaCustomData } : {}),
+        }).catch(() => {});
 
-    } catch (e) {
-      console.error('Batch ingest error:', e);
-      results.push({ status: 'error', error: 'Internal server error' });
+        ga4Service.sendEvent(siteKey, p.eventName, { ...p.event.custom_data, ...p.event.telemetry }, {
+          client_id: p.event.user_data?.external_id || undefined, user_id: undefined,
+          ip_address: capiUser.client_ip_address, user_agent: capiUser.client_user_agent,
+          fbp: capiUser.fbp, fbc: capiUser.fbc,
+          external_id: Array.isArray(capiUser.external_id) ? capiUser.external_id[0] : capiUser.external_id,
+        }).catch(err => console.error('[Ingest/Batch] GA4 error:', err));
+      }
     }
+  } catch (e) {
+    console.error('Batch ingest error:', e);
+    for (let i = 0; i < body.length; i++) { if (!results[i]) results[i] = { status: 'error', error: 'Internal server error' }; }
   }
 
-  if (successfulIngests > 0) {
-    await pool.query(
-      `UPDATE integrations_meta i SET last_ingest_at = NOW() FROM sites s WHERE s.site_key = $1 AND i.site_id = s.id`,
-      [siteKey]
-    );
-  }
-
+  // Fill any missing slots
+  for (let i = 0; i < body.length; i++) { if (!results[i]) results[i] = { status: 'skipped' }; }
   return res.status(202).json({ results });
 });
 
