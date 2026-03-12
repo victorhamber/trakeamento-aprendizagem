@@ -227,6 +227,7 @@ export class MetaMarketingService {
     'actions',
     'action_values',       // returned as array [{action_type, value}] — purchase revenue
     'cost_per_action_type',
+    'video_3_sec_watched_actions',
     'date_start',
     'date_stop',
     'objective',
