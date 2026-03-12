@@ -148,6 +148,12 @@ export class CapiService {
 
   public async processOutbox() {
     try {
+      // 1. Limpa registros que já excederam o limite de tentativas ou são muito velhos (evita acúmulo infinito)
+      await pool.query(
+        "DELETE FROM capi_outbox WHERE attempts >= 5 OR created_at < NOW() - INTERVAL '7 days'"
+      );
+
+      // 2. Busca próximos eventos para re-tentar
       const { rows } = await pool.query(
         `SELECT id, site_key, payload, last_error FROM capi_outbox 
          WHERE next_attempt_at <= NOW() AND attempts < 5 
@@ -155,6 +161,7 @@ export class CapiService {
       );
 
       for (const row of rows) {
+        // ... (continua lógica de envio)
         // Se o último erro foi token inválido, não adianta re-enviar — deletar para não poluir
         if (row.last_error && row.last_error.includes('Token inválido')) {
           await pool.query('DELETE FROM capi_outbox WHERE id = $1', [row.id]);
