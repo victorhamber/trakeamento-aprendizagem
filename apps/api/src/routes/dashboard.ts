@@ -12,17 +12,16 @@ router.get('/revenue', async (req, res) => {
   const siteId = req.query.siteId ? Number(req.query.siteId) : null;
 
   try {
-    // Vendas últimos 30 dias
-    // Se siteId for fornecido, filtra por ele. Senão, pega de todos os sites da conta.
+    // Vendas últimos 30 dias — usa subquery ANY para permitir uso do índice (site_key, status, created_at)
     const query = `
       SELECT
         TO_CHAR(p.created_at, 'YYYY-MM-DD') as date,
         COALESCE(SUM(p.amount), 0)::float as revenue,
         COUNT(*)::int as sales
       FROM purchases p
-      JOIN sites s ON s.site_key = p.site_key
-      WHERE s.account_id = $1
-        AND ($2::int IS NULL OR s.id = $2::int)
+      WHERE p.site_key = ANY(
+        SELECT site_key FROM sites WHERE account_id = $1 AND ($2::int IS NULL OR id = $2::int)
+      )
         AND p.created_at >= NOW() - INTERVAL '30 days'
         AND p.status IN ('approved', 'paid', 'completed', 'active')
       GROUP BY 1
@@ -62,27 +61,27 @@ router.get('/funnel', async (req, res) => {
   }
 
   try {
-    // Query 1: Web Events (Visitas, Engajamento, Checkout)
+    // Query 1: Web Events — usa subquery ANY para acionar o índice (site_key, event_name, event_time)
     const eventsQuery = `
       SELECT
         COUNT(CASE WHEN e.event_name = 'PageView' THEN 1 END)::int as page_views,
         COUNT(CASE WHEN e.event_name = 'PageEngagement' THEN 1 END)::int as engagements,
         COUNT(CASE WHEN e.event_name = 'InitiateCheckout' THEN 1 END)::int as checkouts
       FROM web_events e
-      JOIN sites s ON s.site_key = e.site_key
-      WHERE s.account_id = $1
-        AND ($2::int IS NULL OR s.id = $2::int)
+      WHERE e.site_key = ANY(
+        SELECT site_key FROM sites WHERE account_id = $1 AND ($2::int IS NULL OR id = $2::int)
+      )
         AND e.event_time >= $3
         AND e.event_time <= $4
     `;
 
-    // Query 2: Purchases (Tabela dedicada de compras)
+    // Query 2: Purchases — usa subquery ANY para acionar o índice (site_key, status, created_at)
     const purchasesQuery = `
       SELECT COUNT(*)::int as purchases
       FROM purchases p
-      JOIN sites s ON s.site_key = p.site_key
-      WHERE s.account_id = $1
-        AND ($2::int IS NULL OR s.id = $2::int)
+      WHERE p.site_key = ANY(
+        SELECT site_key FROM sites WHERE account_id = $1 AND ($2::int IS NULL OR id = $2::int)
+      )
         AND p.created_at >= $3
         AND p.created_at <= $4
         AND p.status IN ('approved', 'paid', 'completed', 'active')

@@ -312,6 +312,23 @@ const schemaSql = `
   CREATE INDEX IF NOT EXISTS idx_purchases_site_time ON purchases(site_key, created_at);
   CREATE INDEX IF NOT EXISTS idx_notifications_account ON notifications(account_id);
   CREATE INDEX IF NOT EXISTS idx_site_visitors_last_seen ON site_visitors(site_key, last_seen_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_capi_outbox_queue ON capi_outbox (next_attempt_at, attempts) WHERE attempts < 5;
+  CREATE INDEX IF NOT EXISTS idx_capi_outbox_site_key ON capi_outbox(site_key);
+
+  -- Composite indexes for dashboard/stats period queries (site_key + time range scanning)
+  CREATE INDEX IF NOT EXISTS idx_web_events_site_key_time ON web_events(site_key, event_time);
+  CREATE INDEX IF NOT EXISTS idx_web_events_site_key_name_time ON web_events(site_key, event_name, event_time);
+
+  -- Composite index for purchase queries filtered by status and time
+  CREATE INDEX IF NOT EXISTS idx_purchases_site_status_time ON purchases(site_key, status, created_at);
+
+  -- Partial indexes for visitor attribution lookups (LATERAL JOINs in best-times)
+  CREATE INDEX IF NOT EXISTS idx_site_visitors_email ON site_visitors(site_key, email_hash) WHERE email_hash IS NOT NULL;
+  CREATE INDEX IF NOT EXISTS idx_site_visitors_fbp ON site_visitors(site_key, fbp) WHERE fbp IS NOT NULL;
+  CREATE INDEX IF NOT EXISTS idx_site_visitors_fbc ON site_visitors(site_key, fbc) WHERE fbc IS NOT NULL;
+
+  -- Index for recommendation_reports lookups by site and creation date
+  CREATE INDEX IF NOT EXISTS idx_recommendation_reports_site_time ON recommendation_reports(site_key, created_at);
 `;
 
 export const ensureSchema = async (pool: Pool) => {
@@ -467,6 +484,19 @@ export const ensureSchema = async (pool: Pool) => {
       await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS is_super_admin BOOLEAN DEFAULT false');
     } catch (saasErr) {
       console.warn('SaaS migration for accounts/users skipped/failed:', saasErr);
+    }
+
+    // Performance indexes — composite and partial indexes for dashboard/stats/attribution queries
+    try {
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_web_events_site_key_time ON web_events(site_key, event_time)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_web_events_site_key_name_time ON web_events(site_key, event_name, event_time)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_purchases_site_status_time ON purchases(site_key, status, created_at)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_site_visitors_email ON site_visitors(site_key, email_hash) WHERE email_hash IS NOT NULL`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_site_visitors_fbp ON site_visitors(site_key, fbp) WHERE fbp IS NOT NULL`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_site_visitors_fbc ON site_visitors(site_key, fbc) WHERE fbc IS NOT NULL`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_recommendation_reports_site_time ON recommendation_reports(site_key, created_at)`);
+    } catch (idxErr) {
+      console.warn('Performance index migration skipped:', idxErr);
     }
   } catch (err) {
     console.warn('Schema extension skipped:', err);

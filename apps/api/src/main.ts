@@ -119,14 +119,36 @@ app.get('/health', async (req, res) => {
   }
 });
 
-// ─── 30-Day Garbage Collector ────────────────────────────────────────────────
-// Deletes tracking events and logs older than 30 days. Leaves `purchases` intact.
+// ─── Data Retention Garbage Collector ────────────────────────────────────────
+// Retention policy:
+//   web_events          → kept 30 days  (high volume, raw tracking data)
+//   capi_outbox         → kept 7 days   (short-lived delivery queue)
+//                         immediately remove entries that permanently failed (attempts >= 5)
+//   recommendation_reports → kept 90 days (lower volume, useful for trend analysis)
+//   purchases           → never deleted  (financial records, preserved indefinitely)
 async function runDataRetentionCleanup() {
   try {
-    console.log('[GarbageCollector] Started 30-day retention cleanup routine...');
-    const resultEvents = await pool.query(`DELETE FROM web_events WHERE event_time < NOW() - INTERVAL '30 days'`);
-    const resultOutbox = await pool.query(`DELETE FROM capi_outbox WHERE created_at < NOW() - INTERVAL '30 days'`);
-    console.log(`[GarbageCollector] Cleanup finished. Deleted ${resultEvents.rowCount} old web_events and ${resultOutbox.rowCount} old capi_outbox logs.`);
+    console.log('[GarbageCollector] Started retention cleanup routine...');
+
+    const resultEvents = await pool.query(
+      `DELETE FROM web_events WHERE event_time < NOW() - INTERVAL '30 days'`
+    );
+
+    // Remove permanently failed deliveries immediately; remove old entries after 7 days
+    const resultOutbox = await pool.query(
+      `DELETE FROM capi_outbox WHERE attempts >= 5 OR created_at < NOW() - INTERVAL '7 days'`
+    );
+
+    const resultReports = await pool.query(
+      `DELETE FROM recommendation_reports WHERE created_at < NOW() - INTERVAL '90 days'`
+    );
+
+    console.log(
+      `[GarbageCollector] Cleanup finished. ` +
+      `Deleted ${resultEvents.rowCount} web_events, ` +
+      `${resultOutbox.rowCount} capi_outbox entries, ` +
+      `${resultReports.rowCount} recommendation_reports.`
+    );
   } catch (e) {
     console.error('[GarbageCollector] Failed to execute cleanup query:', e);
   }

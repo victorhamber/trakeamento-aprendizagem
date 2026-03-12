@@ -76,22 +76,22 @@ router.get('/overview', requireAuth, async (req, res) => {
   const eventsPeriod = await pool.query(
     `SELECT COUNT(*)::int as c
      FROM web_events e
-     JOIN sites s ON s.site_key = e.site_key
-     WHERE s.account_id = $1
-       AND ($4::int IS NULL OR s.id = $4::int)
+     WHERE e.site_key = ANY(
+       SELECT site_key FROM sites WHERE account_id = $1 AND ($4::int IS NULL OR id = $4::int)
+     )
        AND e.event_time >= $2
        AND e.event_time <= $3`,
     [auth.accountId, start, end, siteId]
   );
 
   const purchasesPeriod = await pool.query(
-    `SELECT 
-       COUNT(*)::int as c, 
+    `SELECT
+       COUNT(*)::int as c,
        COALESCE(SUM(CASE WHEN p.status IN ('approved', 'paid', 'completed', 'active') AND p.currency = $5 THEN p.amount ELSE 0 END), 0) as total_revenue
      FROM purchases p
-     JOIN sites s ON s.site_key = p.site_key
-     WHERE s.account_id = $1
-       AND ($4::int IS NULL OR s.id = $4::int)
+     WHERE p.site_key = ANY(
+       SELECT site_key FROM sites WHERE account_id = $1 AND ($4::int IS NULL OR id = $4::int)
+     )
        AND p.created_at >= $2
        AND p.created_at <= $3`,
     [auth.accountId, start, end, siteId, currency]
@@ -100,9 +100,9 @@ router.get('/overview', requireAuth, async (req, res) => {
   const reportsPeriod = await pool.query(
     `SELECT COUNT(*)::int as c
      FROM recommendation_reports r
-     JOIN sites s ON s.site_key = r.site_key
-     WHERE s.account_id = $1
-       AND ($4::int IS NULL OR s.id = $4::int)
+     WHERE r.site_key = ANY(
+       SELECT site_key FROM sites WHERE account_id = $1 AND ($4::int IS NULL OR id = $4::int)
+     )
        AND r.created_at >= $2
        AND r.created_at <= $3`,
     [auth.accountId, start, end, siteId]
@@ -252,9 +252,9 @@ router.get('/sales-daily', requireAuth, async (req, res) => {
          COUNT(*)::int as count,
          COALESCE(SUM(CASE WHEN p.status IN ('approved', 'paid', 'completed', 'active') AND p.currency = $5 THEN p.amount ELSE 0 END), 0)::float as revenue
        FROM purchases p
-       JOIN sites s ON s.site_key = p.site_key
-       WHERE s.account_id = $1
-         AND ($4::int IS NULL OR s.id = $4::int)
+       WHERE p.site_key = ANY(
+         SELECT site_key FROM sites WHERE account_id = $1 AND ($4::int IS NULL OR id = $4::int)
+       )
          AND p.created_at >= $2
          AND p.created_at <= $3
        GROUP BY TO_CHAR(p.created_at AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD')
@@ -300,21 +300,22 @@ router.get('/best-times', requireAuth, async (req, res) => {
       let topSourcesQuery = '';
 
       if (isPurchase) {
-        // Query na tabela purchases
+        // Query na tabela purchases — usa subquery ANY para acionar o índice (site_key, status, created_at)
         query = `
-          SELECT 
+          SELECT
             EXTRACT(DOW FROM (p.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo'))::int as dow,
             EXTRACT(HOUR FROM (p.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo'))::int as hour,
             COUNT(*)::int as count
           FROM purchases p
-          JOIN sites s ON s.site_key = p.site_key
-          WHERE s.account_id = $1 AND ($2::int IS NULL OR s.id = $2::int)
+          WHERE p.site_key = ANY(
+            SELECT site_key FROM sites WHERE account_id = $1 AND ($2::int IS NULL OR id = $2::int)
+          )
             AND p.created_at >= $3 AND p.created_at <= $4
             AND p.status IN ('approved', 'paid', 'completed', 'active')
           GROUP BY 1, 2
           ORDER BY 3 DESC
         `;
-        
+
         topSourcesQuery = `
           WITH purchases_base AS (
             SELECT
@@ -326,8 +327,9 @@ router.get('/best-times', requireAuth, async (req, res) => {
               p.fbc,
               p.raw_payload->>'_extracted_external_id' AS extracted_external_id
             FROM purchases p
-            JOIN sites s ON s.site_key = p.site_key
-            WHERE s.account_id = $1 AND ($2::int IS NULL OR s.id = $2::int)
+            WHERE p.site_key = ANY(
+              SELECT site_key FROM sites WHERE account_id = $1 AND ($2::int IS NULL OR id = $2::int)
+            )
               AND p.created_at >= $3 AND p.created_at <= $4
               AND p.status IN ('approved', 'paid', 'completed', 'active')
           ),
@@ -445,15 +447,16 @@ router.get('/best-times', requireAuth, async (req, res) => {
           LIMIT 3
         `;
       } else {
-        // Query na tabela web_events (Padrão)
+        // Query na tabela web_events — usa subquery ANY para acionar o índice (site_key, event_name, event_time)
         query = `
-          SELECT 
+          SELECT
             EXTRACT(DOW FROM (e.event_time AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo'))::int as dow,
             EXTRACT(HOUR FROM (e.event_time AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo'))::int as hour,
             COUNT(*)::int as count
           FROM web_events e
-          JOIN sites s ON s.site_key = e.site_key
-          WHERE s.account_id = $1 AND ($2::int IS NULL OR s.id = $2::int)
+          WHERE e.site_key = ANY(
+            SELECT site_key FROM sites WHERE account_id = $1 AND ($2::int IS NULL OR id = $2::int)
+          )
             AND e.event_name = ANY($5) AND e.event_time >= $3 AND e.event_time <= $4
           GROUP BY 1, 2
           ORDER BY 3 DESC
@@ -463,8 +466,9 @@ router.get('/best-times', requireAuth, async (req, res) => {
           WITH events_base AS (
             SELECT e.site_key, e.event_time, e.user_data, e.custom_data, e.event_source_url
             FROM web_events e
-            JOIN sites s ON s.site_key = e.site_key
-            WHERE s.account_id = $1 AND ($2::int IS NULL OR s.id = $2::int)
+            WHERE e.site_key = ANY(
+              SELECT site_key FROM sites WHERE account_id = $1 AND ($2::int IS NULL OR id = $2::int)
+            )
               AND e.event_name = ANY($5) AND e.event_time >= $3 AND e.event_time <= $4
           ),
           attributed AS (
