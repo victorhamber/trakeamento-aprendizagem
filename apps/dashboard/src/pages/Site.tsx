@@ -470,7 +470,9 @@ export const SitePage = () => {
         if (saved.metricsPreset) setMetricsPreset(saved.metricsPreset);
         if (saved.metricsSince) setMetricsSince(saved.metricsSince);
         if (saved.metricsUntil) setMetricsUntil(saved.metricsUntil);
-        if (saved.diagnosisUtmSource) setDiagnosisUtmSource(saved.diagnosisUtmSource);
+        if (saved.diagnosisUtmSource) {
+          setDiagnosisUtmSource(saved.diagnosisUtmSource === 'facebook' ? '{{site_source_name}}' : saved.diagnosisUtmSource);
+        }
         if (saved.diagnosisUtmMedium) setDiagnosisUtmMedium(saved.diagnosisUtmMedium);
         if (saved.diagnosisUtmCampaign) setDiagnosisUtmCampaign(saved.diagnosisUtmCampaign);
         if (saved.diagnosisUtmContent) setDiagnosisUtmContent(saved.diagnosisUtmContent);
@@ -3723,12 +3725,12 @@ ${scriptContent}
                           <button
                             type="button"
                             onClick={() => {
-                              setDiagnosisUtmSource('');
-                              setDiagnosisUtmMedium('');
-                              setDiagnosisUtmCampaign('');
-                              setDiagnosisUtmContent('');
-                              setDiagnosisUtmTerm('');
-                              setDiagnosisClickId('');
+                              setDiagnosisUtmSource('{{site_source_name}}');
+                              setDiagnosisUtmMedium('paid_social');
+                              setDiagnosisUtmCampaign('{{campaign.name}}');
+                              setDiagnosisUtmContent('{{ad.name}}');
+                              setDiagnosisUtmTerm('{{adset.name}}');
+                              setDiagnosisClickId('{{ad.id}}');
                             }}
                             className="text-[11px] border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/70 hover:bg-zinc-50 dark:hover:bg-zinc-900 text-zinc-600 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 px-3 py-2 rounded-lg transition-colors"
                           >
