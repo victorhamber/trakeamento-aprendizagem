@@ -80,8 +80,16 @@ router.get('/accounts', async (req, res) => {
       SELECT 
         a.id, a.name, a.is_active, a.expires_at, a.bonus_site_limit, a.created_at,
         u.email,
-        p.name as plan_name, p.max_sites as base_max_sites,
-        (SELECT COUNT(*) FROM sites s WHERE s.account_id = a.id) as sites_count
+        p.name AS plan_name, p.max_sites AS base_max_sites,
+        (SELECT COUNT(*) FROM sites s WHERE s.account_id = a.id) AS sites_count,
+        (SELECT COALESCE(SUM(sub.cnt), 0) FROM (
+          SELECT COUNT(*) AS cnt FROM web_events we
+          INNER JOIN sites s2 ON s2.site_key = we.site_key
+          WHERE s2.account_id = a.id
+        ) sub) AS total_events,
+        (SELECT MAX(we2.event_time) FROM web_events we2
+          INNER JOIN sites s3 ON s3.site_key = we2.site_key
+          WHERE s3.account_id = a.id) AS last_activity
       FROM accounts a
       LEFT JOIN users u ON u.account_id = a.id
       LEFT JOIN plans p ON a.active_plan_id = p.id
@@ -190,6 +198,23 @@ router.delete('/plans/:id', async (req, res) => {
 });
 
 // === Global Notifications Management ===
+
+// GET /admin/notifications - List all global notifications (history)
+router.get('/notifications', async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT gn.*,
+        (SELECT COUNT(*) FROM global_notification_reads gnr WHERE gnr.global_notification_id = gn.id) AS read_count
+      FROM global_notifications gn
+      ORDER BY gn.created_at DESC
+      LIMIT 50
+    `);
+    res.json(rows);
+  } catch (error) {
+    console.error('List Notifications Error:', error);
+    res.status(500).json({ error: 'Failed to list notifications' });
+  }
+});
 
 // POST /admin/notifications - Broadcast a new message to all Dashboards
 router.post('/notifications', async (req, res) => {
