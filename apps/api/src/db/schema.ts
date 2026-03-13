@@ -158,8 +158,8 @@ const schemaSql = `
     currency VARCHAR(3),
     status VARCHAR(20),
     buyer_email_hash VARCHAR(64),
-    fbp VARCHAR(100),
-    fbc VARCHAR(100),
+    fbp VARCHAR(255),
+    fbc VARCHAR(255),
     raw_payload JSONB,
     created_at TIMESTAMP DEFAULT NOW(),
     UNIQUE(site_key, order_id)
@@ -415,6 +415,12 @@ export const ensureSchema = async (pool: Pool) => {
     } catch (rawErr) {
       console.warn('web_events raw_payload drop skipped:', rawErr);
     }
+
+    // Widen purchases fbp/fbc from VARCHAR(100) to VARCHAR(255) to match site_visitors
+    try {
+      await pool.query('ALTER TABLE purchases ALTER COLUMN fbp TYPE VARCHAR(255)');
+      await pool.query('ALTER TABLE purchases ALTER COLUMN fbc TYPE VARCHAR(255)');
+    } catch { /* already correct size or column doesn't exist */ }
 
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS unique_clicks INTEGER');
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS link_clicks INTEGER');
