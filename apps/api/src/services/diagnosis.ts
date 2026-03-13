@@ -524,7 +524,7 @@ export class DiagnosisService {
       }
     }
 
-    const utmWhere = this.buildUtmWhere(3, options, metaEntities);
+    const utmWhere = this.buildUtmWhere(4, options, metaEntities);
     if (utmWhere.resolved.length > 0) {
       console.log('[DiagnosisService] Resolved UTM macros:', utmWhere.resolved);
     }
