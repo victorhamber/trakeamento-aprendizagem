@@ -232,4 +232,78 @@ router.post('/notifications', async (req, res) => {
   }
 });
 
+// === Email Settings Management ===
+
+// GET /admin/email-settings - Get current global email configuration (without exposing API key)
+router.get('/email-settings', async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT
+        from_email,
+        from_name,
+        welcome_subject,
+        welcome_html,
+        reset_subject,
+        reset_html,
+        (api_key IS NOT NULL) AS has_api_key
+      FROM email_settings
+      WHERE id = 1
+    `);
+
+    if (!rows.length) {
+      return res.json({
+        from_email: null,
+        from_name: null,
+        welcome_subject: null,
+        welcome_html: null,
+        reset_subject: null,
+        reset_html: null,
+        has_api_key: false,
+      });
+    }
+
+    return res.json(rows[0]);
+  } catch (error) {
+    console.error('Get Email Settings Error:', error);
+    res.status(500).json({ error: 'Failed to get email settings' });
+  }
+});
+
+// PUT /admin/email-settings - Upsert global email configuration (including API key)
+router.put('/email-settings', async (req, res) => {
+  const { api_key, from_email, from_name, welcome_subject, welcome_html, reset_subject, reset_html } = req.body || {};
+
+  try {
+    const { rows } = await pool.query(
+      `
+      INSERT INTO email_settings (id, provider, api_key, from_email, from_name, welcome_subject, welcome_html, reset_subject, reset_html, created_at, updated_at)
+      VALUES (1, 'RESEND', $1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
+      ON CONFLICT (id) DO UPDATE SET
+        api_key = COALESCE(EXCLUDED.api_key, email_settings.api_key),
+        from_email = COALESCE(EXCLUDED.from_email, email_settings.from_email),
+        from_name = COALESCE(EXCLUDED.from_name, email_settings.from_name),
+        welcome_subject = COALESCE(EXCLUDED.welcome_subject, email_settings.welcome_subject),
+        welcome_html = COALESCE(EXCLUDED.welcome_html, email_settings.welcome_html),
+        reset_subject = COALESCE(EXCLUDED.reset_subject, email_settings.reset_subject),
+        reset_html = COALESCE(EXCLUDED.reset_html, email_settings.reset_html),
+        updated_at = NOW()
+      RETURNING
+        from_email,
+        from_name,
+        welcome_subject,
+        welcome_html,
+        reset_subject,
+        reset_html,
+        (api_key IS NOT NULL) AS has_api_key
+      `,
+      [api_key || null, from_email || null, from_name || null, welcome_subject || null, welcome_html || null, reset_subject || null, reset_html || null]
+    );
+
+    return res.json(rows[0]);
+  } catch (error) {
+    console.error('Update Email Settings Error:', error);
+    res.status(500).json({ error: 'Failed to update email settings' });
+  }
+});
+
 export default router;

@@ -84,6 +84,20 @@ const schemaSql = `
     updated_at TIMESTAMP DEFAULT NOW()
   );
 
+  CREATE TABLE IF NOT EXISTS email_settings (
+    id INTEGER PRIMARY KEY DEFAULT 1,
+    provider VARCHAR(50) NOT NULL DEFAULT 'RESEND',
+    api_key TEXT,
+    from_email VARCHAR(190),
+    from_name VARCHAR(190),
+    welcome_subject VARCHAR(190),
+    welcome_html TEXT,
+    reset_subject VARCHAR(190),
+    reset_html TEXT,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+  );
+
   CREATE TABLE IF NOT EXISTS sites (
     id SERIAL PRIMARY KEY,
     account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,

@@ -6,6 +6,7 @@ import { RegisterPage } from './pages/Register';
 import { AccountsPage } from './pages/Accounts';
 import { PlansPage } from './pages/Plans';
 import { NotificationsPage } from './pages/Notifications';
+import { EmailSettingsPage } from './pages/EmailSettings';
 
 const RequireAuth = ({ children }: { children: React.ReactNode }) => {
   const auth = useAuth();
@@ -39,6 +40,14 @@ function App() {
         element={
           <RequireAuth>
             <NotificationsPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/email-settings"
+        element={
+          <RequireAuth>
+            <EmailSettingsPage />
           </RequireAuth>
         }
       />

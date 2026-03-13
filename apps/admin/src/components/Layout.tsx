@@ -36,6 +36,13 @@ const IconBroadcast = ({ className }: { className?: string }) => (
   </svg>
 );
 
+const IconMail = ({ className }: { className?: string }) => (
+  <svg viewBox="0 0 24 24" fill="none" className={className} stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="5" width="18" height="14" rx="2" />
+    <polyline points="3 7 12 13 21 7" />
+  </svg>
+);
+
 const IconSun = () => (
   <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="12" cy="12" r="4" />
@@ -143,6 +150,7 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
           <NavItem to="/accounts" label="Clientes (Contas)" icon={IconUsers} />
           <NavItem to="/plans" label="Planos & Preços" icon={IconPackage} />
           <NavItem to="/notifications" label="Avisos Globais" icon={IconBroadcast} />
+          <NavItem to="/email-settings" label="Config. E-mail" icon={IconMail} />
         </nav>
 
         <div className={`pt-5 border-t ${isDark ? 'border-white/5' : 'border-zinc-200'}`}>
@@ -290,6 +298,7 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
               <NavItem to="/accounts" label="Clientes (Contas)" icon={IconUsers} />
               <NavItem to="/plans" label="Planos & Preços" icon={IconPackage} />
               <NavItem to="/notifications" label="Avisos Globais" icon={IconBroadcast} />
+              <NavItem to="/email-settings" label="Config. E-mail" icon={IconMail} />
             </nav>
 
             <div className={`mt-auto pt-4 border-t ${isDark ? 'border-white/5' : 'border-zinc-200'}`}>
