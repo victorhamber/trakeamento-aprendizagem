@@ -3,10 +3,10 @@ import { pool } from '../db/pool';
 
 const DEFAULT_APP_URL = process.env.VITE_DASHBOARD_URL || 'https://app.trajettu.com';
 
-const DEFAULT_WELCOME_SUBJECT = 'Bem-vindo ao Trajettu AI Analytics';
-const DEFAULT_RESET_SUBJECT = 'Recuperação de Senha - Trajettu';
+export const DEFAULT_WELCOME_SUBJECT = 'Bem-vindo ao Trajettu AI Analytics';
+export const DEFAULT_RESET_SUBJECT = 'Recuperação de Senha - Trajettu';
 
-const DEFAULT_WELCOME_HTML = `
+export const DEFAULT_WELCOME_HTML = `
   <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
     <h1 style="color: #4f46e5;">Bem-vindo ao Trajettu!</h1>
     <p>Olá {{name}},</p>
@@ -18,7 +18,7 @@ const DEFAULT_WELCOME_HTML = `
   </div>
 `;
 
-const DEFAULT_RESET_HTML = `
+export const DEFAULT_RESET_HTML = `
   <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
     <h1 style="color: #4f46e5;">Recuperação de Senha</h1>
     <p>Recebemos uma solicitação para redefinir a senha da sua conta no Trajettu.</p>
@@ -70,14 +70,17 @@ async function loadEmailSettings(): Promise<EmailSettings> {
     throw new Error('RESEND API key is not configured. Set RESEND_API_KEY env or configure in email_settings.');
   }
 
+  const useIfRich = (stored: string | null, fallback: string): string =>
+    stored && stored.includes('style=') ? stored : fallback;
+
   const settings: EmailSettings = {
     apiKey,
     fromEmail: row.from_email || 'contato@trajettu.com',
     fromName: row.from_name || 'Trajettu',
     welcomeSubject: row.welcome_subject || DEFAULT_WELCOME_SUBJECT,
-    welcomeHtml: row.welcome_html || DEFAULT_WELCOME_HTML,
+    welcomeHtml: useIfRich(row.welcome_html, DEFAULT_WELCOME_HTML),
     resetSubject: row.reset_subject || DEFAULT_RESET_SUBJECT,
-    resetHtml: row.reset_html || DEFAULT_RESET_HTML,
+    resetHtml: useIfRich(row.reset_html, DEFAULT_RESET_HTML),
   };
 
   cachedSettings = settings;

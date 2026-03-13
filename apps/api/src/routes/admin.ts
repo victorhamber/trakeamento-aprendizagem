@@ -1,6 +1,10 @@
 import { Router } from 'express';
 import { pool } from '../db/pool';
 import { requireAuth } from '../middleware/auth';
+import {
+  DEFAULT_WELCOME_SUBJECT, DEFAULT_WELCOME_HTML,
+  DEFAULT_RESET_SUBJECT, DEFAULT_RESET_HTML,
+} from '../services/email';
 
 const router = Router();
 
@@ -250,19 +254,19 @@ router.get('/email-settings', async (req, res) => {
       WHERE id = 1
     `);
 
-    if (!rows.length) {
-      return res.json({
-        from_email: null,
-        from_name: null,
-        welcome_subject: null,
-        welcome_html: null,
-        reset_subject: null,
-        reset_html: null,
-        has_api_key: false,
-      });
-    }
+    const row = rows[0] || {};
+    const useIfRich = (stored: string | null, fallback: string): string =>
+      stored && stored.includes('style=') ? stored : fallback;
 
-    return res.json(rows[0]);
+    return res.json({
+      from_email: row.from_email || 'contato@trajettu.com',
+      from_name: row.from_name || 'Trajettu',
+      welcome_subject: row.welcome_subject || DEFAULT_WELCOME_SUBJECT,
+      welcome_html: useIfRich(row.welcome_html, DEFAULT_WELCOME_HTML),
+      reset_subject: row.reset_subject || DEFAULT_RESET_SUBJECT,
+      reset_html: useIfRich(row.reset_html, DEFAULT_RESET_HTML),
+      has_api_key: Boolean(row.has_api_key),
+    });
   } catch (error) {
     console.error('Get Email Settings Error:', error);
     res.status(500).json({ error: 'Failed to get email settings' });

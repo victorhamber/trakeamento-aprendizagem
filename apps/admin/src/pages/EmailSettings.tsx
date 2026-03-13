@@ -33,16 +33,10 @@ export const EmailSettingsPage = () => {
       setHasApiKey(Boolean(data.has_api_key));
       setFromEmail(data.from_email || '');
       setFromName(data.from_name || '');
-      setWelcomeSubject(data.welcome_subject || 'Bem-vindo ao Trajettu AI Analytics');
-      setWelcomeHtml(
-        data.welcome_html ||
-          '<p>Olá {{name}},</p><p>Bem-vindo ao Trajettu! Acesse seu painel em {{app_url}}</p>'
-      );
-      setResetSubject(data.reset_subject || 'Recuperação de Senha - Trajettu');
-      setResetHtml(
-        data.reset_html ||
-          '<p>Recebemos uma solicitação de redefinição de senha.</p><p>Clique em {{reset_link}} para continuar.</p>'
-      );
+      setWelcomeSubject(data.welcome_subject || '');
+      setWelcomeHtml(data.welcome_html || '');
+      setResetSubject(data.reset_subject || '');
+      setResetHtml(data.reset_html || '');
     } catch (err) {
       // silent, form já vem com defaults
     } finally {
