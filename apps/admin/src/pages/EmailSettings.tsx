@@ -148,7 +148,7 @@ export const EmailSettingsPage = () => {
                     Template: Boas-vindas
                   </h3>
                   <span className="text-[10px] text-zinc-400">
-                    Placeholders: <code>{{'{{name}}'}}</code>, <code>{{'{{app_url}}'}}</code>
+                    Placeholders: <code>{'{{name}}'}</code>, <code>{'{{app_url}}'}</code>
                   </span>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -173,7 +173,7 @@ export const EmailSettingsPage = () => {
                     Template: Recuperação de Senha
                   </h3>
                   <span className="text-[10px] text-zinc-400">
-                    Placeholder: <code>{{'{{reset_link}}'}}</code>
+                    Placeholder: <code>{'{{reset_link}}'}</code>
                   </span>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -213,8 +213,8 @@ export const EmailSettingsPage = () => {
               <li>O token é salvo no banco de dados e usado apenas no backend.</li>
               <li>
                 Os templates aceitam placeholders que serão substituídos automaticamente, como{' '}
-                <code>{{'{{name}}'}}</code>, <code>{{'{{app_url}}'}}</code> e{' '}
-                <code>{{'{{reset_link}}'}}</code>.
+                <code>{'{{name}}'}</code>, <code>{'{{app_url}}'}</code> e{' '}
+                <code>{'{{reset_link}}'}</code>.
               </li>
             </ul>
           </div>
