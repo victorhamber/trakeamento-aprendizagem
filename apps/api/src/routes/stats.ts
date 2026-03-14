@@ -423,7 +423,7 @@ router.get('/best-times', requireAuth, async (req, res) => {
                 sv_source.source,
                 NULLIF(eb.custom_data->>'traffic_source', ''),
                 NULLIF(eb.custom_data->>'utm_source', ''),
-                NULLIF(eb.event_source_url, '')
+                prev_event_source.source
               ) as source
             FROM events_base eb
             LEFT JOIN LATERAL (
@@ -447,6 +447,27 @@ router.get('/best-times', requireAuth, async (req, res) => {
               ORDER BY sv.last_seen_at DESC
               LIMIT 1
             ) sv_source ON TRUE
+            LEFT JOIN LATERAL (
+              SELECT
+                COALESCE(
+                  NULLIF(pe.custom_data->>'traffic_source', ''),
+                  NULLIF(pe.custom_data->>'utm_source', '')
+                ) as source
+              FROM web_events pe
+              WHERE pe.site_key = eb.site_key
+                AND pe.event_time <= eb.event_time
+                AND pe.event_time >= eb.event_time - INTERVAL '24 hours'
+                AND (
+                  (eb.user_data->>'external_id' IS NOT NULL AND pe.user_data->>'external_id' = eb.user_data->>'external_id')
+                  OR (eb.user_data->>'fbp' IS NOT NULL AND pe.user_data->>'fbp' = eb.user_data->>'fbp')
+                )
+                AND (
+                  NULLIF(pe.custom_data->>'traffic_source', '') IS NOT NULL
+                  OR NULLIF(pe.custom_data->>'utm_source', '') IS NOT NULL
+                )
+              ORDER BY pe.event_time DESC
+              LIMIT 1
+            ) prev_event_source ON TRUE
           )
           SELECT
             COALESCE(
