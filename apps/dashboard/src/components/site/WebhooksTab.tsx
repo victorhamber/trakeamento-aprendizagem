@@ -216,7 +216,7 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
       {/* ── NATIVE INTEGRATIONS ── */}
       <div className="space-y-4">
         <h3 className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 uppercase tracking-wider">Integrações Nativas</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4">
 
           {/* Hotmart Card */}
           <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/40 p-5 space-y-4 relative overflow-hidden">
@@ -226,10 +226,8 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
               </span>
             </div>
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-[#F04E23] flex items-center justify-center shadow-lg shadow-[#F04E23]/20">
-                <svg className="w-6 h-6 text-white" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M11.96 2.44c-1.8 0-3.53.5-5.06 1.45l1.62 2.8c1.05-.65 2.23-1 3.44-1 3.53 0 6.4 2.87 6.4 6.4s-2.87 6.4-6.4 6.4c-1.58 0-3.08-.58-4.23-1.63L5.4 19.1c1.78 1.63 4.1 2.53 6.56 2.53 5.37 0 9.74-4.37 9.74-9.74S17.33 2.44 11.96 2.44zM3.86 12.06c0-1.8.5-3.53 1.45-5.06l2.8 1.62c-.65 1.05-1 2.23-1 3.44 0 1.58.58 3.08 1.63 4.23l-2.24 2.24c-1.64-1.78-2.55-4.1-2.55-6.57v.1z" />
-                </svg>
+              <div className="w-10 h-10 rounded-lg overflow-hidden shadow-lg shadow-[#F04E23]/20">
+                <img src="/hotmart.jpg" alt="Hotmart" className="w-full h-full object-cover" />
               </div>
               <div>
                 <h4 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Hotmart</h4>
@@ -248,46 +246,6 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
                 <button
                   onClick={() => {
                     const url = `${apiBaseUrl}/webhooks/hotmart?key=${site?.site_key}&token=${webhookSecret}`;
-                    navigator.clipboard.writeText(url);
-                    showFlash('URL copiada!');
-                  }}
-                  className="flex items-center gap-1.5 bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-400 dark:text-zinc-300 px-3 py-2 rounded-lg text-xs transition-colors shrink-0"
-                >
-                  Copiar
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Kiwify Card */}
-          <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/40 p-5 space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-blue-600 flex items-center justify-center">
-                  <span className="font-bold text-white text-[10px]">Kiwify</span>
-                </div>
-                <div>
-                  <h4 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Kiwify</h4>
-                  <p className="text-[10px] text-zinc-600 dark:text-zinc-500">Mapeamento automático de PII e UTMs</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-bold uppercase tracking-wider">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                Ativo
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-medium text-zinc-600 dark:text-zinc-500 mb-1.5">URL do Webhook (Copie e cole na Kiwify)</label>
-              <div className="flex gap-2">
-                <input
-                  readOnly
-                  className="flex-1 rounded-lg bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 px-3 py-2 text-[11px] font-mono text-zinc-600 dark:text-zinc-400 outline-none"
-                  value={webhookSecret ? `${apiBaseUrl}/webhooks/kiwify?key=${site?.site_key}&token=${webhookSecret}` : 'Carregando…'}
-                />
-                <button
-                  onClick={() => {
-                    const url = `${apiBaseUrl}/webhooks/kiwify?key=${site?.site_key}&token=${webhookSecret}`;
                     navigator.clipboard.writeText(url);
                     showFlash('URL copiada!');
                   }}

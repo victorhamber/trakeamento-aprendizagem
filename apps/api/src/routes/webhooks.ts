@@ -5,6 +5,7 @@ import { pool } from '../db/pool';
 import { capiService, CapiService } from '../services/capi';
 import { EnrichmentService } from '../services/enrichment';
 import { decryptString } from '../lib/crypto';
+import { notifyAccountNewSale } from '../services/expo-push';
 
 
 const router = Router();
@@ -51,14 +52,14 @@ async function processPurchaseWebhook({
   console.log(`[Webhook] processPurchaseWebhook called: value=${value} currency=${currency} status=${finalStatus} orderId=${orderId} platform=${platform} siteKey=${siteKey}`);
 
   const siteRow = await pool.query(`
-    SELECT sites.id, m.capi_token_enc, m.pixel_id, m.capi_test_event_code, m.enabled
+    SELECT sites.id, sites.account_id, m.capi_token_enc, m.pixel_id, m.capi_test_event_code, m.enabled
     FROM sites
     LEFT JOIN integrations_meta m ON m.site_id = sites.id
     WHERE sites.site_key = $1
   `, [siteKey]);
 
   if (!siteRow.rowCount) return { success: false, status: 404, error: 'Site not found' };
-  const { id: siteId, capi_token_enc, pixel_id, capi_test_event_code, enabled: metaEnabled } = siteRow.rows[0];
+  const { id: siteId, account_id: siteAccountId, capi_token_enc, pixel_id, capi_test_event_code, enabled: metaEnabled } = siteRow.rows[0];
 
   const dbEmailHash = email ? CapiService.hash(email) : null;
 
@@ -282,6 +283,23 @@ async function processPurchaseWebhook({
     } finally {
       client.release();
     }
+
+    // Push notification to mobile app (fire-and-forget)
+    if (siteAccountId != null) {
+      pool
+        .query('SELECT push_token FROM push_tokens WHERE account_id = $1', [siteAccountId])
+        .then((rows) => {
+          if (rows.rowCount && rows.rows.length > 0) {
+            return notifyAccountNewSale(rows.rows, {
+              amount: value != null ? Number(value) : undefined,
+              currency: currency || undefined,
+              orderId,
+              platform: platform || undefined,
+            });
+          }
+        })
+        .catch((err) => console.warn('[Webhook] Push notify error:', err));
+    }
   } else {
     try {
       await pool.query(
@@ -368,7 +386,10 @@ router.post('/purchase', async (req, res) => {
     firstName = payload.buyer?.name?.split(' ')[0] || payload.first_name;
     lastName = payload.buyer?.name?.split(' ').slice(1).join(' ') || payload.last_name;
     phone = payload.buyer?.phone || payload.buyer?.checkout_phone || payload.phone;
-    value = payload.purchase?.full_price?.value || payload.amount || 0;
+    const hotmartCommissionValue =
+      payload.data?.commissions?.[1]?.value ??
+      payload.commissions?.[1]?.value;
+    value = hotmartCommissionValue ?? payload.purchase?.full_price?.value ?? payload.amount ?? 0;
     currency = payload.purchase?.full_price?.currency_value || payload.currency || 'BRL';
     status = payload.purchase?.status || payload.status;
     orderId = payload.purchase?.transaction || payload.transaction || payload.id;
@@ -518,7 +539,12 @@ router.post('/hotmart', async (req, res) => {
   const lastName = buyer.last_name || buyer.name?.split(' ').slice(1).join(' ') || payload.last_name;
   const phone = buyer.checkout_phone || buyer.phone || payload.phone;
 
+  const hotmartCommissionValue =
+    d.commissions?.[1]?.value ??
+    payload.data?.commissions?.[1]?.value;
+
   const rawValue =
+    hotmartCommissionValue ??
     purchase.full_price?.value ??
     purchase.price?.value ??
     purchase.amount ??
