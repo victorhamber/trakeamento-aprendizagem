@@ -17,6 +17,7 @@ import {
   Linking,
   Pressable,
   InteractionManager,
+  Dimensions,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import * as Notifications from 'expo-notifications';
@@ -41,6 +42,7 @@ import {
 } from './api';
 import { setupAndroidSalesChannel } from './setupNotificationChannels';
 import { getExpoPushTokenString } from './expoPush';
+import Svg, { Circle, Line, Polyline } from 'react-native-svg';
 
 const TOKEN_KEY = '@trajettu_token';
 const USER_EMAIL_KEY = '@trajettu_user_email';
@@ -52,6 +54,23 @@ const PERIODS: { key: string; label: string }[] = [
   { key: 'last_15d', label: '15 dias' },
   { key: 'last_30d', label: '30 dias' },
 ];
+
+/** Paleta unificada (dark premium) */
+const C = {
+  bg: '#030508',
+  bgElevated: '#0c1018',
+  surface: '#111827',
+  surface2: '#151d2e',
+  border: 'rgba(148, 163, 184, 0.12)',
+  borderStrong: 'rgba(56, 189, 248, 0.35)',
+  text: '#f8fafc',
+  textMuted: '#94a3b8',
+  textDim: '#64748b',
+  accent: '#22d3ee',
+  accentDeep: '#0e7490',
+  accentSoft: 'rgba(34, 211, 238, 0.14)',
+  purple: '#a78bfa',
+};
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -83,50 +102,167 @@ function formatCurrencySafe(value: unknown, currency: string | null): string {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: code }).format(n);
 }
 
-function formatChartDay(dateStr: string): string {
-  const p = dateStr.split('-');
-  if (p.length !== 3) return dateStr;
-  return `${p[2]}/${p[1]}`;
+function formatChartAxisDate(dateStr: string): string {
+  const p = dateStr.split('-').map(Number);
+  if (p.length !== 3 || p.some((n) => !Number.isFinite(n))) return dateStr;
+  const [y, m, d] = p;
+  return new Date(y, m - 1, d).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
 }
 
-function SalesChart({ points }: { points: ChartPoint[] }) {
-  const maxVal = useMemo(() => {
-    let m = 0;
-    for (const p of points) m = Math.max(m, p.revenue);
-    return m > 0 ? m : 1;
+/** Mesmo critério do RevenueChart web (Recharts): moeda compacta no eixo Y */
+function formatCurrencyCompact(value: number, currency: string): string {
+  try {
+    return new Intl.NumberFormat(currency === 'BRL' ? 'pt-BR' : 'en-US', {
+      style: 'currency',
+      currency,
+      notation: 'compact',
+      maximumFractionDigits: 1,
+    }).format(value);
+  } catch {
+    return formatCurrencySafe(value, currency);
+  }
+}
+
+/** Gráfico de linha alinhado ao dashboard web (`RevenueChart.tsx`): linha verde, grade horizontal, eixos */
+function SalesChart({ points, currency = 'BRL' }: { points: ChartPoint[]; currency?: string }) {
+  const PLOT_H = 208;
+  const Y_AXIS_W = 56;
+  const MIN_PT = 34;
+  const lineColor = '#34d399';
+  const gridColor = 'rgba(255,255,255,0.06)';
+  const dotStroke = '#18181b';
+
+  const [plotBoxW, setPlotBoxW] = useState(() => Math.max(280, Dimensions.get('window').width - 80));
+
+  const chartData = useMemo(() => {
+    let d = points.map((p) => ({ ...p }));
+    if (d.length === 1) {
+      const parts = d[0].date.split('-').map(Number);
+      if (parts.length === 3 && parts.every((n) => Number.isFinite(n))) {
+        const [y, mo, day] = parts;
+        const dt = new Date(y, mo - 1, day);
+        dt.setDate(dt.getDate() - 1);
+        const py = dt.getFullYear();
+        const pm = String(dt.getMonth() + 1).padStart(2, '0');
+        const pd = String(dt.getDate()).padStart(2, '0');
+        d = [{ date: `${py}-${pm}-${pd}`, revenue: 0, sales: 0 }, ...d];
+      }
+    }
+    return d;
   }, [points]);
+
+  const maxRev = useMemo(() => {
+    let m = 0;
+    for (const p of chartData) m = Math.max(m, p.revenue);
+    return m > 0 ? m : 1;
+  }, [chartData]);
 
   if (points.length === 0) {
     return (
       <View style={chartStyles.emptyChart}>
-        <Text style={chartStyles.emptyChartText}>Sem vendas neste período e filtros.</Text>
+        <Ionicons name="analytics-outline" size={28} color={C.textDim} style={{ marginBottom: 8 }} />
+        <Text style={chartStyles.emptyChartText}>Sem dados no período selecionado</Text>
       </View>
     );
   }
 
-  const barMaxH = 120;
+  const n = chartData.length;
+  const available = Math.max(0, plotBoxW - Y_AXIS_W);
+  const innerW = n <= 1 ? available : Math.max(available, (n - 1) * MIN_PT);
+  const scrolls = innerW > available + 0.5;
+
+  const toY = (rev: number) => PLOT_H - (rev / maxRev) * PLOT_H;
+  const toX = (i: number) => (n <= 1 ? innerW / 2 : (i / Math.max(n - 1, 1)) * innerW);
+
+  const coords = chartData.map((p, i) => ({
+    x: toX(i),
+    y: toY(p.revenue),
+  }));
+  const polylinePts = coords.map((c) => `${c.x},${c.y}`).join(' ');
+  const gridFracs = [0, 0.25, 0.5, 0.75, 1];
+
+  const plotBlock = (
+    <View style={{ width: innerW }}>
+      <Svg width={innerW} height={PLOT_H}>
+        {gridFracs.map((f) => {
+          const y = PLOT_H - f * PLOT_H;
+          return (
+            <Line
+              key={f}
+              x1={0}
+              y1={y}
+              x2={innerW}
+              y2={y}
+              stroke={gridColor}
+              strokeWidth={1}
+              strokeDasharray="4 4"
+            />
+          );
+        })}
+        <Polyline
+          points={polylinePts}
+          fill="none"
+          stroke={lineColor}
+          strokeWidth={2}
+          strokeLinejoin="round"
+          strokeLinecap="round"
+        />
+        {coords.map((c, i) => (
+          <Circle
+            key={`${chartData[i].date}-${i}`}
+            cx={c.x}
+            cy={c.y}
+            r={4}
+            fill={lineColor}
+            stroke={dotStroke}
+            strokeWidth={2}
+          />
+        ))}
+      </Svg>
+      <View style={[chartStyles.xLabels, { width: innerW }]}>
+        {chartData.map((p) => (
+          <Text key={p.date} style={chartStyles.xTick} numberOfLines={1}>
+            {formatChartAxisDate(p.date)}
+          </Text>
+        ))}
+      </View>
+    </View>
+  );
+
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={chartStyles.scroll}>
-      {points.map((p) => {
-        const h = Math.max(4, (p.revenue / maxVal) * barMaxH);
-        return (
-          <View key={p.date} style={chartStyles.barCol}>
-            <Text style={chartStyles.barVal} numberOfLines={1}>
-              {p.revenue > 0 ? formatCurrencySafe(p.revenue, 'BRL') : '—'}
-            </Text>
-            <View style={chartStyles.barTrack}>
-              <LinearGradient
-                colors={['#0a7ea4', '#6366f1']}
-                style={[chartStyles.barFill, { height: h }]}
-                start={{ x: 0, y: 1 }}
-                end={{ x: 0, y: 0 }}
-              />
-            </View>
-            <Text style={chartStyles.barLabel}>{formatChartDay(p.date)}</Text>
+    <View style={chartStyles.chartOuter}>
+      <View
+        style={chartStyles.chartInner}
+        onLayout={(e) => {
+          const w = e.nativeEvent.layout.width;
+          if (w > 0) setPlotBoxW(w);
+        }}
+      >
+        <View style={chartStyles.chartRow}>
+          <View style={[chartStyles.yAxis, { height: PLOT_H }]}>
+            {[1, 0.75, 0.5, 0.25, 0].map((frac) => (
+              <Text key={frac} style={chartStyles.yTick} numberOfLines={1}>
+                {formatCurrencyCompact(frac * maxRev, currency)}
+              </Text>
+            ))}
           </View>
-        );
-      })}
-    </ScrollView>
+          {scrolls ? (
+            <ScrollView
+              horizontal
+              nestedScrollEnabled
+              showsHorizontalScrollIndicator
+              bounces={false}
+              style={chartStyles.chartScroll}
+              contentContainerStyle={{ minWidth: innerW }}
+            >
+              {plotBlock}
+            </ScrollView>
+          ) : (
+            <View style={chartStyles.chartScroll}>{plotBlock}</View>
+          )}
+        </View>
+      </View>
+    </View>
   );
 }
 
@@ -333,10 +469,10 @@ export default function App() {
   if (loading) {
     return (
       <SafeAreaProvider>
-        <View style={styles.centered}>
-          <ActivityIndicator size="large" color="#0a7ea4" />
+        <LinearGradient colors={[C.bg, '#0a0f1a']} style={styles.centered}>
+          <ActivityIndicator size="large" color={C.accent} />
           <StatusBar style="light" />
-        </View>
+        </LinearGradient>
       </SafeAreaProvider>
     );
   }
@@ -344,7 +480,9 @@ export default function App() {
   if (!authToken) {
     return (
       <SafeAreaProvider>
-        <LinearGradient colors={['#05070a', '#0a0612', '#05070a']} style={styles.loginGradient}>
+        <LinearGradient colors={['#020408', '#0c1222', '#080c14']} style={styles.loginGradient}>
+          <View style={styles.loginBlob1} pointerEvents="none" />
+          <View style={styles.loginBlob2} pointerEvents="none" />
           <SafeAreaView style={styles.safeLogin} edges={['top', 'bottom']}>
             <StatusBar style="light" />
             <KeyboardAvoidingView
@@ -353,6 +491,12 @@ export default function App() {
             >
               <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.loginScroll}>
                 <View style={styles.loginCard}>
+                  <LinearGradient
+                    colors={['rgba(34,211,238,0.35)', 'rgba(99,102,241,0.2)', 'transparent']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.loginCardGlow}
+                  />
                   <Image
                     source={require('./assets/logo-full.png')}
                     style={styles.loginLogo}
@@ -364,7 +508,7 @@ export default function App() {
 
                   <Text style={styles.fieldLabel}>Email</Text>
                   <View style={styles.inputWrap}>
-                    <Ionicons name="mail-outline" size={20} color="#71717a" style={styles.inputIcon} />
+                    <Ionicons name="mail-outline" size={20} color={C.textDim} style={styles.inputIcon} />
                     <TextInput
                       style={styles.inputInner}
                       placeholder="seu@email.com"
@@ -380,7 +524,7 @@ export default function App() {
 
                   <Text style={styles.fieldLabel}>Senha</Text>
                   <View style={styles.inputWrap}>
-                    <Ionicons name="lock-closed-outline" size={20} color="#71717a" style={styles.inputIcon} />
+                    <Ionicons name="lock-closed-outline" size={20} color={C.textDim} style={styles.inputIcon} />
                     <TextInput
                       style={styles.inputInner}
                       placeholder="••••••••"
@@ -402,7 +546,7 @@ export default function App() {
                     activeOpacity={0.85}
                   >
                     <LinearGradient
-                      colors={['#0a7ea4', '#6366f1', '#7c3aed']}
+                      colors={[C.accentDeep, '#6366f1', '#7c3aed']}
                       start={{ x: 0, y: 0.5 }}
                       end={{ x: 1, y: 0.5 }}
                       style={styles.gradientBtn}
@@ -440,22 +584,25 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <SafeAreaView style={styles.container} edges={['top']}>
-        <StatusBar style="light" />
-        <View style={styles.header}>
-          <View style={styles.headerLeft}>
-            <Image source={require('./assets/icon.png')} style={styles.headerLogo} resizeMode="contain" accessibilityLabel="Trajettu" />
-            <View style={styles.headerTextCol}>
-              <Text style={styles.brandSmall}>Trajettu</Text>
-              <Text style={styles.headerEmail} numberOfLines={1}>
-                {userEmail || '—'}
-              </Text>
+      <LinearGradient colors={[C.bg, '#0a101c', C.bg]} style={styles.appGradient}>
+        <SafeAreaView style={styles.container} edges={['top']}>
+          <StatusBar style="light" />
+          <View style={styles.header}>
+            <View style={styles.headerLeft}>
+              <View style={styles.headerLogoRing}>
+                <Image source={require('./assets/icon.png')} style={styles.headerLogo} resizeMode="contain" accessibilityLabel="Trajettu" />
+              </View>
+              <View style={styles.headerTextCol}>
+                <Text style={styles.brandSmall}>Trajettu</Text>
+                <Text style={styles.headerEmail} numberOfLines={1}>
+                  {userEmail || '—'}
+                </Text>
+              </View>
             </View>
+            <TouchableOpacity onPress={onLogout} style={styles.logoutPill} activeOpacity={0.8} hitSlop={8}>
+              <Text style={styles.logoutText}>Sair</Text>
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity onPress={onLogout} hitSlop={12}>
-            <Text style={styles.logoutText}>Sair</Text>
-          </TouchableOpacity>
-        </View>
 
         {loadError ? (
           <View style={styles.errorBanner}>
@@ -473,13 +620,16 @@ export default function App() {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
-              tintColor="#0a7ea4"
-              colors={['#0a7ea4']}
+              tintColor={C.accent}
+              colors={[C.accent]}
               progressBackgroundColor="#121826"
             />
           }
         >
-          <Text style={styles.sectionLabel}>Período</Text>
+          <View style={styles.sectionHeaderRow}>
+            <Ionicons name="calendar-outline" size={17} color={C.accent} />
+            <Text style={styles.sectionLabel}>Período</Text>
+          </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.periodRow}>
             {PERIODS.map((p) => {
               const active = periodKey === p.key;
@@ -496,36 +646,61 @@ export default function App() {
           </ScrollView>
 
           {dataLoading && !summary ? (
-            <ActivityIndicator size="large" color="#0a7ea4" style={styles.loader} />
+            <ActivityIndicator size="large" color={C.accent} style={styles.loader} />
           ) : summary ? (
             <>
-              <Text style={styles.sectionLabel}>Resumo · {periodLabel}</Text>
-              <View style={styles.statGrid}>
-                <View style={styles.statCard}>
-                  <Text style={styles.statLabel}>Vendas</Text>
+              <View style={styles.sectionHeaderRow}>
+                <Ionicons name="stats-chart-outline" size={17} color={C.accent} />
+                <Text style={styles.sectionLabel}>Resumo · {periodLabel}</Text>
+              </View>
+              <View style={styles.statRow}>
+                <View style={[styles.statBox, styles.statBoxAccent]}>
+                  <View style={styles.statBoxTop}>
+                    <View style={styles.statIconBg}>
+                      <Ionicons name="bag-handle-outline" size={20} color={C.accent} />
+                    </View>
+                    <Text style={styles.statLabel}>Vendas</Text>
+                  </View>
                   <Text style={styles.statValue}>{summary.periodSales}</Text>
                 </View>
-                <View style={styles.statCard}>
-                  <Text style={styles.statLabel}>Receita</Text>
+                <View style={[styles.statBox, styles.statBoxAccentPurple]}>
+                  <View style={styles.statBoxTop}>
+                    <View style={[styles.statIconBg, styles.statIconBgPurple]}>
+                      <Ionicons name="cash-outline" size={20} color={C.purple} />
+                    </View>
+                    <Text style={styles.statLabel}>Receita</Text>
+                  </View>
                   <Text style={styles.statValue}>{formatCurrencySafe(summary.periodRevenue, 'BRL')}</Text>
                 </View>
               </View>
 
               <View style={styles.inlineMeta}>
+                <Ionicons name="layers-outline" size={14} color={C.textDim} style={{ marginRight: 6 }} />
                 <Text style={styles.inlineMetaText}>
                   {Math.max(sites.length, summary.sitesCount)} site
                   {Math.max(sites.length, summary.sitesCount) === 1 ? '' : 's'} na conta
                 </Text>
               </View>
 
-              <Text style={styles.sectionLabel}>Receita por dia</Text>
+              <View style={styles.sectionHeaderRow}>
+                <Ionicons name="trending-up-outline" size={17} color={C.accent} />
+                <Text style={styles.sectionLabel}>Receita por dia</Text>
+              </View>
               <View style={styles.chartCard}>
-                <SalesChart points={summary.chart} />
+                <SalesChart
+                  points={summary.chart}
+                  currency={
+                    summary.recentPurchases.map((p) => p.currency).find((c): c is string => Boolean(c)) ?? 'BRL'
+                  }
+                />
               </View>
 
               {sites.length > 0 ? (
                 <>
-                  <Text style={styles.sectionLabel}>Sites</Text>
+                  <View style={styles.sectionHeaderRow}>
+                    <Ionicons name="globe-outline" size={17} color={C.accent} />
+                    <Text style={styles.sectionLabel}>Sites</Text>
+                  </View>
                   <Text style={styles.filterHint}>Toque em &quot;Todos&quot; ou combine um ou mais sites.</Text>
                   <View style={styles.siteChips}>
                     <TouchableOpacity
@@ -562,7 +737,10 @@ export default function App() {
                 </>
               ) : null}
 
-              <Text style={styles.sectionLabel}>Últimas vendas</Text>
+              <View style={styles.sectionHeaderRow}>
+                <Ionicons name="receipt-outline" size={17} color={C.accent} />
+                <Text style={styles.sectionLabel}>Últimas vendas</Text>
+              </View>
               {summary.recentPurchases.length === 0 ? (
                 <Text style={styles.empty}>
                   Nenhuma venda neste período com os filtros atuais.
@@ -591,191 +769,294 @@ export default function App() {
             <Text style={styles.empty}>Não foi possível carregar os dados.</Text>
           )}
         </ScrollView>
-      </SafeAreaView>
+        </SafeAreaView>
+      </LinearGradient>
     </SafeAreaProvider>
   );
 }
 
 const chartStyles = StyleSheet.create({
-  scroll: { paddingVertical: 8, gap: 8, alignItems: 'flex-end' },
-  barCol: { width: 72, marginHorizontal: 4, alignItems: 'center' },
-  barVal: { fontSize: 9, color: '#a1a1aa', marginBottom: 4, maxWidth: 70 },
-  barTrack: {
-    width: 36,
-    height: 120,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderRadius: 8,
-    justifyContent: 'flex-end',
-    overflow: 'hidden',
+  chartOuter: {
+    paddingVertical: 10,
+    paddingHorizontal: 4,
   },
-  barFill: { width: '100%', borderRadius: 8 },
-  barLabel: { fontSize: 10, color: '#71717a', marginTop: 6 },
-  emptyChart: { padding: 16, alignItems: 'center' },
-  emptyChartText: { color: '#71717a', fontSize: 13 },
+  chartInner: {
+    width: '100%',
+  },
+  chartRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  yAxis: {
+    width: 56,
+    justifyContent: 'space-between',
+    paddingRight: 6,
+  },
+  yTick: {
+    fontSize: 10,
+    color: C.textDim,
+    textAlign: 'right',
+    width: '100%',
+  },
+  chartScroll: {
+    flex: 1,
+    minWidth: 0,
+  },
+  xLabels: {
+    flexDirection: 'row',
+    marginTop: 8,
+    paddingHorizontal: 0,
+  },
+  xTick: {
+    flex: 1,
+    fontSize: 11,
+    color: C.textDim,
+    textAlign: 'center',
+    fontWeight: '500',
+  },
+  emptyChart: { padding: 22, alignItems: 'center' },
+  emptyChartText: { color: C.textDim, fontSize: 14, textAlign: 'center' },
 });
 
 const styles = StyleSheet.create({
-  centered: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#05070a' },
+  appGradient: { flex: 1 },
+  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   loginGradient: { flex: 1 },
+  loginBlob1: {
+    position: 'absolute',
+    top: -80,
+    right: -60,
+    width: 220,
+    height: 220,
+    borderRadius: 110,
+    backgroundColor: 'rgba(99, 102, 241, 0.12)',
+  },
+  loginBlob2: {
+    position: 'absolute',
+    bottom: 40,
+    left: -50,
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    backgroundColor: 'rgba(14, 165, 233, 0.1)',
+  },
   safeLogin: { flex: 1 },
   keyboardView: { flex: 1 },
-  container: { flex: 1, backgroundColor: '#05070a' },
-  loginScroll: { flexGrow: 1, justifyContent: 'center', padding: 20, paddingBottom: 40 },
+  container: { flex: 1, backgroundColor: 'transparent' },
+  loginScroll: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 22, paddingBottom: 36 },
   loginCard: {
-    maxWidth: 400,
+    maxWidth: 420,
     width: '100%',
     alignSelf: 'center',
-    backgroundColor: '#12141a',
-    borderRadius: 24,
-    padding: 22,
+    backgroundColor: C.surface,
+    borderRadius: 28,
+    padding: 26,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: C.border,
+    overflow: 'hidden',
+    position: 'relative',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 20 },
+    shadowOpacity: 0.45,
+    shadowRadius: 24,
+    elevation: 16,
   },
-  loginLogo: { width: '100%', height: 56, marginBottom: 20, maxWidth: 280, alignSelf: 'center' },
-  welcomeTitle: { fontSize: 22, fontWeight: '700', color: '#fafafa', marginBottom: 4 },
-  welcomeSub: { fontSize: 15, color: '#a1a1aa', marginBottom: 20 },
-  fieldLabel: { fontSize: 13, color: '#a1a1aa', marginBottom: 6, marginTop: 4 },
+  loginCardGlow: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 3,
+  },
+  loginLogo: {
+    width: '100%',
+    height: 128,
+    marginBottom: 28,
+    maxWidth: 340,
+    alignSelf: 'center',
+  },
+  welcomeTitle: { fontSize: 24, fontWeight: '800', color: C.text, marginBottom: 6, letterSpacing: -0.3 },
+  welcomeSub: { fontSize: 15, color: C.textMuted, marginBottom: 22, lineHeight: 22 },
+  fieldLabel: { fontSize: 12, fontWeight: '600', color: C.textMuted, marginBottom: 8, marginTop: 6, textTransform: 'uppercase', letterSpacing: 0.6 },
   inputWrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#0b0f17',
+    backgroundColor: C.bgElevated,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 12,
-    marginBottom: 12,
-    paddingHorizontal: 12,
+    borderColor: C.border,
+    borderRadius: 14,
+    marginBottom: 14,
+    paddingHorizontal: 14,
   },
-  inputIcon: { marginRight: 8 },
-  inputInner: { flex: 1, paddingVertical: 14, fontSize: 16, color: '#f4f4f5' },
-  apiHint: { fontSize: 11, color: '#52525b', marginTop: 16, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
-  error: { color: '#f87171', marginBottom: 8, fontSize: 14 },
-  gradientBtnWrap: { marginTop: 8, borderRadius: 14, overflow: 'hidden' },
-  gradientBtn: { paddingVertical: 16, alignItems: 'center', justifyContent: 'center' },
-  gradientBtnText: { color: '#fff', fontSize: 17, fontWeight: '700' },
-  forgotWrap: { marginTop: 18, alignItems: 'center' },
-  forgotText: { fontSize: 14, color: '#71717a' },
-  forgotLink: { color: '#a78bfa', fontWeight: '600' },
+  inputIcon: { marginRight: 10 },
+  inputInner: { flex: 1, paddingVertical: 15, fontSize: 16, color: C.text },
+  apiHint: { fontSize: 11, color: C.textDim, marginTop: 16, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
+  error: { color: '#fca5a5', marginBottom: 8, fontSize: 14 },
+  gradientBtnWrap: { marginTop: 10, borderRadius: 16, overflow: 'hidden' },
+  gradientBtn: { paddingVertical: 17, alignItems: 'center', justifyContent: 'center' },
+  gradientBtnText: { color: '#fff', fontSize: 17, fontWeight: '800', letterSpacing: 0.3 },
+  forgotWrap: { marginTop: 20, alignItems: 'center' },
+  forgotText: { fontSize: 14, color: C.textDim },
+  forgotLink: { color: C.purple, fontWeight: '700' },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-    backgroundColor: '#080a0f',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(255,255,255,0.08)',
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    backgroundColor: 'rgba(8, 11, 18, 0.92)',
+    borderBottomWidth: 1,
+    borderBottomColor: C.border,
   },
   headerLeft: { flex: 1, marginRight: 12, flexDirection: 'row', alignItems: 'center' },
-  headerLogo: { width: 40, height: 40, marginRight: 10 },
+  headerLogoRing: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: C.accentSoft,
+    borderWidth: 1,
+    borderColor: C.borderStrong,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  headerLogo: { width: 30, height: 30 },
   headerTextCol: { flex: 1, minWidth: 0 },
-  brandSmall: { fontSize: 13, fontWeight: '800', color: '#22d3ee' },
-  headerEmail: { fontSize: 12, color: '#a1a1aa', marginTop: 2 },
-  logoutText: { fontSize: 15, color: '#22d3ee', fontWeight: '600' },
-  errorBanner: {
-    backgroundColor: 'rgba(234, 179, 8, 0.12)',
+  brandSmall: { fontSize: 17, fontWeight: '800', color: C.text, letterSpacing: -0.2 },
+  headerEmail: { fontSize: 12, color: C.textMuted, marginTop: 2 },
+  logoutPill: {
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingVertical: 9,
+    borderRadius: 999,
+    backgroundColor: C.accentSoft,
+    borderWidth: 1,
+    borderColor: C.borderStrong,
+  },
+  logoutText: { fontSize: 14, color: C.accent, fontWeight: '700' },
+  errorBanner: {
+    backgroundColor: 'rgba(234, 179, 8, 0.1)',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(234, 179, 8, 0.35)',
+    borderBottomColor: 'rgba(234, 179, 8, 0.3)',
   },
   errorBannerText: { color: '#fde68a', fontSize: 13, marginBottom: 8 },
   retryBtn: {
     alignSelf: 'flex-start',
-    backgroundColor: 'rgba(234, 179, 8, 0.25)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  retryBtnText: { color: '#fef3c7', fontSize: 13, fontWeight: '600' },
-  scroll: { flex: 1 },
-  scrollContent: { padding: 16, paddingBottom: 40 },
-  loader: { marginTop: 48 },
-  sectionLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#71717a',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    marginBottom: 10,
-    marginTop: 4,
-  },
-  periodRow: { flexDirection: 'row', flexWrap: 'nowrap', paddingBottom: 12, gap: 8 },
-  periodChip: {
+    backgroundColor: 'rgba(234, 179, 8, 0.2)',
     paddingHorizontal: 14,
     paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: '#0b0f17',
+    borderRadius: 10,
+  },
+  retryBtnText: { color: '#fef3c7', fontSize: 13, fontWeight: '700' },
+  scroll: { flex: 1 },
+  scrollContent: { padding: 18, paddingBottom: 44 },
+  loader: { marginTop: 48 },
+  sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12, marginTop: 8 },
+  sectionLabel: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: C.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    flex: 1,
+  },
+  periodRow: { flexDirection: 'row', flexWrap: 'nowrap', paddingBottom: 14, gap: 8 },
+  periodChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: C.surface2,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: C.border,
     marginRight: 8,
   },
   periodChipActive: {
-    borderColor: '#22d3ee',
-    backgroundColor: 'rgba(34, 211, 238, 0.12)',
+    borderColor: C.borderStrong,
+    backgroundColor: C.accentSoft,
   },
-  periodChipText: { fontSize: 13, color: '#a1a1aa', fontWeight: '600' },
-  periodChipTextActive: { color: '#e0f2fe' },
-  statGrid: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -6, marginBottom: 8 },
-  statCard: {
-    width: '50%',
-    paddingHorizontal: 6,
-    marginBottom: 12,
-  },
-  statLabel: { fontSize: 12, color: '#a1a1aa', marginBottom: 4 },
-  statValue: { fontSize: 18, fontWeight: '700', color: '#f4f4f5' },
-  inlineMeta: { marginBottom: 16 },
-  inlineMetaText: { fontSize: 13, color: '#71717a' },
-  chartCard: {
-    backgroundColor: '#0b0f17',
-    borderRadius: 12,
+  periodChipText: { fontSize: 13, color: C.textMuted, fontWeight: '700' },
+  periodChipTextActive: { color: C.text },
+  statRow: { flexDirection: 'row', gap: 12, marginBottom: 14 },
+  statBox: {
+    flex: 1,
+    backgroundColor: C.surface2,
+    borderRadius: 18,
+    padding: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    marginBottom: 16,
+    borderColor: C.border,
+  },
+  statBoxAccent: { borderLeftWidth: 3, borderLeftColor: C.accent },
+  statBoxAccentPurple: { borderLeftWidth: 3, borderLeftColor: C.purple },
+  statBoxTop: { flexDirection: 'row', alignItems: 'center', marginBottom: 10, gap: 8 },
+  statIconBg: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: C.accentSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statIconBgPurple: { backgroundColor: 'rgba(167, 139, 250, 0.15)' },
+  statLabel: { fontSize: 11, fontWeight: '700', color: C.textDim, textTransform: 'uppercase', letterSpacing: 0.5 },
+  statValue: { fontSize: 20, fontWeight: '800', color: C.text, letterSpacing: -0.5 },
+  inlineMeta: { flexDirection: 'row', alignItems: 'center', marginBottom: 18 },
+  inlineMetaText: { fontSize: 13, color: C.textDim },
+  chartCard: {
+    backgroundColor: C.surface2,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: C.border,
+    marginBottom: 18,
     overflow: 'hidden',
   },
-  filterHint: { fontSize: 12, color: '#52525b', marginBottom: 8 },
-  siteChips: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -4, marginBottom: 8 },
+  filterHint: { fontSize: 12, color: C.textDim, marginBottom: 10, lineHeight: 18 },
+  siteChips: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -4, marginBottom: 10 },
   siteChip: {
-    backgroundColor: '#0b0f17',
-    borderRadius: 10,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    backgroundColor: C.surface2,
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
     margin: 4,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: C.border,
     maxWidth: '100%',
   },
   siteChipActive: {
-    borderColor: '#22d3ee',
-    backgroundColor: 'rgba(34, 211, 238, 0.1)',
+    borderColor: C.borderStrong,
+    backgroundColor: C.accentSoft,
   },
-  siteChipName: { fontSize: 14, fontWeight: '600', color: '#e4e4e7' },
-  siteChipNameActive: { color: '#e0f2fe' },
-  siteChipDomain: { fontSize: 11, color: '#71717a', marginTop: 2 },
-  empty: { color: '#a1a1aa', fontSize: 14, lineHeight: 22 },
+  siteChipName: { fontSize: 14, fontWeight: '700', color: C.text },
+  siteChipNameActive: { color: C.text },
+  siteChipDomain: { fontSize: 11, color: C.textDim, marginTop: 2 },
+  empty: { color: C.textMuted, fontSize: 14, lineHeight: 22 },
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    backgroundColor: '#0b0f17',
-    padding: 14,
-    borderRadius: 12,
+    backgroundColor: C.surface2,
+    padding: 16,
+    borderRadius: 16,
     marginBottom: 10,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: C.border,
+    borderLeftWidth: 4,
+    borderLeftColor: C.accentDeep,
   },
   rowLeft: { flex: 1, marginRight: 8 },
   rowTop: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' },
-  rowOrder: { fontSize: 15, fontWeight: '700', color: '#f4f4f5' },
+  rowOrder: { fontSize: 15, fontWeight: '800', color: C.text },
   badge: {
-    backgroundColor: 'rgba(10, 126, 164, 0.25)',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
+    backgroundColor: C.accentSoft,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+    borderRadius: 8,
     marginLeft: 8,
+    borderWidth: 1,
+    borderColor: C.borderStrong,
   },
-  badgeText: { fontSize: 11, fontWeight: '600', color: '#67e8f9' },
-  rowSite: { fontSize: 13, color: '#a1a1aa', marginTop: 4 },
-  rowDate: { fontSize: 12, color: '#71717a', marginTop: 2 },
-  rowAmount: { fontSize: 15, fontWeight: '700', color: '#22d3ee' },
+  badgeText: { fontSize: 11, fontWeight: '700', color: C.accent },
+  rowSite: { fontSize: 13, color: C.textMuted, marginTop: 4 },
+  rowDate: { fontSize: 12, color: C.textDim, marginTop: 2 },
+  rowAmount: { fontSize: 17, fontWeight: '800', color: C.accent, letterSpacing: -0.3 },
 });
