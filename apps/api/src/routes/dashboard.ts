@@ -39,9 +39,57 @@ router.get('/revenue', async (req, res) => {
 
 const APPROVED_PURCHASE_STATUSES = `('approved', 'paid', 'completed', 'active')`;
 
-function mobilePeriodBounds(period: string): { start: Date; end: Date } {
+function parseYmdLocal(s: string): { y: number; m: number; d: number } | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s).trim());
+  if (!m) return null;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  if (!Number.isFinite(y) || !Number.isFinite(mo) || !Number.isFinite(d)) return null;
+  const dt = new Date(y, mo - 1, d);
+  if (dt.getFullYear() !== y || dt.getMonth() !== mo - 1 || dt.getDate() !== d) return null;
+  return { y, m: mo, d };
+}
+
+/** Início/fim do dia civil em UTC a partir de Y-M-D (evita deslocamento servidor vs Postgres timestamptz). */
+function startUtcFromYmd(y: number, m: number, d: number): Date {
+  return new Date(Date.UTC(y, m - 1, d, 0, 0, 0, 0));
+}
+
+function endUtcFromYmd(y: number, m: number, d: number): Date {
+  return new Date(Date.UTC(y, m - 1, d, 23, 59, 59, 999));
+}
+
+/** Alinhado ao dashboard web: presets + máximo + período personalizado (?since=&until=) */
+function resolveMobilePeriod(
+  period: string,
+  sinceStr?: string,
+  untilStr?: string
+): { start: Date; end: Date } | { error: string } {
   const now = new Date();
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  if (period === 'custom') {
+    if (!sinceStr || !untilStr) {
+      return { error: 'Para período personalizado, informe since e until (YYYY-MM-DD).' };
+    }
+    const a = parseYmdLocal(sinceStr);
+    const b = parseYmdLocal(untilStr);
+    if (!a || !b) {
+      return { error: 'Datas inválidas. Use o formato YYYY-MM-DD.' };
+    }
+    let start = startUtcFromYmd(a.y, a.m, a.d);
+    let end = endUtcFromYmd(b.y, b.m, b.d);
+    if (start.getTime() > end.getTime()) {
+      return { error: 'A data inicial não pode ser maior que a final.' };
+    }
+    if (start.getTime() > now.getTime()) {
+      return { error: 'O período não pode estar inteiro no futuro.' };
+    }
+    const endCap = end.getTime() > now.getTime() ? now : end;
+    return { start, end: endCap };
+  }
+
   switch (period) {
     case 'yesterday': {
       const yStart = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000);
@@ -49,10 +97,14 @@ function mobilePeriodBounds(period: string): { start: Date; end: Date } {
     }
     case 'last_7d':
       return { start: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000), end: now };
+    case 'last_14d':
+      return { start: new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000), end: now };
     case 'last_15d':
       return { start: new Date(now.getTime() - 15 * 24 * 60 * 60 * 1000), end: now };
     case 'last_30d':
       return { start: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000), end: now };
+    case 'maximum':
+      return { start: new Date(Date.UTC(1970, 0, 1, 0, 0, 0, 0)), end: now };
     case 'today':
     default:
       return { start: todayStart, end: now };
@@ -79,9 +131,15 @@ function siteIdFilterParam(siteIds: number[]): number[] | null {
 router.get('/mobile-summary', async (req, res) => {
   const auth = req.auth!;
   const period = (req.query.period as string) || 'today';
+  const since = typeof req.query.since === 'string' ? req.query.since.trim() : undefined;
+  const until = typeof req.query.until === 'string' ? req.query.until.trim() : undefined;
   const siteIds = parseSiteIds(req.query.sites);
   const siteFilter = siteIdFilterParam(siteIds);
-  const { start, end } = mobilePeriodBounds(period);
+  const bounds = resolveMobilePeriod(period, since, until);
+  if ('error' in bounds) {
+    return res.status(400).json({ error: bounds.error });
+  }
+  const { start, end } = bounds;
 
   try {
     const [aggRes, chartRes, recentRes, sitesRes] = await Promise.all([

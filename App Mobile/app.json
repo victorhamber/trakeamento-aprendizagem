@@ -44,7 +44,8 @@
             "./assets/sounds/sale_kaching.mp3"
           ]
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "extra": {
       "eas": {

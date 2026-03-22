@@ -142,11 +142,18 @@ async function requireOk(res: Response): Promise<void> {
 export type MobileSummaryParams = {
   period?: string;
   siteIds?: number[];
+  /** Obrigatórios quando `period` é `custom` (YYYY-MM-DD) */
+  since?: string;
+  until?: string;
 };
 
 export async function getMobileSummary(params?: MobileSummaryParams): Promise<MobileSummary> {
   const q = new URLSearchParams();
   q.set('period', params?.period || 'today');
+  if (params?.period === 'custom' && params.since && params.until) {
+    q.set('since', params.since);
+    q.set('until', params.until);
+  }
   if (params?.siteIds?.length) q.set('sites', params.siteIds.join(','));
   const qs = q.toString();
   const url = `${API_BASE}/dashboard/mobile-summary?${qs}`;

@@ -18,12 +18,13 @@ import {
   Pressable,
   InteractionManager,
   Dimensions,
+  Modal,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -43,17 +44,64 @@ import {
 import { setupAndroidSalesChannel } from './setupNotificationChannels';
 import { getExpoPushTokenString } from './expoPush';
 import Svg, { Circle, Line, Polyline } from 'react-native-svg';
+import DateTimePicker from '@react-native-community/datetimepicker';
 
 const TOKEN_KEY = '@trajettu_token';
 const USER_EMAIL_KEY = '@trajettu_user_email';
 
-const PERIODS: { key: string; label: string }[] = [
+/** Presets alinhados ao dashboard web (select de período) */
+const PERIOD_PRESETS: { key: string; label: string }[] = [
   { key: 'today', label: 'Hoje' },
   { key: 'yesterday', label: 'Ontem' },
-  { key: 'last_7d', label: '7 dias' },
-  { key: 'last_15d', label: '15 dias' },
-  { key: 'last_30d', label: '30 dias' },
+  { key: 'last_7d', label: 'Últimos 7 dias' },
+  { key: 'last_14d', label: 'Últimos 14 dias' },
+  { key: 'last_30d', label: 'Últimos 30 dias' },
+  { key: 'maximum', label: 'Máximo' },
 ];
+
+const PERIOD_ROW_SELECTED = '#2563eb';
+
+function toYmd(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function ymdToBr(ymd: string): string {
+  const p = ymd.split('-');
+  if (p.length !== 3) return ymd;
+  return `${p[2]}/${p[1]}/${p[0]}`;
+}
+
+function defaultCustomRange(): { since: string; until: string } {
+  const until = new Date();
+  const since = new Date(until.getTime() - 6 * 24 * 60 * 60 * 1000);
+  return { since: toYmd(since), until: toYmd(until) };
+}
+
+function parseYmdToDate(ymd: string): Date {
+  const p = ymd.split('-').map(Number);
+  if (p.length !== 3 || p.some((n) => !Number.isFinite(n))) return new Date();
+  return new Date(p[0], p[1] - 1, p[2]);
+}
+
+function ymdLocalTime(ymd: string): number {
+  const p = ymd.split('-').map(Number);
+  if (p.length !== 3) return 0;
+  return new Date(p[0], p[1] - 1, p[2]).getTime();
+}
+
+/** Evita intervalo no futuro (relógio errado / ano errado) e garante since ≤ until */
+function clampCustomRange(since: string, until: string): { since: string; until: string } {
+  const today = new Date();
+  const todayYmd = toYmd(today);
+  let s = since;
+  let u = until;
+  if (ymdLocalTime(u) > ymdLocalTime(todayYmd)) u = todayYmd;
+  if (ymdLocalTime(s) > ymdLocalTime(todayYmd)) s = todayYmd;
+  if (ymdLocalTime(s) > ymdLocalTime(u)) {
+    s = u;
+  }
+  return { since: s, until: u };
+}
 
 /** Paleta unificada (dark premium) */
 const C = {
@@ -267,6 +315,7 @@ function SalesChart({ points, currency = 'BRL' }: { points: ChartPoint[]; curren
 }
 
 export default function App() {
+  const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(true);
   const [authToken, setAuthTokenState] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState('');
@@ -280,6 +329,12 @@ export default function App() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [periodKey, setPeriodKey] = useState('today');
+  const [periodModalVisible, setPeriodModalVisible] = useState(false);
+  const [periodModalStep, setPeriodModalStep] = useState<'list' | 'custom'>('list');
+  const [showSincePicker, setShowSincePicker] = useState(false);
+  const [showUntilPicker, setShowUntilPicker] = useState(false);
+  const [customSince, setCustomSince] = useState(() => defaultCustomRange().since);
+  const [customUntil, setCustomUntil] = useState(() => defaultCustomRange().until);
   const [selectedSiteIds, setSelectedSiteIds] = useState<number[]>([]);
 
   const siteKey = useMemo(
@@ -290,6 +345,11 @@ export default function App() {
         .join(','),
     [selectedSiteIds]
   );
+
+  const customRangeForApi = useMemo(() => {
+    if (periodKey !== 'custom') return null;
+    return clampCustomRange(customSince, customUntil);
+  }, [periodKey, customSince, customUntil]);
 
   const logout = useCallback(async () => {
     try {
@@ -306,6 +366,9 @@ export default function App() {
     setUserEmail('');
     setLoadError(null);
     setPeriodKey('today');
+    const dr = defaultCustomRange();
+    setCustomSince(dr.since);
+    setCustomUntil(dr.until);
     setSelectedSiteIds([]);
   }, []);
 
@@ -355,7 +418,13 @@ export default function App() {
     setDataLoading(true);
     try {
       const [sum, siteList] = await Promise.all([
-        getMobileSummary({ period: periodKey, siteIds: selectedSiteIds }),
+        getMobileSummary({
+          period: periodKey,
+          siteIds: selectedSiteIds,
+          ...(periodKey === 'custom' && customRangeForApi
+            ? { since: customRangeForApi.since, until: customRangeForApi.until }
+            : {}),
+        }),
         getSites(),
       ]);
       setSummary(sum);
@@ -371,7 +440,7 @@ export default function App() {
     } finally {
       setDataLoading(false);
     }
-  }, [periodKey, selectedSiteIds, handleAuthFailure]);
+  }, [periodKey, customRangeForApi, selectedSiteIds, handleAuthFailure]);
 
   useEffect(() => {
     if (!authToken) return;
@@ -464,7 +533,40 @@ export default function App() {
 
   const selectAllSites = () => setSelectedSiteIds([]);
 
-  const periodLabel = PERIODS.find((p) => p.key === periodKey)?.label ?? 'Período';
+  const periodSummaryLabel = useMemo(() => {
+    if (periodKey === 'custom' && customRangeForApi) {
+      return `${ymdToBr(customRangeForApi.since)} – ${ymdToBr(customRangeForApi.until)}`;
+    }
+    return PERIOD_PRESETS.find((p) => p.key === periodKey)?.label ?? 'Período';
+  }, [periodKey, customRangeForApi]);
+
+  const openPeriodModal = () => {
+    setPeriodModalStep('list');
+    setPeriodModalVisible(true);
+  };
+
+  const closePeriodModal = () => {
+    setPeriodModalVisible(false);
+    setPeriodModalStep('list');
+    setShowSincePicker(false);
+    setShowUntilPicker(false);
+  };
+
+  const onSelectPresetPeriod = (key: string) => {
+    setPeriodKey(key);
+    closePeriodModal();
+  };
+
+  const onApplyCustomPeriod = () => {
+    const { since, until } = clampCustomRange(customSince, customUntil);
+    setCustomSince(since);
+    setCustomUntil(until);
+    setPeriodKey('custom');
+    closePeriodModal();
+  };
+
+  /** Espaço inferior do sheet: barra de navegação + folga para tocar sem acionar gestos do sistema */
+  const periodSheetBottomPad = Math.max(insets.bottom, 18) + 22;
 
   if (loading) {
     return (
@@ -594,9 +696,6 @@ export default function App() {
               </View>
               <View style={styles.headerTextCol}>
                 <Text style={styles.brandSmall}>Trajettu</Text>
-                <Text style={styles.headerEmail} numberOfLines={1}>
-                  {userEmail || '—'}
-                </Text>
               </View>
             </View>
             <TouchableOpacity onPress={onLogout} style={styles.logoutPill} activeOpacity={0.8} hitSlop={8}>
@@ -630,20 +729,167 @@ export default function App() {
             <Ionicons name="calendar-outline" size={17} color={C.accent} />
             <Text style={styles.sectionLabel}>Período</Text>
           </View>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.periodRow}>
-            {PERIODS.map((p) => {
-              const active = periodKey === p.key;
-              return (
-                <TouchableOpacity
-                  key={p.key}
-                  style={[styles.periodChip, active && styles.periodChipActive]}
-                  onPress={() => setPeriodKey(p.key)}
-                >
-                  <Text style={[styles.periodChipText, active && styles.periodChipTextActive]}>{p.label}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
+          <TouchableOpacity
+            style={styles.periodTrigger}
+            onPress={openPeriodModal}
+            activeOpacity={0.88}
+            accessibilityRole="button"
+            accessibilityLabel="Selecionar período"
+          >
+            <Text style={styles.periodTriggerText} numberOfLines={2}>
+              {periodSummaryLabel}
+            </Text>
+            <Ionicons name="chevron-down" size={22} color={C.textMuted} />
+          </TouchableOpacity>
+
+          <Modal
+            visible={periodModalVisible}
+            transparent
+            animationType="fade"
+            onRequestClose={closePeriodModal}
+          >
+            <View style={styles.periodModalRoot}>
+              <Pressable style={styles.periodModalBackdrop} onPress={closePeriodModal} />
+              <View style={[styles.periodModalSheet, { paddingBottom: periodSheetBottomPad }]}>
+                {periodModalStep === 'list' ? (
+                  <>
+                    <Text style={styles.periodModalTitle}>Período</Text>
+                    <ScrollView
+                      style={styles.periodModalList}
+                      keyboardShouldPersistTaps="handled"
+                      contentContainerStyle={styles.periodModalListContent}
+                    >
+                      {PERIOD_PRESETS.map((p) => {
+                        const active = periodKey === p.key;
+                        return (
+                          <TouchableOpacity
+                            key={p.key}
+                            style={[styles.periodModalRow, active && styles.periodModalRowActive]}
+                            onPress={() => onSelectPresetPeriod(p.key)}
+                            activeOpacity={0.85}
+                          >
+                            <Text style={[styles.periodModalRowText, active && styles.periodModalRowTextActive]}>
+                              {p.label}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                      <TouchableOpacity
+                        style={[
+                          styles.periodModalRow,
+                          periodKey === 'custom' && styles.periodModalRowActive,
+                        ]}
+                        onPress={() => {
+                          const c = clampCustomRange(customSince, customUntil);
+                          setCustomSince(c.since);
+                          setCustomUntil(c.until);
+                          setPeriodModalStep('custom');
+                        }}
+                        activeOpacity={0.85}
+                      >
+                        <Text
+                          style={[
+                            styles.periodModalRowText,
+                            periodKey === 'custom' && styles.periodModalRowTextActive,
+                          ]}
+                        >
+                          Período personalizado
+                        </Text>
+                      </TouchableOpacity>
+                    </ScrollView>
+                  </>
+                ) : (
+                  <>
+                    <View style={styles.periodCustomHeader}>
+                      <TouchableOpacity
+                        onPress={() => setPeriodModalStep('list')}
+                        hitSlop={12}
+                        accessibilityLabel="Voltar"
+                      >
+                        <Ionicons name="arrow-back" size={24} color={C.text} />
+                      </TouchableOpacity>
+                      <Text style={styles.periodModalTitleInline}>Datas</Text>
+                      <View style={{ width: 24 }} />
+                    </View>
+                    <Text style={styles.periodCustomHint}>Escolha o intervalo (início e fim do dia).</Text>
+                    <View style={styles.periodCustomField}>
+                      <Text style={styles.periodCustomLabel}>De</Text>
+                      {Platform.OS === 'ios' ? (
+                        <DateTimePicker
+                          value={parseYmdToDate(customSince)}
+                          mode="date"
+                          display="compact"
+                          themeVariant="dark"
+                          onChange={(_, d) => d && setCustomSince(toYmd(d))}
+                          maximumDate={parseYmdToDate(customUntil)}
+                        />
+                      ) : (
+                        <>
+                          <TouchableOpacity
+                            style={styles.periodAndroidDateBtn}
+                            onPress={() => setShowSincePicker(true)}
+                          >
+                            <Text style={styles.periodAndroidDateBtnText}>{ymdToBr(customSince)}</Text>
+                          </TouchableOpacity>
+                          {showSincePicker ? (
+                            <DateTimePicker
+                              value={parseYmdToDate(customSince)}
+                              mode="date"
+                              display="default"
+                              onChange={(e, d) => {
+                                setShowSincePicker(false);
+                                if (e.type === 'set' && d) setCustomSince(toYmd(d));
+                              }}
+                              maximumDate={parseYmdToDate(customUntil)}
+                            />
+                          ) : null}
+                        </>
+                      )}
+                    </View>
+                    <View style={styles.periodCustomField}>
+                      <Text style={styles.periodCustomLabel}>Até</Text>
+                      {Platform.OS === 'ios' ? (
+                        <DateTimePicker
+                          value={parseYmdToDate(customUntil)}
+                          mode="date"
+                          display="compact"
+                          themeVariant="dark"
+                          onChange={(_, d) => d && setCustomUntil(toYmd(d))}
+                          minimumDate={parseYmdToDate(customSince)}
+                          maximumDate={new Date()}
+                        />
+                      ) : (
+                        <>
+                          <TouchableOpacity
+                            style={styles.periodAndroidDateBtn}
+                            onPress={() => setShowUntilPicker(true)}
+                          >
+                            <Text style={styles.periodAndroidDateBtnText}>{ymdToBr(customUntil)}</Text>
+                          </TouchableOpacity>
+                          {showUntilPicker ? (
+                            <DateTimePicker
+                              value={parseYmdToDate(customUntil)}
+                              mode="date"
+                              display="default"
+                              onChange={(e, d) => {
+                                setShowUntilPicker(false);
+                                if (e.type === 'set' && d) setCustomUntil(toYmd(d));
+                              }}
+                              minimumDate={parseYmdToDate(customSince)}
+                              maximumDate={new Date()}
+                            />
+                          ) : null}
+                        </>
+                      )}
+                    </View>
+                    <TouchableOpacity style={styles.periodApplyBtn} onPress={onApplyCustomPeriod} activeOpacity={0.9}>
+                      <Text style={styles.periodApplyBtnText}>Aplicar</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
+              </View>
+            </View>
+          </Modal>
 
           {dataLoading && !summary ? (
             <ActivityIndicator size="large" color={C.accent} style={styles.loader} />
@@ -651,7 +897,7 @@ export default function App() {
             <>
               <View style={styles.sectionHeaderRow}>
                 <Ionicons name="stats-chart-outline" size={17} color={C.accent} />
-                <Text style={styles.sectionLabel}>Resumo · {periodLabel}</Text>
+                <Text style={styles.sectionLabel}>Resumo · {periodSummaryLabel}</Text>
               </View>
               <View style={styles.statRow}>
                 <View style={[styles.statBox, styles.statBoxAccent]}>
@@ -921,9 +1167,8 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   headerLogo: { width: 30, height: 30 },
-  headerTextCol: { flex: 1, minWidth: 0 },
+  headerTextCol: { flex: 1, minWidth: 0, justifyContent: 'center' },
   brandSmall: { fontSize: 17, fontWeight: '800', color: C.text, letterSpacing: -0.2 },
-  headerEmail: { fontSize: 12, color: C.textMuted, marginTop: 2 },
   logoutPill: {
     paddingHorizontal: 16,
     paddingVertical: 9,
@@ -961,22 +1206,103 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     flex: 1,
   },
-  periodRow: { flexDirection: 'row', flexWrap: 'nowrap', paddingBottom: 14, gap: 8 },
-  periodChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 999,
+  periodTrigger: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginBottom: 14,
+    borderRadius: 12,
     backgroundColor: C.surface2,
     borderWidth: 1,
     borderColor: C.border,
-    marginRight: 8,
+    gap: 10,
   },
-  periodChipActive: {
-    borderColor: C.borderStrong,
-    backgroundColor: C.accentSoft,
+  periodTriggerText: { flex: 1, fontSize: 15, fontWeight: '600', color: C.text },
+  periodModalRoot: {
+    flex: 1,
+    justifyContent: 'flex-end',
   },
-  periodChipText: { fontSize: 13, color: C.textMuted, fontWeight: '700' },
-  periodChipTextActive: { color: C.text },
+  periodModalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+  },
+  periodModalSheet: {
+    backgroundColor: C.surface,
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    borderWidth: 1,
+    borderColor: C.border,
+    paddingTop: 18,
+    paddingHorizontal: 16,
+    maxHeight: '78%',
+  },
+  periodModalTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: C.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 12,
+  },
+  periodModalTitleInline: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: C.text,
+  },
+  periodModalList: { maxHeight: 360 },
+  periodModalListContent: {
+    paddingTop: 4,
+    paddingBottom: 12,
+  },
+  periodModalRow: {
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    marginBottom: 4,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  periodModalRowActive: {
+    backgroundColor: PERIOD_ROW_SELECTED,
+    borderColor: 'rgba(255,255,255,0.12)',
+  },
+  periodModalRowText: { fontSize: 16, fontWeight: '600', color: C.text },
+  periodModalRowTextActive: { color: '#fff' },
+  periodCustomHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  periodCustomHint: { fontSize: 13, color: C.textDim, marginBottom: 16, lineHeight: 20 },
+  periodCustomField: { marginBottom: 16 },
+  periodCustomLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: C.textMuted,
+    marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  periodAndroidDateBtn: {
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    backgroundColor: C.bgElevated,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  periodAndroidDateBtnText: { fontSize: 16, fontWeight: '600', color: C.text },
+  periodApplyBtn: {
+    marginTop: 12,
+    paddingVertical: 16,
+    borderRadius: 14,
+    backgroundColor: PERIOD_ROW_SELECTED,
+    alignItems: 'center',
+  },
+  periodApplyBtnText: { fontSize: 16, fontWeight: '800', color: '#fff' },
   statRow: { flexDirection: 'row', gap: 12, marginBottom: 14 },
   statBox: {
     flex: 1,
