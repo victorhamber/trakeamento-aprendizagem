@@ -3,6 +3,7 @@ import { Link, NavLink } from 'react-router-dom';
 import { useAuth } from '../state/auth';
 import { useTheme } from '../state/theme';
 import { api } from '../lib/api';
+import { SalePushToggle } from './SalePushToggle';
 
 // ─── Icons ───────────────────────────────────────────────────────────────────
 
@@ -204,6 +205,8 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
               >
                 {isDark ? <IconSun /> : <IconMoon />}
               </button>
+
+              {auth.token ? <SalePushToggle /> : null}
 
               {/* Notification bell */}
               <div className="relative">

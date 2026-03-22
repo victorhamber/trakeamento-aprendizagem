@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
-import { useAuth } from '../state/auth';
-import { useWebPush } from '../hooks/useWebPush';
 import { Layout } from '../components/Layout';
 import { BestTimeCards } from '../components/BestTimeCards';
 import { RevenueChart } from '../components/charts/RevenueChart';
@@ -70,13 +68,6 @@ const IconChart = () => (
 const IconArrow = () => (
   <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M5 12h14M12 5l7 7-7 7" />
-  </svg>
-);
-
-const IconBell = () => (
-  <svg viewBox="0 0 24 24" fill="none" className="h-6 w-6" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
-    <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
   </svg>
 );
 
@@ -184,9 +175,6 @@ const selectCls =
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export const DashboardPage = () => {
-  const { token } = useAuth();
-  const webPush = useWebPush(!!token);
-
   const [data, setData] = useState<Overview | null>(null);
   const [salesData, setSalesData] = useState<DailyPoint[]>([]);
   const [funnelData, setFunnelData] = useState<any>(null);
@@ -313,71 +301,6 @@ export const DashboardPage = () => {
             </Link>
           </div>
         </div>
-      </div>
-
-      {/* ── Alertas de venda (destaque — acima dos KPIs) ── */}
-      <div className="mb-6 rounded-2xl border-2 border-emerald-500/35 dark:border-emerald-500/30 bg-gradient-to-br from-emerald-50/95 via-white to-white dark:from-emerald-950/50 dark:via-zinc-950/90 dark:to-zinc-950/80 px-4 py-4 sm:px-6 sm:py-5 shadow-md shadow-emerald-500/5 dark:shadow-none select-none">
-        <div className="flex flex-col lg:flex-row lg:items-center gap-4 lg:gap-6 justify-between">
-          <div className="flex gap-4 min-w-0">
-            <div className="shrink-0 w-14 h-14 rounded-2xl bg-emerald-500/15 dark:bg-emerald-500/20 border border-emerald-500/25 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
-              <IconBell />
-            </div>
-            <div className="min-w-0">
-              <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-700 dark:text-emerald-400 mb-1">
-                Vendas em tempo real
-              </div>
-              <h3 className="text-base sm:text-lg font-bold text-zinc-900 dark:text-zinc-100 tracking-tight">
-                Receba push e som ao fechar venda (Hotmart, Kiwify…)
-              </h3>
-              <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400 leading-snug max-w-xl">
-                Ative no celular ou no PC. Funciona com o painel aberto no navegador ou PWA na tela inicial.
-              </p>
-            </div>
-          </div>
-
-          <div className="shrink-0 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-            {!webPush.supported ? (
-              <p className="text-[13px] text-zinc-500 dark:text-zinc-400 sm:text-right sm:max-w-[220px]">
-                Navegador sem suporte a push. Use Chrome ou Edge atualizado.
-              </p>
-            ) : webPush.serverEnabled === null ? (
-              <span className="text-sm text-zinc-500">Carregando…</span>
-            ) : !webPush.serverEnabled ? (
-              <p className="text-[13px] text-zinc-600 dark:text-zinc-400 sm:text-right sm:max-w-[260px]">
-                Configure chaves VAPID na API (variáveis <code className="text-[11px] bg-zinc-200/80 dark:bg-zinc-800 px-1 rounded">WEB_PUSH_VAPID_*</code>).
-              </p>
-            ) : webPush.subscribed ? (
-              <>
-                <span className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-emerald-500/15 dark:bg-emerald-500/20 border border-emerald-500/30 px-3 py-2 text-xs font-semibold text-emerald-800 dark:text-emerald-300">
-                  <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" aria-hidden />
-                  Alertas ativos
-                </span>
-                <button
-                  type="button"
-                  onClick={() => void webPush.unsubscribe()}
-                  disabled={webPush.busy}
-                  className="rounded-xl border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 px-4 py-2.5 text-sm font-semibold text-zinc-800 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-800 disabled:opacity-50 transition-colors"
-                >
-                  {webPush.busy ? 'Aguarde…' : 'Desativar'}
-                </button>
-              </>
-            ) : (
-              <button
-                type="button"
-                onClick={() => void webPush.subscribe()}
-                disabled={webPush.busy}
-                className="rounded-xl bg-emerald-600 hover:bg-emerald-500 dark:bg-emerald-600 dark:hover:bg-emerald-500 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-emerald-600/25 disabled:opacity-50 transition-colors"
-              >
-                {webPush.busy ? 'Ativando…' : 'Ativar alertas de venda'}
-              </button>
-            )}
-          </div>
-        </div>
-        {webPush.error ? (
-          <p className="mt-3 text-sm text-red-600 dark:text-red-400 border-t border-emerald-500/20 dark:border-emerald-500/15 pt-3">
-            {webPush.error}
-          </p>
-        ) : null}
       </div>
 
       {/* ── KPI grid ── */}
