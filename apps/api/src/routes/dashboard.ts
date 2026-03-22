@@ -39,48 +39,106 @@ router.get('/revenue', async (req, res) => {
 
 const APPROVED_PURCHASE_STATUSES = `('approved', 'paid', 'completed', 'active')`;
 
-/** Mobile app: today + 7d stats, sites count, recent purchases in one call. */
+function mobilePeriodBounds(period: string): { start: Date; end: Date } {
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  switch (period) {
+    case 'yesterday': {
+      const yStart = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000);
+      return { start: yStart, end: todayStart };
+    }
+    case 'last_7d':
+      return { start: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000), end: now };
+    case 'last_15d':
+      return { start: new Date(now.getTime() - 15 * 24 * 60 * 60 * 1000), end: now };
+    case 'last_30d':
+      return { start: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000), end: now };
+    case 'today':
+    default:
+      return { start: todayStart, end: now };
+  }
+}
+
+function parseSiteIds(raw: unknown): number[] {
+  if (raw == null || raw === '') return [];
+  const s = String(raw);
+  return s
+    .split(',')
+    .map((x) => parseInt(x.trim(), 10))
+    .filter((n) => Number.isFinite(n) && n > 0);
+}
+
+/**
+ * Filtro de sites para SQL: `null` = todos os sites (evita `[]` com tipo ambíguo no node-pg).
+ */
+function siteIdFilterParam(siteIds: number[]): number[] | null {
+  return siteIds.length > 0 ? siteIds : null;
+}
+
+/** Mobile app: KPI do período, gráfico diário, últimas vendas — filtros ?period=&sites=1,2 */
 router.get('/mobile-summary', async (req, res) => {
   const auth = req.auth!;
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
+  const period = (req.query.period as string) || 'today';
+  const siteIds = parseSiteIds(req.query.sites);
+  const siteFilter = siteIdFilterParam(siteIds);
+  const { start, end } = mobilePeriodBounds(period);
 
   try {
-    const [todayRes, weekRes, recentRes, sitesRes] = await Promise.all([
+    const [aggRes, chartRes, recentRes, sitesRes] = await Promise.all([
       pool.query(
         `SELECT
           COUNT(*)::int as sales,
           COALESCE(SUM(p.amount), 0)::float as revenue
          FROM purchases p
-         WHERE p.site_key = ANY(SELECT site_key FROM sites WHERE account_id = $1)
-           AND p.created_at >= $2
+         WHERE p.site_key = ANY(
+           SELECT site_key FROM sites
+           WHERE account_id = $1
+             AND ($4::int[] IS NULL OR id = ANY($4))
+         )
+           AND p.created_at >= $2::timestamptz
+           AND p.created_at <= $3::timestamptz
            AND p.status IN ${APPROVED_PURCHASE_STATUSES}`,
-        [auth.accountId, todayStart]
+        [auth.accountId, start, end, siteFilter]
       ),
       pool.query(
         `SELECT
-          COUNT(*)::int as sales,
-          COALESCE(SUM(p.amount), 0)::float as revenue
+          TO_CHAR(p.created_at, 'YYYY-MM-DD') as date,
+          COALESCE(SUM(p.amount), 0)::float as revenue,
+          COUNT(*)::int as sales
          FROM purchases p
-         WHERE p.site_key = ANY(SELECT site_key FROM sites WHERE account_id = $1)
-           AND p.created_at >= NOW() - INTERVAL '7 days'
-           AND p.status IN ${APPROVED_PURCHASE_STATUSES}`,
-        [auth.accountId]
+         WHERE p.site_key = ANY(
+           SELECT site_key FROM sites
+           WHERE account_id = $1
+             AND ($4::int[] IS NULL OR id = ANY($4))
+         )
+           AND p.created_at >= $2::timestamptz
+           AND p.created_at <= $3::timestamptz
+           AND p.status IN ${APPROVED_PURCHASE_STATUSES}
+         GROUP BY 1
+         ORDER BY 1 ASC`,
+        [auth.accountId, start, end, siteFilter]
       ),
       pool.query(
         `SELECT p.id, p.order_id, p.platform, p.amount, p.currency, p.created_at, s.name as site_name
          FROM purchases p
          JOIN sites s ON s.site_key = p.site_key AND s.account_id = $1
          WHERE p.status IN ${APPROVED_PURCHASE_STATUSES}
+           AND p.created_at >= $2::timestamptz
+           AND p.created_at <= $3::timestamptz
+           AND ($4::int[] IS NULL OR s.id = ANY($4))
          ORDER BY p.created_at DESC
          LIMIT 20`,
-        [auth.accountId]
+        [auth.accountId, start, end, siteFilter]
       ),
       pool.query(`SELECT COUNT(*)::int as c FROM sites WHERE account_id = $1`, [auth.accountId]),
     ]);
 
-    const today = todayRes.rows[0] || { sales: 0, revenue: 0 };
-    const week = weekRes.rows[0] || { sales: 0, revenue: 0 };
+    const agg = aggRes.rows[0] || { sales: 0, revenue: 0 };
+    const chart = (chartRes.rows || []).map((r: any) => ({
+      date: String(r.date),
+      revenue: Number(r.revenue || 0),
+      sales: Number(r.sales || 0),
+    }));
     const recent = (recentRes.rows || []).map((r: any) => ({
       id: r.id,
       orderId: r.order_id,
@@ -92,11 +150,11 @@ router.get('/mobile-summary', async (req, res) => {
     }));
 
     res.json({
-      todaySales: Number(today.sales || 0),
-      todayRevenue: Number(today.revenue || 0),
-      weekSales: Number(week.sales || 0),
-      weekRevenue: Number(week.revenue || 0),
+      period,
+      periodSales: Number(agg.sales || 0),
+      periodRevenue: Number(agg.revenue || 0),
       sitesCount: Number(sitesRes.rows[0]?.c || 0),
+      chart,
       recentPurchases: recent,
     });
   } catch (err) {

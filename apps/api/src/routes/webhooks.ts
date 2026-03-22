@@ -295,10 +295,12 @@ async function processPurchaseWebhook({
       };
       pool
         .query('SELECT push_token FROM push_tokens WHERE account_id = $1', [siteAccountId])
-        .then((rows) => {
-          if (rows.rowCount && rows.rows.length > 0) {
-            return notifyAccountNewSale(rows.rows, saleOpts);
+        .then((result) => {
+          const tokens = result.rows || [];
+          if (tokens.length > 0) {
+            return notifyAccountNewSale(tokens, saleOpts);
           }
+          console.log(`[Webhook] No Expo push tokens for account_id=${siteAccountId} (mobile app must register after login).`);
         })
         .catch((err) => console.warn('[Webhook] Expo push notify error:', err));
       notifyAccountWebPushSale(siteAccountId, saleOpts).catch((err) =>
