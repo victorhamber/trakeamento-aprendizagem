@@ -6,6 +6,7 @@ import { capiService, CapiService } from '../services/capi';
 import { EnrichmentService } from '../services/enrichment';
 import { decryptString } from '../lib/crypto';
 import { notifyAccountNewSale } from '../services/expo-push';
+import { notifyAccountWebPushSale } from '../services/web-push-notify';
 
 
 const router = Router();
@@ -284,21 +285,25 @@ async function processPurchaseWebhook({
       client.release();
     }
 
-    // Push notification to mobile app (fire-and-forget)
+    // Push: app mobile (Expo) + navegador (Web Push) — fire-and-forget
     if (siteAccountId != null) {
+      const saleOpts = {
+        amount: value != null ? Number(value) : undefined,
+        currency: currency || undefined,
+        orderId,
+        platform: platform || undefined,
+      };
       pool
         .query('SELECT push_token FROM push_tokens WHERE account_id = $1', [siteAccountId])
         .then((rows) => {
           if (rows.rowCount && rows.rows.length > 0) {
-            return notifyAccountNewSale(rows.rows, {
-              amount: value != null ? Number(value) : undefined,
-              currency: currency || undefined,
-              orderId,
-              platform: platform || undefined,
-            });
+            return notifyAccountNewSale(rows.rows, saleOpts);
           }
         })
-        .catch((err) => console.warn('[Webhook] Push notify error:', err));
+        .catch((err) => console.warn('[Webhook] Expo push notify error:', err));
+      notifyAccountWebPushSale(siteAccountId, saleOpts).catch((err) =>
+        console.warn('[Webhook] Web push notify error:', err)
+      );
     }
   } else {
     try {

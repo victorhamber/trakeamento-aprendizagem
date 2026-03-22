@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
+import { useAuth } from '../state/auth';
+import { useWebPush } from '../hooks/useWebPush';
 import { Layout } from '../components/Layout';
 import { BestTimeCards } from '../components/BestTimeCards';
 import { RevenueChart } from '../components/charts/RevenueChart';
@@ -175,6 +177,9 @@ const selectCls =
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export const DashboardPage = () => {
+  const { token } = useAuth();
+  const webPush = useWebPush(!!token);
+
   const [data, setData] = useState<Overview | null>(null);
   const [salesData, setSalesData] = useState<DailyPoint[]>([]);
   const [funnelData, setFunnelData] = useState<any>(null);
@@ -496,6 +501,55 @@ export const DashboardPage = () => {
                 </span>
               </div>
             </div>
+          </div>
+
+          <div className="mt-5 pt-5 border-t border-zinc-200 dark:border-zinc-800/40">
+            <div className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500 dark:text-zinc-600 mb-2">
+              Alertas no navegador
+            </div>
+            {!webPush.supported ? (
+              <p className="text-[11px] text-zinc-500 leading-relaxed">
+                Este navegador não suporta notificações push. Use Chrome ou Edge atualizado.
+              </p>
+            ) : webPush.serverEnabled === null ? (
+              <p className="text-[11px] text-zinc-500">Carregando…</p>
+            ) : !webPush.serverEnabled ? (
+              <p className="text-[11px] text-zinc-500 leading-relaxed">
+                O servidor ainda não tem chaves VAPID. Configure{' '}
+                <code className="text-[10px] bg-zinc-100 dark:bg-zinc-900 px-1 rounded">WEB_PUSH_VAPID_PUBLIC_KEY</code> e{' '}
+                <code className="text-[10px] bg-zinc-100 dark:bg-zinc-900 px-1 rounded">WEB_PUSH_VAPID_PRIVATE_KEY</code> na API.
+              </p>
+            ) : (
+              <>
+                <p className="text-[11px] text-zinc-600 dark:text-zinc-500 mb-2 leading-relaxed">
+                  Push quando chegar uma venda (webhook Hotmart/Kiwify etc.) + som de caixa.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {webPush.subscribed ? (
+                    <button
+                      type="button"
+                      onClick={() => void webPush.unsubscribe()}
+                      disabled={webPush.busy}
+                      className="text-[11px] font-semibold uppercase tracking-wide rounded-lg px-3 py-1.5 border border-zinc-300 dark:border-zinc-600 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-50"
+                    >
+                      Desativar alertas
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => void webPush.subscribe()}
+                      disabled={webPush.busy}
+                      className="text-[11px] font-semibold uppercase tracking-wide rounded-lg px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50"
+                    >
+                      {webPush.busy ? 'Aguarde…' : 'Ativar alertas de venda'}
+                    </button>
+                  )}
+                </div>
+                {webPush.error ? (
+                  <p className="text-[11px] text-red-600 dark:text-red-400 mt-2">{webPush.error}</p>
+                ) : null}
+              </>
+            )}
           </div>
         </div>
       </div>

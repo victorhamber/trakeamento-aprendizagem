@@ -421,9 +421,10 @@ router.get('/best-times', requireAuth, async (req, res) => {
             SELECT
               COALESCE(
                 sv_source.source,
+                purchase_source.source,
                 NULLIF(eb.custom_data->>'traffic_source', ''),
                 NULLIF(eb.custom_data->>'utm_source', ''),
-                prev_event_source.source
+                NULL
               ) as source
             FROM events_base eb
             LEFT JOIN LATERAL (
@@ -449,25 +450,28 @@ router.get('/best-times', requireAuth, async (req, res) => {
             ) sv_source ON TRUE
             LEFT JOIN LATERAL (
               SELECT
-                COALESCE(
-                  NULLIF(pe.custom_data->>'traffic_source', ''),
-                  NULLIF(pe.custom_data->>'utm_source', '')
-                ) as source
-              FROM web_events pe
-              WHERE pe.site_key = eb.site_key
-                AND pe.event_time <= eb.event_time
-                AND pe.event_time >= eb.event_time - INTERVAL '24 hours'
+                CASE
+                  WHEN sv.last_traffic_source IS NULL OR btrim(sv.last_traffic_source) = '' THEN NULL
+                  WHEN lower(sv.last_traffic_source) LIKE 'trk_%' THEN NULL
+                  WHEN sv.last_traffic_source ~* '(^|[?&])utm_source=' THEN
+                    NULLIF((regexp_match(sv.last_traffic_source, '(?:^|[?&])utm_source=([^&#]+)'))[1], '')
+                  ELSE sv.last_traffic_source
+                END as source
+              FROM purchases pb
+              JOIN site_visitors sv ON sv.site_key = pb.site_key
+                AND (pb.buyer_email_hash = sv.email_hash OR (pb.fbp IS NOT NULL AND sv.fbp = pb.fbp) OR (pb.fbc IS NOT NULL AND sv.fbc = pb.fbc))
+              WHERE pb.site_key = eb.site_key
+                AND pb.created_at >= eb.event_time
+                AND pb.created_at <= eb.event_time + INTERVAL '7 days'
+                AND pb.status IN ('approved', 'paid', 'completed', 'active')
                 AND (
-                  (eb.user_data->>'external_id' IS NOT NULL AND pe.user_data->>'external_id' = eb.user_data->>'external_id')
-                  OR (eb.user_data->>'fbp' IS NOT NULL AND pe.user_data->>'fbp' = eb.user_data->>'fbp')
+                  (eb.user_data->>'em' IS NOT NULL AND pb.buyer_email_hash = eb.user_data->>'em')
+                  OR (eb.user_data->>'fbp' IS NOT NULL AND pb.fbp = eb.user_data->>'fbp')
+                  OR (eb.user_data->>'fbc' IS NOT NULL AND pb.fbc = eb.user_data->>'fbc')
                 )
-                AND (
-                  NULLIF(pe.custom_data->>'traffic_source', '') IS NOT NULL
-                  OR NULLIF(pe.custom_data->>'utm_source', '') IS NOT NULL
-                )
-              ORDER BY pe.event_time DESC
+              ORDER BY pb.created_at ASC
               LIMIT 1
-            ) prev_event_source ON TRUE
+            ) purchase_source ON TRUE
           )
           SELECT
             COALESCE(

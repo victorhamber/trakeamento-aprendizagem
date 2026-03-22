@@ -304,6 +304,16 @@ const schemaSql = `
     created_at TIMESTAMP DEFAULT NOW()
   );
 
+  CREATE TABLE IF NOT EXISTS push_tokens (
+    id SERIAL PRIMARY KEY,
+    account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    push_token VARCHAR(512) NOT NULL,
+    platform VARCHAR(20) DEFAULT 'expo',
+    created_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(account_id, push_token)
+  );
+  CREATE INDEX IF NOT EXISTS idx_push_tokens_account ON push_tokens(account_id);
+
   CREATE TABLE IF NOT EXISTS site_visitors (
     id SERIAL PRIMARY KEY,
     site_key VARCHAR(50) NOT NULL REFERENCES sites(site_key) ON DELETE CASCADE,
@@ -553,6 +563,25 @@ export const ensureSchema = async (pool: Pool) => {
       await pool.query(`CREATE INDEX IF NOT EXISTS idx_recommendation_reports_site_time ON recommendation_reports(site_key, created_at)`);
     } catch (idxErr) {
       console.warn('Performance index migration skipped:', idxErr);
+    }
+
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS web_push_subscriptions (
+          id SERIAL PRIMARY KEY,
+          account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+          endpoint TEXT NOT NULL,
+          p256dh TEXT NOT NULL,
+          auth_key TEXT NOT NULL,
+          created_at TIMESTAMP DEFAULT NOW(),
+          UNIQUE(account_id, endpoint)
+        )
+      `);
+      await pool.query(
+        `CREATE INDEX IF NOT EXISTS idx_web_push_account ON web_push_subscriptions(account_id)`
+      );
+    } catch (wpErr) {
+      console.warn('web_push_subscriptions migration skipped/failed:', wpErr);
     }
   } catch (err) {
     console.warn('Schema extension skipped:', err);

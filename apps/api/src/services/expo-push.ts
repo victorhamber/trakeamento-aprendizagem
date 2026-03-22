@@ -3,6 +3,8 @@
  * https://docs.expo.dev/push-notifications/sending-notifications/
  */
 
+import { buildSaleNotification, type SaleNotifyOpts } from './sale-notification';
+
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
 export type ExpoMessage = {
@@ -34,26 +36,15 @@ async function sendExpoPush(messages: ExpoMessage[]): Promise<void> {
 
 export async function notifyAccountNewSale(
   pushTokens: { push_token: string }[],
-  opts: { amount?: number; currency?: string; orderId?: string; platform?: string }
+  opts: SaleNotifyOpts
 ): Promise<void> {
-  const { amount, currency, orderId, platform } = opts;
-  const valueStr =
-    amount != null && currency
-      ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: currency.toUpperCase() }).format(Number(amount))
-      : 'Nova venda';
-  const title = '💰 Venda recebida';
-  const body =
-    amount != null && currency
-      ? `${valueStr}${platform ? ` (${platform})` : ''}`
-      : orderId
-        ? `Pedido ${orderId}${platform ? ` · ${platform}` : ''}`
-        : 'Confira no app.';
+  const { title, body, data } = buildSaleNotification(opts);
 
   const messages: ExpoMessage[] = pushTokens.map((t) => ({
     to: t.push_token,
     title,
     body,
-    data: { type: 'sale', orderId, amount, currency },
+    data,
     sound: 'default',
     priority: 'high',
   }));
