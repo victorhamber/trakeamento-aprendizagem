@@ -7,12 +7,14 @@ import { buildSaleNotification, type SaleNotifyOpts } from './sale-notification'
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
+/** Som empacotado no app (ex.: sale_kaching.mp3) + canal Android `sales` — ver App Mobile app.json + setupNotificationChannels */
 export type ExpoMessage = {
   to: string;
   title: string;
   body: string;
   data?: Record<string, unknown>;
-  sound?: 'default' | null;
+  /** iOS: ficheiro de som no bundle; Android: usa o som do canal `channelId` */
+  sound?: string | null;
   channelId?: string;
   priority?: 'default' | 'normal' | 'high';
 };
@@ -45,7 +47,8 @@ export async function notifyAccountNewSale(
     title,
     body,
     data,
-    sound: 'default',
+    sound: 'sale_kaching.mp3',
+    channelId: 'sales',
     priority: 'high',
   }));
   await sendExpoPush(messages);

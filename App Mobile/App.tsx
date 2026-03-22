@@ -28,6 +28,7 @@ import {
   type MobileSummary,
   type SiteRow,
 } from './api';
+import { setupAndroidSalesChannel } from './setupNotificationChannels';
 
 const TOKEN_KEY = '@trajettu_token';
 const USER_EMAIL_KEY = '@trajettu_user_email';
@@ -111,6 +112,10 @@ export default function App() {
   useEffect(() => {
     loadToken();
   }, [loadToken]);
+
+  useEffect(() => {
+    void setupAndroidSalesChannel();
+  }, []);
 
   const registerForPush = useCallback(async () => {
     if (!Device.isDevice) return;

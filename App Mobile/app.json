@@ -1,22 +1,21 @@
 {
   "expo": {
-    "name": "app-mobile",
+    "name": "Trajettu",
     "slug": "app-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
+    "scheme": "trajettu",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#E6F4FE"
     },
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "UIBackgroundModes": [
-          "remote-notification"
-        ]
+        "UIBackgroundModes": ["remote-notification"]
       }
     },
     "android": {
@@ -36,7 +35,10 @@
       [
         "expo-notifications",
         {
-          "defaultChannel": "sales"
+          "icon": "./assets/icon.png",
+          "color": "#0a7ea4",
+          "defaultChannel": "sales",
+          "sounds": ["./assets/sounds/sale_kaching.mp3"]
         }
       ]
     ],

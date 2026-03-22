@@ -94,7 +94,9 @@ Para instalar no iPhone é preciso build com EAS em um plano pago ou com Mac + X
 
 - No **Expo Go**, push funciona em desenvolvimento.
 - Para **build de produção** (standalone), configure o projeto no [EAS](https://expo.dev) e gere os builds (Android/iOS).
-- O backend já envia push via Expo Push API quando uma venda é aprovada (tabela `push_tokens` + rota `/mobile/register-push`).
+- O backend envia push com `channelId: sales` e som `sale_kaching.mp3` (empacotado em `assets/sounds/` via plugin `expo-notifications`).
+- **Android:** o canal `sales` é criado ao abrir o app (`setupNotificationChannels.ts`). Se mudar o som do canal, pode ser preciso **desinstalar e reinstalar** o app (canais não mudam depois de criados).
+- **Ícone / nome do app:** `app.json` usa nome **Trajettu**, ícones em `assets/` (logo alinhado ao dashboard).
 
 ## Estrutura
 
