@@ -149,7 +149,7 @@ export type MobileSummaryParams = {
 
 export async function getMobileSummary(params?: MobileSummaryParams): Promise<MobileSummary> {
   const q = new URLSearchParams();
-  q.set('period', params?.period || 'today');
+  q.set('period', (params?.period || 'today').trim().toLowerCase());
   if (params?.period === 'custom' && params.since && params.until) {
     q.set('since', params.since);
     q.set('until', params.until);

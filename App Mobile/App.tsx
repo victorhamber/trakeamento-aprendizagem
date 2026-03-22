@@ -150,6 +150,28 @@ function formatCurrencySafe(value: unknown, currency: string | null): string {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: code }).format(n);
 }
 
+/** Evita SVG com dezenas de milhares de px (período máximo) — mantém forma da série */
+function bucketChartPointsByCount(points: ChartPoint[], max: number): ChartPoint[] {
+  if (points.length <= max || points.length === 0) return points;
+  const out: ChartPoint[] = [];
+  const n = points.length;
+  for (let b = 0; b < max; b++) {
+    const i0 = Math.floor((b * n) / max);
+    const i1 = Math.floor(((b + 1) * n) / max) - 1;
+    let rev = 0;
+    let sal = 0;
+    for (let i = i0; i <= i1; i++) {
+      rev += points[i].revenue;
+      sal += points[i].sales;
+    }
+    const mid = Math.floor((i0 + i1) / 2);
+    out.push({ date: points[mid].date, revenue: rev, sales: sal });
+  }
+  return out;
+}
+
+const MAX_LINE_POINTS = 100;
+
 function formatChartAxisDate(dateStr: string): string {
   const p = dateStr.split('-').map(Number);
   if (p.length !== 3 || p.some((n) => !Number.isFinite(n))) return dateStr;
@@ -182,8 +204,10 @@ function SalesChart({ points, currency = 'BRL' }: { points: ChartPoint[]; curren
 
   const [plotBoxW, setPlotBoxW] = useState(() => Math.max(280, Dimensions.get('window').width - 80));
 
+  const displayPoints = useMemo(() => bucketChartPointsByCount(points, MAX_LINE_POINTS), [points]);
+
   const chartData = useMemo(() => {
-    let d = points.map((p) => ({ ...p }));
+    let d = displayPoints.map((p) => ({ ...p }));
     if (d.length === 1) {
       const parts = d[0].date.split('-').map(Number);
       if (parts.length === 3 && parts.every((n) => Number.isFinite(n))) {
@@ -197,7 +221,7 @@ function SalesChart({ points, currency = 'BRL' }: { points: ChartPoint[]; curren
       }
     }
     return d;
-  }, [points]);
+  }, [displayPoints]);
 
   const maxRev = useMemo(() => {
     let m = 0;

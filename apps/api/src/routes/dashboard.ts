@@ -60,12 +60,19 @@ function endUtcFromYmd(y: number, m: number, d: number): Date {
   return new Date(Date.UTC(y, m - 1, d, 23, 59, 59, 999));
 }
 
+/** Normaliza query ?period= (trim, lower, aliases) para bater com o app e o web */
+function normalizeMobilePeriodParam(raw: string): string {
+  const p = String(raw || 'today').trim().toLowerCase();
+  if (p === 'max' || p === 'all' || p === 'tudo' || p === 'full') return 'maximum';
+  return p;
+}
+
 /** Alinhado ao dashboard web: presets + máximo + período personalizado (?since=&until=) */
 function resolveMobilePeriod(
   period: string,
   sinceStr?: string,
   untilStr?: string
-): { start: Date; end: Date } | { error: string } {
+): { start: Date | null; end: Date } | { error: string } {
   const now = new Date();
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
@@ -103,8 +110,9 @@ function resolveMobilePeriod(
       return { start: new Date(now.getTime() - 15 * 24 * 60 * 60 * 1000), end: now };
     case 'last_30d':
       return { start: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000), end: now };
+    /** `start: null` = sem limite inferior no SQL (todo o histórico até `end`) */
     case 'maximum':
-      return { start: new Date(Date.UTC(1970, 0, 1, 0, 0, 0, 0)), end: now };
+      return { start: null, end: now };
     case 'today':
     default:
       return { start: todayStart, end: now };
@@ -130,7 +138,7 @@ function siteIdFilterParam(siteIds: number[]): number[] | null {
 /** Mobile app: KPI do período, gráfico diário, últimas vendas — filtros ?period=&sites=1,2 */
 router.get('/mobile-summary', async (req, res) => {
   const auth = req.auth!;
-  const period = (req.query.period as string) || 'today';
+  const period = normalizeMobilePeriodParam((req.query.period as string) || 'today');
   const since = typeof req.query.since === 'string' ? req.query.since.trim() : undefined;
   const until = typeof req.query.until === 'string' ? req.query.until.trim() : undefined;
   const siteIds = parseSiteIds(req.query.sites);
@@ -153,8 +161,8 @@ router.get('/mobile-summary', async (req, res) => {
            WHERE account_id = $1
              AND ($4::int[] IS NULL OR id = ANY($4))
          )
-           AND p.created_at >= $2::timestamptz
            AND p.created_at <= $3::timestamptz
+           AND ($2::timestamptz IS NULL OR p.created_at >= $2::timestamptz)
            AND p.status IN ${APPROVED_PURCHASE_STATUSES}`,
         [auth.accountId, start, end, siteFilter]
       ),
@@ -169,8 +177,8 @@ router.get('/mobile-summary', async (req, res) => {
            WHERE account_id = $1
              AND ($4::int[] IS NULL OR id = ANY($4))
          )
-           AND p.created_at >= $2::timestamptz
            AND p.created_at <= $3::timestamptz
+           AND ($2::timestamptz IS NULL OR p.created_at >= $2::timestamptz)
            AND p.status IN ${APPROVED_PURCHASE_STATUSES}
          GROUP BY 1
          ORDER BY 1 ASC`,
@@ -181,8 +189,8 @@ router.get('/mobile-summary', async (req, res) => {
          FROM purchases p
          JOIN sites s ON s.site_key = p.site_key AND s.account_id = $1
          WHERE p.status IN ${APPROVED_PURCHASE_STATUSES}
-           AND p.created_at >= $2::timestamptz
            AND p.created_at <= $3::timestamptz
+           AND ($2::timestamptz IS NULL OR p.created_at >= $2::timestamptz)
            AND ($4::int[] IS NULL OR s.id = ANY($4))
          ORDER BY p.created_at DESC
          LIMIT 20`,
