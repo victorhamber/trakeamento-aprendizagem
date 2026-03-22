@@ -5,11 +5,13 @@ App nativo (Expo) para acompanhar vendas e receber **notificações push** quand
 ## O que o app faz
 
 - **Login** com as mesmas credenciais do dashboard (API Trajettu).
-- **Resumo do dia**: vendas de hoje e receita de hoje.
-- **Últimas vendas**: lista das 15 vendas mais recentes (valor, site, data).
-- **Push notifications**: quando uma compra é aprovada no webhook, o app recebe uma notificação com valor e plataforma.
+- **Resumo**: vendas e receita **de hoje**, e totais dos **últimos 7 dias**.
+- **Seus sites**: chips com nome (e domínio) dos sites da conta.
+- **Últimas vendas**: até 20 pedidos recentes (valor, site, plataforma, data).
+- **Push**: quando uma compra é aprovada no webhook, o app pode receber notificação (Expo Push).
+- **Sessão**: se o token expirar, o app pede login de novo.
 
-O app usa a **mesma base de dados** da API (rotas `/auth`, `/dashboard/mobile-summary`, `/mobile/register-push`). É um projeto separado apenas no código (pasta e repositório à parte, se quiser).
+O app usa a mesma API (`/auth/login`, `/dashboard/mobile-summary`, `/sites`, `/mobile/register-push`).
 
 ## Configurar a API
 
