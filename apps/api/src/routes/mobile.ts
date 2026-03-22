@@ -83,7 +83,9 @@ router.post('/register-push', async (req, res) => {
     await pool.query(
       `INSERT INTO push_tokens (account_id, push_token, platform)
        VALUES ($1, $2, $3)
-       ON CONFLICT (account_id, push_token) DO UPDATE SET created_at = NOW()`,
+       ON CONFLICT (account_id, push_token) DO UPDATE SET
+         created_at = NOW(),
+         platform = EXCLUDED.platform`,
       [auth.accountId, pushToken.trim(), (platform || 'expo').toString().slice(0, 20)]
     );
     return res.json({ ok: true });

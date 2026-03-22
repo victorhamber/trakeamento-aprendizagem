@@ -294,7 +294,7 @@ async function processPurchaseWebhook({
         platform: platform || undefined,
       };
       pool
-        .query('SELECT push_token FROM push_tokens WHERE account_id = $1', [siteAccountId])
+        .query('SELECT push_token, platform FROM push_tokens WHERE account_id = $1', [siteAccountId])
         .then((result) => {
           const tokens = result.rows || [];
           if (tokens.length > 0) {

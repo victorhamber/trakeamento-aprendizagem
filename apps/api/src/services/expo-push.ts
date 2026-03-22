@@ -57,13 +57,21 @@ async function sendExpoPush(messages: ExpoMessage[]): Promise<void> {
     }
     const tickets = parsed.data;
     if (!Array.isArray(tickets)) return;
+    let ok = 0;
+    let err = 0;
     for (let i = 0; i < tickets.length; i++) {
       const ticket = tickets[i];
       const msg = messages[i];
-      if (!ticket || ticket.status !== 'error' || !msg) continue;
-      const code = ticket.details?.error || ticket.details?.fault;
-      const msgText = ticket.message || '';
+      if (!ticket || !msg) continue;
+      if (ticket.status === 'ok') {
+        ok += 1;
+        continue;
+      }
+      err += 1;
+      const code = ticket.status === 'error' ? ticket.details?.error || ticket.details?.fault : undefined;
+      const msgText = ticket.status === 'error' ? ticket.message || '' : '';
       console.warn('[ExpoPush] Ticket error:', code || msgText, msgText.slice(0, 200));
+      if (ticket.status !== 'error') continue;
       const shouldDrop =
         code === 'DeviceNotRegistered' ||
         /not a registered push/i.test(msgText) ||
@@ -72,25 +80,40 @@ async function sendExpoPush(messages: ExpoMessage[]): Promise<void> {
         await removePushTokenIfInvalid(msg.to);
       }
     }
+    if (ok > 0) {
+      console.log(`[ExpoPush] ${ok} ticket(s) ok${err ? `, ${err} error(s)` : ''}`);
+    }
   } catch (e) {
     console.warn('[ExpoPush] Error:', e);
   }
 }
 
-export async function notifyAccountNewSale(
-  pushTokens: { push_token: string }[],
-  opts: SaleNotifyOpts
-): Promise<void> {
+export type ExpoPushTokenRow = { push_token: string; platform?: string | null };
+
+/**
+ * Android: não enviar `sound` no payload — o som vem do canal `sales` (evita rejeição FCM/Expo).
+ * iOS: som no bundle (ex.: sale_kaching.mp3).
+ * Legado `expo`: tratar como Android (canal + sem sound no payload).
+ */
+export async function notifyAccountNewSale(rows: ExpoPushTokenRow[], opts: SaleNotifyOpts): Promise<void> {
   const { title, body, data } = buildSaleNotification(opts);
 
-  const messages: ExpoMessage[] = pushTokens.map((t) => ({
-    to: t.push_token,
-    title,
-    body,
-    data,
-    sound: 'sale_kaching.mp3',
-    channelId: 'sales',
-    priority: 'high',
-  }));
+  const messages: ExpoMessage[] = rows.map((row) => {
+    const plat = (row.platform || '').toLowerCase();
+    const base: ExpoMessage = {
+      to: row.push_token,
+      title,
+      body,
+      data,
+      priority: 'high',
+    };
+    if (plat === 'android') {
+      return { ...base, channelId: 'sales' };
+    }
+    if (plat === 'ios') {
+      return { ...base, sound: 'sale_kaching.mp3' };
+    }
+    return { ...base, channelId: 'sales' };
+  });
   await sendExpoPush(messages);
 }

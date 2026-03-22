@@ -211,7 +211,7 @@ export default function App() {
     }
     if (final !== 'granted') return;
     const pushTok = await getExpoPushTokenString();
-    if (pushTok) await registerPushToken(pushTok, 'expo');
+    if (pushTok) await registerPushToken(pushTok, Platform.OS);
   }, []);
 
   const fetchDashboard = useCallback(async () => {
