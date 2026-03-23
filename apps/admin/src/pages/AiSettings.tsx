@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { Layout } from '../components/Layout';
 
@@ -10,49 +10,18 @@ type Settings = {
 export const AiSettingsPage = () => {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [openaiApiKey, setOpenaiApiKey] = useState('');
-  const [modelSelect, setModelSelect] = useState('gpt-4o');
-  const [models, setModels] = useState<string[]>([]);
-  const [modelsLoading, setModelsLoading] = useState(false);
-  const [modelsError, setModelsError] = useState<string | null>(null);
+  const [openaiModel, setOpenaiModel] = useState('gpt-4o');
   const [saving, setSaving] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
-
-  const refreshModelsList = useCallback(
-    async (savedModel: string, previewKey?: string) => {
-      setModelsLoading(true);
-      setModelsError(null);
-      try {
-        const res = await api.post('/ai/openai-models', {
-          openai_api_key: (previewKey ?? '').trim() || undefined,
-        });
-        const list: string[] = res.data.models || [];
-        const merged = savedModel && !list.includes(savedModel) ? [savedModel, ...list] : [...list];
-        merged.sort((a, b) => a.localeCompare(b));
-        setModels(merged);
-        if (merged.includes(savedModel)) setModelSelect(savedModel);
-        else if (merged.length) setModelSelect(merged[0]);
-      } catch (err: unknown) {
-        const ax = err as { response?: { data?: { error?: string } } };
-        setModelsError(ax.response?.data?.error || 'Não foi possível carregar os modelos da OpenAI.');
-        setModels(savedModel ? [savedModel] : []);
-      } finally {
-        setModelsLoading(false);
-      }
-    },
-    [],
-  );
 
   const load = async () => {
     const res = await api.get('/ai/settings');
     setSettings(res.data);
-    const m = res.data.openai_model || 'gpt-4o';
-    setModelSelect(m);
-    await refreshModelsList(m, '');
+    setOpenaiModel(res.data.openai_model || 'gpt-4o');
   };
 
   useEffect(() => {
-    load().catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- montagem: lista com chave salva
+    load().catch(() => { });
   }, []);
 
   const save = async (e: React.FormEvent) => {
@@ -60,25 +29,12 @@ export const AiSettingsPage = () => {
     setSaving(true);
     setFlash(null);
     try {
-      if (!modelSelect) {
-        setFlash('Escolha um modelo na lista.');
-        setSaving(false);
-        return;
-      }
-      await api.put('/ai/settings', {
-        openai_api_key: openaiApiKey || undefined,
-        openai_model: modelSelect,
-      });
+      await api.put('/ai/settings', { openai_api_key: openaiApiKey || undefined, openai_model: openaiModel });
       setOpenaiApiKey('');
-      const res = await api.get('/ai/settings');
-      setSettings(res.data);
-      const m = res.data.openai_model || 'gpt-4o';
-      setModelSelect(m);
-      await refreshModelsList(m, '');
+      await load();
       setFlash('Chave salva com sucesso. A IA já pode gerar diagnósticos.');
-    } catch (err: unknown) {
-      const ax = err as { response?: { data?: { error?: string } } };
-      setFlash(ax.response?.data?.error || 'Falha ao salvar');
+    } catch (err: any) {
+      setFlash(err?.response?.data?.error || 'Falha ao salvar');
     } finally {
       setSaving(false);
     }
@@ -123,36 +79,15 @@ export const AiSettingsPage = () => {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <label className="block text-xs text-zinc-700 dark:text-zinc-400">Modelo</label>
-                  <button
-                    type="button"
-                    disabled={saving || modelsLoading}
-                    onClick={() => refreshModelsList(modelSelect, openaiApiKey)}
-                    className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline disabled:opacity-50"
-                  >
-                    {modelsLoading ? 'Carregando…' : 'Atualizar lista'}
-                  </button>
-                </div>
+                <label className="block text-xs text-zinc-700 dark:text-zinc-400">Modelo</label>
                 <select
-                  aria-label="Modelo OpenAI"
-                  value={modelSelect}
-                  onChange={(e) => setModelSelect(e.target.value)}
-                  disabled={modelsLoading || models.length === 0}
-                  className="mt-1 w-full rounded-lg bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-200 outline-none focus:border-indigo-500/60 dark:focus:border-zinc-600 transition-colors disabled:opacity-60"
+                  value={openaiModel}
+                  onChange={(e) => setOpenaiModel(e.target.value)}
+                  className="mt-1 w-full rounded-lg bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-200 outline-none focus:border-indigo-500/60 dark:focus:border-zinc-600 transition-colors"
                 >
-                  {models.map((id) => (
-                    <option key={id} value={id}>
-                      {id}
-                    </option>
-                  ))}
+                  <option value="gpt-4o">gpt-4o</option>
+                  <option value="gpt-4o-mini">gpt-4o-mini</option>
                 </select>
-                {modelsError && (
-                  <p className="mt-1.5 text-xs text-amber-600 dark:text-amber-400">{modelsError}</p>
-                )}
-                <p className="mt-1.5 text-xs text-zinc-500 dark:text-zinc-500">
-                  Lista obtida em tempo real da API OpenAI (modelos compatíveis com chat). Use &quot;Atualizar lista&quot; após colar uma chave nova (ainda não salva).
-                </p>
               </div>
 
               <div>

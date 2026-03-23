@@ -530,7 +530,7 @@ export default function App() {
     try {
       await fetchDashboard();
     } finally {
-      setRefreshing(false);
+    setRefreshing(false);
     }
   };
 
@@ -635,35 +635,35 @@ export default function App() {
                   <Text style={styles.fieldLabel}>Email</Text>
                   <View style={styles.inputWrap}>
                     <Ionicons name="mail-outline" size={20} color={C.textDim} style={styles.inputIcon} />
-                    <TextInput
+          <TextInput
                       style={styles.inputInner}
                       placeholder="seu@email.com"
                       placeholderTextColor="#52525b"
-                      value={email}
-                      onChangeText={setEmail}
-                      autoCapitalize="none"
-                      keyboardType="email-address"
+            value={email}
+            onChangeText={setEmail}
+            autoCapitalize="none"
+            keyboardType="email-address"
                       autoComplete="email"
                       selectionColor="#22d3ee"
-                    />
+          />
                   </View>
 
                   <Text style={styles.fieldLabel}>Senha</Text>
                   <View style={styles.inputWrap}>
                     <Ionicons name="lock-closed-outline" size={20} color={C.textDim} style={styles.inputIcon} />
-                    <TextInput
+          <TextInput
                       style={styles.inputInner}
                       placeholder="••••••••"
                       placeholderTextColor="#52525b"
-                      value={password}
-                      onChangeText={setPassword}
-                      secureTextEntry
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
                       autoComplete="password"
                       selectionColor="#22d3ee"
-                    />
+          />
                   </View>
 
-                  {loginError ? <Text style={styles.error}>{loginError}</Text> : null}
+          {loginError ? <Text style={styles.error}>{loginError}</Text> : null}
 
                   <TouchableOpacity
                     style={styles.gradientBtnWrap}
@@ -677,13 +677,13 @@ export default function App() {
                       end={{ x: 1, y: 0.5 }}
                       style={styles.gradientBtn}
                     >
-                      {loginLoading ? (
-                        <ActivityIndicator color="#fff" />
-                      ) : (
+            {loginLoading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
                         <Text style={styles.gradientBtnText}>Entrar</Text>
-                      )}
+            )}
                     </LinearGradient>
-                  </TouchableOpacity>
+          </TouchableOpacity>
 
                   <Pressable
                     onPress={() => Linking.openURL(FORGOT_PASSWORD_URL)}
@@ -699,7 +699,7 @@ export default function App() {
                       API: {API_BASE}
                     </Text>
                   ) : null}
-                </View>
+        </View>
               </ScrollView>
             </KeyboardAvoidingView>
           </SafeAreaView>
@@ -713,7 +713,7 @@ export default function App() {
       <LinearGradient colors={[C.bg, '#0a101c', C.bg]} style={styles.appGradient}>
         <SafeAreaView style={styles.container} edges={['top']}>
           <StatusBar style="light" />
-          <View style={styles.header}>
+      <View style={styles.header}>
             <View style={styles.headerLeft}>
               <View style={styles.headerLogoRing}>
                 <Image source={require('./assets/icon.png')} style={styles.headerLogo} resizeMode="contain" accessibilityLabel="Trajettu" />
@@ -723,9 +723,9 @@ export default function App() {
               </View>
             </View>
             <TouchableOpacity onPress={onLogout} style={styles.logoutPill} activeOpacity={0.8} hitSlop={8}>
-              <Text style={styles.logoutText}>Sair</Text>
-            </TouchableOpacity>
-          </View>
+          <Text style={styles.logoutText}>Sair</Text>
+        </TouchableOpacity>
+      </View>
 
         {loadError ? (
           <View style={styles.errorBanner}>
@@ -736,9 +736,9 @@ export default function App() {
           </View>
         ) : null}
 
-        <ScrollView
-          style={styles.scroll}
-          contentContainerStyle={styles.scrollContent}
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -917,8 +917,8 @@ export default function App() {
 
           {dataLoading && !summary ? (
             <ActivityIndicator size="large" color={C.accent} style={styles.loader} />
-          ) : summary ? (
-            <>
+        ) : summary ? (
+          <>
               <View style={styles.sectionHeaderRow}>
                 <Ionicons name="stats-chart-outline" size={17} color={C.accent} />
                 <Text style={styles.sectionLabel}>Resumo · {periodSummaryLabel}</Text>
@@ -928,9 +928,9 @@ export default function App() {
                   <View style={styles.statBoxTop}>
                     <View style={styles.statIconBg}>
                       <Ionicons name="bag-handle-outline" size={20} color={C.accent} />
-                    </View>
+              </View>
                     <Text style={styles.statLabel}>Vendas</Text>
-                  </View>
+            </View>
                   <Text style={styles.statValue}>{summary.periodSales}</Text>
                 </View>
                 <View style={[styles.statBox, styles.statBoxAccentPurple]}>
@@ -1011,34 +1011,34 @@ export default function App() {
                 <Ionicons name="receipt-outline" size={17} color={C.accent} />
                 <Text style={styles.sectionLabel}>Últimas vendas</Text>
               </View>
-              {summary.recentPurchases.length === 0 ? (
+            {summary.recentPurchases.length === 0 ? (
                 <Text style={styles.empty}>
                   Nenhuma venda neste período com os filtros atuais.
                 </Text>
-              ) : (
-                summary.recentPurchases.map((p) => (
-                  <View key={p.id} style={styles.row}>
-                    <View style={styles.rowLeft}>
+            ) : (
+              summary.recentPurchases.map((p) => (
+                <View key={p.id} style={styles.row}>
+                  <View style={styles.rowLeft}>
                       <View style={styles.rowTop}>
-                        <Text style={styles.rowOrder}>#{p.orderId}</Text>
+                    <Text style={styles.rowOrder}>#{p.orderId}</Text>
                         <View style={styles.badge}>
                           <Text style={styles.badgeText}>{formatPlatform(p.platform)}</Text>
                         </View>
                       </View>
-                      <Text style={styles.rowSite}>{p.siteName}</Text>
-                      <Text style={styles.rowDate}>{formatDate(p.createdAt)}</Text>
-                    </View>
-                    <Text style={styles.rowAmount}>
-                      {p.amount != null ? formatCurrencySafe(p.amount, p.currency) : '—'}
-                    </Text>
+                    <Text style={styles.rowSite}>{p.siteName}</Text>
+                    <Text style={styles.rowDate}>{formatDate(p.createdAt)}</Text>
                   </View>
-                ))
-              )}
-            </>
-          ) : (
-            <Text style={styles.empty}>Não foi possível carregar os dados.</Text>
-          )}
-        </ScrollView>
+                  <Text style={styles.rowAmount}>
+                      {p.amount != null ? formatCurrencySafe(p.amount, p.currency) : '—'}
+                  </Text>
+                </View>
+              ))
+            )}
+          </>
+        ) : (
+          <Text style={styles.empty}>Não foi possível carregar os dados.</Text>
+        )}
+      </ScrollView>
         </SafeAreaView>
       </LinearGradient>
     </SafeAreaProvider>

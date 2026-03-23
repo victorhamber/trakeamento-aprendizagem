@@ -99,143 +99,6 @@ export class LlmService {
     }
   }
 
-  /** Modelos o1/o3/o4 etc.: chat/completions exige `max_completion_tokens`, não `max_tokens`; temperatura costuma ser fixa. */
-  private modelUsesMaxCompletionTokens(model: string): boolean {
-    return /^o[0-9]/i.test(model.trim());
-  }
-
-  private isUnsupportedMaxTokensError(error: unknown): boolean {
-    if (!axios.isAxiosError(error)) return false;
-    if (error.response?.status !== 400) return false;
-    const raw = JSON.stringify(error.response?.data ?? '');
-    return /max_completion_tokens|unsupported_parameter.*max_tokens|'max_tokens' is not supported/i.test(raw);
-  }
-
-  /** GPT-5.x / alguns modelos “pro” só expõem Responses API, não chat/completions. */
-  private isChatModelUnsupportedError(error: unknown): boolean {
-    if (!axios.isAxiosError(error)) return false;
-    const status = error.response?.status;
-    if (status !== 404 && status !== 400) return false;
-    const raw = JSON.stringify(error.response?.data ?? '');
-    return /not a chat model|not supported in the v1\/chat\/completions/i.test(raw);
-  }
-
-  private extractResponsesOutputText(data: Record<string, unknown>): string {
-    const ot = data.output_text;
-    if (typeof ot === 'string' && ot.trim()) return ot;
-    const output = data.output;
-    if (!Array.isArray(output)) return '';
-    const chunks: string[] = [];
-    for (const item of output) {
-      if (!item || typeof item !== 'object') continue;
-      const row = item as Record<string, unknown>;
-      if (row.type !== 'message' || !Array.isArray(row.content)) continue;
-      for (const part of row.content) {
-        if (!part || typeof part !== 'object') continue;
-        const p = part as Record<string, unknown>;
-        if (p.type === 'output_text' && typeof p.text === 'string') chunks.push(p.text);
-      }
-    }
-    return chunks.join('');
-  }
-
-  private buildChatCompletionsBody(
-    model: string,
-    systemPrompt: string,
-    userContent: string,
-    useMaxCompletionTokens: boolean
-  ): Record<string, unknown> {
-    const messages = [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userContent },
-    ];
-    if (!useMaxCompletionTokens) {
-      return {
-        model,
-        messages,
-        temperature: DEFAULT_TEMPERATURE,
-        max_tokens: DEFAULT_MAX_TOKENS,
-      };
-    }
-    const body: Record<string, unknown> = {
-      model,
-      messages,
-      max_completion_tokens: DEFAULT_MAX_TOKENS,
-    };
-    if (!this.modelUsesMaxCompletionTokens(model)) {
-      body.temperature = DEFAULT_TEMPERATURE;
-    }
-    return body;
-  }
-
-  private extractChatCompletionText(data: unknown): string | null {
-    const msg = (data as { choices?: { message?: { content?: unknown } }[] })?.choices?.[0]?.message;
-    const c = msg?.content;
-    if (typeof c === 'string' && c.trim()) return c;
-    if (Array.isArray(c)) {
-      const parts: string[] = [];
-      for (const p of c) {
-        if (p && typeof p === 'object' && 'text' in p && typeof (p as { text?: string }).text === 'string') {
-          parts.push((p as { text: string }).text);
-        }
-      }
-      const joined = parts.join('');
-      if (joined.trim()) return joined;
-    }
-    return null;
-  }
-
-  private async callChatCompletions(
-    apiKey: string,
-    model: string,
-    systemPrompt: string,
-    userContent: string,
-    useMaxCompletionTokens: boolean
-  ): Promise<string> {
-    const mode = useMaxCompletionTokens ? 'max_completion_tokens' : 'max_tokens';
-    this.log('info', `OpenAI chat/completions [model=${model}, ${mode}]`);
-    const response = await axios.post(
-      'https://api.openai.com/v1/chat/completions',
-      this.buildChatCompletionsBody(model, systemPrompt, userContent, useMaxCompletionTokens),
-      {
-        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        timeout: REQUEST_TIMEOUT_MS,
-      }
-    );
-    const content = this.extractChatCompletionText(response.data);
-    if (!content) throw new Error('Resposta invalida da OpenAI — content vazio.');
-    this.log('info', `OpenAI OK (${content.length} chars)`);
-    return content;
-  }
-
-  private async callResponsesAPI(
-    apiKey: string,
-    model: string,
-    systemPrompt: string,
-    userContent: string
-  ): Promise<string> {
-    this.log('info', `OpenAI Responses API [model=${model}]`);
-    const response = await axios.post(
-      'https://api.openai.com/v1/responses',
-      {
-        model,
-        instructions: systemPrompt,
-        input: userContent,
-        temperature: DEFAULT_TEMPERATURE,
-        max_output_tokens: DEFAULT_MAX_TOKENS,
-      },
-      {
-        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        timeout: REQUEST_TIMEOUT_MS,
-      }
-    );
-    const data = response.data as Record<string, unknown>;
-    const text = this.extractResponsesOutputText(data);
-    if (!text) throw new Error('Resposta invalida da OpenAI (Responses) — texto vazio.');
-    this.log('info', `OpenAI Responses OK (${text.length} chars)`);
-    return text;
-  }
-
   private async callOpenAI(
     apiKey: string,
     model: string,
@@ -243,18 +106,29 @@ export class LlmService {
     userContent: string,
     attempt = 1
   ): Promise<string> {
-    const preferCompletion = this.modelUsesMaxCompletionTokens(model);
     try {
-      return await this.callChatCompletions(apiKey, model, systemPrompt, userContent, preferCompletion);
+      this.log('info', `Calling OpenAI [model=${model}, attempt=${attempt}]`);
+      const response = await axios.post(
+        'https://api.openai.com/v1/chat/completions',
+        {
+          model,
+          temperature: DEFAULT_TEMPERATURE,
+          max_tokens: DEFAULT_MAX_TOKENS,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userContent },
+          ],
+        },
+        {
+          headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+          timeout: REQUEST_TIMEOUT_MS,
+        }
+      );
+      const content = response.data?.choices?.[0]?.message?.content;
+      if (!content || typeof content !== 'string') throw new Error('Resposta invalida da OpenAI — content vazio.');
+      this.log('info', `OpenAI OK (${content.length} chars)`);
+      return content;
     } catch (error) {
-      if (!preferCompletion && this.isUnsupportedMaxTokensError(error)) {
-        this.log('info', `Retrying chat/completions with max_completion_tokens [model=${model}]`);
-        return await this.callChatCompletions(apiKey, model, systemPrompt, userContent, true);
-      }
-      if (this.isChatModelUnsupportedError(error)) {
-        this.log('info', `Fallback Responses API [model=${model}]`);
-        return await this.callResponsesAPIWithRetry(apiKey, model, systemPrompt, userContent);
-      }
       const isRetryable = axios.isAxiosError(error) &&
         (!error.response ||
           error.response.status === 429 ||
@@ -274,40 +148,6 @@ export class LlmService {
         });
       } else if (error instanceof Error) {
         this.log('error', 'OpenAI error', error.message);
-      }
-      throw error;
-    }
-  }
-
-  private async callResponsesAPIWithRetry(
-    apiKey: string,
-    model: string,
-    systemPrompt: string,
-    userContent: string,
-    attempt = 1
-  ): Promise<string> {
-    try {
-      return await this.callResponsesAPI(apiKey, model, systemPrompt, userContent);
-    } catch (error) {
-      const isRetryable = axios.isAxiosError(error) &&
-        (!error.response ||
-          error.response.status === 429 ||
-          error.response.status >= 500);
-      if (isRetryable && attempt < MAX_RETRY_ATTEMPTS) {
-        const delay = attempt * 2000;
-        this.log('warn', `Retrying Responses API in ${delay}ms (attempt ${attempt})...`);
-        await new Promise(res => setTimeout(res, delay));
-        return this.callResponsesAPIWithRetry(apiKey, model, systemPrompt, userContent, attempt + 1);
-      }
-      if (axios.isAxiosError(error)) {
-        this.log('error', 'OpenAI Responses Axios error', {
-          status: error.response?.status,
-          data: error.response?.data,
-          message: error.message,
-          code: error.code,
-        });
-      } else if (error instanceof Error) {
-        this.log('error', 'OpenAI Responses error', error.message);
       }
       throw error;
     }
