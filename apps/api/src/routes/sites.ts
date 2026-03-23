@@ -37,9 +37,9 @@ const sanitizeMapping = (input: unknown) => {
 };
 
 const buildFbp = () => `fb.1.${Math.floor(Date.now() / 1000)}.${crypto.randomBytes(8).toString('hex')}`;
-const buildFbc = () => `fb.1.${Math.floor(Date.now() / 1000)}.${crypto.randomBytes(8).toString('hex')}`;
-const buildTrkToken = (externalId: string, fbc: string, fbp: string) =>
-  `trk_${Buffer.from(`${externalId}|${fbc}|${fbp}`).toString('base64')}`;
+const buildFbcFromFbclid = (fbclid: string) => `fb.1.${Date.now()}.${fbclid}`;
+const buildTrkToken = (externalId: string, fbc?: string | null, fbp?: string | null) =>
+  `trk_${Buffer.from(`${externalId}|${fbc || ''}|${fbp || ''}`).toString('base64')}`;
 
 const toNullableString = (value: unknown) =>
   typeof value === 'string' && value.trim() ? value.trim() : null;
@@ -168,7 +168,10 @@ router.post('/:siteId/checkout-simulator/generate', requireAuth, async (req, res
 
   const externalId = toNullableString(body.external_id) || `lead_${randomKey(8)}`;
   const fbp = toNullableString(body.fbp) || buildFbp();
-  const fbc = toNullableString(body.fbc) || buildFbc();
+  const providedFbc = toNullableString(body.fbc);
+  const fbclid = toNullableString(body.fbclid);
+  // Não gerar FBC aleatório: sem fbclid real, melhor omitir o campo.
+  const fbc = providedFbc || (fbclid ? buildFbcFromFbclid(fbclid) : null);
   const trkToken = buildTrkToken(externalId, fbc, fbp);
 
   const params: Record<string, string | null> = {
