@@ -8,21 +8,36 @@ const router = Router();
 
 const OPENAI_MODELS_URL = 'https://api.openai.com/v1/models';
 
-/** Modelos usáveis com /v1/chat/completions (mesmo fluxo do LlmService). */
-function isChatCompletionsModel(id: string): boolean {
-  const low = id.toLowerCase();
+/**
+ * Modelos que o LlmService consegue usar para análise (texto: chat/completions, Responses ou o-series).
+ * Exclui áudio, embeddings, imagem, moderador, search-only, realtime, etc.
+ */
+function isAnalysisLlmModel(id: string): boolean {
+  const low = id.toLowerCase().trim();
+
   if (
-    /embedding|text-embedding|whisper|tts|dall-e|moderation|davinci|babbage|curie|ada|realtime|transcribe|speech|sora|gpt-image|omni-moderation|video|clip|search-api/.test(
+    /embedding|text-embedding|whisper|dall-e|moderation|davinci|babbage|curie|ada|omni-moderation|gpt-image|sora|clip|search-api|computer-use|evals-/.test(
       low,
     )
   ) {
     return false;
   }
+
+  if (
+    /audio|transcrib|tts|text-to-speech|speech|voice|sound|realtime|live-preview|live\b|playground|instrument|music|stt\b|asr\b|mini-tts|-tts-|_tts|-audio|-stt|search-preview|mini-transcribe|transcribe-diarize/.test(
+      low,
+    )
+  ) {
+    return false;
+  }
+
   if (/instruct$/.test(low) && id.startsWith('gpt')) return false;
+
   if (id.startsWith('gpt-')) return true;
   if (id.startsWith('chatgpt-')) return true;
-  if (/^o[0-9]/.test(id)) return true;
-  if (id.startsWith('ft:') && /gpt|o[0-9]/.test(id)) return true;
+  if (/^o[0-9]/.test(id.trim())) return true;
+  if (id.startsWith('ft:') && /gpt|o[0-9]/i.test(id)) return true;
+
   return false;
 }
 
@@ -32,7 +47,7 @@ async function listOpenAiModelIds(apiKey: string): Promise<string[]> {
     timeout: 30_000,
   });
   const rows = Array.isArray(res.data?.data) ? res.data.data : [];
-  const ids = rows.map((r) => r.id).filter((id) => typeof id === 'string' && isChatCompletionsModel(id));
+  const ids = rows.map((r) => r.id).filter((id) => typeof id === 'string' && isAnalysisLlmModel(id));
   return [...new Set(ids)].sort((a, b) => a.localeCompare(b));
 }
 
