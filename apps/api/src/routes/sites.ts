@@ -37,7 +37,7 @@ const sanitizeMapping = (input: unknown) => {
 };
 
 const buildFbp = () => `fb.1.${Math.floor(Date.now() / 1000)}.${crypto.randomBytes(8).toString('hex')}`;
-const buildFbc = () => `fb.1.${Date.now()}.${crypto.randomBytes(8).toString('hex')}`;
+const buildFbc = () => `fb.1.${Math.floor(Date.now() / 1000)}.${crypto.randomBytes(8).toString('hex')}`;
 const buildTrkToken = (externalId: string, fbc: string, fbp: string) =>
   `trk_${Buffer.from(`${externalId}|${fbc}|${fbp}`).toString('base64')}`;
 
