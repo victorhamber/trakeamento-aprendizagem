@@ -691,7 +691,7 @@ export const SitePage = () => {
         console.error(err);
         if (!cancelled) {
           setMentorChecklist(null);
-          showFlash('Não foi possível carregar a trilha.', 'error');
+          showFlash('Não foi possível carregar o checklist do mentor.', 'error');
         }
       } finally {
         if (!cancelled) setMentorChecklistLoading(false);
@@ -3759,7 +3759,7 @@ ${scriptContent}
                       : 'bg-zinc-50 dark:bg-zinc-900/60 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800 hover:border-zinc-400'
                       }`}
                   >
-                    Trilha Meta (mentor)
+                    Mentor
                   </button>
                 </div>
 
@@ -4193,15 +4193,15 @@ ${scriptContent}
                 {reportsSubTab === 'mentor' && (
                   <div className="space-y-4">
                     {mentorChecklistLoading && (
-                      <div className="text-sm text-zinc-600 dark:text-zinc-400">A carregar trilha…</div>
+                      <div className="text-sm text-zinc-600 dark:text-zinc-400">A carregar o mentor…</div>
                     )}
                     {mentorChecklist && !mentorChecklistLoading && (
                       <>
                         <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/30 p-5 space-y-4">
                           <div>
-                            <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{mentorChecklist.title}</h3>
+                            <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">{mentorChecklist.title}</h3>
                             {mentorChecklist.subtitle && (
-                              <p className="text-xs text-zinc-600 dark:text-zinc-500 mt-1">{mentorChecklist.subtitle}</p>
+                              <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-1">{mentorChecklist.subtitle}</p>
                             )}
                           </div>
                           {(() => {
@@ -4212,7 +4212,7 @@ ${scriptContent}
                             const pct = total > 0 ? Math.round((done / total) * 100) : 0;
                             return (
                               <div className="space-y-2">
-                                <div className="flex justify-between text-xs text-zinc-600 dark:text-zinc-400">
+                                <div className="flex justify-between text-sm text-zinc-600 dark:text-zinc-300">
                                   <span>
                                     Progresso: {done} / {total}
                                   </span>
@@ -4261,7 +4261,7 @@ ${scriptContent}
                               {mentorCoachLoading ? 'A gerar…' : 'Gerar orientação do mentor'}
                             </button>
                           </div>
-                          <p className="text-[11px] text-zinc-600 dark:text-zinc-500">
+                          <p className="text-xs sm:text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed">
                             Opcional: selecione uma campanha na aba Campanhas ou em «Análise de campanha» para enriquecer a
                             orientação com métricas dos últimos 14 dias.
                           </p>
@@ -4286,7 +4286,7 @@ ${scriptContent}
                                     className="w-full flex items-center gap-2 px-4 py-3 text-left bg-zinc-50 dark:bg-zinc-900/50 border-b border-zinc-200 dark:border-zinc-800/60"
                                   >
                                     <span className="text-lg">{ph.icon || '•'}</span>
-                                    <span className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 flex-1">
+                                    <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 flex-1">
                                       {ph.order.toString().padStart(2, '0')} — {ph.title}
                                     </span>
                                     {ph.badge && (
@@ -4300,7 +4300,7 @@ ${scriptContent}
                                   {open && (
                                     <div className="px-4 py-3 space-y-3 border-t border-zinc-100 dark:border-zinc-800/40">
                                       {ph.note && (
-                                        <p className="text-xs text-zinc-600 dark:text-zinc-400 bg-zinc-50 dark:bg-zinc-900/30 rounded-lg px-3 py-2">
+                                        <p className="text-sm text-zinc-600 dark:text-zinc-300 bg-zinc-50 dark:bg-zinc-900/30 rounded-lg px-3 py-2.5 leading-relaxed">
                                           {ph.note}
                                         </p>
                                       )}
@@ -4327,11 +4327,15 @@ ${scriptContent}
                                                 }}
                                               />
                                               <div className="flex-1 min-w-0">
-                                                <div className="text-sm text-zinc-800 dark:text-zinc-200">{it.text}</div>
+                                                <div className="text-base text-zinc-800 dark:text-zinc-100 font-medium leading-snug">
+                                                  {it.text}
+                                                </div>
                                                 {it.hints && it.hints.length > 0 && (
-                                                  <ul className="mt-1 text-[11px] text-zinc-500 space-y-0.5 list-disc list-inside">
+                                                  <ul className="mt-2 space-y-1.5 text-sm leading-relaxed text-zinc-400 dark:text-zinc-300 list-disc list-inside pl-1 marker:text-amber-500/90">
                                                     {it.hints.map((h, hi) => (
-                                                      <li key={hi}>{h}</li>
+                                                      <li key={hi} className="pl-0.5">
+                                                        {h}
+                                                      </li>
                                                     ))}
                                                   </ul>
                                                 )}
