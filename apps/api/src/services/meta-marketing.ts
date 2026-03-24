@@ -52,7 +52,8 @@ export class MetaMarketingService {
     const adAccountId = this.normalizeAdAccountId(String(row.ad_account_id || ''));
     if (!adAccountId) throw new Error('Ad Account ID inválido.');
 
-    const tokenCandidates = [row.marketing_token_enc, row.fb_user_token_enc].filter(
+    // Preferir token do OAuth (por usuário/conta) — marketing_token só como fallback legado.
+    const tokenCandidates = [row.fb_user_token_enc, row.marketing_token_enc].filter(
       Boolean
     ) as string[];
     for (const enc of tokenCandidates) {
@@ -294,6 +295,108 @@ export class MetaMarketingService {
     return allData;
   }
 
+  /** Query string para insights no formato esperado pela Graph API (time_range JSON). */
+  private buildInsightsRelativeUrl(
+    adAccountId: string,
+    level: 'ad' | 'adset' | 'campaign',
+    fields: string,
+    since: string,
+    until: string
+  ): string {
+    const timeRange = encodeURIComponent(JSON.stringify({ since, until }));
+    const f = encodeURIComponent(fields);
+    return `${encodeURIComponent(adAccountId)}/insights?level=${level}&time_increment=1&limit=500&fields=${f}&time_range=${timeRange}`;
+  }
+
+  private parseBatchInsightItem(item: { code?: number; body?: string }): {
+    data: Record<string, unknown>[];
+    nextUrl: string | null;
+  } {
+    const code = typeof item.code === 'number' ? item.code : 0;
+    if (code < 200 || code >= 300 || !item.body) {
+      throw new Error(`Batch item HTTP ${code}: ${item.body || ''}`);
+    }
+    let parsed: { data?: unknown; paging?: { next?: string } };
+    try {
+      parsed = JSON.parse(item.body) as typeof parsed;
+    } catch {
+      throw new Error('Batch item body is not JSON');
+    }
+    const data = Array.isArray(parsed.data)
+      ? (parsed.data.filter(MetaMarketingService.isRecord) as Record<string, unknown>[])
+      : [];
+    const nextUrl =
+      parsed.paging?.next && typeof parsed.paging.next === 'string' ? parsed.paging.next : null;
+    return { data, nextUrl };
+  }
+
+  /**
+   * Primeira página dos três níveis de insights em uma única chamada batch (Graph API),
+   * reduzindo 3 HTTP round-trips para 1. Paginação seguinte usa GET direto (URLs em paging.next).
+   */
+  private async fetchInsightsFirstPagesBatch(
+    token: string,
+    adAccountId: string,
+    since: string,
+    until: string,
+    adFields: string,
+    adSetFields: string,
+    campaignFields: string
+  ): Promise<[
+    { data: Record<string, unknown>[]; nextUrl: string | null },
+    { data: Record<string, unknown>[]; nextUrl: string | null },
+    { data: Record<string, unknown>[]; nextUrl: string | null },
+  ]> {
+    const ruAd = this.buildInsightsRelativeUrl(adAccountId, 'ad', adFields, since, until);
+    const ruAdset = this.buildInsightsRelativeUrl(adAccountId, 'adset', adSetFields, since, until);
+    const ruCamp = this.buildInsightsRelativeUrl(adAccountId, 'campaign', campaignFields, since, until);
+
+    const batchPayload = [
+      { method: 'GET', relative_url: ruAd },
+      { method: 'GET', relative_url: ruAdset },
+      { method: 'GET', relative_url: ruCamp },
+    ];
+
+    const body = new URLSearchParams();
+    body.append('access_token', token);
+    body.append('batch', JSON.stringify(batchPayload));
+
+    const res = await axios.post(`https://graph.facebook.com/v19.0/`, body.toString(), {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      timeout: 120_000,
+    });
+
+    const arr = res.data;
+    if (!Array.isArray(arr) || arr.length !== 3) {
+      throw new Error('Unexpected batch response shape');
+    }
+
+    const a = this.parseBatchInsightItem(arr[0]);
+    const b = this.parseBatchInsightItem(arr[1]);
+    const c = this.parseBatchInsightItem(arr[2]);
+    return [
+      { data: a.data, nextUrl: a.nextUrl },
+      { data: b.data, nextUrl: b.nextUrl },
+      { data: c.data, nextUrl: c.nextUrl },
+    ];
+  }
+
+  private async fetchRemainingPagesFromNext(firstNextUrl: string | null): Promise<Record<string, unknown>[]> {
+    if (!firstNextUrl) return [];
+    let allData: Record<string, unknown>[] = [];
+    let currentUrl: string | null = firstNextUrl;
+    while (currentUrl) {
+      const apiRes: any = await axios.get(currentUrl);
+      const data = apiRes.data?.data;
+      if (Array.isArray(data)) {
+        allData = allData.concat(data);
+      }
+      const nextUrl: unknown = apiRes.data?.paging?.next;
+      currentUrl = nextUrl && typeof nextUrl === 'string' ? nextUrl : null;
+    }
+    return allData;
+  }
+
   public async syncDailyInsights(
     siteId: number,
     datePreset: string = 'last_7d',
@@ -323,11 +426,36 @@ export class MetaMarketingService {
 
       const campaignFields = [...MetaMarketingService.BASE_FIELDS].join(',');
 
-      const [adInsights, adSetInsights, campaignInsights] = await Promise.all([
-        this.fetchAllPages(baseUrl, { access_token: cfg.token, level: 'ad', ...timeParams, time_increment: 1, fields: adFields, limit: 500 }),
-        this.fetchAllPages(baseUrl, { access_token: cfg.token, level: 'adset', ...timeParams, time_increment: 1, fields: adSetFields, limit: 500 }),
-        this.fetchAllPages(baseUrl, { access_token: cfg.token, level: 'campaign', ...timeParams, time_increment: 1, fields: campaignFields, limit: 500 }),
-      ]);
+      let adInsights: Record<string, unknown>[];
+      let adSetInsights: Record<string, unknown>[];
+      let campaignInsights: Record<string, unknown>[];
+
+      try {
+        const [ad0, adset0, camp0] = await this.fetchInsightsFirstPagesBatch(
+          cfg.token,
+          cfg.adAccountId,
+          range.since,
+          range.until,
+          adFields,
+          adSetFields,
+          campaignFields
+        );
+        const [adRest, adsetRest, campRest] = await Promise.all([
+          this.fetchRemainingPagesFromNext(ad0.nextUrl),
+          this.fetchRemainingPagesFromNext(adset0.nextUrl),
+          this.fetchRemainingPagesFromNext(camp0.nextUrl),
+        ]);
+        adInsights = [...ad0.data, ...adRest];
+        adSetInsights = [...adset0.data, ...adsetRest];
+        campaignInsights = [...camp0.data, ...campRest];
+      } catch (batchErr) {
+        console.warn('[MetaSync] insights batch failed, using parallel GET:', batchErr);
+        [adInsights, adSetInsights, campaignInsights] = await Promise.all([
+          this.fetchAllPages(baseUrl, { access_token: cfg.token, level: 'ad', ...timeParams, time_increment: 1, fields: adFields, limit: 500 }),
+          this.fetchAllPages(baseUrl, { access_token: cfg.token, level: 'adset', ...timeParams, time_increment: 1, fields: adSetFields, limit: 500 }),
+          this.fetchAllPages(baseUrl, { access_token: cfg.token, level: 'campaign', ...timeParams, time_increment: 1, fields: campaignFields, limit: 500 }),
+        ]);
+      }
 
       console.log(
         `[MetaSync] site=${siteId} range=${range.since}→${range.until} ` +
