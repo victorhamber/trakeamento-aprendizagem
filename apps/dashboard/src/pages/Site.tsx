@@ -4227,6 +4227,64 @@ ${scriptContent}
                               </div>
                             );
                           })()}
+
+                          {campaigns.length > 0 ? (
+                            <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 items-end">
+                              <div>
+                                <div className="flex items-center gap-2 mb-1.5">
+                                  <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-500">
+                                    Campanha (opcional)
+                                  </label>
+                                  {selectedCampaign && (
+                                    <Badge variant={getStatusVariant(selectedCampaign)}>
+                                      {getStatusLabel(selectedCampaign)}
+                                    </Badge>
+                                  )}
+                                </div>
+                                <select
+                                  className={selectCls}
+                                  aria-label="Campanha para enriquecer métricas do mentor"
+                                  value={selectedCampaignId}
+                                  onChange={(e) => setSelectedCampaignId(e.target.value)}
+                                >
+                                  <option value="">Nenhuma — só checklist e dados gerais do site</option>
+                                  {[...campaigns]
+                                    .sort((a, b) => {
+                                      const aA = a.status === 'ACTIVE' ? 0 : 1;
+                                      const bA = b.status === 'ACTIVE' ? 0 : 1;
+                                      if (aA !== bA) return aA - bA;
+                                      return a.name.localeCompare(b.name);
+                                    })
+                                    .map((c) => (
+                                      <option key={c.id} value={c.id}>
+                                        {c.name} {c.status === 'ACTIVE' ? '(Ativa)' : '(Pausada)'}
+                                      </option>
+                                    ))}
+                                </select>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => loadCampaigns({ force: true }).catch(() => { })}
+                                className="bg-zinc-50 dark:bg-zinc-900/60 hover:bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 px-3.5 py-2.5 rounded-lg text-xs transition-colors self-end"
+                              >
+                                Atualizar lista
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-900/20 px-3 py-2.5">
+                              <span className="text-sm text-zinc-600 dark:text-zinc-400">
+                                Nenhuma campanha carregada. Ligue o Meta Ads e sincronize na aba Campanhas, ou atualize aqui.
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => loadCampaigns({ force: true }).catch(() => { })}
+                                className="text-xs font-medium px-3 py-1.5 rounded-lg bg-zinc-200 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 hover:bg-zinc-300 dark:hover:bg-zinc-700"
+                              >
+                                Tentar carregar campanhas
+                              </button>
+                            </div>
+                          )}
+
                           <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 items-end">
                             <div>
                               <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-500 mb-1.5">
@@ -4262,8 +4320,8 @@ ${scriptContent}
                             </button>
                           </div>
                           <p className="text-xs sm:text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed">
-                            Opcional: selecione uma campanha na aba Campanhas ou em «Análise de campanha» para enriquecer a
-                            orientação com métricas dos últimos 14 dias.
+                            Se escolher uma campanha acima, a orientação pode usar métricas agregadas dos últimos 14 dias
+                            dessa campanha (além do checklist e da integração Meta do site).
                           </p>
                         </div>
 
