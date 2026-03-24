@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "scripts": {
     "dev": "ts-node-dev src/main.ts",
-    "build": "tsc",
+    "build": "tsc && node -e \"const fs=require('fs');const p='dist/data';fs.mkdirSync(p,{recursive:true});fs.copyFileSync('src/data/meta-ads-mentor-checklist.json',p+'/meta-ads-mentor-checklist.json')\"",
     "start": "node dist/main.js",
     "migrate": "ts-node src/scripts/migrate.ts",
     "migrate:prod": "node dist/scripts/migrate.js",

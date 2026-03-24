@@ -1,0 +1,920 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Checklist Meta ADS — Diagnóstico Completo</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --surface: #12121a;
+    --surface2: #1a1a26;
+    --border: #2a2a3d;
+    --accent: #ff6b35;
+    --accent2: #7c3aed;
+    --accent3: #06d6a0;
+    --warn: #ffd166;
+    --text: #e8e8f0;
+    --muted: #6b6b8a;
+    --done: #06d6a0;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    min-height: 100vh;
+    padding: 0 0 60px 0;
+  }
+
+  /* HEADER */
+  header {
+    background: linear-gradient(135deg, #0f0f1a 0%, #1a0a2e 50%, #0a1a0f 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 48px 24px 36px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  header::before {
+    content: '';
+    position: absolute;
+    top: -60px; left: -60px;
+    width: 300px; height: 300px;
+    background: radial-gradient(circle, rgba(255,107,53,0.15) 0%, transparent 70%);
+    border-radius: 50%;
+  }
+  header::after {
+    content: '';
+    position: absolute;
+    bottom: -80px; right: -40px;
+    width: 280px; height: 280px;
+    background: radial-gradient(circle, rgba(124,58,237,0.12) 0%, transparent 70%);
+    border-radius: 50%;
+  }
+
+  .header-inner { max-width: 800px; margin: 0 auto; position: relative; z-index: 1; }
+
+  .tag {
+    display: inline-block;
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--accent);
+    border: 1px solid rgba(255,107,53,0.4);
+    padding: 4px 10px;
+    border-radius: 2px;
+    margin-bottom: 16px;
+  }
+
+  h1 {
+    font-family: 'Syne', sans-serif;
+    font-size: clamp(28px, 6vw, 48px);
+    font-weight: 800;
+    line-height: 1.1;
+    margin-bottom: 12px;
+    color: #fff;
+  }
+
+  h1 span {
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .subtitle {
+    color: var(--muted);
+    font-size: 15px;
+    font-weight: 300;
+    max-width: 500px;
+    line-height: 1.6;
+  }
+
+  /* PROGRESS */
+  .progress-bar-wrap {
+    max-width: 800px;
+    margin: 28px auto 0;
+    padding: 0 24px;
+  }
+
+  .progress-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+
+  .progress-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .progress-count {
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    color: var(--accent);
+    font-weight: 500;
+  }
+
+  .progress-track {
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    border-radius: 2px;
+    transition: width 0.4s ease;
+    width: 0%;
+  }
+
+  /* MAIN */
+  main { max-width: 800px; margin: 0 auto; padding: 32px 24px 0; }
+
+  /* PHASE BLOCK */
+  .phase {
+    margin-bottom: 20px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    background: var(--surface);
+    transition: border-color 0.3s;
+  }
+
+  .phase:has(.item-check:checked) {
+    border-color: rgba(6,214,160,0.2);
+  }
+
+  .phase-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 18px 20px;
+    cursor: pointer;
+    user-select: none;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.2s;
+  }
+
+  .phase-header:hover { background: var(--surface2); }
+
+  .phase-number {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--muted);
+    min-width: 28px;
+  }
+
+  .phase-icon {
+    font-size: 20px;
+    min-width: 24px;
+    text-align: center;
+  }
+
+  .phase-title {
+    font-family: 'Syne', sans-serif;
+    font-weight: 700;
+    font-size: 15px;
+    flex: 1;
+    color: #fff;
+  }
+
+  .phase-badge {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    padding: 3px 8px;
+    border-radius: 20px;
+    font-weight: 500;
+  }
+
+  .phase-progress {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    min-width: 32px;
+    text-align: right;
+  }
+
+  .phase-chevron {
+    color: var(--muted);
+    font-size: 12px;
+    transition: transform 0.3s;
+  }
+
+  .phase.open .phase-chevron { transform: rotate(180deg); }
+
+  .phase-body {
+    display: none;
+    padding: 4px 0 8px;
+  }
+
+  .phase.open .phase-body { display: block; }
+
+  /* ITEMS */
+  .item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 13px 20px;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+    transition: background 0.2s;
+    cursor: pointer;
+  }
+
+  .item:last-child { border-bottom: none; }
+  .item:hover { background: var(--surface2); }
+
+  .item-check {
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    min-width: 18px;
+    border: 1.5px solid var(--border);
+    border-radius: 4px;
+    cursor: pointer;
+    margin-top: 1px;
+    position: relative;
+    transition: all 0.2s;
+    background: transparent;
+  }
+
+  .item-check:checked {
+    background: var(--done);
+    border-color: var(--done);
+  }
+
+  .item-check:checked::after {
+    content: '✓';
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    color: #000;
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  .item-content { flex: 1; }
+
+  .item-label {
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 1.5;
+    color: var(--text);
+    transition: color 0.2s;
+  }
+
+  .item:has(.item-check:checked) .item-label {
+    color: var(--muted);
+    text-decoration: line-through;
+  }
+
+  .item-meta {
+    margin-top: 5px;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .metric-tag {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    padding: 2px 7px;
+    border-radius: 3px;
+    border: 1px solid;
+    font-weight: 500;
+  }
+
+  .metric-tag.ref {
+    color: #7c3aed;
+    border-color: rgba(124,58,237,0.4);
+    background: rgba(124,58,237,0.08);
+  }
+
+  .metric-tag.warn {
+    color: var(--warn);
+    border-color: rgba(255,209,102,0.4);
+    background: rgba(255,209,102,0.06);
+  }
+
+  .metric-tag.ok {
+    color: var(--done);
+    border-color: rgba(6,214,160,0.4);
+    background: rgba(6,214,160,0.06);
+  }
+
+  .metric-tag.danger {
+    color: var(--accent);
+    border-color: rgba(255,107,53,0.4);
+    background: rgba(255,107,53,0.06);
+  }
+
+  /* SECTION COLORS */
+  .phase[data-color="orange"] .phase-header { border-left: 3px solid var(--accent); }
+  .phase[data-color="purple"] .phase-header { border-left: 3px solid var(--accent2); }
+  .phase[data-color="green"] .phase-header { border-left: 3px solid var(--done); }
+  .phase[data-color="yellow"] .phase-header { border-left: 3px solid var(--warn); }
+  .phase[data-color="blue"] .phase-header { border-left: 3px solid #38bdf8; }
+  .phase[data-color="pink"] .phase-header { border-left: 3px solid #f472b6; }
+  .phase[data-color="teal"] .phase-header { border-left: 3px solid #2dd4bf; }
+
+  .phase[data-color="orange"] .phase-badge { color: var(--accent); border: 1px solid rgba(255,107,53,0.3); background: rgba(255,107,53,0.08); }
+  .phase[data-color="purple"] .phase-badge { color: var(--accent2); border: 1px solid rgba(124,58,237,0.3); background: rgba(124,58,237,0.08); }
+  .phase[data-color="green"] .phase-badge { color: var(--done); border: 1px solid rgba(6,214,160,0.3); background: rgba(6,214,160,0.08); }
+  .phase[data-color="yellow"] .phase-badge { color: var(--warn); border: 1px solid rgba(255,209,102,0.3); background: rgba(255,209,102,0.08); }
+  .phase[data-color="blue"] .phase-badge { color: #38bdf8; border: 1px solid rgba(56,189,248,0.3); background: rgba(56,189,248,0.08); }
+  .phase[data-color="pink"] .phase-badge { color: #f472b6; border: 1px solid rgba(244,114,182,0.3); background: rgba(244,114,182,0.08); }
+  .phase[data-color="teal"] .phase-badge { color: #2dd4bf; border: 1px solid rgba(45,212,191,0.3); background: rgba(45,212,191,0.08); }
+
+  /* NOTE BLOCKS */
+  .phase-note {
+    margin: 0 20px 12px;
+    padding: 10px 14px;
+    background: rgba(255,209,102,0.06);
+    border: 1px solid rgba(255,209,102,0.2);
+    border-radius: 6px;
+    font-size: 12px;
+    color: var(--warn);
+    line-height: 1.5;
+  }
+
+  /* RESET BTN */
+  .reset-wrap {
+    max-width: 800px;
+    margin: 24px auto 0;
+    padding: 0 24px;
+    text-align: right;
+  }
+
+  .reset-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 1px;
+    padding: 7px 14px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-transform: uppercase;
+  }
+
+  .reset-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <div class="tag">Meta ADS · Diagnóstico</div>
+    <h1>Checklist Completo de<br><span>Otimização de Vendas</span></h1>
+    <p class="subtitle">Do anúncio à venda — todas as etapas que você precisa analisar, com as métricas certas para tomar decisões.</p>
+  </div>
+</header>
+
+<div class="progress-bar-wrap">
+  <div class="progress-meta">
+    <span class="progress-label">Progresso Geral</span>
+    <span class="progress-count" id="progress-count">0 / 0 concluídos</span>
+  </div>
+  <div class="progress-track">
+    <div class="progress-fill" id="progress-fill"></div>
+  </div>
+</div>
+
+<div class="reset-wrap">
+  <button class="reset-btn" onclick="resetAll()">↺ Reiniciar Checklist</button>
+</div>
+
+<main id="checklist">
+
+  <!-- FASE 1 -->
+  <div class="phase open" data-color="orange">
+    <div class="phase-header" onclick="togglePhase(this)">
+      <span class="phase-number">01</span>
+      <span class="phase-icon">🎯</span>
+      <span class="phase-title">Oferta e Produto</span>
+      <span class="phase-badge">Fundação</span>
+      <span class="phase-progress"></span>
+      <span class="phase-chevron">▼</span>
+    </div>
+    <div class="phase-body">
+      <div class="phase-note">⚡ Comece aqui. Nenhum anúncio salva uma oferta ruim.</div>
+      <label class="item">
+        <input type="checkbox" class="item-check">
+        <div class="item-content">
+          <div class="item-label">O produto resolve um problema real e urgente de um público específico?</div>
+          <div class="item-meta"><span class="metric-tag warn">Se não → reposicionar antes de anunciar</span></div>
+        </div>
+      </label>
+      <label class="item">
+        <input type="checkbox" class="item-check">
+        <div class="item-content">
+          <div class="item-label">A proposta de valor é clara em menos de 5 segundos?</div>
+          <div class="item-meta"><span class="metric-tag ref">Teste: mostre para alguém por 5 seg e pergunte o que vende</span></div>
+        </div>
+      </label>
+      <label class="item">
+        <input type="checkbox" class="item-check">
+        <div class="item-content">
+          <div class="item-label">O preço está adequado à percepção de valor e ao mercado?</div>
+          <div class="item-meta"><span class="metric-tag ref">Compare com 3 concorrentes diretos</span></div>
+        </div>
+      </label>
+      <label class="item">
+        <input type="checkbox" class="item-check">
+        <div class="item-content">
+          <div class="item-label">Existe prova social? (depoimentos, avaliações, cases)</div>
+          <div class="item-meta"><span class="metric-tag ok">Mínimo: 5 depoimentos reais com foto/nome</span></div>
+        </div>
+      </label>
+      <label class="item">
+        <input type="checkbox" class="item-check">
+        <div class="item-content">
+          <div class="item-label">Existe garantia ou elemento de redução de risco para o comprador?</div>
+          <div class="item-meta"><span class="metric-tag ok">Ex: Garantia de 7 dias, frete grátis, troca sem custo</span></div>
+        </div>
+      </label>
+    </div>
+  </div>
+
+  <!-- FASE 2 -->
+  <div class="phase" data-color="purple">
+    <div class="phase-header" onclick="togglePhase(this)">
+      <span class="phase-number">02</span>
+      <span class="phase-icon">👥</span>
+      <span class="phase-title">Público e Segmentação</span>
+      <span class="phase-badge">Targeting</span>
+      <span class="phase-progress"></span>
+      <span class="phase-chevron">▼</span>
+    </div>
+    <div class="phase-body">
+      <label class="item">
+        <input type="checkbox" class="item-check">
+        <div class="item-content">
+          <div class="item-label">O público-alvo está bem definido (idade, interesses, comportamentos)?</div>
+          <div class="item-meta"><span class="metric-tag ref">Evite públicos muito amplos no início</span></div>
+        </div>
+      </label>
+      <label class="item">
+        <input type="checkbox" class="item-check">
+        <div class="item-content">
+          <div class="item-label">O tamanho do público está adequado ao orçamento?</div>
+          <div class="item-meta"><span class="metric-tag ok">R$30–100/dia → público de 500k a 2M</span><span class="metric-tag ok">R$300+/dia → pode escalar para milhões</span></div>
+        </div>
+      </label>
+      <label class="item">
+        <input type="checkbox" class="item-check">
+        <div class="item-content">
+          <div class="item-label">Pixel do Meta instalado e disparando eventos corretamente?</div>
+          <div class="item-meta"><span class="metric-tag danger">Verificar: ViewContent, AddToCart, Purchase</span></div>
+        </div>
+      </label>
+      <label class="item">
+        <input type="checkbox" class="item-check">
+        <div class="item-content">
+          <div class="item-label">Testou público de interesse vs. Advantage+ Audience (antigo open targeting)?</div>
+          <div class="item-meta"><span class="metric-tag ref">Em 2024+ o Meta favorece públicos abertos com criativo forte</span></div>
+        </div>
+      </label>
+      <label class="item">
+        <input type="checkbox" class="item-check">
+        <div class="item-content">
+          <div class="item-label">Existe público de remarketing configurado? (visitantes, carrinho abandonado)</div>
+          <div class="item-meta"><span class="metric-tag warn">Remarketing converte 3–5x mais que tráfego frio</span></div>
+        </div>
+      </label>
+      <label class="item">
+        <input type="checkbox" class="item-check">
+        <div class="item-content">
+          <div class="item-label">Público lookalike criado com base em compradores reais?</div>
+          <div class="item-meta"><span class="metric-tag ok">Mínimo: 100 compradores para Lookalike 1%</span></div>
+        </div>
+      </label>
+    </div>
+  </div>
+
+  <!-- FASE 3 -->
+  <div class="phase" data-color="blue">
+    <div class="phase-header" onclick="togglePhase(this)">
+      <span class="phase-number">03</span>
+      <span class="phase-icon">🎨</span>
+      <span class="phase-title">Criativo (Anúncio)</span>
+      <span class="phase-badge">Creative</span>
+      <span class="phase-progress"></span>
+      <span class="phase-chevron">▼</span>
+    </div>
+    <div class="phase-body">
+      <div class="phase-note">📊 O criativo é responsável por ~70% do resultado do anúncio. É a alavanca mais poderosa.</div>
+      <label class="item">
+        <input type="checkbox" class="item-check">
+        <div class="item-content">
+          <div class="item-label">Os 3 primeiros segundos do vídeo (ou imagem) param o scroll?</div>
+          <div class="item-meta"><span class="metric-tag ref">Hook visual obrigatório — sem isso ninguém assiste</span></div>
+        </div>
+      </label>
+      <label class="item">
+        <input type="checkbox" class="item-check">
+        <div class="item-content">
+          <div class="item-label">Está testando pelo menos 3 criativos diferentes por campanha?</div>
+          <div class="item-meta"><span class="metric-tag ok">Teste: imagem estática, vídeo curto (15–30s), carrossel</span></div>
+        </div>
+      </label>
+      <label class="item">
+        <input type="checkbox" class="item-check">
+        <div class="item-content">
+          <div class="item-label">O copy do anúncio fala do problema do cliente, não só do produto?</div>
+          <div class="item-meta"><span class="metric-tag ref">Estrutura: Problema → Agitação → Solução → CTA</span></div>
+        </div>
+      </label>
+      <label class="item">
+        <input type="checkbox" class="item-check">
+        <div class="item-content">
+          <div class="item-label">O CTA (Call to Action) é claro e direto?</div>
+          <div class="item-meta"><span class="metric-tag ok">Ex: "Compre agora", "Garanta o seu", "Clique e saiba mais"</span></div>
+        </div>
+      </label>
+      <label class="item">
+        <input type="checkbox" class="item-check">
+        <div class="item-content">
+          <div class="item-label">O anúncio está adaptado para o formato (Feed, Stories, Reels)?</div>
+          <div class="item-meta"><span class="metric-tag warn">Stories/Reels: 9:16 vertical · Feed: 1:1 ou 4:5</span></div>
+        </div>
+      </label>
+      <label class="item">
+        <input type="checkbox" class="item-check">
+        <div class="item-content">
+          <div class="item-label">Analisou CTR (taxa de clique) dos criativos?</div>
+          <div class="item-meta">
+            <span class="metric-tag danger">Ruim: abaixo de 0,8%</span>
+            <span class="metric-tag warn">Ok: 1%–1,5%</span>
+            <span class="metric-tag ok">Bom: acima de 2%</span>
+          </div>
+        </div>
+      </label>
+    </div>
+  </div>
+
+  <!-- FASE 4 -->
+  <div class="phase" data-color="yellow">
+    <div class="phase-header" onclick="togglePhase(this)">
+      <span class="phase-number">04</span>
+      <span class="phase-icon">📊</span>
+      <span class="phase-title">Métricas do Gestor de Anúncios</span>
+      <span class="phase-badge">Analytics</span>
+      <span class="phase-progress"></span>
+      <span class="phase-chevron">▼</span>
+    </div>
+    <div class="phase-body">
+      <div class="phase-note">🔍 Deixe rodar pelo menos 3–5 dias antes de tirar conclusões. O algoritmo precisa de aprendizado.</div>
+      <label class="item">
+        <input type="checkbox" class="item-check">
+        <div class="item-content">
+          <div class="item-label">CPM (custo por 1.000 impressões) está razoável?</div>
+          <div class="item-meta">
+            <span class="metric-tag ok">Bom: R$5–R$20</span>
+            <span class="metric-tag warn">Alerta: R$20–R$50</span>
+            <span class="metric-tag danger">Crítico: acima de R$50</span>
+          </div>
+        </div>
+      </label>
+      <label class="item">
+        <input type="checkbox" class="item-check">
+        <div class="item-content">
+          <div class="item-label">CTR (Link Click-Through Rate) analisado?</div>
+          <div class="item-meta">
+            <span class="metric-tag danger">Ruim: &lt; 0,8%</span>
+            <span class="metric-tag ok">Bom: &gt; 1,5%</span>
+            <span class="metric-tag ref">CTR baixo = problema no criativo ou público errado</span>
+          </div>
+        </div>
+      </label>
+      <label class="item">
+        <input type="checkbox" class="item-check">
+        <div class="item-content">
+          <div class="item-label">CPC (custo por clique) analisado?</div>
+          <div class="item-meta">
+            <span class="metric-tag ok">Ideal: R$0,50 a R$2,00</span>
+            <span class="metric-tag warn">Alerta: acima de R$3,00</span>
+          </div>
+        </div>
+      </label>
+      <label class="item">
+        <input type="checkbox" class="item-check">
+        <div class="item-content">
+          <div class="item-label">Frequência do anúncio está sob controle?</div>
+          <div class="item-meta">
+            <span class="metric-tag warn">Alerta: acima de 3x na mesma semana</span>
+            <span class="metric-tag danger">Crítico: acima de 5x (público saturado)</span>
+          </div>
+        </div>
+      </label>
+      <label class="item">
+        <input type="checkbox" class="item-check">
+        <div class="item-content">
+          <div class="item-label">A campanha saiu da fase de aprendizado?</div>
+          <div class="item-meta"><span class="metric-tag ref">Meta precisa de ~50 conversões/semana por conjunto de anúncios</span></div>
+        </div>
+      </label>
+      <label class="item">
+        <input type="checkbox" class="item-check">
+        <div class="item-content">
+          <div class="item-label">Custo por resultado (CPL ou CPA) calculado e comparado com o objetivo?</div>
+          <div class="item-meta"><span class="metric-tag ref">Defina: quanto posso pagar por venda e ainda ter lucro?</span></div>
+        </div>
+      </label>
+    </div>
+  </div>
+
+  <!-- FASE 5 -->
+  <div class="phase" data-color="pink">
+    <div class="phase-header" onclick="togglePhase(this)">
+      <span class="phase-number">05</span>
+      <span class="phase-icon">🛒</span>
+      <span class="phase-title">Página de Vendas (Landing Page)</span>
+      <span class="phase-badge">Conversão</span>
+      <span class="phase-progress"></span>
+      <span class="phase-chevron">▼</span>
+    </div>
+    <div class="phase-body">
+      <div class="phase-note">⚠️ Se o CTR é bom mas não vende → o problema está na página. Esta é a etapa mais ignorada.</div>
+      <label class="item">
+        <input type="checkbox" class="item-check">
+        <div class="item-content">
+          <div class="item-label">A página carrega em menos de 3 segundos no celular?</div>
+          <div class="item-meta"><span class="metric-tag danger">+1 seg de carregamento = -7% de conversão</span><span class="metric-tag ref">Teste: PageSpeed Insights</span></div>
+        </div>
+      </label>
+      <label class="item">
+        <input type="checkbox" class="item-check">
+        <div class="item-content">
+          <div class="item-label">A mensagem do anúncio continua na página? (message match)</div>
+          <div class="item-meta"><span class="metric-tag warn">Se o anúncio fala em "desconto 50%" a página deve confirmar</span></div>
+        </div>
+      </label>
+      <label class="item">
+        <input type="checkbox" class="item-check">
+        <div class="item-content">
+          <div class="item-label">A taxa de conversão da página está sendo monitorada?</div>
+          <div class="item-meta">
+            <span class="metric-tag danger">Ruim: &lt; 1%</span>
+            <span class="metric-tag warn">Mediana: 1%–3%</span>
+            <span class="metric-tag ok">Boa: &gt; 3%</span>
+          </div>
+        </div>
+      </label>
+      <label class="item">
+        <input type="checkbox" class="item-check">
+        <div class="item-content">
+          <div class="item-label">O botão de compra está visível sem precisar rolar a página?</div>
+          <div class="item-meta"><span class="metric-tag ok">CTA acima da dobra = fundamental no mobile</span></div>
+        </div>
+      </label>
+      <label class="item">
+        <input type="checkbox" class="item-check">
+        <div class="item-content">
+          <div class="item-label">A página tem elementos de confiança? (SSL, selos, CNPJ, política de troca)</div>
+          <div class="item-meta"><span class="metric-tag ref">Sem confiança → sem compra, mesmo que queira</span></div>
+        </div>
+      </label>
+      <label class="item">
+        <input type="checkbox" class="item-check">
+        <div class="item-content">
+          <div class="item-label">O checkout é simples e tem poucas etapas?</div>
+          <div class="item-meta"><span class="metric-tag danger">Cada etapa extra remove ~20% dos compradores</span></div>
+        </div>
+      </label>
+      <label class="item">
+        <input type="checkbox" class="item-check">
+        <div class="item-content">
+          <div class="item-label">Existe urgência real na página? (estoque limitado, oferta por tempo)</div>
+          <div class="item-meta"><span class="metric-tag ok">Urgência genuína aumenta conversão — fake urgência prejudica</span></div>
+        </div>
+      </label>
+    </div>
+  </div>
+
+  <!-- FASE 6 -->
+  <div class="phase" data-color="teal">
+    <div class="phase-header" onclick="togglePhase(this)">
+      <span class="phase-number">06</span>
+      <span class="phase-icon">💸</span>
+      <span class="phase-title">Estrutura Financeira e ROAS</span>
+      <span class="phase-badge">Financeiro</span>
+      <span class="phase-progress"></span>
+      <span class="phase-chevron">▼</span>
+    </div>
+    <div class="phase-body">
+      <label class="item">
+        <input type="checkbox" class="item-check">
+        <div class="item-content">
+          <div class="item-label">O ROAS mínimo para breakeven está calculado?</div>
+          <div class="item-meta"><span class="metric-tag ref">Fórmula: 1 ÷ Margem de lucro. Ex: margem 40% → ROAS mínimo = 2,5</span></div>
+        </div>
+      </label>
+      <label class="item">
+        <input type="checkbox" class="item-check">
+        <div class="item-content">
+          <div class="item-label">O ROAS atual da campanha está acima do breakeven?</div>
+          <div class="item-meta">
+            <span class="metric-tag danger">Abaixo do BE: parar e otimizar</span>
+            <span class="metric-tag ok">Acima do BE: escalar</span>
+          </div>
+        </div>
+      </label>
+      <label class="item">
+        <input type="checkbox" class="item-check">
+        <div class="item-content">
+          <div class="item-label">O LTV (valor do cliente ao longo do tempo) está no cálculo?</div>
+          <div class="item-meta"><span class="metric-tag warn">Se cliente compra 3x, pode gastar mais na aquisição</span></div>
+        </div>
+      </label>
+      <label class="item">
+        <input type="checkbox" class="item-check">
+        <div class="item-content">
+          <div class="item-label">O orçamento diário está adequado para gerar dados suficientes?</div>
+          <div class="item-meta"><span class="metric-tag ref">Mínimo sugerido: 10x o CPA desejado por dia por conjunto</span></div>
+        </div>
+      </label>
+    </div>
+  </div>
+
+  <!-- FASE 7 -->
+  <div class="phase" data-color="green">
+    <div class="phase-header" onclick="togglePhase(this)">
+      <span class="phase-number">07</span>
+      <span class="phase-icon">⚙️</span>
+      <span class="phase-title">Estrutura Técnica da Campanha</span>
+      <span class="phase-badge">Setup</span>
+      <span class="phase-progress"></span>
+      <span class="phase-chevron">▼</span>
+    </div>
+    <div class="phase-body">
+      <label class="item">
+        <input type="checkbox" class="item-check">
+        <div class="item-content">
+          <div class="item-label">O objetivo da campanha está correto para a fase atual?</div>
+          <div class="item-meta"><span class="metric-tag ref">Início: Tráfego ou Conversão · Escala: Conversão · Branding: Alcance</span></div>
+        </div>
+      </label>
+      <label class="item">
+        <input type="checkbox" class="item-check">
+        <div class="item-content">
+          <div class="item-label">A conversão de compra está rastreando no evento correto?</div>
+          <div class="item-meta"><span class="metric-tag danger">Otimizar para "Compra" e não para "Visualização de página"</span></div>
+        </div>
+      </label>
+      <label class="item">
+        <input type="checkbox" class="item-check">
+        <div class="item-content">
+          <div class="item-label">A API de Conversões está configurada (além do Pixel)?</div>
+          <div class="item-meta"><span class="metric-tag warn">iOS 14+ reduziu dados do pixel — API de Conversões compensa isso</span></div>
+        </div>
+      </label>
+      <label class="item">
+        <input type="checkbox" class="item-check">
+        <div class="item-content">
+          <div class="item-label">Não está fazendo mudanças na campanha com menos de 72h de dados?</div>
+          <div class="item-meta"><span class="metric-tag danger">Mexer antes reinicia o aprendizado → desperdiça verba</span></div>
+        </div>
+      </label>
+      <label class="item">
+        <input type="checkbox" class="item-check">
+        <div class="item-content">
+          <div class="item-label">As métricas de atribuição estão configuradas corretamente?</div>
+          <div class="item-meta"><span class="metric-tag ref">Janela recomendada: 7 dias clique + 1 dia visualização</span></div>
+        </div>
+      </label>
+    </div>
+  </div>
+
+  <!-- FASE 8 -->
+  <div class="phase" data-color="orange">
+    <div class="phase-header" onclick="togglePhase(this)">
+      <span class="phase-number">08</span>
+      <span class="phase-icon">🚀</span>
+      <span class="phase-title">Escala e Otimização Contínua</span>
+      <span class="phase-badge">Escala</span>
+      <span class="phase-progress"></span>
+      <span class="phase-chevron">▼</span>
+    </div>
+    <div class="phase-body">
+      <label class="item">
+        <input type="checkbox" class="item-check">
+        <div class="item-content">
+          <div class="item-label">Está escalando o orçamento gradualmente (máx 20–30% por vez)?</div>
+          <div class="item-meta"><span class="metric-tag danger">Dobrar orçamento de uma vez reinicia o aprendizado</span></div>
+        </div>
+      </label>
+      <label class="item">
+        <input type="checkbox" class="item-check">
+        <div class="item-content">
+          <div class="item-label">Renova os criativos quando o CTR começa a cair?</div>
+          <div class="item-meta"><span class="metric-tag ref">Troque criativos a cada 2–4 semanas ou quando CTR cair 30%</span></div>
+        </div>
+      </label>
+      <label class="item">
+        <input type="checkbox" class="item-check">
+        <div class="item-content">
+          <div class="item-label">Tem um processo de A/B test contínuo para copy e criativo?</div>
+          <div class="item-meta"><span class="metric-tag ok">Regra: sempre 1 variável por teste</span></div>
+        </div>
+      </label>
+      <label class="item">
+        <input type="checkbox" class="item-check">
+        <div class="item-content">
+          <div class="item-label">Analisa os resultados por dia da semana e horário?</div>
+          <div class="item-meta"><span class="metric-tag ref">Use programação de anúncios para otimizar custo</span></div>
+        </div>
+      </label>
+      <label class="item">
+        <input type="checkbox" class="item-check">
+        <div class="item-content">
+          <div class="item-label">Analisa o funil completo semanalmente? (impressão → clique → página → checkout → compra)</div>
+          <div class="item-meta"><span class="metric-tag ok">Identifica onde estão as maiores perdas para priorizar ajustes</span></div>
+        </div>
+      </label>
+    </div>
+  </div>
+
+</main>
+
+<script>
+  // Toggle phase
+  function togglePhase(header) {
+    const phase = header.closest('.phase');
+    phase.classList.toggle('open');
+  }
+
+  // Update progress
+  function updateProgress() {
+    const allChecks = document.querySelectorAll('.item-check');
+    const checkedChecks = document.querySelectorAll('.item-check:checked');
+    const total = allChecks.length;
+    const done = checkedChecks.length;
+    const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+
+    document.getElementById('progress-count').textContent = `${done} / ${total} concluídos`;
+    document.getElementById('progress-fill').style.width = pct + '%';
+
+    // Update phase progress badges
+    document.querySelectorAll('.phase').forEach(phase => {
+      const phaseChecks = phase.querySelectorAll('.item-check');
+      const phaseChecked = phase.querySelectorAll('.item-check:checked');
+      const el = phase.querySelector('.phase-progress');
+      if (el) el.textContent = `${phaseChecked.length}/${phaseChecks.length}`;
+    });
+
+    // Save state
+    const state = {};
+    allChecks.forEach((cb, i) => { state[i] = cb.checked; });
+    try { localStorage.setItem('metaads_checklist', JSON.stringify(state)); } catch(e) {}
+  }
+
+  function resetAll() {
+    if (!confirm('Reiniciar todo o checklist?')) return;
+    document.querySelectorAll('.item-check').forEach(cb => cb.checked = false);
+    try { localStorage.removeItem('metaads_checklist'); } catch(e) {}
+    updateProgress();
+  }
+
+  // Load saved state
+  function loadState() {
+    try {
+      const saved = localStorage.getItem('metaads_checklist');
+      if (!saved) return;
+      const state = JSON.parse(saved);
+      const allChecks = document.querySelectorAll('.item-check');
+      allChecks.forEach((cb, i) => {
+        if (state[i]) cb.checked = true;
+      });
+    } catch(e) {}
+  }
+
+  // Init
+  document.querySelectorAll('.item-check').forEach(cb => {
+    cb.addEventListener('change', updateProgress);
+  });
+
+  loadState();
+  updateProgress();
+</script>
+</body>
+</html>

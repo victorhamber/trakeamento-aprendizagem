@@ -10,6 +10,7 @@ interface LlmConfig {
 const DEFAULT_MODEL = 'gpt-4o';
 const DEFAULT_TEMPERATURE = 0.2;
 const DEFAULT_MAX_TOKENS = 12000;
+const MENTOR_MAX_TOKENS = 4500;
 const REQUEST_TIMEOUT_MS = 90_000;
 const MAX_RETRY_ATTEMPTS = 2;
 const MAX_SNAPSHOT_CHARS = 60_000;
@@ -104,7 +105,8 @@ export class LlmService {
     model: string,
     systemPrompt: string,
     userContent: string,
-    attempt = 1
+    attempt = 1,
+    maxTokens: number = DEFAULT_MAX_TOKENS
   ): Promise<string> {
     try {
       this.log('info', `Calling OpenAI [model=${model}, attempt=${attempt}]`);
@@ -113,7 +115,7 @@ export class LlmService {
         {
           model,
           temperature: DEFAULT_TEMPERATURE,
-          max_tokens: DEFAULT_MAX_TOKENS,
+          max_tokens: maxTokens,
           messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userContent },
@@ -137,7 +139,7 @@ export class LlmService {
         const delay = attempt * 2000;
         this.log('warn', `Retrying in ${delay}ms (attempt ${attempt})...`);
         await new Promise(res => setTimeout(res, delay));
-        return this.callOpenAI(apiKey, model, systemPrompt, userContent, attempt + 1);
+        return this.callOpenAI(apiKey, model, systemPrompt, userContent, attempt + 1, maxTokens);
       }
       if (axios.isAxiosError(error)) {
         this.log('error', 'OpenAI Axios error', {
@@ -230,6 +232,125 @@ export class LlmService {
       this.log('warn', 'All OpenAI attempts failed — returning fallback report');
       return this.fallbackReport(snapshot);
     }
+  }
+
+  /**
+   * Orientação do mentor Trilha Meta (Markdown). Usa OpenAI quando houver chave; senão fallback estruturado.
+   */
+  public async generateMentorGuidance(siteKey: string, mentorContext: Record<string, unknown>): Promise<string> {
+    const cfg = await this.getKeyForSite(siteKey);
+    const apiKey = cfg?.apiKey || process.env.OPENAI_API_KEY || '';
+    const model = cfg?.model || DEFAULT_MODEL;
+    if (!apiKey) {
+      this.log('warn', 'No OpenAI key — mentor fallback');
+      return this.fallbackMentorGuidance(mentorContext);
+    }
+    const systemPrompt = this.buildMentorSystemPrompt();
+    const userContent = `Contexto (JSON). Nao invente dados que nao estejam no JSON. Responda apenas em Markdown conforme o system prompt.\n\n${JSON.stringify(mentorContext, null, 2)}`;
+    try {
+      return await this.callOpenAI(apiKey, model, systemPrompt, userContent, 1, MENTOR_MAX_TOKENS);
+    } catch {
+      this.log('warn', 'Mentor OpenAI failed — fallback');
+      return this.fallbackMentorGuidance(mentorContext);
+    }
+  }
+
+  private buildMentorSystemPrompt(): string {
+    return [
+      'Voce e um mentor senior de Meta Ads (Facebook/Instagram) para utilizadores da plataforma Trajettu.',
+      'Tom: direto, encorajador, acionavel. Idioma: portugues do Brasil.',
+      'A trilha tem 8 fases na ordem: Oferta e Produto; Publico e Segmentacao; Criativo; Metricas do Gestor; Landing Page; Financeiro/ROAS; Setup tecnico; Escala.',
+      'Use o objeto checklist_progress e focus_phase para dizer onde a pessoa esta.',
+      'Use site_signals e metricas_aggregate (quando existirem) para personalizar: ex. sem pixel/CAPI sugira priorizar rastreamento; CTR baixo → criativo/publico; muitas compras → escala com cuidado.',
+      'Nao repita o checklist inteiro. Priorize 3 a 5 proximos passos concretos.',
+      'Formato de saida obrigatorio em Markdown:',
+      '## Onde voce esta',
+      '## Proximos passos (priorizados)',
+      '## Ligacao com os dados do Trajettu (se houver dados uteis no JSON; senao diga que faltam dados e o que configurar)',
+      '## Observacoes da trilha',
+      'Sem blocos de codigo. Sem cumprimentos longos.',
+    ].join('\n');
+  }
+
+  private fallbackMentorGuidance(ctx: Record<string, unknown>): string {
+    const lines: string[] = [];
+    const focus = ctx.focus_phase && typeof ctx.focus_phase === 'object'
+      ? (ctx.focus_phase as Record<string, unknown>)
+      : null;
+    const progress = Array.isArray(ctx.checklist_progress)
+      ? (ctx.checklist_progress as Record<string, unknown>[])
+      : [];
+    const nextItems = Array.isArray(ctx.next_items_across_phases)
+      ? (ctx.next_items_across_phases as Record<string, unknown>[])
+      : [];
+
+    lines.push('## Onde voce esta');
+    lines.push('');
+    if (focus && typeof focus.title === 'string') {
+      lines.push(`Foco sugerido: **${focus.title}**. Conclua os itens desta fase antes de acelerar etapas seguintes.`);
+    } else {
+      lines.push('Continue a trilha na primeira fase com itens pendentes — a ordem das fases evita gastar verba sem fundacao.');
+    }
+    lines.push('');
+
+    lines.push('## Proximos passos (priorizados)');
+    lines.push('');
+    if (nextItems.length === 0) {
+      lines.push('1. Parabens: nao ha itens pendentes mapeados — revise escalacao e criativos periodicamente.');
+    } else {
+      nextItems.slice(0, 7).forEach((it, i) => {
+        const text = typeof it.text === 'string' ? it.text : '';
+        lines.push(`${i + 1}. ${text}`);
+      });
+    }
+    lines.push('');
+
+    lines.push('## Ligacao com os dados do Trajettu');
+    lines.push('');
+    const signals = ctx.site_signals && typeof ctx.site_signals === 'object'
+      ? (ctx.site_signals as Record<string, unknown>)
+      : {};
+    const hasPixel = signals.pixel_configured === true;
+    const hasCapi = signals.capi_configured === true;
+    const metaOk = signals.meta_connected === true;
+    if (!hasPixel && !hasCapi) {
+      lines.push('- **Rastreamento:** configure Pixel e, se possivel, API de Conversoes — sem isso a fase Publico e Metricas fica cega.');
+    } else {
+      lines.push(`- **Pixel:** ${hasPixel ? 'configurado' : 'nao indicado'} · **CAPI:** ${hasCapi ? 'configurada' : 'nao indicada'} · **Conta Meta ligada:** ${metaOk ? 'sim' : 'nao'}.`);
+    }
+    const m = ctx.metrics_aggregate && typeof ctx.metrics_aggregate === 'object'
+      ? (ctx.metrics_aggregate as Record<string, unknown>)
+      : null;
+    if (m && Number(m.impressions) > 0) {
+      const ctr = Number(m.ctr_pct);
+      lines.push(`- **Ultimos ~14 dias:** investimento ${this.fmtMoney(m.spend)} · impressoes ${this.fmtInt(m.impressions)} · CTR ~${Number.isFinite(ctr) ? `${ctr.toFixed(2)}%` : 'N/A'} · compras ${this.fmtInt(m.purchases)}.`);
+      if (Number.isFinite(ctr) && ctr < 0.8) {
+        lines.push('- CTR abaixo de 0,8% costuma apontar criativo fraco ou publico desalinhado; teste novos hooks antes de escalar.');
+      }
+    } else {
+      lines.push('- Poucos ou nenhuns dados agregados no periodo — sincronize campanhas no Trajettu ou aguarde volume para analisar CPM/CTR/frequencia.');
+    }
+    lines.push('');
+
+    lines.push('## Observacoes da trilha');
+    lines.push('');
+    if (progress.length) {
+      const frag = progress
+        .filter((p) => typeof p.phase_title === 'string')
+        .map((p) => {
+          const t = String(p.phase_title);
+          const c = Number(p.completed) || 0;
+          const tot = Number(p.total) || 0;
+          return `${t}: ${c}/${tot}`;
+        })
+        .join(' · ');
+      lines.push(`Progresso por fase: ${frag}.`);
+    }
+    lines.push('Boas praticas: deixe o algoritmo aprender 3–5 dias; evite mudancas bruscas antes de 72h; alinhe promessa do anuncio com a landing (message match).');
+    lines.push('');
+    lines.push('---');
+    lines.push('*Orientacao basica sem IA. Configure OpenAI nas definicoes da conta para texto personalizado pelo modelo.*');
+    return lines.join('\n');
   }
 
   private buildUserBriefing(snap: Record<string, unknown>): string {

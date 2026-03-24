@@ -1,0 +1,315 @@
+{
+  "version": 1,
+  "title": "Trilha Meta — do zero à escala",
+  "subtitle": "Mentor: checklist interativa",
+  "phases": [
+    {
+      "id": "oferta",
+      "order": 1,
+      "title": "Oferta e Produto",
+      "badge": "Fundação",
+      "icon": "🎯",
+      "color": "orange",
+      "note": "Comece aqui. Nenhum anúncio salva uma oferta ruim.",
+      "items": [
+        {
+          "id": "oferta-1",
+          "text": "O produto resolve um problema real e urgente de um público específico?",
+          "hints": ["Se não → reposicionar antes de anunciar"]
+        },
+        {
+          "id": "oferta-2",
+          "text": "A proposta de valor é clara em menos de 5 segundos?",
+          "hints": ["Teste: mostre para alguém por 5 seg e pergunte o que vende"]
+        },
+        {
+          "id": "oferta-3",
+          "text": "O preço está adequado à percepção de valor e ao mercado?",
+          "hints": ["Compare com 3 concorrentes diretos"]
+        },
+        {
+          "id": "oferta-4",
+          "text": "Existe prova social? (depoimentos, avaliações, cases)",
+          "hints": ["Mínimo: 5 depoimentos reais com foto/nome"]
+        },
+        {
+          "id": "oferta-5",
+          "text": "Existe garantia ou elemento de redução de risco para o comprador?",
+          "hints": ["Ex: Garantia de 7 dias, frete grátis, troca sem custo"]
+        }
+      ]
+    },
+    {
+      "id": "publico",
+      "order": 2,
+      "title": "Público e Segmentação",
+      "badge": "Targeting",
+      "icon": "👥",
+      "color": "purple",
+      "note": "",
+      "items": [
+        {
+          "id": "publico-1",
+          "text": "O público-alvo está bem definido (idade, interesses, comportamentos)?",
+          "hints": ["Evite públicos muito amplos no início"]
+        },
+        {
+          "id": "publico-2",
+          "text": "O tamanho do público está adequado ao orçamento?",
+          "hints": ["R$30–100/dia → público de 500k a 2M", "R$300+/dia → pode escalar para milhões"]
+        },
+        {
+          "id": "publico-3",
+          "text": "Pixel do Meta instalado e disparando eventos corretamente?",
+          "hints": ["Verificar: ViewContent, AddToCart, Purchase"]
+        },
+        {
+          "id": "publico-4",
+          "text": "Testou público de interesse vs. Advantage+ Audience (antigo open targeting)?",
+          "hints": ["Em 2024+ o Meta favorece públicos abertos com criativo forte"]
+        },
+        {
+          "id": "publico-5",
+          "text": "Existe público de remarketing configurado? (visitantes, carrinho abandonado)",
+          "hints": ["Remarketing converte 3–5x mais que tráfego frio"]
+        },
+        {
+          "id": "publico-6",
+          "text": "Público lookalike criado com base em compradores reais?",
+          "hints": ["Mínimo: 100 compradores para Lookalike 1%"]
+        }
+      ]
+    },
+    {
+      "id": "criativo",
+      "order": 3,
+      "title": "Criativo (Anúncio)",
+      "badge": "Creative",
+      "icon": "🎨",
+      "color": "blue",
+      "note": "O criativo é responsável por ~70% do resultado do anúncio. É a alavanca mais poderosa.",
+      "items": [
+        {
+          "id": "criativo-1",
+          "text": "Os 3 primeiros segundos do vídeo (ou imagem) param o scroll?",
+          "hints": ["Hook visual obrigatório — sem isso ninguém assiste"]
+        },
+        {
+          "id": "criativo-2",
+          "text": "Está testando pelo menos 3 criativos diferentes por campanha?",
+          "hints": ["Teste: imagem estática, vídeo curto (15–30s), carrossel"]
+        },
+        {
+          "id": "criativo-3",
+          "text": "O copy do anúncio fala do problema do cliente, não só do produto?",
+          "hints": ["Estrutura: Problema → Agitação → Solução → CTA"]
+        },
+        {
+          "id": "criativo-4",
+          "text": "O CTA (Call to Action) é claro e direto?",
+          "hints": ["Ex: \"Compre agora\", \"Garanta o seu\", \"Clique e saiba mais\""]
+        },
+        {
+          "id": "criativo-5",
+          "text": "O anúncio está adaptado para o formato (Feed, Stories, Reels)?",
+          "hints": ["Stories/Reels: 9:16 vertical · Feed: 1:1 ou 4:5"]
+        },
+        {
+          "id": "criativo-6",
+          "text": "Analisou CTR (taxa de clique) dos criativos?",
+          "hints": ["Ruim: abaixo de 0,8%", "Ok: 1%–1,5%", "Bom: acima de 2%"]
+        }
+      ]
+    },
+    {
+      "id": "metricas-ads",
+      "order": 4,
+      "title": "Métricas do Gestor de Anúncios",
+      "badge": "Analytics",
+      "icon": "📊",
+      "color": "yellow",
+      "note": "Deixe rodar pelo menos 3–5 dias antes de tirar conclusões. O algoritmo precisa de aprendizado.",
+      "items": [
+        {
+          "id": "metricas-1",
+          "text": "CPM (custo por 1.000 impressões) está razoável?",
+          "hints": ["Bom: R$5–R$20", "Alerta: R$20–R$50", "Crítico: acima de R$50"]
+        },
+        {
+          "id": "metricas-2",
+          "text": "CTR (Link Click-Through Rate) analisado?",
+          "hints": ["Ruim: < 0,8%", "Bom: > 1,5%", "CTR baixo = problema no criativo ou público errado"]
+        },
+        {
+          "id": "metricas-3",
+          "text": "CPC (custo por clique) analisado?",
+          "hints": ["Ideal: R$0,50 a R$2,00", "Alerta: acima de R$3,00"]
+        },
+        {
+          "id": "metricas-4",
+          "text": "Frequência do anúncio está sob controle?",
+          "hints": ["Alerta: acima de 3x na mesma semana", "Crítico: acima de 5x (público saturado)"]
+        },
+        {
+          "id": "metricas-5",
+          "text": "A campanha saiu da fase de aprendizado?",
+          "hints": ["Meta precisa de ~50 conversões/semana por conjunto de anúncios"]
+        },
+        {
+          "id": "metricas-6",
+          "text": "Custo por resultado (CPL ou CPA) calculado e comparado com o objetivo?",
+          "hints": ["Defina: quanto posso pagar por venda e ainda ter lucro?"]
+        }
+      ]
+    },
+    {
+      "id": "landing",
+      "order": 5,
+      "title": "Página de Vendas (Landing Page)",
+      "badge": "Conversão",
+      "icon": "🛒",
+      "color": "pink",
+      "note": "Se o CTR é bom mas não vende → o problema está na página. Esta é a etapa mais ignorada.",
+      "items": [
+        {
+          "id": "landing-1",
+          "text": "A página carrega em menos de 3 segundos no celular?",
+          "hints": ["+1 seg de carregamento = -7% de conversão", "Teste: PageSpeed Insights"]
+        },
+        {
+          "id": "landing-2",
+          "text": "A mensagem do anúncio continua na página? (message match)",
+          "hints": ["Se o anúncio fala em \"desconto 50%\" a página deve confirmar"]
+        },
+        {
+          "id": "landing-3",
+          "text": "A taxa de conversão da página está sendo monitorada?",
+          "hints": ["Ruim: < 1%", "Mediana: 1%–3%", "Boa: > 3%"]
+        },
+        {
+          "id": "landing-4",
+          "text": "O botão de compra está visível sem precisar rolar a página?",
+          "hints": ["CTA acima da dobra = fundamental no mobile"]
+        },
+        {
+          "id": "landing-5",
+          "text": "A página tem elementos de confiança? (SSL, selos, CNPJ, política de troca)",
+          "hints": ["Sem confiança → sem compra, mesmo que queira"]
+        },
+        {
+          "id": "landing-6",
+          "text": "O checkout é simples e tem poucas etapas?",
+          "hints": ["Cada etapa extra remove ~20% dos compradores"]
+        },
+        {
+          "id": "landing-7",
+          "text": "Existe urgência real na página? (estoque limitado, oferta por tempo)",
+          "hints": ["Urgência genuína aumenta conversão — fake urgência prejudica"]
+        }
+      ]
+    },
+    {
+      "id": "financeiro",
+      "order": 6,
+      "title": "Estrutura Financeira e ROAS",
+      "badge": "Financeiro",
+      "icon": "💸",
+      "color": "teal",
+      "note": "",
+      "items": [
+        {
+          "id": "financeiro-1",
+          "text": "O ROAS mínimo para breakeven está calculado?",
+          "hints": ["Fórmula: 1 ÷ Margem de lucro. Ex: margem 40% → ROAS mínimo = 2,5"]
+        },
+        {
+          "id": "financeiro-2",
+          "text": "O ROAS atual da campanha está acima do breakeven?",
+          "hints": ["Abaixo do BE: parar e otimizar", "Acima do BE: escalar"]
+        },
+        {
+          "id": "financeiro-3",
+          "text": "O LTV (valor do cliente ao longo do tempo) está no cálculo?",
+          "hints": ["Se cliente compra 3x, pode gastar mais na aquisição"]
+        },
+        {
+          "id": "financeiro-4",
+          "text": "O orçamento diário está adequado para gerar dados suficientes?",
+          "hints": ["Mínimo sugerido: 10x o CPA desejado por dia por conjunto"]
+        }
+      ]
+    },
+    {
+      "id": "setup-tecnico",
+      "order": 7,
+      "title": "Estrutura Técnica da Campanha",
+      "badge": "Setup",
+      "icon": "⚙️",
+      "color": "green",
+      "note": "",
+      "items": [
+        {
+          "id": "setup-1",
+          "text": "O objetivo da campanha está correto para a fase atual?",
+          "hints": ["Início: Tráfego ou Conversão · Escala: Conversão · Branding: Alcance"]
+        },
+        {
+          "id": "setup-2",
+          "text": "A conversão de compra está rastreando no evento correto?",
+          "hints": ["Otimizar para \"Compra\" e não para \"Visualização de página\""]
+        },
+        {
+          "id": "setup-3",
+          "text": "A API de Conversões está configurada (além do Pixel)?",
+          "hints": ["iOS 14+ reduziu dados do pixel — API de Conversões compensa isso"]
+        },
+        {
+          "id": "setup-4",
+          "text": "Não está fazendo mudanças na campanha com menos de 72h de dados?",
+          "hints": ["Mexer antes reinicia o aprendizado → desperdiça verba"]
+        },
+        {
+          "id": "setup-5",
+          "text": "As métricas de atribuição estão configuradas corretamente?",
+          "hints": ["Janela recomendada: 7 dias clique + 1 dia visualização"]
+        }
+      ]
+    },
+    {
+      "id": "escala",
+      "order": 8,
+      "title": "Escala e Otimização Contínua",
+      "badge": "Escala",
+      "icon": "🚀",
+      "color": "orange",
+      "note": "",
+      "items": [
+        {
+          "id": "escala-1",
+          "text": "Está escalando o orçamento gradualmente (máx 20–30% por vez)?",
+          "hints": ["Dobrar orçamento de uma vez reinicia o aprendizado"]
+        },
+        {
+          "id": "escala-2",
+          "text": "Renova os criativos quando o CTR começa a cair?",
+          "hints": ["Troque criativos a cada 2–4 semanas ou quando CTR cair 30%"]
+        },
+        {
+          "id": "escala-3",
+          "text": "Tem um processo de A/B test contínuo para copy e criativo?",
+          "hints": ["Regra: sempre 1 variável por teste"]
+        },
+        {
+          "id": "escala-4",
+          "text": "Analisa os resultados por dia da semana e horário?",
+          "hints": ["Use programação de anúncios para otimizar custo"]
+        },
+        {
+          "id": "escala-5",
+          "text": "Analisa o funil completo semanalmente? (impressão → clique → página → checkout → compra)",
+          "hints": ["Identifica onde estão as maiores perdas para priorizar ajustes"]
+        }
+      ]
+    }
+  ]
+}

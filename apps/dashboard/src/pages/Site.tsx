@@ -109,6 +109,100 @@ type CampaignMetrics = {
   promoted_object?: Record<string, unknown> | null;
 };
 
+type MentorChecklistPhase = {
+  id: string;
+  order: number;
+  title: string;
+  badge?: string;
+  icon?: string;
+  color?: string;
+  note?: string;
+  items: Array<{ id: string; text: string; hints?: string[] }>;
+};
+
+type MentorChecklist = {
+  version: number;
+  title: string;
+  subtitle?: string;
+  phases: MentorChecklistPhase[];
+};
+
+function splitMarkdownH2Sections(text: string): Array<{ title: string; body: string }> {
+  const trimmed = text.trim();
+  if (!trimmed) return [];
+  const parts = trimmed.split(/\n##\s+/);
+  const sections: Array<{ title: string; body: string }> = [];
+  const hasLeading = !trimmed.startsWith('## ') && parts[0]?.trim();
+  if (hasLeading) {
+    sections.push({ title: 'Resumo executivo', body: parts[0].trim() });
+  }
+  for (let i = 1; i < parts.length; i += 1) {
+    const part = parts[i]?.trim();
+    if (!part) continue;
+    const lines = part.split('\n');
+    const title = lines[0]?.trim() || 'Seção';
+    const body = lines.slice(1).join('\n').trim();
+    sections.push({ title, body });
+  }
+  if (!sections.length) {
+    sections.push({ title: 'Conteúdo', body: trimmed });
+  }
+  return sections;
+}
+
+const reportMarkdownComponents = {
+  table: ({ children }: { children?: React.ReactNode }) => (
+    <div className="overflow-auto rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/40 my-4">
+      <table className="w-full border-collapse">{children}</table>
+    </div>
+  ),
+  thead: ({ children }: { children?: React.ReactNode }) => (
+    <thead className="bg-zinc-50 dark:bg-zinc-900/60">{children}</thead>
+  ),
+  th: ({ children }: { children?: React.ReactNode }) => (
+    <th className="text-left text-[10px] font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-400 px-4 py-2.5 border-b border-zinc-200 dark:border-zinc-800">
+      {children}
+    </th>
+  ),
+  td: ({ children }: { children?: React.ReactNode }) => (
+    <td className="text-xs text-zinc-600 dark:text-zinc-400 px-4 py-2.5 border-b border-zinc-200 dark:border-zinc-800">
+      {children}
+    </td>
+  ),
+  h3: ({ children }: { children?: React.ReactNode }) => (
+    <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100 mt-8 mb-4 flex items-center gap-2">{children}</h3>
+  ),
+  h4: ({ children }: { children?: React.ReactNode }) => (
+    <h4 className="text-sm font-bold text-blue-600 dark:text-blue-400 mt-6 mb-3 bg-blue-50 dark:bg-blue-500/10 px-3 py-1.5 rounded-md inline-flex items-center gap-2">
+      {children}
+    </h4>
+  ),
+  p: ({ children }: { children?: React.ReactNode }) => (
+    <p className="text-sm text-zinc-600 dark:text-zinc-400 mb-3 leading-relaxed">{children}</p>
+  ),
+  strong: ({ children }: { children?: React.ReactNode }) => (
+    <strong className="font-semibold text-zinc-800 dark:text-zinc-200">{children}</strong>
+  ),
+  blockquote: ({ children }: { children?: React.ReactNode }) => (
+    <blockquote className="border-l-4 border-amber-500/50 bg-gradient-to-r from-amber-500/10 to-transparent rounded-r-lg px-4 py-3 my-5 text-zinc-700 dark:text-zinc-300 not-italic">
+      {children}
+    </blockquote>
+  ),
+  ul: ({ children }: { children?: React.ReactNode }) => (
+    <ul className="list-none space-y-2 my-3 text-zinc-600 dark:text-zinc-400">{children}</ul>
+  ),
+  li: ({ children }: { children?: React.ReactNode }) => (
+    <li className="flex gap-2">
+      <span className="text-amber-500 mt-0.5">•</span>
+      <span>{children}</span>
+    </li>
+  ),
+  ol: ({ children }: { children?: React.ReactNode }) => (
+    <ol className="list-decimal list-inside space-y-2 my-3 text-zinc-600 dark:text-zinc-400">{children}</ol>
+  ),
+  hr: () => <div className="my-8 h-px w-full bg-zinc-200 dark:bg-zinc-800/80" />,
+};
+
 // ─── Small UI primitives ────────────────────────────────────────────────────
 
 const Badge = ({
@@ -164,6 +258,14 @@ export const SitePage = () => {
   const [qualityPeriod, setQualityPeriod] = useState('last_7d');
   const [report, setReport] = useState<DiagnosisReport | null>(null);
   const [reportLoadedFromStorage, setReportLoadedFromStorage] = useState(false);
+  const [reportsSubTab, setReportsSubTab] = useState<'campaign' | 'mentor'>('campaign');
+  const [mentorChecklist, setMentorChecklist] = useState<MentorChecklist | null>(null);
+  const [mentorChecklistLoading, setMentorChecklistLoading] = useState(false);
+  const [mentorCompletedIds, setMentorCompletedIds] = useState<string[]>([]);
+  const [mentorFocusPhaseId, setMentorFocusPhaseId] = useState<string | null>(null);
+  const [mentorGuidanceMd, setMentorGuidanceMd] = useState('');
+  const [mentorCoachLoading, setMentorCoachLoading] = useState(false);
+  const [mentorOpenPhases, setMentorOpenPhases] = useState<Record<string, boolean>>({});
   const [campaigns, setCampaigns] = useState<any[]>([]);
   const [campaignMetrics, setCampaignMetrics] = useState<Record<string, any>>({});
   const [selectedCampaignId, setSelectedCampaignId] = useState<string>('');
@@ -421,28 +523,17 @@ export const SitePage = () => {
   }, []);
 
   const reportStorageKey = useMemo(() => `diagnosis:${id}`, [id]);
-  const reportSections = useMemo(() => {
-    const text = report?.analysis_text?.trim() || '';
-    if (!text) return [];
-    const parts = text.split(/\n##\s+/);
-    const sections: Array<{ title: string; body: string }> = [];
-    const hasLeading = !text.startsWith('## ') && parts[0]?.trim();
-    if (hasLeading) {
-      sections.push({ title: 'Resumo executivo', body: parts[0].trim() });
-    }
-    for (let i = 1; i < parts.length; i += 1) {
-      const part = parts[i]?.trim();
-      if (!part) continue;
-      const lines = part.split('\n');
-      const title = lines[0]?.trim() || 'Seção';
-      const body = lines.slice(1).join('\n').trim();
-      sections.push({ title, body });
-    }
-    if (!sections.length) {
-      sections.push({ title: 'Diagnóstico', body: text });
-    }
-    return sections;
-  }, [report?.analysis_text]);
+  const reportSections = useMemo(
+    () => splitMarkdownH2Sections(report?.analysis_text || ''),
+    [report?.analysis_text]
+  );
+  const mentorGuidanceSections = useMemo(
+    () =>
+      splitMarkdownH2Sections(mentorGuidanceMd).filter(
+        (section) => !section.title.toLowerCase().includes('tabela de métricas')
+      ),
+    [mentorGuidanceMd]
+  );
   const visibleReportSections = useMemo(
     () =>
       reportSections.filter(
@@ -569,6 +660,56 @@ export const SitePage = () => {
     diagnosisClickId,
     reportStorageKey,
   ]);
+
+  useEffect(() => {
+    if (!id) return;
+    try {
+      const raw = localStorage.getItem(`mentorTrack:${id}`);
+      if (!raw) {
+        setMentorCompletedIds([]);
+        setMentorFocusPhaseId(null);
+        return;
+      }
+      const s = JSON.parse(raw);
+      setMentorCompletedIds(Array.isArray(s.completed) ? s.completed : []);
+      setMentorFocusPhaseId(typeof s.focus_phase_id === 'string' ? s.focus_phase_id : null);
+    } catch {
+      setMentorCompletedIds([]);
+      setMentorFocusPhaseId(null);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    if (tab !== 'reports' || reportsSubTab !== 'mentor') return;
+    let cancelled = false;
+    (async () => {
+      setMentorChecklistLoading(true);
+      try {
+        const res = await api.get('/mentor/checklist');
+        if (!cancelled) setMentorChecklist(res.data);
+      } catch (err) {
+        console.error(err);
+        if (!cancelled) {
+          setMentorChecklist(null);
+          showFlash('Não foi possível carregar a trilha.', 'error');
+        }
+      } finally {
+        if (!cancelled) setMentorChecklistLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, reportsSubTab, showFlash]);
+
+  useEffect(() => {
+    if (!mentorChecklist?.phases.length) return;
+    setMentorOpenPhases((prev) => {
+      if (Object.keys(prev).length) return prev;
+      const first = mentorChecklist.phases[0]?.id;
+      return first ? { [first]: true } : {};
+    });
+  }, [mentorChecklist]);
 
   const loadSite = useCallback(async () => {
     const res = await api.get(`/sites/${id}`);
@@ -1495,6 +1636,42 @@ ${scriptContent}
       setTab('reports');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const persistMentorLocal = useCallback(
+    (completed: string[], focus: string | null) => {
+      if (!id) return;
+      localStorage.setItem(
+        `mentorTrack:${id}`,
+        JSON.stringify({ completed, focus_phase_id: focus })
+      );
+    },
+    [id]
+  );
+
+  const generateMentorCoach = async () => {
+    if (!site) return;
+    setMentorCoachLoading(true);
+    try {
+      const res = await api.post('/mentor/coach', {
+        site_key: site.site_key,
+        focus_phase_id: mentorFocusPhaseId || undefined,
+        completed_item_ids: mentorCompletedIds,
+        campaign_id: selectedCampaignId || undefined,
+      });
+      const md = typeof res.data?.markdown === 'string' ? res.data.markdown : '';
+      setMentorGuidanceMd(md);
+      showFlash('Orientação do mentor pronta.');
+    } catch (err: unknown) {
+      console.error(err);
+      const apiError =
+        err && typeof err === 'object' && 'response' in err
+          ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
+          : undefined;
+      showFlash(apiError || 'Erro ao gerar orientação.', 'error');
+    } finally {
+      setMentorCoachLoading(false);
     }
   };
 
@@ -3563,6 +3740,31 @@ ${scriptContent}
           {
             tab === 'reports' && (
               <div className="max-w-none space-y-4">
+                <div className="flex flex-wrap gap-2 border-b border-zinc-200 dark:border-zinc-800 pb-3">
+                  <button
+                    type="button"
+                    onClick={() => setReportsSubTab('campaign')}
+                    className={`text-xs font-semibold px-3.5 py-2 rounded-lg border transition-colors ${reportsSubTab === 'campaign'
+                      ? 'bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 border-zinc-900 dark:border-zinc-100'
+                      : 'bg-zinc-50 dark:bg-zinc-900/60 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800 hover:border-zinc-400'
+                      }`}
+                  >
+                    Análise de campanha
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setReportsSubTab('mentor')}
+                    className={`text-xs font-semibold px-3.5 py-2 rounded-lg border transition-colors ${reportsSubTab === 'mentor'
+                      ? 'bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 border-zinc-900 dark:border-zinc-100'
+                      : 'bg-zinc-50 dark:bg-zinc-900/60 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800 hover:border-zinc-400'
+                      }`}
+                  >
+                    Trilha Meta (mentor)
+                  </button>
+                </div>
+
+                {reportsSubTab === 'campaign' && (
+                  <>
                 {campaigns.length > 0 && (
                   <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/30 p-5 space-y-4">
                     <div className="flex items-center gap-3">
@@ -3976,79 +4178,199 @@ ${scriptContent}
                         </div>
                         {section.body && (
                           <div className="px-5 py-4 prose prose-invert max-w-none text-sm prose-headings:tracking-tight prose-h1:text-xl prose-h2:text-lg prose-h3:text-sm prose-p:text-zinc-600 dark:text-zinc-400 prose-p:leading-relaxed prose-strong:text-zinc-800 dark:text-zinc-200 prose-a:text-blue-400 prose-a:no-underline hover:prose-a:text-blue-300">
-                            <ReactMarkdown
-                              remarkPlugins={[remarkGfm]}
-                              components={{
-                                table: ({ children }) => (
-                                  <div className="overflow-auto rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/40 my-4">
-                                    <table className="w-full border-collapse">{children}</table>
-                                  </div>
-                                ),
-                                thead: ({ children }) => (
-                                  <thead className="bg-zinc-50 dark:bg-zinc-900/60">{children}</thead>
-                                ),
-                                th: ({ children }) => (
-                                  <th className="text-left text-[10px] font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-400 px-4 py-2.5 border-b border-zinc-200 dark:border-zinc-800">
-                                    {children}
-                                  </th>
-                                ),
-                                td: ({ children }) => (
-                                  <td className="text-xs text-zinc-600 dark:text-zinc-400 px-4 py-2.5 border-b border-zinc-200 dark:border-zinc-800">
-                                    {children}
-                                  </td>
-                                ),
-                                h3: ({ children }) => (
-                                  <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100 mt-8 mb-4 flex items-center gap-2">
-                                    {children}
-                                  </h3>
-                                ),
-                                h4: ({ children }) => (
-                                  <h4 className="text-sm font-bold text-blue-600 dark:text-blue-400 mt-6 mb-3 bg-blue-50 dark:bg-blue-500/10 px-3 py-1.5 rounded-md inline-flex items-center gap-2">
-                                    {children}
-                                  </h4>
-                                ),
-                                p: ({ children }) => (
-                                  <p className="text-sm text-zinc-600 dark:text-zinc-400 mb-3 leading-relaxed">
-                                    {children}
-                                  </p>
-                                ),
-                                strong: ({ children }) => (
-                                  <strong className="font-semibold text-zinc-800 dark:text-zinc-200">
-                                    {children}
-                                  </strong>
-                                ),
-                                blockquote: ({ children }) => (
-                                  <blockquote className="border-l-4 border-amber-500/50 bg-gradient-to-r from-amber-500/10 to-transparent rounded-r-lg px-4 py-3 my-5 text-zinc-700 dark:text-zinc-300 not-italic">
-                                    {children}
-                                  </blockquote>
-                                ),
-                                ul: ({ children }) => (
-                                  <ul className="list-none space-y-2 my-3 text-zinc-600 dark:text-zinc-400">
-                                    {children}
-                                  </ul>
-                                ),
-                                li: ({ children }) => (
-                                  <li className="flex gap-2">
-                                    <span className="text-amber-500 mt-0.5">•</span>
-                                    <span>{children}</span>
-                                  </li>
-                                ),
-                                ol: ({ children }) => (
-                                  <ol className="list-decimal list-inside space-y-2 my-3 text-zinc-600 dark:text-zinc-400">
-                                    {children}
-                                  </ol>
-                                ),
-                                hr: () => (
-                                  <div className="my-8 h-px w-full bg-zinc-200 dark:bg-zinc-800/80" />
-                                ),
-                              }}
-                            >
+                            <ReactMarkdown remarkPlugins={[remarkGfm]} components={reportMarkdownComponents}>
                               {section.body}
                             </ReactMarkdown>
                           </div>
                         )}
                       </div>
                     ))}
+                  </div>
+                )}
+                  </>
+                )}
+
+                {reportsSubTab === 'mentor' && (
+                  <div className="space-y-4">
+                    {mentorChecklistLoading && (
+                      <div className="text-sm text-zinc-600 dark:text-zinc-400">A carregar trilha…</div>
+                    )}
+                    {mentorChecklist && !mentorChecklistLoading && (
+                      <>
+                        <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/30 p-5 space-y-4">
+                          <div>
+                            <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{mentorChecklist.title}</h3>
+                            {mentorChecklist.subtitle && (
+                              <p className="text-xs text-zinc-600 dark:text-zinc-500 mt-1">{mentorChecklist.subtitle}</p>
+                            )}
+                          </div>
+                          {(() => {
+                            const total = mentorChecklist.phases.reduce((n, ph) => n + ph.items.length, 0);
+                            const done = mentorCompletedIds.filter((cid) =>
+                              mentorChecklist.phases.some((ph) => ph.items.some((it) => it.id === cid))
+                            ).length;
+                            const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+                            return (
+                              <div className="space-y-2">
+                                <div className="flex justify-between text-xs text-zinc-600 dark:text-zinc-400">
+                                  <span>
+                                    Progresso: {done} / {total}
+                                  </span>
+                                  <span>{pct}%</span>
+                                </div>
+                                <div className="h-2 rounded-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden">
+                                  <div
+                                    className="h-full bg-amber-500/90 rounded-full transition-all"
+                                    style={{ width: `${pct}%` }}
+                                  />
+                                </div>
+                              </div>
+                            );
+                          })()}
+                          <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 items-end">
+                            <div>
+                              <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-500 mb-1.5">
+                                Fase em foco (opcional)
+                              </label>
+                              <select
+                                className={selectCls}
+                                aria-label="Fase em foco para o mentor"
+                                value={mentorFocusPhaseId || ''}
+                                onChange={(e) => {
+                                  const v = e.target.value || null;
+                                  setMentorFocusPhaseId(v);
+                                  persistMentorLocal(mentorCompletedIds, v);
+                                }}
+                              >
+                                <option value="">Automático (primeira incompleta)</option>
+                                {[...mentorChecklist.phases]
+                                  .sort((a, b) => a.order - b.order)
+                                  .map((ph) => (
+                                    <option key={ph.id} value={ph.id}>
+                                      {ph.order.toString().padStart(2, '0')} — {ph.title}
+                                    </option>
+                                  ))}
+                              </select>
+                            </div>
+                            <button
+                              type="button"
+                              disabled={mentorCoachLoading}
+                              onClick={() => generateMentorCoach()}
+                              className="text-xs font-semibold px-4 py-2.5 rounded-lg bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white transition-colors"
+                            >
+                              {mentorCoachLoading ? 'A gerar…' : 'Gerar orientação do mentor'}
+                            </button>
+                          </div>
+                          <p className="text-[11px] text-zinc-600 dark:text-zinc-500">
+                            Opcional: selecione uma campanha na aba Campanhas ou em «Análise de campanha» para enriquecer a
+                            orientação com métricas dos últimos 14 dias.
+                          </p>
+                        </div>
+
+                        <div className="space-y-2">
+                          {[...mentorChecklist.phases]
+                            .sort((a, b) => a.order - b.order)
+                            .map((ph) => {
+                              const open = !!mentorOpenPhases[ph.id];
+                              const phDone = ph.items.filter((it) => mentorCompletedIds.includes(it.id)).length;
+                              return (
+                                <div
+                                  key={ph.id}
+                                  className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/40 overflow-hidden"
+                                >
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setMentorOpenPhases((prev) => ({ ...prev, [ph.id]: !prev[ph.id] }))
+                                    }
+                                    className="w-full flex items-center gap-2 px-4 py-3 text-left bg-zinc-50 dark:bg-zinc-900/50 border-b border-zinc-200 dark:border-zinc-800/60"
+                                  >
+                                    <span className="text-lg">{ph.icon || '•'}</span>
+                                    <span className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 flex-1">
+                                      {ph.order.toString().padStart(2, '0')} — {ph.title}
+                                    </span>
+                                    {ph.badge && (
+                                      <span className="text-[10px] uppercase tracking-wider text-zinc-500">{ph.badge}</span>
+                                    )}
+                                    <span className="text-[11px] text-zinc-500 tabular-nums">
+                                      {phDone}/{ph.items.length}
+                                    </span>
+                                    <span className="text-zinc-400 text-xs">{open ? '▼' : '▶'}</span>
+                                  </button>
+                                  {open && (
+                                    <div className="px-4 py-3 space-y-3 border-t border-zinc-100 dark:border-zinc-800/40">
+                                      {ph.note && (
+                                        <p className="text-xs text-zinc-600 dark:text-zinc-400 bg-zinc-50 dark:bg-zinc-900/30 rounded-lg px-3 py-2">
+                                          {ph.note}
+                                        </p>
+                                      )}
+                                      <div className="space-y-2">
+                                        {ph.items.map((it) => {
+                                          const checked = mentorCompletedIds.includes(it.id);
+                                          return (
+                                            <label
+                                              key={it.id}
+                                              className="flex gap-3 items-start cursor-pointer rounded-lg border border-zinc-200 dark:border-zinc-800/80 px-3 py-2 hover:bg-zinc-50 dark:hover:bg-zinc-900/30"
+                                            >
+                                              <input
+                                                type="checkbox"
+                                                checked={checked}
+                                                className="mt-1 rounded border-zinc-400"
+                                                onChange={() => {
+                                                  setMentorCompletedIds((prev) => {
+                                                    const next = checked
+                                                      ? prev.filter((x) => x !== it.id)
+                                                      : [...prev, it.id];
+                                                    persistMentorLocal(next, mentorFocusPhaseId);
+                                                    return next;
+                                                  });
+                                                }}
+                                              />
+                                              <div className="flex-1 min-w-0">
+                                                <div className="text-sm text-zinc-800 dark:text-zinc-200">{it.text}</div>
+                                                {it.hints && it.hints.length > 0 && (
+                                                  <ul className="mt-1 text-[11px] text-zinc-500 space-y-0.5 list-disc list-inside">
+                                                    {it.hints.map((h, hi) => (
+                                                      <li key={hi}>{h}</li>
+                                                    ))}
+                                                  </ul>
+                                                )}
+                                              </div>
+                                            </label>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                        </div>
+                      </>
+                    )}
+
+                    {mentorGuidanceMd.trim() && (
+                      <div className="space-y-3">
+                        <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Orientação do mentor</h3>
+                        {mentorGuidanceSections.map((section, index) => (
+                          <div
+                            key={`mentor-${section.title}-${index}`}
+                            className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/50 overflow-hidden"
+                          >
+                            <div className="px-5 py-3.5 border-b border-zinc-200 dark:border-zinc-800/40 bg-zinc-50 dark:bg-zinc-900/40">
+                              <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{section.title}</h3>
+                            </div>
+                            {section.body && (
+                              <div className="px-5 py-4 prose prose-invert max-w-none text-sm prose-headings:tracking-tight prose-h1:text-xl prose-h2:text-lg prose-h3:text-sm prose-p:text-zinc-600 dark:text-zinc-400 prose-p:leading-relaxed prose-strong:text-zinc-800 dark:text-zinc-200 prose-a:text-blue-400 prose-a:no-underline hover:prose-a:text-blue-300">
+                                <ReactMarkdown remarkPlugins={[remarkGfm]} components={reportMarkdownComponents}>
+                                  {section.body}
+                                </ReactMarkdown>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
