@@ -15,7 +15,7 @@ export class DiagnosisService {
           'User-Agent': 'TrakeamentoBot/1.0 (Diagnosis Analysis)',
           Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         },
-        timeout: 5000,
+        timeout: 8000,
         maxContentLength: 500_000,
       });
       if (response.status !== 200) return null;
@@ -29,7 +29,7 @@ export class DiagnosisService {
         .replace(/<[^>]+>/g, ' ')
         .replace(/\s+/g, ' ')
         .trim()
-        .slice(0, 3000);
+        .slice(0, 12_000);
     } catch {
       return null;
     }
@@ -1217,10 +1217,20 @@ export class DiagnosisService {
       signals: signals.slice(0, 10),
       trend,
 
-      landing_page: {
-        url: options?.userContext?.landing_page_url || landingPageUrl,
-        content: landingPageContent,
-      },
+      landing_page: (() => {
+        const lpUrl = options?.userContext?.landing_page_url || landingPageUrl;
+        const contentOk = typeof landingPageContent === 'string' && landingPageContent.length > 0;
+        return {
+          url: lpUrl,
+          content: landingPageContent,
+          content_source: contentOk ? 'http_html_text' : lpUrl ? 'fetch_failed_or_empty' : 'no_url',
+          content_note: contentOk
+            ? 'Texto obtido pelo servidor Trajettu via HTTP GET do HTML publico (scripts/estilos removidos; texto plano, ate ~12000 caracteres). Nao e renderizacao JS completa nem screenshot.'
+            : lpUrl
+              ? 'Fetch da URL falhou ou retornou vazio (rede, bloqueio, bot, SPA sem conteudo no HTML inicial). Nao invente copy da pagina.'
+              : 'Nenhuma URL de landing definida para este diagnostico.',
+        };
+      })(),
       message_match: this.buildMessageMatch(finalCreatives, landingPageContent),
       segments: {
         hourly: hourlyDistribution,

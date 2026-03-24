@@ -58,8 +58,8 @@ export class LlmService {
   private sanitizeSnapshot(snapshot: unknown): string {
     const snap = structuredClone(snapshot) as Record<string, unknown>;
     const lp = this.asRecord(snap.landing_page);
-    if (typeof lp.content === 'string' && lp.content.length > 3000) {
-      lp.content = lp.content.slice(0, 3000) + '\n[...truncado...]';
+    if (typeof lp.content === 'string' && lp.content.length > 12_000) {
+      lp.content = lp.content.slice(0, 12_000) + '\n[...truncado...]';
       snap.landing_page = lp;
     }
     const mb = this.asRecord(snap.meta_breakdown);
@@ -159,39 +159,9 @@ export class LlmService {
     '## Plano de Acao',
   ];
 
-  private getExpectedSections(snapshot: Record<string, unknown>): string[] {
-    const sections: string[] = [
-      '## Auditoria Tecnica',
-      '## Diagnostico de 3 Camadas',
-    ];
-
-    const meta = this.asRecord(snapshot.meta);
-    const sales = this.asRecord(snapshot.sales);
-    if (Number(meta.spend || 0) > 0) {
-      sections.push('## Vendas e ROAS');
-    }
-
-    const mb = this.asRecord(snapshot.meta_breakdown);
-    const ads = Array.isArray(mb.ads) ? mb.ads : [];
-    if (ads.length > 0) {
-      sections.push('## Analise de Criativos');
-    }
-
-    const uc = this.asRecord(snapshot.user_context);
-    const creatives = Array.isArray(uc.creatives) ? uc.creatives : [];
-    const lp = this.asRecord(snapshot.landing_page);
-    if (creatives.length > 0 || (lp.content && ads.length > 1)) {
-      sections.push('## Analise Avancada: Copy, Frameworks e 80/20');
-    }
-
-    const segments = this.asRecord(snapshot.segments);
-    const hourly = this.asRecord(segments.hourly);
-    const dow = this.asRecord(segments.day_of_week);
-    if (Object.keys(hourly).length > 0 || Object.keys(dow).length > 0) {
-      sections.push('## Distribuicao Temporal');
-    }
-
-    return sections;
+  /** Secoes "esperadas" opcionais: nao gerar aviso no relatorio se o modelo omitir (evita falsos positivos). */
+  private getExpectedSections(_snapshot: Record<string, unknown>): string[] {
+    return [];
   }
 
   private validateOutput(content: string, snapshot?: Record<string, unknown>): { valid: boolean; missing: string[]; missingExpected: string[]; truncated: boolean } {
@@ -303,6 +273,20 @@ export class LlmService {
     lines.push(`- Cliques CTA: ${this.fmtInt(site.clicks_cta)}`);
     lines.push(`- Discrepancia Cliques→LP: ${derived.click_to_lp_discrepancy_pct != null ? this.fmtPct(derived.click_to_lp_discrepancy_pct) : 'N/A'}`);
     lines.push('');
+
+    const lpBrief = this.asRecord(snap.landing_page);
+    if (typeof lpBrief.content === 'string' && lpBrief.content.length > 0) {
+      lines.push(`## Landing page — texto capturado para auditoria`);
+      lines.push(`- URL: ${lpBrief.url || 'N/A'}`);
+      lines.push(`- Proveniencia: ${String(lpBrief.content_note || 'Servidor fez GET do HTML e extraiu texto plano.')}`);
+      lines.push(`- Caracteres no recorte: ${lpBrief.content.length}`);
+      lines.push('');
+    } else if (lpBrief.url) {
+      lines.push(`## Landing page`);
+      lines.push(`- URL: ${lpBrief.url}`);
+      lines.push(`- ${String(lpBrief.content_note || 'Sem texto — nao invente copy da pagina.')}`);
+      lines.push('');
+    }
 
     lines.push(`## Vendas Reais (Banco)`);
     lines.push(`- Compras: ${this.fmtInt(sales.purchases)} | Receita: ${this.fmtMoney(sales.revenue)}`);
@@ -457,14 +441,36 @@ Compare ad_headline vs lp_headline. Se incongruente (🔴 MISMATCH), OBRIGATORIA
 NUNCA sinalize mismatch sem dar a solucao concreta.`);
     }
 
-    // ── Conditional: Landing Page frameworks ──
+    // ── Conditional: Landing Page — analista por dobras (direto do mercado BR) ──
     if (hasLPContent) {
       sections.push(`
-=== FRAMEWORKS DA LANDING PAGE ===
+=== ANALISTA DE LANDING PAGE (AUDITORIA PROFUNDA — OBRIGATORIO) ===
 
-A. Nivel de Consciencia (Eugene Schwartz): Em qual dos 5 niveis a oferta opera? Comunicacao alinhada?
-B. Estrutura PAS (Dan Kennedy): A LP segue Problem-Agitation-Solution de forma visceral?
-Se falhar, sugira copy especifica usando PAS no Plano de Acao.`);
+FONTE DOS DADOS (anti-alucinacao):
+- Baseie-se APENAS em landing_page.content, landing_page.url, landing_page.content_source e landing_page.content_note do JSON.
+- Esse texto veio de GET HTTP no servidor (HTML convertido em texto; limite ~12000 chars). NAO e browser headless completo: conteudo carregado so por JS pode faltar.
+- Se content estiver vazio ou content_source indicar falha, diga explicitamente e NAO invente texto ou estrutura da pagina.
+
+METODOLOGIA:
+1) Classifique o produto por faixa de PRECO encontrada no texto: Low ate R$197 | Mid R$198-997 | High R$998-4997 | Ultra R$5000+. Se nao achar preco, diga "preco nao identificado no recorte" e trabalhe com hipotese Mid **marcada como fragil**.
+
+2) Principios universais: clareza em ~8s (o que e, para quem, quanto); nivel de consciencia do avatar na headline; densidade de prova proporcional ao ticket; CTA coerente com ticket; sem frases genericas tipo "transforme sua vida" — use resultado especifico.
+
+3) Dobras por nivel (audite cada uma como Presente / Fraco / Ausente / Fora de ordem, com 1 frase cada):
+- Low: D1 Hero ate D12 FAQ+CTA final (hero, dor, agitacao, solucao, tangibilizacao, para quem, checklist entregaveis, prova, bonus, oferta, garantia, FAQ).
+- Mid: D1-D15 (inclui quebra de crenca, novo mecanismo, autoridade, qualificacao para quem NAO e, urgencia).
+- High: D1-D18 (inclui custo de nao agir, jornada de transformacao, modulos, cases longos, empilhamento de valor, garantia detalhada).
+- Ultra: carta longa/VSL fluida — historia, problema profundo, autoridade narrativa, mecanismo como visao, prova qualitativa, exclusividade, aplicacao, investimento, CTA alta intencao.
+
+4) Entregue na secao "## Analise da Landing Page" (Markdown):
+- **Fonte dos dados** (1 frase citando content_note).
+- **Nivel estimado** + justificativa.
+- **Tabela ou lista**: cada dobra do nivel com status + observacao.
+- **Top 5 gaps** que mais prejudicam conversao.
+- **Reescritas e estrutura**: alem de headline/subhead, proponha copy em bullets para secoes fracas (prova, oferta, CTA, garantia, FAQ, urgencia) quando aplicavel.
+- Cruze com metricas de comportamento (dwell, scroll, load) do JSON quando fizer sentido.
+
+Tambem integre: Schwartz (consciencia) e PAS onde couber, sem substituir o checklist de dobras.`);
     }
 
     // ── Conditional: Pareto ──
@@ -615,9 +621,17 @@ Para CADA criativo:
 ---
 
 ## Analise da Landing Page
-- Diagnostico de Estrutura e congruencia com anuncios
-- Analise Comportamental (Dwell/Scroll vs design)
-- **🔥 Otimizacao**: Nova Headline, Sub-Headline e Mudanca Estrutural sugeridas`);
+
+Estrutura obrigatoria (use subtitulos ## ou ###):
+1. **Fonte dos dados** — como o texto foi obtido; limitacoes (JS, truncamento).
+2. **Nivel do produto** — faixa de preco e decisao de compra esperada.
+3. **Auditoria por dobra** — checklist do nivel (Presente/Fraco/Ausente + 1 frase por dobra).
+4. **Gaps criticos** — top 5.
+5. **Congruencia anuncio-pagina** — se houver criativos/message_match no JSON.
+6. **Comportamento vs pagina** — dwell, scroll, load (dados do JSON).
+7. **Otimizacao** — headline, subhead, **e** blocos adicionais (prova, oferta, CTA, garantia, FAQ, urgencia) em formato acionavel.
+
+Nao limite a analise a apenas headline/subheadline.`);
     }
 
     sections.push(`
