@@ -285,7 +285,7 @@ export class LlmService {
     lines.push(`## Metricas Meta Ads`);
     lines.push(`- Investimento: ${this.fmtMoney(meta.spend)}`);
     lines.push(`- Resultados (evento otimizado): ${this.fmtInt(meta.results)} | CPA: ${this.fmtMoney(meta.cost_per_result)}`);
-    lines.push(`- Impressoes: ${this.fmtInt(meta.impressions)} | Alcance: ${this.fmtInt(meta.reach)} | Frequencia: ${this.fmt(meta.frequency_avg)}`);
+    lines.push(`- Impressoes: ${this.fmtInt(meta.impressions)} | Alcance: ${this.fmtInt(meta.reach)} (contas da Central de Contas) | Frequencia: ${this.fmt(meta.frequency_avg)}`);
     lines.push(`- Cliques: ${this.fmtInt(meta.clicks)} | Link Clicks Unicos: ${this.fmtInt(meta.unique_link_clicks)}`);
     lines.push(`- CTR: ${this.fmtPct(derived.ctr_calc_pct)} | CPC: ${this.fmtMoney(derived.cpc_calc)} | CPM: ${this.fmtMoney(derived.cpm_calc)}`);
     lines.push(`- LP Views: ${this.fmtInt(meta.landing_page_views)} | Taxa LP View: ${this.fmtPct(meta.connect_rate_pct)}`);
@@ -373,6 +373,25 @@ Voce cobra caro pela sua consultoria. Cada relatorio que voce produz deve justif
 Seu tom: firme, educativo, assertivo. Como um mentor que ja gastou milhoes em ads e sabe exatamente onde o dinheiro esta vazando. Nunca use linguagem corporativa vazia. Fale de dor, conversao e dinheiro.
 
 Benchmarks BR de referencia: CTR (1-2%), CPC (R$0.50-2.50), CPM (R$15-40), Tx Conversao LP (1-3%), Taxa LP View (>70%).`);
+
+    // ── Diretrizes alinhadas ao modelo de analista Meta Ads (Performance / funil / leilao) ──
+    sections.push(`
+=== DIRETRIZES META ADS (PERFIL E METODOLOGIA) ===
+
+Voce tambem atua como Analista de Performance Senior em Meta Ads. Missao: identificar gargalos no funil e recomendacoes acionaveis para melhorar ROAS e custo por resultado (CPA do evento otimizado).
+
+Diretrizes de analise:
+- Foco no objetivo: priorize SEMPRE a metrica principal da campanha (compras, leads, finalizacoes de compra, etc.) — no JSON, isso e meta.results / evento otimizado.
+- Visao de funil: relacione Impressoes > Cliques (link) > acoes no site (LP views, eventos CAPI) > conversoes.
+- Contexto de leilao: use CPM e CTR para comentar competitividade e relevancia do criativo (sem generalizar sem dados).
+- Nao invente metricas ausentes (null no JSON): declare "sem dados" quando aplicavel.
+
+Terminologia Meta: ao reportar alcance ou tamanho de audiencia, prefira "contas da Central de Contas" em vez de "pessoas" de forma generica.
+
+Alinhamento com a estrutura OBRIGATORIA deste relatorio:
+- Em ## Diagnostico Executivo: comece com 1-2 frases de resumo executivo (equivalente ao "Resumo Executivo" da Meta), depois a tabela.
+- ## Analise do Funil e ## Diagnostico de 3 Camadas cobrem o papel de "Diagnostico de Performance" (explicacao tecnica do porque dos numeros).
+- Em ## Plano de Acao: use lista NUMERADA (1., 2., 3., ...) com passos praticos (lances, criativos, publico, pagina). Mantenha o titulo exato ## Plano de Acao.`);
 
     // ── Pre-analysis checklist ──
     sections.push(`
@@ -481,6 +500,8 @@ Se conflitar com meta.objective, priorize o que o usuario declarou.`);
 === ESTRUTURA DE RESPOSTA (MARKDOWN OBRIGATORIO) ===
 
 ## Diagnostico Executivo
+
+Abra esta secao com 1-2 frases curtas de resumo executivo (o que aconteceu no periodo). Depois preencha a tabela.
 
 | | |
 |---|---|
@@ -641,6 +662,8 @@ Para CADA criativo:
 
 ## Plano de Acao 100% Pratico
 
+Inclua uma lista NUMERADA no inicio desta secao (1., 2., 3., ...) com os passos mais urgentes; depois pode usar a tabela por prazo.
+
 | Prazo | Acao (O Que + Metrica Alvo) | Como Implementar |
 |:---|:---|:---|
 | **Hoje** | [cortar sangramento — ex: pausar anuncio X] | [passo a passo com numeros] |
@@ -658,6 +681,188 @@ Para CADA criativo:
     return sections.join('\n');
   }
 
+  private buildFallbackResumoLines(
+    snap: Record<string, unknown>,
+    m: Record<string, unknown>,
+    d: Record<string, unknown>,
+    sales: Record<string, unknown>,
+    trend: Record<string, unknown> | null,
+    skipped: string[]
+  ): string[] {
+    const L: string[] = [];
+    L.push(
+      'Relatorio automatico **sem IA**. Configure uma chave OpenAI nas configuracoes da conta para analise completa com LLM.'
+    );
+    L.push('');
+    L.push(
+      `**Periodo:** ${this.fmtInt(snap.period_days)} dias | **Objetivo (Meta):** ${String(m.objective || '—')}`
+    );
+    L.push('');
+    if (skipped.length > 0) {
+      L.push(
+        `> **UTM:** Macros nao resolvidas — filtros ignorados: ${skipped.join(', ')}. Dados de site/CAPI podem incluir trafego alem da campanha filtrada.`
+      );
+      L.push('');
+    }
+    const spend = Number(m.spend || 0);
+    const results = Number(m.results || 0);
+    let s1 = `Nos ultimos **${this.fmtInt(snap.period_days)} dias**, investimento **${this.fmtMoney(m.spend)}**`;
+    if (results > 0) {
+      s1 += `, **${this.fmtInt(results)}** resultado(s) no evento otimizado e CPA **${this.fmtMoney(m.cost_per_result)}**.`;
+    } else if (spend > 0) {
+      s1 += ` e **nenhum resultado** no evento otimizado — vale revisar evento, volume e congruencia do funil.`;
+    } else {
+      s1 += `; **sem gasto** neste recorte.`;
+    }
+    L.push(s1);
+    const purchases = Number(sales.purchases || 0);
+    const roas = d.roas != null ? Number(d.roas) : NaN;
+    if (purchases > 0 && Number.isFinite(roas)) {
+      L.push(
+        `Vendas no banco: **${this.fmtInt(purchases)}** compra(s), ROAS real **${this.fmt(roas)}x**.`
+      );
+    }
+    if (trend) {
+      const ts = this.asRecord(trend.spend);
+      const ch = ts.change_pct;
+      if (ch != null && ch !== '') {
+        L.push(`Versus periodo anterior: variacao de gasto **${ch}%**.`);
+      }
+    }
+    return L;
+  }
+
+  private buildFallbackDiagnosticoPerformance(
+    m: Record<string, unknown>,
+    d: Record<string, unknown>,
+    capi: Record<string, unknown>,
+    site: Record<string, unknown>,
+    sales: Record<string, unknown>,
+    signals: Record<string, unknown>[],
+    discPct: number
+  ): string[] {
+    const L: string[] = [];
+    L.push('### Funil resumido');
+    L.push('');
+    L.push(
+      `**Impressoes** ${this.fmtInt(m.impressions)} → **Cliques em link** ${this.fmtInt(m.unique_link_clicks)} → **LP Views (Pixel)** ${this.fmtInt(m.landing_page_views)} → **Resultados (evento otimizado)** ${this.fmtInt(m.results)}.`
+    );
+    L.push(`**CAPI — Page Views:** ${this.fmtInt(capi.page_views)} (quando rastreado).`);
+    L.push('');
+    L.push('### Contexto de leilao (CTR / CPM / alcance)');
+    L.push('');
+    L.push(
+      `- **CTR** ${this.fmtPct(d.ctr_calc_pct)} | **CPM** ${this.fmtMoney(d.cpm_calc)} | **Alcance** ${this.fmtInt(m.reach)} contas da Central de Contas`
+    );
+    L.push(
+      '- Referencia ampla mercado BR (nao e regra): CTR ~1–2%, CPM ~R$15–40 — interpretar conforme seu nicho.'
+    );
+    L.push('');
+    if (Number.isFinite(discPct)) {
+      const flag = discPct > 40 ? 'critico' : discPct > 25 ? 'atencao' : 'monitorar';
+      L.push(`**Discrepancia clique → visitas/LP:** ${discPct.toFixed(1)}% (${flag}).`);
+      L.push('');
+    }
+    L.push('### Sinais pre-calculados');
+    L.push('');
+    if (signals.length === 0) {
+      L.push('- Nenhum sinal extra neste recorte.');
+    } else {
+      for (const sig of signals) {
+        const area = String(sig.area ?? '');
+        const signal = String(sig.signal ?? '');
+        const evidence = String(sig.evidence ?? '');
+        L.push(`- **${area}** — ${signal}${evidence ? `: ${evidence}` : ''}`);
+      }
+    }
+    L.push('');
+    L.push('### Comportamento no destino');
+    L.push('');
+    L.push(
+      `- Load: ${site.effective_load_ms != null ? this.fmtMs(site.effective_load_ms) : 'sem dados'} | Scroll: ${site.effective_scroll_pct != null ? this.fmtPct(site.effective_scroll_pct) : 'sem dados'} | Dwell: ${site.effective_dwell_ms != null ? this.fmtMs(site.effective_dwell_ms) : 'sem dados'}.`
+    );
+    const purchases = Number(sales.purchases || 0);
+    if (purchases > 0) {
+      L.push(
+        `- **Compras (banco):** ${this.fmtInt(purchases)} — comparar com compras atribuidas no Meta quando fizer sentido.`
+      );
+    }
+    return L;
+  }
+
+  private buildFallbackPlanoNumerado(
+    m: Record<string, unknown>,
+    d: Record<string, unknown>,
+    sales: Record<string, unknown>,
+    site: Record<string, unknown>,
+    capi: Record<string, unknown>,
+    signals: Record<string, unknown>[],
+    discPct: number
+  ): string[] {
+    const steps: string[] = [];
+    const spend = Number(m.spend || 0);
+    const ctr = Number(d.ctr_calc_pct);
+    const cpm = Number(d.cpm_calc);
+    const roas = d.roas != null ? Number(d.roas) : NaN;
+
+    if (Number.isFinite(discPct) && discPct > 25) {
+      steps.push(
+        'Revisar pixel, URLs de destino e UTMs para reduzir discrepancia entre cliques no anuncio e visitas na landing page.'
+      );
+    }
+    if (spend > 0 && Number.isFinite(ctr) && ctr < 0.5) {
+      steps.push(
+        'CTR baixo: priorizar testes de criativo (novos angulos) e checar relevancia do publico e posicionamentos.'
+      );
+    }
+    if (spend > 0 && Number.isFinite(cpm) && cpm > 45) {
+      steps.push(
+        'CPM elevado: avaliar competicao no leilao, segmentacao e rotacao de criativos para refrescar entrega.'
+      );
+    }
+    const loadMs = site.effective_load_ms != null ? Number(site.effective_load_ms) : null;
+    if (loadMs != null && loadMs > 3500) {
+      steps.push(
+        'Otimizar performance da pagina (imagens, LCP, hospedagem) — carregamento lento aumenta abandono.'
+      );
+    }
+    if (spend > 0 && Number.isFinite(roas) && roas < 1) {
+      steps.push(
+        'ROAS real abaixo de 1x: revisar oferta, margem e alinhamento promessa do anuncio com a pagina antes de escalar verba.'
+      );
+    }
+    if (spend > 0 && Number(m.results || 0) === 0) {
+      steps.push(
+        'Confirmar no Gerenciador se o evento de conversao otimizado dispara corretamente e se ha volume para aprendizagem.'
+      );
+    }
+    const pv = Number(capi.page_views || 0);
+    const lpv = Number(m.landing_page_views || 0);
+    if (spend > 0 && pv === 0 && lpv === 0) {
+      steps.push(
+        'Verificar implementacao de PageView / Landing Page View (Pixel + CAPI) para atribuicao e sinais de qualidade.'
+      );
+    }
+
+    for (const sig of signals.slice(0, 3)) {
+      const area = String(sig.area || '');
+      const ev = String(sig.evidence || sig.signal || '');
+      if (ev) steps.push(`Agir com base no sinal (${area}): ${ev}`);
+    }
+
+    const fillers = [
+      'Documentar hipoteses e rodar teste A/B com orcamento limitado em criativo ou segmentacao.',
+      'Alinhar primeira dobra da LP com a promessa principal do anuncio (message match).',
+      'Agendar revisao semanal dos anuncios com pior CPA e realocar verba para os melhores.',
+    ];
+    for (const f of fillers) {
+      if (steps.length >= 7) break;
+      if (!steps.some((s) => s === f)) steps.push(f);
+    }
+
+    return steps.slice(0, 7);
+  }
+
   private fallbackReport(snapshot: unknown): string {
     const snap = this.asRecord(snapshot);
     const m = this.asRecord(snap.meta);
@@ -665,32 +870,42 @@ Para CADA criativo:
     const site = this.asRecord(snap.site);
     const sales = this.asRecord(snap.sales);
     const d = this.asRecord(snap.derived);
-    const signals = Array.isArray(snap.signals) ? snap.signals as Record<string, unknown>[] : [];
+    const signals = Array.isArray(snap.signals) ? (snap.signals as Record<string, unknown>[]) : [];
     const mb = this.asRecord(snap.meta_breakdown);
-    const campaigns = Array.isArray(mb.campaigns) ? mb.campaigns as Record<string, unknown>[] : [];
-    const adsets = Array.isArray(mb.adsets) ? mb.adsets as Record<string, unknown>[] : [];
-    const ads = Array.isArray(mb.ads) ? mb.ads as Record<string, unknown>[] : [];
+    const campaigns = Array.isArray(mb.campaigns) ? (mb.campaigns as Record<string, unknown>[]) : [];
+    const adsets = Array.isArray(mb.adsets) ? (mb.adsets as Record<string, unknown>[]) : [];
+    const ads = Array.isArray(mb.ads) ? (mb.ads as Record<string, unknown>[]) : [];
     const segments = this.asRecord(snap.segments);
+    const trend = snap.trend ? this.asRecord(snap.trend as Record<string, unknown>) : null;
+
+    const skipped = Array.isArray(snap.utm_filters_skipped) ? (snap.utm_filters_skipped as string[]) : [];
+    const applied = snap.utm_filters_applied;
+
+    const discPct = Number(d.click_to_lp_discrepancy_pct);
+    const discStatus = !Number.isFinite(discPct)
+      ? '—'
+      : discPct > 40
+        ? `CRITICO ${discPct.toFixed(1)}%`
+        : discPct > 25
+          ? `Alerta ${discPct.toFixed(1)}%`
+          : `OK ${discPct.toFixed(1)}%`;
 
     const lines: string[] = [];
 
-    lines.push(`# Diagnostico de Performance (Modo Basico — sem IA)`);
+    lines.push('## Resumo Executivo');
     lines.push('');
-    lines.push(`> Relatorio gerado sem IA. Configure uma chave OpenAI nas configuracoes da conta para analise aprofundada.`);
-    lines.push('');
-    lines.push(`**Periodo:** ${this.fmtInt(snap.period_days)} dias | **Objetivo:** ${String(m.objective || '—')}`);
+    lines.push(...this.buildFallbackResumoLines(snap, m, d, sales, trend, skipped));
     lines.push('');
 
-    const skipped = Array.isArray(snap.utm_filters_skipped) ? snap.utm_filters_skipped as string[] : [];
-    const applied = snap.utm_filters_applied;
-    if (skipped.length > 0) {
-      lines.push(`> **Aviso de UTM:** Os seguintes filtros continham macros nao resolvidas e foram ignorados: ${skipped.join(', ')}. Os dados de CAPI/site cobrem todo o trafego do dominio.`);
-      lines.push('');
-    }
     if (applied) {
       lines.push(`> **Filtros UTM aplicados:** ${JSON.stringify(applied)}`);
       lines.push('');
     }
+
+    lines.push('## Diagnostico de Performance');
+    lines.push('');
+    lines.push(...this.buildFallbackDiagnosticoPerformance(m, d, capi, site, sales, signals, discPct));
+    lines.push('');
 
     lines.push(`## Metricas Principais`);
     lines.push('');
@@ -700,7 +915,7 @@ Para CADA criativo:
     lines.push(`| CPA | ${this.fmtMoney(m.cost_per_result)} | Custo por resultado |`);
     lines.push(`| Investimento | ${this.fmtMoney(m.spend)} | Total gasto |`);
     lines.push(`| Impressoes | ${this.fmtInt(m.impressions)} | |`);
-    lines.push(`| Alcance | ${this.fmtInt(m.reach)} | Pessoas unicas |`);
+    lines.push(`| Alcance | ${this.fmtInt(m.reach)} | Contas da Central de Contas |`);
     lines.push(`| Cliques (link) | ${this.fmtInt(m.unique_link_clicks)} | |`);
     lines.push(`| CTR | ${this.fmtPct(d.ctr_calc_pct)} | Cliques / Impressoes |`);
     lines.push(`| CPC | ${this.fmtMoney(d.cpc_calc)} | |`);
@@ -717,12 +932,6 @@ Para CADA criativo:
     lines.push(`| CAPI — Dwell Time | ${capi.avg_dwell_time_ms != null ? this.fmtMs(capi.avg_dwell_time_ms) : 'Sem dados'} | |`);
     lines.push(`| CAPI — Scroll medio | ${capi.avg_scroll_pct != null ? this.fmtPct(capi.avg_scroll_pct) : 'Sem dados'} | |`);
     lines.push('');
-
-    const discPct = Number(d.click_to_lp_discrepancy_pct);
-    const discStatus = !Number.isFinite(discPct) ? '—'
-      : discPct > 40 ? `CRITICO ${discPct.toFixed(1)}%`
-        : discPct > 25 ? `Alerta ${discPct.toFixed(1)}%`
-          : `OK ${discPct.toFixed(1)}%`;
     lines.push(`| Discrepancia Cliques->Visitas | ${discStatus} | >25% = investigar |`);
     lines.push('');
     lines.push(`| **Banco — Compras** | **${this.fmtInt(sales.purchases)}** | Verdade absoluta |`);
@@ -779,7 +988,9 @@ Para CADA criativo:
     // Rastreamento
     lines.push(`| Rastreamento | Filtros UTM | ${applied ? 'OK' : 'N/A'} | ${JSON.stringify(applied || 'Nenhum')} |`);
     lines.push(`| Rastreamento | Macros nao resolvidas | ${skipped.length ? 'ALERTA' : 'OK'} | ${skipped.length ? skipped.join(', ') : 'Nenhuma'} |`);
-    lines.push(`| Rastreamento | Discrepancia | ${discStatus.split(' ')[0]} | Cliques vs LP Views: ${discPct.toFixed(1)}% |`);
+    lines.push(
+      `| Rastreamento | Discrepancia | ${discStatus.split(' ')[0]} | Cliques vs LP Views: ${Number.isFinite(discPct) ? `${discPct.toFixed(1)}%` : 'N/A'} |`
+    );
     lines.push(`| Rastreamento | Funil de Dados | — | Meta: ${this.fmtInt(m.unique_link_clicks)} | Pixel: ${this.fmtInt(m.landing_page_views)} | CAPI: ${this.fmtInt(capi.page_views)} |`);
 
     // Comportamento
@@ -793,6 +1004,12 @@ Para CADA criativo:
 
     const dwell = site.effective_dwell_ms != null ? this.fmtMs(site.effective_dwell_ms) : 'N/A';
     lines.push(`| Comportamento | Dwell Time | — | ${dwell} |`);
+    lines.push('');
+
+    const plano = this.buildFallbackPlanoNumerado(m, d, sales, site, capi, signals, discPct);
+    lines.push('## Plano de Acao');
+    lines.push('');
+    plano.forEach((step, i) => lines.push(`${i + 1}. ${step}`));
     lines.push('');
     lines.push('---');
     lines.push('*Relatorio basico sem IA. Configure OpenAI nas configuracoes da conta para analise completa.*');
