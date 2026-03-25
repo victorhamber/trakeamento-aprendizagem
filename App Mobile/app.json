@@ -24,6 +24,7 @@
     "android": {
       "versionCode": 2,
       "package": "com.trajettu.mobile",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#05070a",
         "foregroundImage": "./assets/android-icon-foreground.png",
