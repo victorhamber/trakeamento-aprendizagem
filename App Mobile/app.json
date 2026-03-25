@@ -2,7 +2,7 @@
   "expo": {
     "name": "Trajettu",
     "slug": "app-mobile",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "scheme": "trajettu",
     "icon": "./assets/icon.png",
@@ -13,6 +13,7 @@
       "backgroundColor": "#05070a"
     },
     "ios": {
+      "buildNumber": "2",
       "supportsTablet": true,
       "infoPlist": {
         "UIBackgroundModes": [
@@ -21,6 +22,7 @@
       }
     },
     "android": {
+      "versionCode": 2,
       "package": "com.trajettu.mobile",
       "adaptiveIcon": {
         "backgroundColor": "#05070a",

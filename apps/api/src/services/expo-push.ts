@@ -35,9 +35,17 @@ async function removePushTokenIfInvalid(token: string): Promise<void> {
 async function sendExpoPush(messages: ExpoMessage[]): Promise<void> {
   if (messages.length === 0) return;
   try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    };
+    if (process.env.EXPO_ACCESS_TOKEN) {
+      headers.Authorization = `Bearer ${process.env.EXPO_ACCESS_TOKEN}`;
+    }
+
     const res = await fetch(EXPO_PUSH_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      headers,
       body: JSON.stringify(messages),
     });
     const text = await res.text();
