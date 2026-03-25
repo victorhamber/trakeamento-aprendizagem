@@ -5,10 +5,11 @@ export type SaleNotifyOpts = {
   currency?: string;
   orderId?: string;
   platform?: string;
+  productName?: string;
 };
 
 export function buildSaleNotification(opts: SaleNotifyOpts) {
-  const { amount, currency, orderId, platform } = opts;
+  const { amount, currency, orderId, platform, productName } = opts;
   const valueStr =
     amount != null && currency
       ? new Intl.NumberFormat('pt-BR', {
@@ -20,9 +21,9 @@ export function buildSaleNotification(opts: SaleNotifyOpts) {
   const title = '💰 Venda recebida';
   const body =
     amount != null && currency
-      ? `${valueStr}${platform ? ` (${platform})` : ''}`
+      ? `${valueStr}${productName ? `\n📦 ${productName}` : platform ? ` (${platform})` : ''}`
       : orderId
-        ? `Pedido ${orderId}${platform ? ` · ${platform}` : ''}`
+        ? `Pedido ${orderId}${productName ? `\n📦 ${productName}` : platform ? ` · ${platform}` : ''}`
         : 'Confira no painel.';
 
   const data: Record<string, unknown> = {

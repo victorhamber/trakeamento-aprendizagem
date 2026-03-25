@@ -292,6 +292,7 @@ async function processPurchaseWebhook({
         currency: currency || undefined,
         orderId,
         platform: platform || undefined,
+        productName: contentName || undefined,
       };
       pool
         .query('SELECT push_token, platform FROM push_tokens WHERE account_id = $1', [siteAccountId])
