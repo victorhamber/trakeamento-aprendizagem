@@ -15,7 +15,7 @@ router.get('/revenue', async (req, res) => {
     // Vendas últimos 30 dias — usa subquery ANY para permitir uso do índice (site_key, status, created_at)
     const query = `
       SELECT
-        TO_CHAR(p.created_at, 'YYYY-MM-DD') as date,
+        TO_CHAR(p.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD') as date,
         COALESCE(SUM(p.amount), 0)::float as revenue,
         COUNT(*)::int as sales
       FROM purchases p
@@ -168,7 +168,7 @@ router.get('/mobile-summary', async (req, res) => {
       ),
       pool.query(
         `SELECT
-          TO_CHAR(p.created_at, 'YYYY-MM-DD') as date,
+          TO_CHAR(p.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD') as date,
           COALESCE(SUM(p.amount), 0)::float as revenue,
           COUNT(*)::int as sales
          FROM purchases p
