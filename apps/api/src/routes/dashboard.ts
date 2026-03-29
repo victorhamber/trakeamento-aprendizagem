@@ -15,14 +15,14 @@ router.get('/revenue', async (req, res) => {
     // Vendas últimos 30 dias — usa subquery ANY para permitir uso do índice (site_key, status, created_at)
     const query = `
       SELECT
-        TO_CHAR(p.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD') as date,
+        TO_CHAR(COALESCE(p.platform_date, p.created_at) AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD') as date,
         COALESCE(SUM(p.amount), 0)::float as revenue,
         COUNT(*)::int as sales
       FROM purchases p
       WHERE p.site_key = ANY(
         SELECT site_key FROM sites WHERE account_id = $1 AND ($2::int IS NULL OR id = $2::int)
       )
-        AND p.created_at >= NOW() - INTERVAL '30 days'
+        AND COALESCE(p.platform_date, p.created_at) >= NOW() - INTERVAL '30 days'
         AND p.status IN ('approved', 'paid', 'completed', 'active')
       GROUP BY 1
       ORDER BY 1 ASC
@@ -161,14 +161,14 @@ router.get('/mobile-summary', async (req, res) => {
            WHERE account_id = $1
              AND ($4::int[] IS NULL OR id = ANY($4))
          )
-           AND p.created_at <= $3::timestamptz
-           AND ($2::timestamptz IS NULL OR p.created_at >= $2::timestamptz)
+           AND COALESCE(p.platform_date, p.created_at) <= $3::timestamptz
+           AND ($2::timestamptz IS NULL OR COALESCE(p.platform_date, p.created_at) >= $2::timestamptz)
            AND p.status IN ${APPROVED_PURCHASE_STATUSES}`,
         [auth.accountId, start, end, siteFilter]
       ),
       pool.query(
         `SELECT
-          TO_CHAR(p.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD') as date,
+          TO_CHAR(COALESCE(p.platform_date, p.created_at) AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD') as date,
           COALESCE(SUM(p.amount), 0)::float as revenue,
           COUNT(*)::int as sales
          FROM purchases p
@@ -177,22 +177,22 @@ router.get('/mobile-summary', async (req, res) => {
            WHERE account_id = $1
              AND ($4::int[] IS NULL OR id = ANY($4))
          )
-           AND p.created_at <= $3::timestamptz
-           AND ($2::timestamptz IS NULL OR p.created_at >= $2::timestamptz)
+           AND COALESCE(p.platform_date, p.created_at) <= $3::timestamptz
+           AND ($2::timestamptz IS NULL OR COALESCE(p.platform_date, p.created_at) >= $2::timestamptz)
            AND p.status IN ${APPROVED_PURCHASE_STATUSES}
          GROUP BY 1
          ORDER BY 1 ASC`,
         [auth.accountId, start, end, siteFilter]
       ),
       pool.query(
-        `SELECT p.id, p.order_id, p.platform, p.amount, p.currency, p.created_at, s.name as site_name
+        `SELECT p.id, p.order_id, p.platform, p.amount, p.currency, COALESCE(p.platform_date, p.created_at) as created_at, s.name as site_name
          FROM purchases p
          JOIN sites s ON s.site_key = p.site_key AND s.account_id = $1
          WHERE p.status IN ${APPROVED_PURCHASE_STATUSES}
-           AND p.created_at <= $3::timestamptz
-           AND ($2::timestamptz IS NULL OR p.created_at >= $2::timestamptz)
+           AND COALESCE(p.platform_date, p.created_at) <= $3::timestamptz
+           AND ($2::timestamptz IS NULL OR COALESCE(p.platform_date, p.created_at) >= $2::timestamptz)
            AND ($4::int[] IS NULL OR s.id = ANY($4))
-         ORDER BY p.created_at DESC
+         ORDER BY COALESCE(p.platform_date, p.created_at) DESC
          LIMIT 20`,
         [auth.accountId, start, end, siteFilter]
       ),
@@ -274,8 +274,8 @@ router.get('/funnel', async (req, res) => {
       WHERE p.site_key = ANY(
         SELECT site_key FROM sites WHERE account_id = $1 AND ($2::int IS NULL OR id = $2::int)
       )
-        AND p.created_at >= $3
-        AND p.created_at <= $4
+        AND COALESCE(p.platform_date, p.created_at) >= $3
+        AND COALESCE(p.platform_date, p.created_at) <= $4
         AND p.status IN ('approved', 'paid', 'completed', 'active')
     `;
 

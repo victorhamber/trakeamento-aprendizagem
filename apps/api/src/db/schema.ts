@@ -137,7 +137,7 @@ const schemaSql = `
 
   CREATE TABLE IF NOT EXISTS web_events (
     id SERIAL PRIMARY KEY,
-    site_key VARCHAR(50) NOT NULL,
+    site_key VARCHAR(100) NOT NULL,
     event_id VARCHAR(100) NOT NULL,
     event_name VARCHAR(50) NOT NULL,
     event_time TIMESTAMP NOT NULL,
@@ -151,7 +151,7 @@ const schemaSql = `
 
   CREATE TABLE IF NOT EXISTS purchases (
     id SERIAL PRIMARY KEY,
-    site_key VARCHAR(50) NOT NULL,
+    site_key VARCHAR(100) NOT NULL,
     order_id VARCHAR(100) NOT NULL,
     platform VARCHAR(50),
     amount NUMERIC,
@@ -161,6 +161,7 @@ const schemaSql = `
     fbp VARCHAR(255),
     fbc VARCHAR(255),
     raw_payload JSONB,
+    platform_date TIMESTAMP,
     created_at TIMESTAMP DEFAULT NOW(),
     UNIQUE(site_key, order_id)
   );
@@ -211,7 +212,7 @@ const schemaSql = `
 
   CREATE TABLE IF NOT EXISTS recommendation_reports (
     id SERIAL PRIMARY KEY,
-    site_key VARCHAR(50) NOT NULL,
+    site_key VARCHAR(100) NOT NULL,
     analysis_text TEXT,
     campaign_id VARCHAR(50),
     date_preset VARCHAR(50),
@@ -223,7 +224,7 @@ const schemaSql = `
 
   CREATE TABLE IF NOT EXISTS capi_outbox (
     id SERIAL PRIMARY KEY,
-    site_key VARCHAR(50) NOT NULL,
+    site_key VARCHAR(100) NOT NULL,
     payload JSONB NOT NULL,
     attempts INTEGER DEFAULT 0,
     last_error TEXT,
@@ -316,7 +317,7 @@ const schemaSql = `
 
   CREATE TABLE IF NOT EXISTS site_visitors (
     id SERIAL PRIMARY KEY,
-    site_key VARCHAR(50) NOT NULL REFERENCES sites(site_key) ON DELETE CASCADE,
+    site_key VARCHAR(100) NOT NULL REFERENCES sites(site_key) ON DELETE CASCADE,
     external_id VARCHAR(255) NOT NULL,
     fbc VARCHAR(255),
     fbp VARCHAR(255),
@@ -582,6 +583,17 @@ export const ensureSchema = async (pool: Pool) => {
       );
     } catch (wpErr) {
       console.warn('web_push_subscriptions migration skipped/failed:', wpErr);
+    }
+    // Fix site_key lengths and add platform_at
+    try {
+      await pool.query('ALTER TABLE web_events ALTER COLUMN site_key TYPE VARCHAR(100)');
+      await pool.query('ALTER TABLE purchases ALTER COLUMN site_key TYPE VARCHAR(100)');
+      await pool.query('ALTER TABLE purchases ADD COLUMN IF NOT EXISTS platform_date TIMESTAMP');
+      await pool.query('ALTER TABLE recommendation_reports ALTER COLUMN site_key TYPE VARCHAR(100)');
+      await pool.query('ALTER TABLE capi_outbox ALTER COLUMN site_key TYPE VARCHAR(100)');
+      await pool.query('ALTER TABLE site_visitors ALTER COLUMN site_key TYPE VARCHAR(100)');
+    } catch (sizeErr) {
+      console.warn('Schema size/column migration skipped:', sizeErr);
     }
   } catch (err) {
     console.warn('Schema extension skipped:', err);

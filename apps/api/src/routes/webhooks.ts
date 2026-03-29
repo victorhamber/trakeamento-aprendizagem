@@ -50,6 +50,8 @@ async function processPurchaseWebhook({
   purchaseTimestamp,
 }: any) {
   const { finalStatus, isApproved } = normalizeStatus(status);
+  const platformDate = purchaseTimestamp ? new Date(purchaseTimestamp) : null;
+
   console.log(`[Webhook] processPurchaseWebhook called: value=${value} currency=${currency} status=${finalStatus} orderId=${orderId} platform=${platform} siteKey=${siteKey}`);
 
   const siteRow = await pool.query(`
@@ -243,17 +245,19 @@ async function processPurchaseWebhook({
       await client.query('BEGIN');
 
       await client.query(
-        `INSERT INTO purchases (site_key, order_id, platform, amount, currency, status, buyer_email_hash, fbp, fbc, raw_payload)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        `INSERT INTO purchases (site_key, order_id, platform, amount, currency, status, buyer_email_hash, fbp, fbc, raw_payload, platform_date)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
          ON CONFLICT (site_key, order_id) DO UPDATE SET
            amount = EXCLUDED.amount,
            currency = EXCLUDED.currency,
            status = EXCLUDED.status,
            raw_payload = EXCLUDED.raw_payload,
            fbp = EXCLUDED.fbp,
-           fbc = EXCLUDED.fbc`,
-        [siteKey, orderId, platform, value, currency, finalStatus, dbEmailHash, mergedFbp, mergedFbc, JSON.stringify(payload)]
+           fbc = EXCLUDED.fbc,
+           platform_date = EXCLUDED.platform_date`,
+        [siteKey, orderId, platform, value, currency, finalStatus, dbEmailHash, mergedFbp, mergedFbc, JSON.stringify(payload), platformDate]
       );
+
 
       // Salvar no outbox dentro da transação (será removido se CAPI direto funcionar)
       let outboxId: number | null = null;
@@ -311,18 +315,20 @@ async function processPurchaseWebhook({
   } else {
     try {
       await pool.query(
-        `INSERT INTO purchases (site_key, order_id, platform, amount, currency, status, buyer_email_hash, fbp, fbc, raw_payload)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        `INSERT INTO purchases (site_key, order_id, platform, amount, currency, status, buyer_email_hash, fbp, fbc, raw_payload, platform_date)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
          ON CONFLICT (site_key, order_id) DO UPDATE SET
            amount = EXCLUDED.amount,
            currency = EXCLUDED.currency,
            status = EXCLUDED.status,
            raw_payload = EXCLUDED.raw_payload,
            fbp = EXCLUDED.fbp,
-           fbc = EXCLUDED.fbc`,
-        [siteKey, orderId, platform, value, currency, finalStatus, dbEmailHash, mergedFbp, mergedFbc, JSON.stringify(payload)]
+           fbc = EXCLUDED.fbc,
+           platform_date = EXCLUDED.platform_date`,
+        [siteKey, orderId, platform, value, currency, finalStatus, dbEmailHash, mergedFbp, mergedFbc, JSON.stringify(payload), platformDate]
       );
     } catch (e) {
+
       console.error('[Webhook] Refund DB DB Error:', e);
       return { success: false, status: 500, error: 'DB insert failed' };
     }
