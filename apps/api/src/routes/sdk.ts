@@ -974,11 +974,13 @@ router.get('/tracker.js', async (req, res) => {
         
         var matchVal = (rule.match_value || '').toLowerCase();
         var isMatch = false;
+        
+        var fullUrl = location.href.toLowerCase();
 
-        if (rule.rule_type === 'url_contains' && currentPath.indexOf(matchVal) >= 0) {
+        if (rule.rule_type === 'url_contains' && (currentPath.indexOf(matchVal) >= 0 || fullUrl.indexOf(matchVal) >= 0)) {
           isMatch = true;
         }
-        else if (rule.rule_type === 'url_equals' && currentPath === matchVal) {
+        else if (rule.rule_type === 'url_equals' && (currentPath === matchVal || fullUrl === matchVal)) {
           isMatch = true;
         }
 
@@ -998,6 +1000,7 @@ router.get('/tracker.js', async (req, res) => {
       if (!target) return;
       
       var currentPath = (location.pathname + location.search).toLowerCase();
+      var fullUrl = location.href.toLowerCase();
 
       var el = target;
       // Sobe até encontrar A, BUTTON ou INPUT[type=submit/button]
@@ -1019,7 +1022,7 @@ router.get('/tracker.js', async (req, res) => {
           var ruleText = (rule.match_text || '').toLowerCase();
 
           // Verifica se está na URL correta (ou global '/')
-          if (ruleUrl === '/' || currentPath.indexOf(ruleUrl) >= 0) {
+          if (ruleUrl === '/' || currentPath.indexOf(ruleUrl) >= 0 || fullUrl.indexOf(ruleUrl) >= 0) {
             // Verifica se o texto bate
             if (ruleText && clickedText.indexOf(ruleText) >= 0) {
               var customData = rule.parameters || {};
