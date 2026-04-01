@@ -13,6 +13,7 @@ type PeakData = {
   daily_peaks: DailyPeak[];
   total_volume: number;
   top_sources?: { source: string; count: number }[];
+  top_locations?: { location: string; count: number }[];
 };
 
 type BestTimesData = {
@@ -144,6 +145,26 @@ const Card = ({ title, data, color, textColor }: { title: string; data: PeakData
                       </span>
                     </div>
                   ))}
+              </div>
+            </div>
+          )}
+
+          {data.top_locations && data.top_locations.length > 0 && (
+            <div className="mt-4 pt-4 border-t border-zinc-100 dark:border-zinc-800/50">
+              <h4 className="text-[10px] font-semibold tracking-wider uppercase text-zinc-500 mb-2">
+                Top Regiões
+              </h4>
+              <div className="space-y-1.5">
+                {data.top_locations.map((loc, idx) => (
+                  <div key={idx} className="flex items-center justify-between text-xs">
+                    <span className="text-zinc-600 dark:text-zinc-400 truncate max-w-[70%]">
+                      {loc.location}
+                    </span>
+                    <span className="text-zinc-900 dark:text-zinc-100 font-medium tabular-nums">
+                      {loc.count}
+                    </span>
+                  </div>
+                ))}
               </div>
             </div>
           )}

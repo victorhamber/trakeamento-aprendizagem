@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { requireAuth } from '../middleware/auth';
 import { pool } from '../db/pool';
+import geoip from 'geoip-lite';
 
 const router = Router();
 
@@ -244,6 +245,7 @@ router.get('/best-times', requireAuth, async (req, res) => {
       const isPurchase = eventNames.includes('Purchase');
       let query = '';
       let topSourcesQuery = '';
+      let topLocationsQuery = '';
 
       if (isPurchase) {
         // Query na tabela purchases — usa subquery ANY para acionar o índice (site_key, status, created_at)
@@ -392,6 +394,41 @@ router.get('/best-times', requireAuth, async (req, res) => {
           ORDER BY 2 DESC
           LIMIT 3
         `;
+
+        topLocationsQuery = `
+          WITH purchases_base AS (
+            SELECT p.site_key, p.buyer_email_hash, p.fbp, p.fbc
+            FROM purchases p
+            WHERE p.site_key = ANY(
+              SELECT site_key FROM sites WHERE account_id = $1 AND ($2::int IS NULL OR id = $2::int)
+            )
+              AND COALESCE(p.platform_date, p.created_at) >= $3 AND COALESCE(p.platform_date, p.created_at) <= $4
+              AND p.status IN ('approved', 'paid', 'completed', 'active')
+          ),
+          attributed AS (
+            SELECT
+              sv_loc.ip
+            FROM purchases_base pb
+            LEFT JOIN LATERAL (
+              SELECT sv.last_ip as ip
+              FROM site_visitors sv
+              WHERE sv.site_key = pb.site_key
+                AND (
+                  (pb.buyer_email_hash IS NOT NULL AND sv.email_hash = pb.buyer_email_hash)
+                  OR (pb.fbp IS NOT NULL AND sv.fbp = pb.fbp)
+                  OR (pb.fbc IS NOT NULL AND sv.fbc = pb.fbc)
+                )
+              ORDER BY sv.last_seen_at DESC
+              LIMIT 1
+            ) sv_loc ON TRUE
+          )
+          SELECT ip, COUNT(*)::int as count
+          FROM attributed
+          WHERE ip IS NOT NULL AND ip != ''
+          GROUP BY 1
+          ORDER BY 2 DESC
+          LIMIT 100
+        `;
       } else {
         // Query na tabela web_events — usa subquery ANY para acionar o índice (site_key, event_name, event_time)
         query = `
@@ -488,16 +525,84 @@ router.get('/best-times', requireAuth, async (req, res) => {
           ORDER BY 2 DESC
           LIMIT 3
         `;
+
+        topLocationsQuery = `
+          WITH events_base AS (
+            SELECT e.site_key, e.user_data
+            FROM web_events e
+            WHERE e.site_key = ANY(
+              SELECT site_key FROM sites WHERE account_id = $1 AND ($2::int IS NULL OR id = $2::int)
+            )
+              AND e.event_name = ANY($5) AND e.event_time >= $3 AND e.event_time <= $4
+          ),
+          attributed AS (
+            SELECT
+              sv_loc.ip
+            FROM events_base eb
+            LEFT JOIN LATERAL (
+              SELECT sv.last_ip as ip
+              FROM site_visitors sv
+              WHERE sv.site_key = eb.site_key
+                AND (
+                  (eb.user_data->>'external_id' IS NOT NULL AND sv.external_id = eb.user_data->>'external_id')
+                  OR (eb.user_data->>'em' IS NOT NULL AND sv.email_hash = eb.user_data->>'em')
+                  OR (eb.user_data->>'ph' IS NOT NULL AND sv.phone_hash = eb.user_data->>'ph')
+                  OR (eb.user_data->>'fbp' IS NOT NULL AND sv.fbp = eb.user_data->>'fbp')
+                  OR (eb.user_data->>'fbc' IS NOT NULL AND sv.fbc = eb.user_data->>'fbc')
+                )
+              ORDER BY sv.last_seen_at DESC
+              LIMIT 1
+            ) sv_loc ON TRUE
+          )
+          SELECT ip, COUNT(*)::int as count
+          FROM attributed
+          WHERE ip IS NOT NULL AND ip != ''
+          GROUP BY 1
+          ORDER BY 2 DESC
+          LIMIT 100
+        `;
       }
 
       const params = isPurchase 
         ? [auth.accountId, siteId, start, end]
         : [auth.accountId, siteId, start, end, eventNames];
 
-      const [peakResult, sourceResult] = await Promise.all([
+      const [peakResult, sourceResult, locationResult] = await Promise.all([
         pool.query(query, params),
-        pool.query(topSourcesQuery, params)
+        pool.query(topSourcesQuery, params),
+        pool.query(topLocationsQuery, params)
       ]);
+
+      // Resolve IPs em Localizações em memória (rápido com geoip-lite)
+      const locationCounts = new Map<string, number>();
+      
+      locationResult.rows.forEach(row => {
+        let ip = row.ip;
+        if (ip.includes(',')) ip = ip.split(',')[0].trim();
+        ip = ip.replace(/^::ffff:/, '');
+        
+        const geo = geoip.lookup(ip);
+        let locName = 'Desconhecido';
+        if (geo) {
+          const parts = [];
+          if (geo.city && geo.city !== 'null') parts.push(geo.city);
+          if (geo.region && geo.region !== 'null') parts.push(geo.region);
+          if (parts.length > 0) {
+            locName = `${parts.join(', ')} - ${geo.country || 'BR'}`;
+          } else if (geo.country && geo.country !== 'null') {
+            locName = geo.country;
+          }
+        }
+        
+        if (locName !== 'Desconhecido') {
+          locationCounts.set(locName, (locationCounts.get(locName) || 0) + row.count);
+        }
+      });
+      
+      const topLocations = Array.from(locationCounts.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([location, count]) => ({ location, count }));
 
       // Encontra o melhor horário para cada dia da semana
       const bestByDay = new Map<number, { hour: number; count: number }>();
@@ -535,7 +640,8 @@ router.get('/best-times', requireAuth, async (req, res) => {
       return {
         daily_peaks: dailyPeaks,
         total_volume: maxCount, // apenas para referência de escala
-        top_sources: sourceResult.rows.map(r => ({ source: r.source, count: r.count }))
+        top_sources: sourceResult.rows.map(r => ({ source: r.source, count: r.count })),
+        top_locations: topLocations
       };
     };
 
