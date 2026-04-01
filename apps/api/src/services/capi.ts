@@ -282,7 +282,7 @@ export class CapiService {
           await this.updateLastStatus(siteKey, { ok: false, error: `Token inválido no Meta. ${message || ''}`.trim(), details: error.response?.data });
           return { ok: false, error: `Token inválido no Meta. ${message || ''}`.trim() };
         }
-        console.error('CAPI Error:', error.response?.data || error.message);
+        console.error(`CAPI Error for event_time=${event.event_time}:`, error.response?.data || error.message);
         await this.updateLastStatus(siteKey, { ok: false, error: message || 'Erro ao enviar para o Meta', details: error.response?.data });
         return { ok: false, error: message || 'Erro ao enviar para o Meta' };
       } else {

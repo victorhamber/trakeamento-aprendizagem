@@ -398,7 +398,19 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
     };
   }
 
-  const eventTimeSec = event.event_time ?? Math.floor(Date.now() / 1000);
+  // Calculate base time, defaulting to now
+  let eventTimeSec = event.event_time ?? Math.floor(Date.now() / 1000);
+  
+  // Défense in Depth: CAPI strict future time validation
+  // Meta will reject if event_time is > 60s in the future. If the client clock is ahead, it will fail.
+  // We clamp down to the server's current time minus a tiny safety buffer (1 minute).
+  // If the server clock itself is behind (as discovered), this safely anchors reality to the server time,
+  // which will appear as "in the past" to Meta (which they allow up to 7 days).
+  const currentServerSec = Math.floor(Date.now() / 1000) - 60; 
+  if (eventTimeSec > currentServerSec) {
+    eventTimeSec = currentServerSec;
+  }
+
   const eventTimeMs = eventTimeSec * 1000;
   const eventId = event.event_id || `evt_${eventTimeSec}_${Math.random().toString(36).slice(2, 8)}`;
   const eventName = event.event_name;
@@ -664,7 +676,15 @@ router.post('/batch', cors(), ingestLimiter, async (req, res) => {
       event.telemetry = { ...event.telemetry, engagement_score: engagement.score, engagement_bucket: engagement.bucket };
     }
 
-    const eventTimeSec = event.event_time ?? Math.floor(Date.now() / 1000);
+    // Base time, defaulting to now
+    let eventTimeSec = event.event_time ?? Math.floor(Date.now() / 1000);
+
+    // CAPI future time validation (defense against client clock drift or server drift)
+    const currentServerSec = Math.floor(Date.now() / 1000) - 60;
+    if (eventTimeSec > currentServerSec) {
+      eventTimeSec = currentServerSec;
+    }
+
     const eventTimeMs = eventTimeSec * 1000;
     const eventId = event.event_id || `evt_${eventTimeSec}_${Math.random().toString(36).slice(2, 8)}`;
 
