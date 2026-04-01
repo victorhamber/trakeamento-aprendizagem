@@ -611,12 +611,9 @@ router.get('/tracker.js', async (req, res) => {
     try {
       if (!window.fbq) return;
       var opts = eventId ? { eventID: eventId } : {};
-      // NÃO injetar PII (em, ph, fn, ln...) nos params do evento.
-      // O advanced matching é feito corretamente via fbq('init', pixelId, am)
-      // na loadMetaPixel(). Colocar PII hashes dentro do custom_data do evento
-      // polui o payload e pode causar warnings no Meta.
       if (isCustom) window.fbq('trackCustom', eventName, params || {}, opts);
       else          window.fbq('track', eventName, params || {}, opts);
+      // console.log('[TRK] Meta event sent:', eventName);
     } catch(_e) {}
   }
 
@@ -736,30 +733,31 @@ router.get('/tracker.js', async (req, res) => {
       if (!cfg || !cfg.apiUrl || !cfg.siteKey) return;
       
       var now = Date.now();
-      // Dedup de Memória Rápida (Debounce): evita disparos duplos em < 1 segundo na mesma URL 
-      // (ex: Next.js hydration disparam history.pushState repetidas vezes rapidamente)
-      if (_lastPageViewUrl === location.href && (now - _lastPageViewTime) < 1000) return;
-      _lastPageViewUrl = location.href;
+      var currentUrlNoHash = location.origin + location.pathname + location.search;
+
+      // 1. Memory Debounce (prevent double fire within 1s on same URL, ignoring hash)
+      if (_lastPageViewUrl === currentUrlNoHash && (now - _lastPageViewTime) < 1000) return;
+      _lastPageViewUrl = currentUrlNoHash;
       _lastPageViewTime = now;
 
       // Dedup por estado global e Sessão: 
       // 1. Evita disparos duplos no mesmo instante (ex: script duplicado gtm + hardcode)
-      if (window.__TA_PAGE_VIEW_URL === location.href) return;
-      window.__TA_PAGE_VIEW_URL = location.href;
+      // Dedup por estado global (Shared across scripts if any)
+      if (window.__TA_PAGE_VIEW_URL === currentUrlNoHash) return;
+      window.__TA_PAGE_VIEW_URL = currentUrlNoHash;
 
       // 2. Evita disparos no F5 (Refresh) ou retornando para a mesma página na mesma sessão
       try {
+        var currentPathOnly = location.pathname + (location.search || '');
         var visited = window.sessionStorage.getItem('_ta_visited_paths');
         var visitedArr = visited ? visited.split('|') : [];
-        if (visitedArr.indexOf(location.pathname) > -1) {
-          // console.log('[TRK] Dedup: PageView já disparado nesta sessão para ' + location.pathname);
+        if (visitedArr.indexOf(currentPathOnly) > -1) {
+          // console.log('[TRK] Dedup: PageView já disparado nesta sessão para ' + currentPathOnly);
           return;
         }
-        visitedArr.push(location.pathname);
+        visitedArr.push(currentPathOnly);
         window.sessionStorage.setItem('_ta_visited_paths', visitedArr.join('|'));
       } catch(_e) {}
-
-      // console.log('[TRK] PageView init', location.href);
 
       var nav         = performance && performance.timing ? performance.timing : null;
       var loadTimeMs  = nav && nav.domContentLoadedEventEnd > 0 ? (nav.domContentLoadedEventEnd - nav.navigationStart) : undefined;
@@ -810,7 +808,7 @@ router.get('/tracker.js', async (req, res) => {
             payload.custom_data
           ), eventId, false);
         }
-      }, 0);
+      }, 50); // Aumento leve para garantir init do fbq stub
 
       if (cfg.gaMeasurementId) {
         loadGa(cfg.gaMeasurementId);
@@ -944,7 +942,14 @@ router.get('/tracker.js', async (req, res) => {
           metaParams.currency = payload.custom_data.currency;
         }
 
-        trackMeta(eventName, metaParams, eventId, isCustom);
+        if (window.fbq) {
+          trackMeta(eventName, metaParams, eventId, isCustom);
+        } else {
+          // Pequena espera se fbq ainda não estiver pronto (script async)
+          setTimeout(function() { 
+            if (window.fbq) trackMeta(eventName, metaParams, eventId, isCustom);
+          }, 100);
+        }
       }
 
       if (cfg.gaMeasurementId) {
