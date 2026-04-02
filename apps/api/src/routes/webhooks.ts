@@ -1,3 +1,4 @@
+import geoip from 'geoip-lite';
 import { Router } from 'express';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
@@ -7,6 +8,7 @@ import { EnrichmentService } from '../services/enrichment';
 import { decryptString } from '../lib/crypto';
 import { notifyAccountNewSale } from '../services/expo-push';
 import { notifyAccountWebPushSale } from '../services/web-push-notify';
+import { DDI_LIST } from '../lib/ddi';
 
 
 const router = Router();
@@ -97,7 +99,7 @@ async function processPurchaseWebhook({
   // Verifica se faltam dados CRÍTICOS para qualidade do evento (IP, UA, FBC, FBP)
   if (!finalFbp || !finalFbc || !clientIp || !clientUa || !payload.utm_source) {
     console.log(`[Webhook] Missing critical data (fbp=${finalFbp}, ip=${clientIp}, ua=${clientUa}). Attempting enrichment for ${email || phone || finalExternalId}...`);
-    enriched = await EnrichmentService.findVisitorData(siteKey, email, phone, finalExternalId);
+    enriched = await EnrichmentService.findVisitorData(siteKey, email, phone, finalExternalId, { ip: clientIp, country });
 
     if (enriched) {
       console.log(`[Webhook] Enrichment success: found fbp=${enriched.fbp}, ip=${enriched.clientIp}, ua=${enriched.clientUa}`);
@@ -143,8 +145,26 @@ async function processPurchaseWebhook({
       em: email ? CapiService.hash(email) : undefined,
       ph: phone ? CapiService.hash((() => {
         let p = phone.replace(/[^0-9]/g, '');
-        if (p && p.length <= 11 && (!country || country.toUpperCase() === 'BR' || country.toUpperCase() === 'BRASIL')) {
-          p = '55' + p;
+        if (p && p.length >= 10 && p.length <= 11) {
+          // Se o país veio no webhook, usa ele. Se não, tenta descobrir pelo IP
+          let iso = (country || '').toUpperCase().trim();
+          if (!iso && mergedIp) {
+            const geo = geoip.lookup(mergedIp);
+            if (geo?.country) iso = geo.country;
+          }
+
+          // Se identificamos o país (ou assumimos BR como fallback seguro para 10-11 dígitos)
+          const targetCountry = iso || 'BR';
+          const ddi = DDI_LIST.find(d => d.country === targetCountry)?.code;
+
+          if (ddi) {
+            // Só adiciona o DDI se o número já não começar com ele
+            if (!p.startsWith(ddi)) {
+              p = ddi + p;
+            }
+          } else if (targetCountry === 'BR' || targetCountry === 'BRASIL') {
+             if (!p.startsWith('55')) p = '55' + p;
+          }
         }
         return p;
       })()) : undefined,
@@ -207,7 +227,20 @@ async function processPurchaseWebhook({
     const visitorExtId = mergedExternalId ? CapiService.hash(String(mergedExternalId)) : (dbEmailHash || `buyer_${orderId}`);
     const phoneHash = phone ? CapiService.hash((() => {
       let p = phone.replace(/[^0-9]/g, '');
-      if (p.length <= 11) p = '55' + p;
+      if (p.length >= 10 && p.length <= 11) {
+        let iso = (country || '').toUpperCase().trim();
+        if (!iso && mergedIp) {
+          const geo = geoip.lookup(mergedIp);
+          if (geo?.country) iso = geo.country;
+        }
+        const targetCountry = iso || 'BR';
+        const ddi = DDI_LIST.find(d => d.country === targetCountry)?.code;
+        if (ddi) {
+          if (!p.startsWith(ddi)) p = ddi + p;
+        } else if (targetCountry === 'BR' || targetCountry === 'BRASIL') {
+          if (!p.startsWith('55')) p = '55' + p;
+        }
+      }
       return p;
     })()) : null;
 

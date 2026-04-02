@@ -199,17 +199,21 @@ router.get('/tracker.js', async (req, res) => {
 
   // ─── FBC / FBP ───────────────────────────────────────────────────────────
   function getFbc() {
-    var fbc = getCookie('_fbc');
-    if (fbc) return fbc;
     try {
       var url     = new URL(location.href);
       var fbclid  = url.searchParams.get('fbclid');
+      
       if (fbclid) {
-        // Formato correto: fb.{version}.{creationTime}.{fbclid}
+        // Se houver um novo fbclid na URL, ele SEMPRE tem prioridade sobre o cookie antigo.
+        // Isso garante que a atribuição vá para o clique mais recente do anúncio.
         var generated = 'fb.1.' + Date.now() + '.' + fbclid;
         setCookie('_fbc', generated, COOKIE_TTL_90D);
         return generated;
       }
+      
+      // Se não houver clique na URL, tenta recuperar o que já está salvo
+      var fbc = getCookie('_fbc');
+      if (fbc) return fbc;
     } catch(_e) {}
     return undefined;
   }
@@ -1023,11 +1027,11 @@ router.get('/tracker.js', async (req, res) => {
       for (var i = 0; i < cfg.eventRules.length; i++) {
         var rule = cfg.eventRules[i];
         if (rule.rule_type === 'button_click') {
-          var ruleUrl = (rule.match_value || '').toLowerCase();
-          var ruleText = (rule.match_text || '').toLowerCase();
+          var ruleUrl = (rule.match_value || '').toLowerCase().trim();
+          var ruleText = (rule.match_text || '').toLowerCase().trim();
 
           // Verifica se está na URL correta (ou global '/')
-          if (ruleUrl === '/' || currentPath.indexOf(ruleUrl) >= 0 || fullUrl.indexOf(ruleUrl) >= 0) {
+          if (ruleUrl === '/' || ruleUrl === '' || currentPath.indexOf(ruleUrl) >= 0 || fullUrl.indexOf(ruleUrl) >= 0) {
             // Verifica se o texto bate
             if (ruleText && clickedText.indexOf(ruleText) >= 0) {
               var customData = rule.parameters || {};

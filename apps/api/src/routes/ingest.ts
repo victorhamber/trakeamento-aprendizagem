@@ -1,12 +1,13 @@
+import geoip from 'geoip-lite';
 import { Router, Request } from 'express';
 import { createHash } from 'crypto';
-import geoip from 'geoip-lite';
 import { z } from 'zod';
 import { pool } from '../db/pool';
 import { capiService, CapiService, CapiEvent } from '../services/capi';
 import { Ga4Service } from '../services/ga4';
 import rateLimit from 'express-rate-limit'; // Added import for express-rate-limit
 import cors from 'cors'; // Added import for cors
+import { DDI_LIST } from '../lib/ddi';
 
 const LRUCache = require('lru-cache').LRUCache || require('lru-cache');
 
@@ -113,7 +114,7 @@ const normalizers: Record<string, (v: string) => string> = {
   db: (v) => v.replace(/[^0-9]/g, ''),   // YYYYMMDD
 };
 
-function normalizeAndHash(field: string, value: string | string[] | undefined): string | undefined {
+function normalizeAndHash(field: string, value: string | string[] | undefined, options?: { ip?: string, country?: string }): string | undefined {
   const raw = Array.isArray(value) ? value[0] : value;
   if (!raw) return undefined;
 
@@ -123,7 +124,26 @@ function normalizeAndHash(field: string, value: string | string[] | undefined): 
     return raw.toLowerCase();
   }
 
-  const norm = normalizers[field] ? normalizers[field](raw) : raw.trim();
+  let norm = normalizers[field] ? normalizers[field](raw) : raw.trim();
+
+  // Especial para telefone (ph): se veio sem DDI (10-11 dígitos), tenta injetar dinamicamente
+  if (field === 'ph' && norm && (norm.length === 10 || norm.length === 11)) {
+    let digits = norm;
+    let iso = (options?.country || '').toUpperCase().trim();
+    if (!iso && options?.ip) {
+      const geo = geoip.lookup(options.ip);
+      if (geo?.country) iso = geo.country;
+    }
+    const targetCountry = iso || 'BR';
+    const ddi = DDI_LIST.find(d => d.country === targetCountry)?.code;
+    if (ddi && !digits.startsWith(ddi)) {
+      digits = ddi + digits;
+    } else if (targetCountry === 'BR' && !digits.startsWith('55')) {
+      digits = '55' + digits;
+    }
+    norm = digits;
+  }
+
   if (!norm) return undefined;
   return hashPii(norm);
 }
@@ -297,7 +317,7 @@ function buildCapiUserData(
 
   // Monta campos com prioridade: payload hasheado > payload raw > geo
   const pick = (field: string) =>
-    normalizeAndHash(field, pickRaw(field));
+    normalizeAndHash(field, pickRaw(field), { ip: clientIp, country: pickCustom('country') });
 
   const ct = pick('ct') ?? (geo.city ? hashPii(normalizers.ct(geo.city)) : undefined);
   const st = pick('st') ?? (geo.region ? hashPii(normalizers.st(geo.region)) : undefined);

@@ -1,5 +1,7 @@
+import geoip from 'geoip-lite';
 import { pool } from '../db/pool';
 import { CapiService } from './capi';
+import { DDI_LIST } from '../lib/ddi';
 
 interface EnrichedData {
   fbp?: string;
@@ -15,16 +17,35 @@ interface EnrichedData {
 }
 
 export class EnrichmentService {
-  static async findVisitorData(siteKey: string, email?: string, phone?: string, externalId?: string): Promise<EnrichedData | null> {
+  static async findVisitorData(siteKey: string, email?: string, phone?: string, externalId?: string, options?: { ip?: string, country?: string }): Promise<EnrichedData | null> {
     if (!email && !phone && !externalId) return null;
 
     const emailHash = email ? CapiService.hash(email) : null;
-    const phoneHash = phone ? CapiService.hash(phone) : null;
+    
+    // Normalização inteligente de telefone antes de gerar o hash para a busca
+    let phoneHash: string | null = null;
+    if (phone) {
+      let p = phone.replace(/[^0-9]/g, '');
+      if (p.length >= 10 && p.length <= 11) {
+        let iso = (options?.country || '').toUpperCase().trim();
+        if (!iso && options?.ip) {
+          const geo = geoip.lookup(options.ip);
+          if (geo?.country) iso = geo.country;
+        }
+        const targetCountry = iso || 'BR';
+        const ddi = DDI_LIST.find(d => d.country === targetCountry)?.code;
+        if (ddi && !p.startsWith(ddi)) {
+          p = ddi + p;
+        } else if (targetCountry === 'BR' && !p.startsWith('55')) {
+          p = '55' + p;
+        }
+      }
+      phoneHash = CapiService.hash(p);
+    }
 
     if (!emailHash && !phoneHash && !externalId) return null;
 
     // 1. Tentar buscar em site_visitors (Perfil consolidado)
-    // Busca por email_hash OU phone_hash OU external_id
     const visitorQuery = `
       SELECT fbp, fbc, external_id, last_traffic_source, last_ip, last_user_agent
       FROM site_visitors
@@ -57,7 +78,6 @@ export class EnrichmentService {
       }
 
       // Buscar metadados (IP/UA) mais recentes em web_events APENAS se não tiver no visitorData
-      // Isso permite limpar web_events antigo sem perder dados do perfil
       let metadata: any = null;
       if (!visitorData.clientIp || !visitorData.clientUa) {
          metadata = await this.findLatestMetadata(siteKey, visitorData.fbp, visitorData.externalId, emailHash, phoneHash);
@@ -71,8 +91,7 @@ export class EnrichmentService {
         };
       }
 
-      // 2. Se não achou em visitors, tentar match direto em web_events (menos provável se visitors estiver populado corretamente)
-      // Mas web_events tem o user_data.em / user_data.ph / user_data.external_id
+      // 2. Se não achou em visitors, tentar match direto em web_events
       const eventQuery = `
         SELECT user_data, custom_data, user_data->>'client_ip_address' as ip, user_data->>'client_user_agent' as ua
         FROM web_events
@@ -96,7 +115,7 @@ export class EnrichmentService {
         return {
           fbp: ud.fbp,
           fbc: ud.fbc,
-          externalId: ud.external_id, // pode ser array ou string
+          externalId: ud.external_id,
           clientIp: row.ip,
           clientUa: row.ua,
           utmSource: cd.utm_source,
@@ -115,7 +134,6 @@ export class EnrichmentService {
   }
 
   private static async findLatestMetadata(siteKey: string, fbp?: string, externalId?: string, emailHash?: string | null, phoneHash?: string | null) {
-    // Busca IP/UA baseado em qualquer identificador disponível
     const query = `
       SELECT user_data->>'client_ip_address' as ip, user_data->>'client_user_agent' as ua
       FROM web_events
@@ -139,7 +157,6 @@ export class EnrichmentService {
 
   private static parseUtmString(source?: string) {
     if (!source) return {};
-    // Ex: "utm_source=google&utm_medium=cpc..."
     try {
       const urlParams = new URLSearchParams(source);
       return {
