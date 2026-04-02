@@ -330,6 +330,8 @@ const schemaSql = `
     last_event_name VARCHAR(100),
   last_ip VARCHAR(45),
   last_user_agent TEXT,
+  city VARCHAR(255),
+  state VARCHAR(255),
   last_seen_at TIMESTAMP DEFAULT NOW(),
     created_at TIMESTAMP DEFAULT NOW(),
     UNIQUE(site_key, external_id)
@@ -587,8 +589,20 @@ export const ensureSchema = async (pool: Pool) => {
     // Fix site_key lengths and add platform_at
     try {
       await pool.query('ALTER TABLE web_events ALTER COLUMN site_key TYPE VARCHAR(100)');
-      await pool.query('ALTER TABLE purchases ALTER COLUMN site_key TYPE VARCHAR(100)');
-      await pool.query('ALTER TABLE purchases ADD COLUMN IF NOT EXISTS platform_date TIMESTAMP');
+    await pool.query('ALTER TABLE purchases ALTER COLUMN site_key TYPE VARCHAR(100)');
+    await pool.query('ALTER TABLE purchases ADD COLUMN IF NOT EXISTS platform_date TIMESTAMP');
+    // Webhooks / processPurchaseWebhook — alinhar com routes/webhooks.ts
+    await pool.query('ALTER TABLE site_visitors ADD COLUMN IF NOT EXISTS city VARCHAR(255)');
+    await pool.query('ALTER TABLE site_visitors ADD COLUMN IF NOT EXISTS state VARCHAR(255)');
+    await pool.query('ALTER TABLE purchases ADD COLUMN IF NOT EXISTS customer_email VARCHAR(255)');
+    await pool.query('ALTER TABLE purchases ADD COLUMN IF NOT EXISTS customer_phone VARCHAR(120)');
+    await pool.query('ALTER TABLE purchases ADD COLUMN IF NOT EXISTS customer_name TEXT');
+    await pool.query('ALTER TABLE purchases ADD COLUMN IF NOT EXISTS external_id VARCHAR(255)');
+    await pool.query('ALTER TABLE purchases ADD COLUMN IF NOT EXISTS utm_source TEXT');
+    await pool.query('ALTER TABLE purchases ADD COLUMN IF NOT EXISTS utm_medium TEXT');
+    await pool.query('ALTER TABLE purchases ADD COLUMN IF NOT EXISTS utm_campaign TEXT');
+    await pool.query('ALTER TABLE purchases ADD COLUMN IF NOT EXISTS user_data JSONB');
+    await pool.query('ALTER TABLE purchases ADD COLUMN IF NOT EXISTS custom_data JSONB');
       await pool.query('ALTER TABLE recommendation_reports ALTER COLUMN site_key TYPE VARCHAR(100)');
       await pool.query('ALTER TABLE capi_outbox ALTER COLUMN site_key TYPE VARCHAR(100)');
       await pool.query('ALTER TABLE site_visitors ALTER COLUMN site_key TYPE VARCHAR(100)');

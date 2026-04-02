@@ -223,7 +223,7 @@ async function processPurchaseWebhook({
       platform_date, user_data, custom_data
     )
     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
-    ON CONFLICT (order_id) DO UPDATE SET
+    ON CONFLICT (site_key, order_id) DO UPDATE SET
       status = EXCLUDED.status,
       amount = EXCLUDED.amount,
       currency = EXCLUDED.currency,
