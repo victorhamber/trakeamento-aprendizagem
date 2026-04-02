@@ -767,7 +767,8 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
                               { label: 'Valor da Compra', field: 'value' },
                               { label: 'Moeda (BRL, USD...)', field: 'currency' },
                               { label: 'ID do Pedido', field: 'order_id' },
-                              { label: 'Status da Compra', field: 'status' }
+                              { label: 'Status da Compra', field: 'status' },
+                              { label: 'Método de pagamento (PIX / boleto — título do push)', field: 'payment_method' }
                             ].map(mapField => (
                               <div key={mapField.field}>
                                 <label className="block text-[10px] font-medium text-zinc-500 mb-1">{mapField.label}</label>

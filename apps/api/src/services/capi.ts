@@ -91,9 +91,47 @@ export class CapiService {
     return cleaned as Partial<T>;
   }
 
+  /**
+   * Graph API exige vários campos de user_data como array de strings.
+   * fbc/fbp/client_ip/client_user_agent ficam como string simples.
+   * @see https://developers.facebook.com/docs/marketing-api/conversions-api/parameters/customer-information-parameters
+   */
+  private static normalizeUserDataForGraphApi(
+    ud: Record<string, unknown>
+  ): Record<string, unknown> {
+    const asArrayKeys = new Set([
+      'em',
+      'ph',
+      'fn',
+      'ln',
+      'ct',
+      'st',
+      'zp',
+      'db',
+      'country',
+      'external_id',
+      'ge',
+      'lead_id',
+      'madid',
+      'anon_id',
+    ]);
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(ud)) {
+      if (v === undefined || v === null || v === '') continue;
+      if (asArrayKeys.has(k)) {
+        out[k] = Array.isArray(v) ? v : [v];
+      } else {
+        out[k] = v;
+      }
+    }
+    return out;
+  }
+
   private buildPayload(cfg: { pixelId: string; capiToken: string; testEventCode?: string | null }, event: CapiEvent) {
     // Limpa user_data — o Meta penaliza campos vazios/nulos
-    const cleanedUserData = CapiService.cleanObject(event.user_data);
+    const cleanedUserData = CapiService.normalizeUserDataForGraphApi(
+      CapiService.cleanObject(event.user_data) as Record<string, unknown>
+    );
     // Limpa custom_data também
     const cleanedCustomData = event.custom_data ? CapiService.cleanObject(event.custom_data) : undefined;
 

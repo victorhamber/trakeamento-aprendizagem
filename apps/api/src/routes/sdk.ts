@@ -604,6 +604,8 @@ router.get('/tracker.js', async (req, res) => {
       }
       if (!inits[pixelId]) {
         var am = getMetaUserDataFromCookies();
+        var fbcInit = getFbc();
+        if (fbcInit) am.fbc = fbcInit;
         w.fbq('init', pixelId, am);
         inits[pixelId] = true;
       }

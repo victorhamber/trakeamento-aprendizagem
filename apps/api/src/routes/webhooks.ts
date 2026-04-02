@@ -28,6 +28,69 @@ function decodeTrkToken(token: string) {
   }
 }
 
+function coerceWebhookStr(v: unknown): string {
+  if (v == null) return '';
+  if (typeof v === 'string') return v.trim();
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+  return '';
+}
+
+/** Lê método de pagamento em payloads Hotmart, Kiwify e formatos genéricos. */
+function extractPaymentMethodRaw(payload: Record<string, unknown> | null | undefined): string {
+  if (!payload || typeof payload !== 'object') return '';
+  const p = payload;
+  const d = (p.data as Record<string, unknown>) || p;
+  const purchase = (d.purchase as Record<string, unknown>) || (p.purchase as Record<string, unknown>) || {};
+  const offer = (purchase.offer as Record<string, unknown>) || (d.offer as Record<string, unknown>) || {};
+  const payment = (purchase.payment as Record<string, unknown>) || (offer.payment as Record<string, unknown>) || (d.payment as Record<string, unknown>) || {};
+  const order = (p.order as Record<string, unknown>) || {};
+  const orderPay = (order.payment as Record<string, unknown>) || {};
+
+  return (
+    coerceWebhookStr(payment.type) ||
+    coerceWebhookStr(payment.method) ||
+    coerceWebhookStr(payment.payment_type) ||
+    coerceWebhookStr(payment.paymentType) ||
+    coerceWebhookStr(purchase.payment_type) ||
+    coerceWebhookStr(purchase.paymentType) ||
+    coerceWebhookStr(offer.payment_type) ||
+    coerceWebhookStr(offer.paymentType) ||
+    coerceWebhookStr(p.payment_method) ||
+    coerceWebhookStr(p.paymentMethod) ||
+    coerceWebhookStr(p.payment_type) ||
+    coerceWebhookStr(orderPay.method) ||
+    coerceWebhookStr(orderPay.type) ||
+    coerceWebhookStr(orderPay.payment_method) ||
+    coerceWebhookStr(orderPay.gateway) ||
+    coerceWebhookStr((p.Customer as Record<string, unknown>)?.payment_method) ||
+    coerceWebhookStr((p.customer as Record<string, unknown>)?.payment_method)
+  );
+}
+
+/** Classifica texto vindo da plataforma (ex.: Hotmart BILLET / PIX). */
+function classifyPendingPaymentMethod(raw: string): 'pix' | 'boleto' | null {
+  const s = raw.toLowerCase().replace(/[\s-]+/g, '_');
+  if (!s) return null;
+  if (s.includes('billet') || s.includes('boleto') || s.includes('bank_slip') || s.includes('bankslip')) return 'boleto';
+  if (s.includes('slip') && !s.includes('pay')) return 'boleto';
+  if (s === 'ticket' || (s.includes('ticket') && !s.includes('ticketmaster'))) return 'boleto';
+  if (s.includes('financed') && s.includes('billet')) return 'boleto';
+  if (s === 'pix' || s.startsWith('pix_') || s.endsWith('_pix') || s.includes('_pix_')) return 'pix';
+  if (s.includes('pix') && !s.includes('boleto')) return 'pix';
+  return null;
+}
+
+function resolvePendingPaymentKind(
+  finalStatus: string,
+  paymentMethodRaw: string | null | undefined,
+  payload: unknown
+): 'pix' | 'boleto' | null {
+  if (finalStatus !== 'pending_payment') return null;
+  const p = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : null;
+  const raw = coerceWebhookStr(paymentMethodRaw) || extractPaymentMethodRaw(p);
+  return classifyPendingPaymentMethod(raw);
+}
+
 const normalizeStatus = (rawStatus: unknown) => {
   const s = String(rawStatus || '').toLowerCase().trim();
 
@@ -72,6 +135,8 @@ async function processPurchaseWebhook({
   siteKey, payload, email, phone, firstName, lastName, city, state, zip, country, dob,
   fbp, fbc, externalId, clientIp, clientUa, value, currency, status, orderId, platform, contentName,
   purchaseTimestamp,
+  /** Valor mapeado (webhook custom) ou vazio para inferir do payload */
+  paymentMethodRaw,
 }: any) {
   const { finalStatus, sendToCapi } = normalizeStatus(status);
   const platformDate = purchaseTimestamp ? new Date(purchaseTimestamp) : null;
@@ -241,16 +306,23 @@ async function processPurchaseWebhook({
   }
 
   if (sendToCapi && siteAccountId) {
-    const isBoleto = finalStatus === 'pending_payment';
-    const title = isBoleto ? 'Boleto/PIX Gerado' : 'Venda Aprovada! 🚀';
-    const body = `${contentName || 'Produto'} - ${currency} ${value} (${platform})`;
+    const pendingPaymentKind = resolvePendingPaymentKind(finalStatus, paymentMethodRaw, payload);
+    const notifyOpts = {
+      amount: value,
+      currency,
+      orderId,
+      platform,
+      productName: contentName,
+      notifyKind: (finalStatus === 'pending_payment' ? 'pending_payment' : 'sale') as const,
+      pendingPaymentKind,
+    };
 
     pool.query('SELECT push_token, platform FROM push_tokens WHERE account_id = $1', [siteAccountId])
       .then(res => {
-        if (res.rows.length > 0) notifyAccountNewSale(res.rows, { amount: value, currency, orderId, platform, productName: contentName });
+        if (res.rows.length > 0) notifyAccountNewSale(res.rows, notifyOpts);
       }).catch(() => {});
-    
-    notifyAccountWebPushSale(siteAccountId, { amount: value, currency, orderId, platform, productName: contentName }).catch(() => {});
+
+    notifyAccountWebPushSale(siteAccountId, notifyOpts).catch(() => {});
   }
 
   return { success: true };
@@ -341,7 +413,11 @@ router.post('/purchase', async (req, res) => {
     purchaseTimestamp = payload.created_at || payload.date;
   }
 
-  const result = await processPurchaseWebhook({ siteKey, payload, email, phone, firstName, lastName, city, state, zip, country, dob, fbp, fbc, value, currency, status, orderId, platform, contentName, purchaseTimestamp });
+  const result = await processPurchaseWebhook({
+    siteKey, payload, email, phone, firstName, lastName, city, state, zip, country, dob, fbp, fbc,
+    value, currency, status, orderId, platform, contentName, purchaseTimestamp,
+    paymentMethodRaw: extractPaymentMethodRaw(payload),
+  });
   if (!result.success) return res.status(result.status || 500).json({ error: result.error });
   return res.json({ received: true });
 });
@@ -397,6 +473,7 @@ router.post('/hotmart', async (req, res) => {
     clientUa: d.client_user_agent || payload.user_agent || undefined,
     value, currency, status, orderId, platform: 'hotmart',
     contentName: d.product?.name || payload.product?.name,
+    paymentMethodRaw: extractPaymentMethodRaw(payload),
   });
 
   if (!result.success) return res.status(result.status || 500).json({ error: result.error });
@@ -422,7 +499,8 @@ router.post('/kiwify', async (req, res) => {
     fbp: payload.tracking?.fbp || payload.fbp, fbc: payload.tracking?.fbc || payload.fbc,
     externalId: customer.email, clientIp: payload.client_ip, clientUa: payload.client_user_agent,
     value, currency: payload.order?.payment?.currency || 'BRL', status: payload.status, orderId: payload.id, platform: 'kiwify',
-    contentName: payload.Product?.name || payload.product_name, purchaseTimestamp: payload.order?.created_at || payload.created_at
+    contentName: payload.Product?.name || payload.product_name, purchaseTimestamp: payload.order?.created_at || payload.created_at,
+    paymentMethodRaw: extractPaymentMethodRaw(payload),
   });
   return res.json({ received: true });
 });
@@ -439,12 +517,14 @@ router.post('/custom/:id', async (req, res) => {
   const getNested = (obj: any, path: string) => path ? path.split('.').reduce((acc, part) => acc && acc[part], obj) : undefined;
   const config = hook.mapping_config || {};
 
+  const mappedMethod = getNested(payload, config.payment_method);
   const result = await processPurchaseWebhook({
     siteKey: hook.site_key, payload, email: getNested(payload, config.email), phone: getNested(payload, config.phone),
     firstName: getNested(payload, config.first_name), lastName: getNested(payload, config.last_name),
     city: getNested(payload, config.city), state: getNested(payload, config.state),
     value: getNested(payload, config.amount) || 0, currency: getNested(payload, config.currency) || 'BRL',
-    status: getNested(payload, config.status), orderId: getNested(payload, config.order_id) || `c_${Date.now()}`, platform: 'custom'
+    status: getNested(payload, config.status), orderId: getNested(payload, config.order_id) || `c_${Date.now()}`, platform: 'custom',
+    paymentMethodRaw: mappedMethod != null && mappedMethod !== '' ? String(mappedMethod) : undefined,
   });
   return res.json({ received: true });
 });

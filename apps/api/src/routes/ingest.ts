@@ -494,9 +494,12 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
       const ph = capiUser.ph;
       const fn = capiUser.fn;
       const ln = capiUser.ln;
-      let extId = Array.isArray(capiUser.external_id) && capiUser.external_id.length > 0
-        ? capiUser.external_id[0]
-        : `anon_${eventId}`;
+      // external_id vem de buildCapiUserData como string (hash SHA-256), não array — o check anterior falhava sempre e gerava anon_* por evento.
+      const rawExt = capiUser.external_id;
+      const extId =
+        rawExt != null && String(rawExt).trim() !== ''
+          ? (Array.isArray(rawExt) ? String(rawExt[0]) : String(rawExt))
+          : `anon_${eventId}`;
 
       const trafficSourceValue = buildTrafficSourceValue(event.custom_data);
 
@@ -795,8 +798,11 @@ router.post('/batch', cors(), ingestLimiter, async (req, res) => {
       // Visitor UPSERTs + CAPI + GA4 — all fire-and-forget per event
       for (const p of inserted) {
         const capiUser = buildCapiUserData(req, p.event.user_data || {}, siteKey, p.event.custom_data ?? {});
-        const extId = Array.isArray(capiUser.external_id) && capiUser.external_id.length > 0
-          ? capiUser.external_id[0] : `anon_${p.eventId}`;
+        const rawExtB = capiUser.external_id;
+        const extId =
+          rawExtB != null && String(rawExtB).trim() !== ''
+            ? (Array.isArray(rawExtB) ? String(rawExtB[0]) : String(rawExtB))
+            : `anon_${p.eventId}`;
         const trafficSourceValue = buildTrafficSourceValue(p.event.custom_data);
 
         pool.query(`
