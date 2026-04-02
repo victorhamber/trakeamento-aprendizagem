@@ -8,6 +8,7 @@ import { EnrichmentService } from '../services/enrichment';
 import { decryptString } from '../lib/crypto';
 import { notifyAccountNewSale } from '../services/expo-push';
 import { notifyAccountWebPushSale } from '../services/web-push-notify';
+import type { SaleNotifyKind } from '../services/sale-notification';
 import { DDI_LIST } from '../lib/ddi';
 
 const router = Router();
@@ -307,13 +308,15 @@ async function processPurchaseWebhook({
 
   if (sendToCapi && siteAccountId) {
     const pendingPaymentKind = resolvePendingPaymentKind(finalStatus, paymentMethodRaw, payload);
+    const notifyKind: SaleNotifyKind =
+      finalStatus === 'pending_payment' ? 'pending_payment' : 'sale';
     const notifyOpts = {
       amount: value,
       currency,
       orderId,
       platform,
       productName: contentName,
-      notifyKind: (finalStatus === 'pending_payment' ? 'pending_payment' : 'sale') as const,
+      notifyKind,
       pendingPaymentKind,
     };
 
