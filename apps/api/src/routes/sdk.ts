@@ -788,7 +788,9 @@ router.get('/tracker.js', async (req, res) => {
           page_title:    document.title,
           referrer:      document.referrer,
           traffic_source: getTrafficSource(),
-          page_path:     location.pathname
+          page_path:     location.pathname,
+          event_url:     location.origin + location.pathname + (location.search || ''),
+          page_location: location.href
         }, attrs),
         telemetry: telemetry
       };
@@ -849,6 +851,8 @@ router.get('/tracker.js', async (req, res) => {
         custom_data:      Object.assign({
           page_title:   document.title,
           page_path:    location.pathname,
+          event_url:    location.origin + location.pathname + (location.search || ''),
+          page_location: location.href,
           traffic_source: getTrafficSource()
         }, attrs)
       };
@@ -905,7 +909,8 @@ router.get('/tracker.js', async (req, res) => {
       var baseCustom = {
         page_title:       document.title,
         page_path:        location.pathname,
-        event_url:        location.origin + location.pathname,
+        event_url:        location.origin + location.pathname + (location.search || ''),
+        page_location:    location.href,
         traffic_source:   getTrafficSource()
       };
       var telemetry = buildTelemetry({ page_path: location.pathname, page_title: document.title });

@@ -288,6 +288,145 @@ function resolveGeo(clientIp: string) {
   };
 }
 
+/** URL http(s) válida para event_source_url (CAPI / eventos website). */
+function isValidHttpUrl(s: string | undefined | null): s is string {
+  if (!s || typeof s !== 'string') return false;
+  const t = s.trim();
+  if (!t.startsWith('http://') && !t.startsWith('https://')) return false;
+  try {
+    const u = new URL(t);
+    return Boolean(u.hostname);
+  } catch {
+    return false;
+  }
+}
+
+function joinOriginAndPath(originOrBase: string, pagePath: string): string {
+  let raw = originOrBase.trim();
+  if (!raw.startsWith('http://') && !raw.startsWith('https://')) {
+    raw = `https://${raw.replace(/^\/+/, '')}`;
+  }
+  const base = new URL(raw);
+  const path = pagePath.startsWith('/') ? pagePath : `/${pagePath}`;
+  return `${base.origin}${path}`;
+}
+
+function headerOriginFromReferer(referer: string | undefined): string | undefined {
+  if (!referer || typeof referer !== 'string') return undefined;
+  try {
+    return new URL(referer.trim()).origin;
+  } catch {
+    return undefined;
+  }
+}
+
+const siteFallbackOriginCache = new LRUCache({
+  max: 2000,
+  ttl: 10 * 60 * 1000,
+});
+
+async function lookupSiteCanonicalOrigin(siteKey: string): Promise<string | undefined> {
+  const cached = siteFallbackOriginCache.get(siteKey) as string | undefined;
+  if (cached !== undefined) {
+    return cached.length > 0 ? cached : undefined;
+  }
+  try {
+    const { rows } = await pool.query<{ host: string | null }>(
+      `SELECT COALESCE(NULLIF(TRIM(s.tracking_domain), ''), NULLIF(TRIM(s.domain), '')) AS host
+       FROM sites s WHERE s.site_key = $1 LIMIT 1`,
+      [siteKey]
+    );
+    const host = rows[0]?.host?.trim();
+    if (!host) {
+      siteFallbackOriginCache.set(siteKey, '');
+      return undefined;
+    }
+    const hostOnly = host.replace(/^https?:\/\//i, '').split('/')[0];
+    const origin = `https://${hostOnly}`;
+    siteFallbackOriginCache.set(siteKey, origin);
+    return origin;
+  } catch {
+    siteFallbackOriginCache.set(siteKey, '');
+    return undefined;
+  }
+}
+
+/**
+ * Meta CAPI: event_source_url obrigatório para eventos website.
+ * @see https://developers.facebook.com/docs/marketing-api/conversions-api/best-practices
+ */
+async function resolveEventSourceUrlForIngest(
+  event: IngestEvent,
+  req: Request,
+  siteKey: string
+): Promise<string> {
+  const action = (event.action_source || 'website').toLowerCase();
+  if (action !== 'website') {
+    const raw = (event.event_source_url || '').trim();
+    return isValidHttpUrl(raw) ? raw : '';
+  }
+
+  const cd = (event.custom_data ?? {}) as Record<string, unknown>;
+  const tl = (event.telemetry ?? {}) as Record<string, unknown>;
+  const pagePath =
+    pickStringField(cd, 'page_path') ||
+    pickStringField(tl, 'page_path') ||
+    '/';
+
+  const candidates: (string | undefined)[] = [
+    typeof event.event_source_url === 'string' ? event.event_source_url : undefined,
+    pickStringField(cd, 'event_url'),
+    pickStringField(cd, 'page_location'),
+    pickStringField(cd, 'page_url'),
+    typeof req.headers.referer === 'string' ? req.headers.referer : undefined,
+  ];
+  for (const c of candidates) {
+    if (isValidHttpUrl(c)) return c.trim();
+  }
+
+  const originHeader = typeof req.headers.origin === 'string' ? req.headers.origin.trim() : '';
+  if (isValidHttpUrl(originHeader)) {
+    const composed = joinOriginAndPath(originHeader, pagePath);
+    if (isValidHttpUrl(composed)) return composed;
+  }
+
+  const refOrigin = headerOriginFromReferer(req.headers.referer);
+  if (refOrigin) {
+    const composed = joinOriginAndPath(refOrigin, pagePath);
+    if (isValidHttpUrl(composed)) return composed;
+  }
+
+  const fromDb = await lookupSiteCanonicalOrigin(siteKey);
+  if (fromDb) {
+    const composed = joinOriginAndPath(fromDb, pagePath);
+    if (isValidHttpUrl(composed)) return composed;
+    if (isValidHttpUrl(fromDb)) return fromDb;
+  }
+
+  console.warn('[Ingest] event_source_url ausente para evento website (CAPI).', {
+    siteKey,
+    event_name: event.event_name,
+  });
+  return '';
+}
+
+const FALLBACK_CAPI_UA =
+  (typeof process !== 'undefined' && process.env.CAPI_FALLBACK_USER_AGENT?.trim()) ||
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+
+/** Meta CAPI: client_user_agent obrigatório para website — prioriza navigator (corpo) sobre o header da requisição ao ingest. */
+function resolveClientUserAgentForCapi(
+  req: Request,
+  userData: NonNullable<IngestEvent['user_data']>
+): string {
+  const fromBody =
+    typeof userData.client_user_agent === 'string' ? userData.client_user_agent.trim() : '';
+  if (fromBody) return fromBody;
+  const fromHeader = (req.get('user-agent') || '').trim();
+  if (fromHeader) return fromHeader;
+  return FALLBACK_CAPI_UA;
+}
+
 function buildCapiUserData(
   req: Request,
   userData: NonNullable<IngestEvent['user_data']>,
@@ -295,7 +434,7 @@ function buildCapiUserData(
   customData: Record<string, unknown>
 ) {
   const clientIp = resolveClientIp(req, userData);
-  const clientUserAgent = req.headers['user-agent'] || userData.client_user_agent || '';
+  const clientUserAgent = resolveClientUserAgentForCapi(req, userData);
   const geo = resolveGeo(clientIp);
   const pickCustom = (field: string) => {
     const val = customData[field];
@@ -438,7 +577,6 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
   const eventTimeMs = eventTimeSec * 1000;
   const eventId = event.event_id || `evt_${eventTimeSec}_${Math.random().toString(36).slice(2, 8)}`;
   const eventName = event.event_name;
-  const eventSourceUrl = event.event_source_url || '';
 
   // ─── 1. Deduplicação (In-Memory) ──────────────────────────────────
   if (isDuplicate(siteKey, eventId)) {
@@ -447,6 +585,7 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
 
   // DB dedup is handled by ON CONFLICT — no need for a separate SELECT query
   try {
+    const eventSourceUrl = await resolveEventSourceUrlForIngest(event, req, siteKey);
     let result;
     if (eventName === 'PageEngagement') {
       result = await pool.query(`
@@ -720,13 +859,14 @@ router.post('/batch', cors(), ingestLimiter, async (req, res) => {
       continue;
     }
 
+    const eventSourceUrl = await resolveEventSourceUrlForIngest(event, req, siteKey);
     prepared.push({
       event,
       eventId,
       eventTimeSec,
       eventTimeMs,
       eventName: event.event_name,
-      eventSourceUrl: event.event_source_url || '',
+      eventSourceUrl,
     });
     indexMap.push(i);
   }
