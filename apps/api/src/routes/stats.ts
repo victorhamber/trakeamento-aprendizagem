@@ -195,7 +195,7 @@ router.get('/sales-daily', requireAuth, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT
-         TO_CHAR(COALESCE(p.platform_date, p.created_at), 'YYYY-MM-DD') as date,
+         TO_CHAR(COALESCE(p.platform_date, p.created_at) AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD') as date,
          COUNT(*)::int as count,
          COALESCE(SUM(CASE WHEN p.status IN ('approved', 'paid', 'completed', 'active') AND p.currency = $5 THEN p.amount ELSE 0 END), 0)::float as revenue
        FROM purchases p
@@ -251,8 +251,8 @@ router.get('/best-times', requireAuth, async (req, res) => {
         // Query na tabela purchases — usa subquery ANY para acionar o índice (site_key, status, created_at)
         query = `
           SELECT
-            EXTRACT(DOW FROM COALESCE(p.platform_date, p.created_at))::int as dow,
-            EXTRACT(HOUR FROM COALESCE(p.platform_date, p.created_at))::int as hour,
+            EXTRACT(DOW FROM (COALESCE(p.platform_date, p.created_at) AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo'))::int as dow,
+            EXTRACT(HOUR FROM (COALESCE(p.platform_date, p.created_at) AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo'))::int as hour,
             COUNT(*)::int as count
           FROM purchases p
           WHERE p.site_key = ANY(
@@ -433,8 +433,8 @@ router.get('/best-times', requireAuth, async (req, res) => {
         // Query na tabela web_events — usa subquery ANY para acionar o índice (site_key, event_name, event_time)
         query = `
           SELECT
-            EXTRACT(DOW FROM e.event_time)::int as dow,
-            EXTRACT(HOUR FROM e.event_time)::int as hour,
+            EXTRACT(DOW FROM (e.event_time AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo'))::int as dow,
+            EXTRACT(HOUR FROM (e.event_time AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo'))::int as hour,
             COUNT(*)::int as count
           FROM web_events e
           WHERE e.site_key = ANY(
