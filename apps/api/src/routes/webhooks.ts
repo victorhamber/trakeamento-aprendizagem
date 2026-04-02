@@ -176,7 +176,7 @@ async function processPurchaseWebhook({
       country: country ? [CapiService.hash(country.toLowerCase())] : undefined,
       fbc: mergedFbc,
       fbp: mergedFbp,
-      external_id: mergedExternalId ? [CapiService.hash(String(mergedExternalId))] : undefined,
+      external_id: mergedExternalId ? CapiService.hash(String(mergedExternalId)) : undefined,
     },
     custom_data: {
       value: Number(value) || 0,

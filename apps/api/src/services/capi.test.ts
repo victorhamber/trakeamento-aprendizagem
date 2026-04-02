@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { CapiService } from './capi';
+import { CapiService, CapiEvent } from './capi';
 import { pool } from '../db/pool';
 
 // Mock do pool do Postgres
@@ -38,12 +38,14 @@ describe('CapiService', () => {
 
   it('deve salvar evento na outbox em caso de erro', async () => {
     const siteKey = 'test-site-key';
-    const event = {
+    const event: CapiEvent = {
       event_name: 'Purchase',
-      event_time: 1234567890,
-      event_id: 'evt_123',
+      event_time: Math.floor(Date.now() / 1000),
+      event_id: 'test_event_123',
       event_source_url: 'http://example.com',
-      user_data: { em: 'hashed_email' },
+      user_data: {
+        em: ['test@example.com'],
+      },
     };
     const errorMsg = 'Network Error';
 
