@@ -5,6 +5,29 @@ import geoip from 'geoip-lite';
 
 const router = Router();
 
+// TEMPORARY: Diagnostic endpoint to debug purchase visibility issues
+router.get('/debug-purchase/:orderId', requireAuth, async (req, res) => {
+  const orderId = req.params.orderId;
+  try {
+    const result = await pool.query(
+      `SELECT order_id, platform, amount, currency, status, platform_date, created_at, buyer_email_hash, fbp, fbc
+       FROM purchases WHERE order_id = $1 LIMIT 1`,
+      [orderId]
+    );
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    return res.json({
+      found: (result.rowCount || 0) > 0,
+      row: result.rows[0] || null,
+      server_now_utc: now.toISOString(),
+      today_start_utc: todayStart.toISOString(),
+      note: 'Compare platform_date/created_at with today_start to see if it falls within "Hoje" filter',
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/overview', requireAuth, async (req, res) => {
   const auth = req.auth!;
   const period = (req.query.period as string) || 'today';
