@@ -12,18 +12,18 @@ export interface CapiEvent {
   user_data: {
     client_ip_address?: string;
     client_user_agent?: string;
-    em?: string; // hash SHA-256
-    ph?: string; // hash SHA-256
-    fn?: string; // hash SHA-256
-    ln?: string; // hash SHA-256
-    ct?: string; // hash SHA-256
-    st?: string; // hash SHA-256
-    zp?: string; // hash SHA-256
-    db?: string; // hash SHA-256 (YYYYMMDD)
-    country?: string; // hash SHA-256 (ISO 2-letter lowercase)
+    em?: string[]; // hash SHA-256
+    ph?: string[]; // hash SHA-256
+    fn?: string[]; // hash SHA-256
+    ln?: string[]; // hash SHA-256
+    ct?: string[]; // hash SHA-256
+    st?: string[]; // hash SHA-256
+    zp?: string[]; // hash SHA-256
+    db?: string[]; // hash SHA-256 (YYYYMMDD)
+    country?: string[]; // hash SHA-256 (ISO 2-letter lowercase)
     fbp?: string;
     fbc?: string;
-    external_id?: string | string[]; // hash SHA-256
+    external_id?: string; // hash SHA-256
   };
   custom_data?: CapiCustomData;
   action_source?: 'email' | 'website' | 'app' | 'phone_call' | 'chat' | 'physical_store' | 'system_generated' | 'other';

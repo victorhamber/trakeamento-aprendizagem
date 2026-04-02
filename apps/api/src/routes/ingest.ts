@@ -325,22 +325,32 @@ function buildCapiUserData(
   const fbp = userData.fbp || pickCustom('fbp');
   const fbc = userData.fbc || pickCustom('fbc');
   const externalIdRaw = userData.external_id || pickCustom('external_id');
+  const zp = pick('zp');
+  const db = pick('db');
+
+  // Log diagnostic for attribution
+  if (fbc || fbp) {
+    console.log(`[Ingest] Site Event Attribution - fbc: ${!!fbc}, fbp: ${!!fbp}`);
+  }
+
+  // Helper to wrap in array (Meta CAPI requires arrays for PII fields, except for external_id/fbc/fbp)
+  const wrap = (val: string | undefined): string[] | undefined => (val ? [val] : undefined);
 
   return {
     client_ip_address: clientIp,
     client_user_agent: clientUserAgent,
-    em: pick('em'),
-    ph: pick('ph'),
-    fn: pick('fn'),
-    ln: pick('ln'),
-    ct,
-    st,
-    country,
-    zp: pick('zp'),
-    db: pick('db'),
+    em: wrap(pick('em')),
+    ph: wrap(pick('ph')),
+    fn: wrap(pick('fn')),
+    ln: wrap(pick('ln')),
+    ct: wrap(ct),
+    st: wrap(st),
+    country: wrap(country),
+    zp: wrap(zp),
+    db: wrap(db),
     fbp,
     fbc,
-    external_id: externalIdRaw ? [hashPii(String(externalIdRaw))!] : undefined,
+    external_id: externalIdRaw ? hashPii(String(externalIdRaw)) : undefined,
   };
 }
 
@@ -420,12 +430,6 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
 
   // Calculate base time, defaulting to now
   let eventTimeSec = event.event_time ?? Math.floor(Date.now() / 1000);
-  
-  // Défense in Depth: CAPI strict future time validation
-  // Meta will reject if event_time is > 60s in the future. If the client clock is ahead, it will fail.
-  // We clamp down to the server's current time minus a tiny safety buffer (1 minute).
-  // If the server clock itself is behind (as discovered), this safely anchors reality to the server time,
-  // which will appear as "in the past" to Meta (which they allow up to 7 days).
   const currentServerSec = Math.floor(Date.now() / 1000) - 60; 
   if (eventTimeSec > currentServerSec) {
     eventTimeSec = currentServerSec;
