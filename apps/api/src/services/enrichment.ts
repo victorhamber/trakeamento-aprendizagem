@@ -48,6 +48,7 @@ export class EnrichmentService {
     if (!emailHash && !phoneHash && !externalId) return null;
 
     // 1. Tentar buscar em site_visitors (Perfil consolidado)
+    // Prioridade: IDs diretos > IP (Se habilitado)
     const visitorQuery = `
       SELECT fbp, fbc, external_id, last_traffic_source, last_ip, last_user_agent
       FROM site_visitors
@@ -55,14 +56,29 @@ export class EnrichmentService {
         AND (
           ($2::text IS NOT NULL AND email_hash = $2::text) OR
           ($3::text IS NOT NULL AND phone_hash = $3::text) OR
-          ($4::text IS NOT NULL AND external_id = $4::text)
+          ($4::text IS NOT NULL AND external_id = $4::text) OR
+          (external_id IS NOT NULL AND last_ip = $5::text)
         )
-      ORDER BY last_seen_at DESC
+      ORDER BY 
+        CASE 
+          WHEN email_hash = $2::text THEN 1
+          WHEN phone_hash = $3::text THEN 2
+          WHEN external_id = $4::text THEN 3
+          WHEN last_ip = $5::text THEN 4
+          ELSE 5
+        END ASC,
+        last_seen_at DESC
       LIMIT 1
     `;
 
     try {
-      const visitorRes = await pool.query(visitorQuery, [siteKey, emailHash, phoneHash, externalId || null]);
+      const visitorRes = await pool.query(visitorQuery, [
+        siteKey, 
+        emailHash, 
+        phoneHash, 
+        externalId || null,
+        options?.ip || null
+      ]);
       
       let visitorData: any = {};
       

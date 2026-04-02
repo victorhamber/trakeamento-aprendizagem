@@ -12,6 +12,22 @@ import { DDI_LIST } from '../lib/ddi';
 
 const router = Router();
 
+function decodeTrkToken(token: string) {
+  if (!token || !token.startsWith('trk_')) return null;
+  try {
+    const b64 = token.substring(4);
+    const decoded = Buffer.from(b64, 'base64').toString('utf-8');
+    const parts = decoded.split('|');
+    return {
+      externalId: parts[0] || null,
+      fbc: parts[1] || null,
+      fbp: parts[2] || null,
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
 const normalizeStatus = (rawStatus: unknown) => {
   const s = String(rawStatus || '').toLowerCase().trim();
 
@@ -79,20 +95,32 @@ async function processPurchaseWebhook({
   const { account_id: siteAccountId, pixel_id, capi_token_enc, capi_test_event_code, meta_enabled: metaEnabled } = siteRes.rows[0];
   const capiToken = capi_token_enc ? decryptString(capi_token_enc) : null;
 
-  // 1. Enrichment: Missing attribution data or geolocation
+  // 1. Attribute Recovery (trk_ token in sck/src)
+  const sckRaw = String(payload.sck || payload.src || payload.trackingParameters?.utm_source || payload.tracking_parameters?.utm_source || '');
+  let trkData = null;
+  if (sckRaw.includes('trk_')) {
+    const match = sckRaw.match(/trk_[A-Za-z0-9+/=]+/);
+    if (match) trkData = decodeTrkToken(match[0]);
+  }
+
+  const finalFbc = fbc || trkData?.fbc;
+  const finalFbp = fbp || trkData?.fbp;
+  const finalExternalId = externalId || trkData?.externalId;
+
+  // 2. Enrichment: Missing attribution data or geolocation
   let enriched = null;
-  if (!fbp || !fbc || !clientIp || !clientUa || (!city && !state)) {
-    enriched = await EnrichmentService.findVisitorData(siteKey, email, phone, externalId, { ip: clientIp, country });
+  if (!finalFbp || !finalFbc || !clientIp || !clientUa || (!city && !state)) {
+    enriched = await EnrichmentService.findVisitorData(siteKey, email, phone, finalExternalId, { ip: clientIp, country });
     if (enriched) {
       console.log(`[Webhook] Enrichment success: found fbp=${!!enriched.fbp}, fbc=${!!enriched.fbc}, ip=${!!enriched.clientIp}, city=${!!enriched.city}`);
     }
   }
 
-  const mergedFbp = fbp || enriched?.fbp;
-  const mergedFbc = fbc || enriched?.fbc;
+  const mergedFbp = finalFbp || enriched?.fbp;
+  const mergedFbc = finalFbc || enriched?.fbc;
   const mergedIp = clientIp || enriched?.clientIp;
   const mergedUa = clientUa || enriched?.clientUa;
-  const mergedExternalId = externalId || enriched?.externalId || (email ? CapiService.hash(email) : undefined);
+  const mergedExternalId = finalExternalId || enriched?.externalId || (email ? CapiService.hash(email) : undefined);
 
   // Location recovery: Priority Webhook > Enriched (history) > GeoIP (current IP)
   let finalCity = city || enriched?.city;
@@ -105,8 +133,12 @@ async function processPurchaseWebhook({
     }
   }
 
-  // UTMs priority
-  const utmSource = payload.utm_source || payload.trackingParameters?.utm_source || payload.tracking_parameters?.utm_source || (payload.sck && !String(payload.sck).startsWith('trk_') ? payload.sck : undefined) || (payload.src && !String(payload.src).startsWith('trk_') ? payload.src : undefined) || enriched?.utmSource || undefined;
+  // UTMs priority (Strip trk_ token from UTM source if present)
+  let baseUtmSource = payload.utm_source || payload.trackingParameters?.utm_source || payload.tracking_parameters?.utm_source || (payload.sck && !String(payload.sck).startsWith('trk_') ? payload.sck : undefined) || (payload.src && !String(payload.src).startsWith('trk_') ? payload.src : undefined) || enriched?.utmSource || undefined;
+  if (baseUtmSource && typeof baseUtmSource === 'string' && baseUtmSource.includes('-trk_')) {
+    baseUtmSource = baseUtmSource.split('-trk_')[0];
+  }
+  const utmSource = baseUtmSource;
   const utmMedium = payload.utm_medium || payload.trackingParameters?.utm_medium || payload.tracking_parameters?.utm_medium || enriched?.utmMedium || undefined;
   const utmCampaign = payload.utm_campaign || payload.trackingParameters?.utm_campaign || payload.tracking_parameters?.utm_campaign || enriched?.utmCampaign || undefined;
 
@@ -161,8 +193,9 @@ async function processPurchaseWebhook({
 
   // 3. Database Persistence
   const dbEmailHash = email ? CapiService.hash(email.toLowerCase()) : null;
-  if (dbEmailHash || mergedFbp) {
-    const visitorExtId = mergedExternalId ? CapiService.hash(String(mergedExternalId)) : (dbEmailHash || `buyer_${orderId}`);
+  const visitorExtId = mergedExternalId || dbEmailHash || `buyer_${orderId}`;
+
+  if (dbEmailHash || mergedFbp || mergedExternalId) {
     pool.query(`
       INSERT INTO site_visitors (
         site_key, external_id, fbc, fbp, email_hash, phone_hash,
