@@ -9,6 +9,8 @@ interface EnrichedData {
   externalId?: string;
   clientIp?: string;
   clientUa?: string;
+  city?: string;
+  state?: string;
   utmSource?: string;
   utmMedium?: string;
   utmCampaign?: string;
@@ -87,7 +89,9 @@ export class EnrichmentService {
         return {
           ...visitorData,
           clientIp: visitorData.clientIp || metadata?.ip,
-          clientUa: visitorData.clientUa || metadata?.ua
+          clientUa: visitorData.clientUa || metadata?.ua,
+          city: visitorData.city || metadata?.city,
+          state: visitorData.state || metadata?.state
         };
       }
 
@@ -118,6 +122,8 @@ export class EnrichmentService {
           externalId: ud.external_id,
           clientIp: row.ip,
           clientUa: row.ua,
+          city: ud.ct || cd.city,
+          state: ud.st || cd.state,
           utmSource: cd.utm_source,
           utmMedium: cd.utm_medium,
           utmCampaign: cd.utm_campaign,
@@ -135,7 +141,11 @@ export class EnrichmentService {
 
   private static async findLatestMetadata(siteKey: string, fbp?: string, externalId?: string, emailHash?: string | null, phoneHash?: string | null) {
     const query = `
-      SELECT user_data->>'client_ip_address' as ip, user_data->>'client_user_agent' as ua
+      SELECT 
+        user_data->>'client_ip_address' as ip, 
+        user_data->>'client_user_agent' as ua,
+        user_data->>'ct' as city,
+        user_data->>'st' as state
       FROM web_events
       WHERE site_key = $1
         AND (
