@@ -15,34 +15,31 @@ interface EnrichedData {
 }
 
 export class EnrichmentService {
-  /**
-   * Tenta encontrar dados de rastreamento (FBP, FBC, UTMs) baseados no email ou telefone do comprador.
-   * Busca primeiro na tabela consolidada site_visitors, depois em eventos recentes.
-   */
-  static async findVisitorData(siteKey: string, email?: string, phone?: string): Promise<EnrichedData | null> {
-    if (!email && !phone) return null;
+  static async findVisitorData(siteKey: string, email?: string, phone?: string, externalId?: string): Promise<EnrichedData | null> {
+    if (!email && !phone && !externalId) return null;
 
     const emailHash = email ? CapiService.hash(email) : null;
     const phoneHash = phone ? CapiService.hash(phone) : null;
 
-    if (!emailHash && !phoneHash) return null;
+    if (!emailHash && !phoneHash && !externalId) return null;
 
     // 1. Tentar buscar em site_visitors (Perfil consolidado)
-    // Busca por email_hash OU phone_hash
+    // Busca por email_hash OU phone_hash OU external_id
     const visitorQuery = `
       SELECT fbp, fbc, external_id, last_traffic_source, last_ip, last_user_agent
       FROM site_visitors
       WHERE site_key = $1
         AND (
           ($2::text IS NOT NULL AND email_hash = $2::text) OR
-          ($3::text IS NOT NULL AND phone_hash = $3::text)
+          ($3::text IS NOT NULL AND phone_hash = $3::text) OR
+          ($4::text IS NOT NULL AND external_id = $4::text)
         )
       ORDER BY last_seen_at DESC
       LIMIT 1
     `;
 
     try {
-      const visitorRes = await pool.query(visitorQuery, [siteKey, emailHash, phoneHash]);
+      const visitorRes = await pool.query(visitorQuery, [siteKey, emailHash, phoneHash, externalId || null]);
       
       let visitorData: any = {};
       
@@ -75,20 +72,21 @@ export class EnrichmentService {
       }
 
       // 2. Se não achou em visitors, tentar match direto em web_events (menos provável se visitors estiver populado corretamente)
-      // Mas web_events tem o user_data.em / user_data.ph
+      // Mas web_events tem o user_data.em / user_data.ph / user_data.external_id
       const eventQuery = `
         SELECT user_data, custom_data, user_data->>'client_ip_address' as ip, user_data->>'client_user_agent' as ua
         FROM web_events
         WHERE site_key = $1
           AND (
             ($2::text IS NOT NULL AND user_data->>'em' = $2::text) OR
-            ($3::text IS NOT NULL AND user_data->>'ph' = $3::text)
+            ($3::text IS NOT NULL AND user_data->>'ph' = $3::text) OR
+            ($4::text IS NOT NULL AND user_data->>'external_id' = $4::text)
           )
         ORDER BY event_time DESC
         LIMIT 1
       `;
 
-      const eventRes = await pool.query(eventQuery, [siteKey, emailHash, phoneHash]);
+      const eventRes = await pool.query(eventQuery, [siteKey, emailHash, phoneHash, externalId || null]);
       
       if (eventRes.rowCount && eventRes.rowCount > 0) {
         const row = eventRes.rows[0];

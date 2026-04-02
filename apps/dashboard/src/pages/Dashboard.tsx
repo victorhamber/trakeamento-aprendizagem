@@ -290,7 +290,6 @@ export const DashboardPage = () => {
             >
               <option value="BRL">BRL (R$)</option>
               <option value="USD">USD ($)</option>
-              <option value="EUR">EUR (€)</option>
             </select>
             <Link
               to="/sites"

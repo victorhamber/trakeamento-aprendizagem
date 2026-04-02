@@ -96,8 +96,8 @@ async function processPurchaseWebhook({
   let enriched: any = {};
   // Verifica se faltam dados CRÍTICOS para qualidade do evento (IP, UA, FBC, FBP)
   if (!finalFbp || !finalFbc || !clientIp || !clientUa || !payload.utm_source) {
-    console.log(`[Webhook] Missing critical data (fbp=${finalFbp}, ip=${clientIp}, ua=${clientUa}). Attempting enrichment for ${email || phone}...`);
-    enriched = await EnrichmentService.findVisitorData(siteKey, email, phone);
+    console.log(`[Webhook] Missing critical data (fbp=${finalFbp}, ip=${clientIp}, ua=${clientUa}). Attempting enrichment for ${email || phone || finalExternalId}...`);
+    enriched = await EnrichmentService.findVisitorData(siteKey, email, phone, finalExternalId);
 
     if (enriched) {
       console.log(`[Webhook] Enrichment success: found fbp=${enriched.fbp}, ip=${enriched.clientIp}, ua=${enriched.clientUa}`);
@@ -400,11 +400,23 @@ router.post('/purchase', async (req, res) => {
     firstName = payload.buyer?.name?.split(' ')[0] || payload.first_name;
     lastName = payload.buyer?.name?.split(' ').slice(1).join(' ') || payload.last_name;
     phone = payload.buyer?.phone || payload.buyer?.checkout_phone || payload.phone;
-    const hotmartCommissionValue =
-      payload.data?.commissions?.[1]?.value ??
-      payload.commissions?.[1]?.value;
-    value = hotmartCommissionValue ?? payload.purchase?.full_price?.value ?? payload.amount ?? 0;
-    currency = payload.purchase?.full_price?.currency_value || payload.currency || 'BRL';
+    const d = payload.data || payload;
+    const purchase = d.purchase || payload.purchase || {};
+    const commissions = d.commissions || payload.commissions || [];
+    
+    value = purchase.full_price?.value ?? purchase.price?.value ?? purchase.amount ?? d.amount ?? d.price ?? d.value ?? 0;
+    currency = purchase.full_price?.currency_value ?? purchase.price?.currency_value ?? d.currency ?? 'BRL';
+    
+    if (Array.isArray(commissions) && commissions.length > 0) {
+      // Prioritize PRODUCER or AFFILIATE. Fallback to anything non-HOTMART/MARKETPLACE.
+      const validCommissions = commissions.filter((c: any) => c && c.source === 'PRODUCER' || c.source === 'AFFILIATE');
+      const commission = validCommissions.length > 0 ? validCommissions[0] : commissions.filter((c: any) => c && c.source !== 'HOTMART' && c.source !== 'MARKETPLACE')[0];
+      if (commission && commission.value !== undefined) {
+        value = Number(commission.value) || 0;
+        if (commission.currency_value) currency = commission.currency_value;
+      }
+    }
+
     status = payload.purchase?.status || payload.status;
     orderId = payload.purchase?.transaction || payload.transaction || payload.id;
     city = payload.buyer?.address?.city;
@@ -412,7 +424,7 @@ router.post('/purchase', async (req, res) => {
     zip = payload.buyer?.address?.zipCode || payload.buyer?.address?.zip_code;
     country = payload.buyer?.address?.country || payload.buyer?.address?.country_iso;
     contentName = payload.product?.name;
-    purchaseTimestamp = payload.purchase?.approved_date || payload.purchase?.order_date || payload.creation_date;
+    purchaseTimestamp = undefined; // Force current time to avoid timezone issues
   } else if (payload.webhook_event_type || payload.Customer) {
     platform = 'kiwify';
     email = payload.Customer?.email || payload.email;
@@ -553,19 +565,22 @@ router.post('/hotmart', async (req, res) => {
   const lastName = buyer.last_name || buyer.name?.split(' ').slice(1).join(' ') || payload.last_name;
   const phone = buyer.checkout_phone || buyer.phone || payload.phone;
 
-  const hotmartCommissionValue =
-    d.commissions?.[1]?.value ??
-    payload.data?.commissions?.[1]?.value;
+  const commissions = d.commissions || payload.data?.commissions || [];
+  let rawValue = purchase.full_price?.value ?? purchase.price?.value ?? purchase.amount ?? purchase.total ?? d.amount ?? d.price ?? d.value ?? d.full_price ?? 0;
+  let currency = purchase.full_price?.currency_value || purchase.price?.currency_value || d.currency || 'BRL';
 
-  const rawValue =
-    hotmartCommissionValue ??
-    purchase.full_price?.value ??
-    purchase.price?.value ??
-    purchase.amount ??
-    purchase.total ??
-    d.amount ?? d.price ?? d.value ?? d.full_price ?? 0;
+  if (Array.isArray(commissions) && commissions.length > 0) {
+    const validCommissions = commissions.filter((c: any) => c && (c.source === 'PRODUCER' || c.source === 'AFFILIATE'));
+    const commission = validCommissions.length > 0 ? validCommissions[0] : commissions.filter((c: any) => c && c.source !== 'HOTMART' && c.source !== 'MARKETPLACE')[0];
+    if (commission && commission.value !== undefined) {
+      rawValue = commission.value;
+      if (commission.currency_value) {
+        currency = commission.currency_value;
+      }
+    }
+  }
+
   const value = parseFloat(String(rawValue)) || 0;
-  const currency = purchase.full_price?.currency_value || purchase.price?.currency_value || d.currency || 'BRL';
   console.log(`[Hotmart] orderId=${purchase.transaction} status=${purchase.status} rawValue=${rawValue} parsedValue=${value} currency=${currency}`);
 
   let rawStatus = purchase.status || d.status || payload.event;
@@ -586,7 +601,7 @@ router.post('/hotmart', async (req, res) => {
     clientUa: d.client_user_agent || payload.user_agent || undefined,
     value, currency, status, orderId, platform,
     contentName: d.product?.name || payload.product?.name,
-    purchaseTimestamp: purchase.approved_date || purchase.order_date || d.creation_date,
+    purchaseTimestamp: undefined, // undefined prevents parsing local timezone times sent by platforms, forcing real webhook ingestion UTC time
   });
 
   if (!result.success) return res.status(result.status || 500).json({ error: result.error });

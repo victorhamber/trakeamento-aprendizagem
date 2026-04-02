@@ -2929,7 +2929,6 @@ ${scriptContent}
                           >
                             <option value="BRL">BRL</option>
                             <option value="USD">USD</option>
-                            <option value="EUR">EUR</option>
                           </select>
                         </div>
                       </div>
@@ -3087,7 +3086,6 @@ ${scriptContent}
                           >
                             <option value="BRL">BRL</option>
                             <option value="USD">USD</option>
-                            <option value="EUR">EUR</option>
                           </select>
                         </div>
                       </div>
@@ -3385,8 +3383,7 @@ ${scriptContent}
                               >
                                 <option value="BRL">BRL</option>
                                 <option value="USD">USD</option>
-                                <option value="EUR">EUR</option>
-                              </select>
+                                  </select>
                             </div>
                           </div>
                         )}
