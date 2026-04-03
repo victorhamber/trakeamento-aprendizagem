@@ -218,7 +218,7 @@ router.get('/sales-daily', requireAuth, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT
-         TO_CHAR(COALESCE(p.platform_date, p.created_at) AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD') as date,
+         TO_CHAR(COALESCE(p.platform_date, p.created_at) AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD') as date,
          COUNT(*)::int as count,
          COALESCE(SUM(CASE WHEN p.status IN ('approved', 'paid', 'completed', 'active') AND p.currency = $5 THEN p.amount ELSE 0 END), 0)::float as revenue
        FROM purchases p
@@ -274,8 +274,8 @@ router.get('/best-times', requireAuth, async (req, res) => {
         // Query na tabela purchases — usa subquery ANY para acionar o índice (site_key, status, created_at)
         query = `
           SELECT
-            EXTRACT(DOW FROM (COALESCE(p.platform_date, p.created_at) AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo'))::int as dow,
-            EXTRACT(HOUR FROM (COALESCE(p.platform_date, p.created_at) AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo'))::int as hour,
+            EXTRACT(DOW FROM (COALESCE(p.platform_date, p.created_at) AT TIME ZONE 'America/Sao_Paulo'))::int as dow,
+            EXTRACT(HOUR FROM (COALESCE(p.platform_date, p.created_at) AT TIME ZONE 'America/Sao_Paulo'))::int as hour,
             COUNT(*)::int as count
           FROM purchases p
           WHERE p.site_key = ANY(
@@ -420,7 +420,9 @@ router.get('/best-times', requireAuth, async (req, res) => {
 
         topLocationsQuery = `
           WITH purchases_base AS (
-            SELECT p.site_key, p.buyer_email_hash, p.fbp, p.fbc
+            SELECT p.site_key, p.buyer_email_hash, p.fbp, p.fbc,
+                   p.raw_payload->'_capi_debug'->'user_data'->>'client_ip_address' as capi_ip,
+                   p.raw_payload->>'_extracted_external_id' AS extracted_external_id
             FROM purchases p
             WHERE p.site_key = ANY(
               SELECT site_key FROM sites WHERE account_id = $1 AND ($2::int IS NULL OR id = $2::int)
@@ -430,7 +432,7 @@ router.get('/best-times', requireAuth, async (req, res) => {
           ),
           attributed AS (
             SELECT
-              sv_loc.ip
+              COALESCE(sv_loc.ip, ev_ip.ip, pb.capi_ip) as ip
             FROM purchases_base pb
             LEFT JOIN LATERAL (
               SELECT sv.last_ip as ip
@@ -444,6 +446,20 @@ router.get('/best-times', requireAuth, async (req, res) => {
               ORDER BY sv.last_seen_at DESC
               LIMIT 1
             ) sv_loc ON TRUE
+            LEFT JOIN LATERAL (
+              SELECT e.user_data->>'client_ip_address' as ip
+              FROM web_events e
+              WHERE e.site_key = pb.site_key
+                AND (
+                  (pb.buyer_email_hash IS NOT NULL AND e.user_data->>'em' = pb.buyer_email_hash)
+                  OR (pb.fbp IS NOT NULL AND e.user_data->>'fbp' = pb.fbp)
+                  OR (pb.fbc IS NOT NULL AND e.user_data->>'fbc' = pb.fbc)
+                  OR (pb.extracted_external_id IS NOT NULL AND e.user_data->>'external_id' = pb.extracted_external_id)
+                )
+                AND e.user_data->>'client_ip_address' IS NOT NULL
+              ORDER BY e.event_time DESC
+              LIMIT 1
+            ) ev_ip ON sv_loc.ip IS NULL
           )
           SELECT ip, COUNT(*)::int as count
           FROM attributed
@@ -456,8 +472,8 @@ router.get('/best-times', requireAuth, async (req, res) => {
         // Query na tabela web_events — usa subquery ANY para acionar o índice (site_key, event_name, event_time)
         query = `
           SELECT
-            EXTRACT(DOW FROM (e.event_time AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo'))::int as dow,
-            EXTRACT(HOUR FROM (e.event_time AT TIME ZONE 'UTC' AT TIME ZONE 'America/Sao_Paulo'))::int as hour,
+            EXTRACT(DOW FROM (e.event_time AT TIME ZONE 'America/Sao_Paulo'))::int as dow,
+            EXTRACT(HOUR FROM (e.event_time AT TIME ZONE 'America/Sao_Paulo'))::int as hour,
             COUNT(*)::int as count
           FROM web_events e
           WHERE e.site_key = ANY(
