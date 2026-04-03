@@ -220,3 +220,13 @@ input[type='date']::-webkit-calendar-picker-indicator {
 .animate-pulse-glow {
   animation: pulse-glow 3s ease-in-out infinite;
 }
+
+/* Site.tsx: métricas / prévia de formulário — largura e cores via CSS vars */
+.metric-quality-bar-fill {
+  width: var(--metric-quality-pct, 0%);
+}
+
+.form-preview-submit-appearance {
+  background-color: var(--form-preview-bg, #3b82f6);
+  color: var(--form-preview-fg, #ffffff);
+}

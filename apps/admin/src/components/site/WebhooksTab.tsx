@@ -239,9 +239,10 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
             </div>
 
             <div>
-              <label className="block text-[10px] font-medium text-zinc-600 dark:text-zinc-500 mb-1.5">URL do Webhook (Copie e cole na Hotmart)</label>
+              <label htmlFor="webhook-hotmart-url" className="block text-[10px] font-medium text-zinc-600 dark:text-zinc-500 mb-1.5">URL do Webhook (Copie e cole na Hotmart)</label>
               <div className="flex gap-2">
                 <input
+                  id="webhook-hotmart-url"
                   readOnly
                   className="flex-1 rounded-lg bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 px-3 py-2 text-[11px] font-mono text-zinc-600 dark:text-zinc-400 outline-none"
                   value={webhookSecret ? `${apiBaseUrl}/webhooks/hotmart?key=${site?.site_key}&token=${webhookSecret}` : 'Carregando…'}
@@ -279,9 +280,10 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
             </div>
 
             <div>
-              <label className="block text-[10px] font-medium text-zinc-600 dark:text-zinc-500 mb-1.5">URL do Webhook (Copie e cole na Kiwify)</label>
+              <label htmlFor="webhook-kiwify-url" className="block text-[10px] font-medium text-zinc-600 dark:text-zinc-500 mb-1.5">URL do Webhook (Copie e cole na Kiwify)</label>
               <div className="flex gap-2">
                 <input
+                  id="webhook-kiwify-url"
                   readOnly
                   className="flex-1 rounded-lg bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 px-3 py-2 text-[11px] font-mono text-zinc-600 dark:text-zinc-400 outline-none"
                   value={webhookSecret ? `${apiBaseUrl}/webhooks/kiwify?key=${site?.site_key}&token=${webhookSecret}` : 'Carregando…'}
@@ -314,8 +316,9 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
         <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/40 p-5 space-y-4">
           <div className="grid grid-cols-1 gap-3">
             <div>
-              <label className="block text-[10px] font-medium text-zinc-600 dark:text-zinc-500 mb-1.5">Link base do checkout</label>
+              <label htmlFor="checkout-sim-base-url" className="block text-[10px] font-medium text-zinc-600 dark:text-zinc-500 mb-1.5">Link base do checkout</label>
               <input
+                id="checkout-sim-base-url"
                 value={checkoutUrl}
                 onChange={(e) => setCheckoutUrl(e.target.value)}
                 placeholder="https://plataforma.com/checkout/123"
@@ -367,8 +370,9 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
-              <label className="block text-[10px] font-medium text-zinc-600 dark:text-zinc-500 mb-1.5">Email</label>
+              <label htmlFor="checkout-sim-email" className="block text-[10px] font-medium text-zinc-600 dark:text-zinc-500 mb-1.5">Email</label>
               <input
+                id="checkout-sim-email"
                 value={checkoutEmail}
                 onChange={(e) => setCheckoutEmail(e.target.value)}
                 placeholder="lead@email.com"
@@ -376,8 +380,9 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
               />
             </div>
             <div>
-              <label className="block text-[10px] font-medium text-zinc-600 dark:text-zinc-500 mb-1.5">Telefone</label>
+              <label htmlFor="checkout-sim-phone" className="block text-[10px] font-medium text-zinc-600 dark:text-zinc-500 mb-1.5">Telefone</label>
               <input
+                id="checkout-sim-phone"
                 value={checkoutPhone}
                 onChange={(e) => setCheckoutPhone(e.target.value)}
                 placeholder="5511999999999"
@@ -385,8 +390,9 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
               />
             </div>
             <div>
-              <label className="block text-[10px] font-medium text-zinc-600 dark:text-zinc-500 mb-1.5">Nome</label>
+              <label htmlFor="checkout-sim-first-name" className="block text-[10px] font-medium text-zinc-600 dark:text-zinc-500 mb-1.5">Nome</label>
               <input
+                id="checkout-sim-first-name"
                 value={checkoutFirstName}
                 onChange={(e) => setCheckoutFirstName(e.target.value)}
                 placeholder="Nome"
@@ -394,8 +400,9 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
               />
             </div>
             <div>
-              <label className="block text-[10px] font-medium text-zinc-600 dark:text-zinc-500 mb-1.5">Sobrenome</label>
+              <label htmlFor="checkout-sim-last-name" className="block text-[10px] font-medium text-zinc-600 dark:text-zinc-500 mb-1.5">Sobrenome</label>
               <input
+                id="checkout-sim-last-name"
                 value={checkoutLastName}
                 onChange={(e) => setCheckoutLastName(e.target.value)}
                 placeholder="Sobrenome"
@@ -406,8 +413,9 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
-              <label className="block text-[10px] font-medium text-zinc-600 dark:text-zinc-500 mb-1.5">External ID</label>
+              <label htmlFor="checkout-sim-external-id" className="block text-[10px] font-medium text-zinc-600 dark:text-zinc-500 mb-1.5">External ID</label>
               <input
+                id="checkout-sim-external-id"
                 value={checkoutExternalId}
                 onChange={(e) => setCheckoutExternalId(e.target.value)}
                 placeholder="lead_123"
@@ -415,8 +423,9 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
               />
             </div>
             <div>
-              <label className="block text-[10px] font-medium text-zinc-600 dark:text-zinc-500 mb-1.5">FBP</label>
+              <label htmlFor="checkout-sim-fbp" className="block text-[10px] font-medium text-zinc-600 dark:text-zinc-500 mb-1.5">FBP</label>
               <input
+                id="checkout-sim-fbp"
                 value={checkoutFbp}
                 onChange={(e) => setCheckoutFbp(e.target.value)}
                 placeholder="fb.1.1690000000.123456"
@@ -424,8 +433,9 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
               />
             </div>
             <div>
-              <label className="block text-[10px] font-medium text-zinc-600 dark:text-zinc-500 mb-1.5">FBC</label>
+              <label htmlFor="checkout-sim-fbc" className="block text-[10px] font-medium text-zinc-600 dark:text-zinc-500 mb-1.5">FBC</label>
               <input
+                id="checkout-sim-fbc"
                 value={checkoutFbc}
                 onChange={(e) => setCheckoutFbc(e.target.value)}
                 placeholder="fb.1.1690000000.123456"
@@ -436,40 +446,45 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
 
           <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
             <div>
-              <label className="block text-[10px] font-medium text-zinc-600 dark:text-zinc-500 mb-1.5">UTM Source</label>
+              <label htmlFor="checkout-sim-utm-source" className="block text-[10px] font-medium text-zinc-600 dark:text-zinc-500 mb-1.5">UTM Source</label>
               <input
+                id="checkout-sim-utm-source"
                 value={checkoutUtmSource}
                 onChange={(e) => setCheckoutUtmSource(e.target.value)}
                 className="w-full rounded-lg bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 px-3 py-2 text-[11px] text-zinc-700 dark:text-zinc-300 outline-none"
               />
             </div>
             <div>
-              <label className="block text-[10px] font-medium text-zinc-600 dark:text-zinc-500 mb-1.5">UTM Medium</label>
+              <label htmlFor="checkout-sim-utm-medium" className="block text-[10px] font-medium text-zinc-600 dark:text-zinc-500 mb-1.5">UTM Medium</label>
               <input
+                id="checkout-sim-utm-medium"
                 value={checkoutUtmMedium}
                 onChange={(e) => setCheckoutUtmMedium(e.target.value)}
                 className="w-full rounded-lg bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 px-3 py-2 text-[11px] text-zinc-700 dark:text-zinc-300 outline-none"
               />
             </div>
             <div>
-              <label className="block text-[10px] font-medium text-zinc-600 dark:text-zinc-500 mb-1.5">UTM Campaign</label>
+              <label htmlFor="checkout-sim-utm-campaign" className="block text-[10px] font-medium text-zinc-600 dark:text-zinc-500 mb-1.5">UTM Campaign</label>
               <input
+                id="checkout-sim-utm-campaign"
                 value={checkoutUtmCampaign}
                 onChange={(e) => setCheckoutUtmCampaign(e.target.value)}
                 className="w-full rounded-lg bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 px-3 py-2 text-[11px] text-zinc-700 dark:text-zinc-300 outline-none"
               />
             </div>
             <div>
-              <label className="block text-[10px] font-medium text-zinc-600 dark:text-zinc-500 mb-1.5">UTM Content</label>
+              <label htmlFor="checkout-sim-utm-content" className="block text-[10px] font-medium text-zinc-600 dark:text-zinc-500 mb-1.5">UTM Content</label>
               <input
+                id="checkout-sim-utm-content"
                 value={checkoutUtmContent}
                 onChange={(e) => setCheckoutUtmContent(e.target.value)}
                 className="w-full rounded-lg bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 px-3 py-2 text-[11px] text-zinc-700 dark:text-zinc-300 outline-none"
               />
             </div>
             <div>
-              <label className="block text-[10px] font-medium text-zinc-600 dark:text-zinc-500 mb-1.5">UTM Term</label>
+              <label htmlFor="checkout-sim-utm-term" className="block text-[10px] font-medium text-zinc-600 dark:text-zinc-500 mb-1.5">UTM Term</label>
               <input
+                id="checkout-sim-utm-term"
                 value={checkoutUtmTerm}
                 onChange={(e) => setCheckoutUtmTerm(e.target.value)}
                 className="w-full rounded-lg bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 px-3 py-2 text-[11px] text-zinc-700 dark:text-zinc-300 outline-none"
@@ -479,8 +494,9 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
-              <label className="block text-[10px] font-medium text-zinc-600 dark:text-zinc-500 mb-1.5">Valor</label>
+              <label htmlFor="checkout-sim-value" className="block text-[10px] font-medium text-zinc-600 dark:text-zinc-500 mb-1.5">Valor</label>
               <input
+                id="checkout-sim-value"
                 value={checkoutValue}
                 onChange={(e) => setCheckoutValue(e.target.value)}
                 placeholder="97.00"
@@ -488,8 +504,9 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
               />
             </div>
             <div>
-              <label className="block text-[10px] font-medium text-zinc-600 dark:text-zinc-500 mb-1.5">Moeda</label>
+              <label htmlFor="checkout-sim-currency" className="block text-[10px] font-medium text-zinc-600 dark:text-zinc-500 mb-1.5">Moeda</label>
               <input
+                id="checkout-sim-currency"
                 value={checkoutCurrency}
                 onChange={(e) => setCheckoutCurrency(e.target.value)}
                 placeholder="BRL"
@@ -499,8 +516,9 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
           </div>
 
           <div>
-            <label className="block text-[10px] font-medium text-zinc-600 dark:text-zinc-500 mb-1.5">Link gerado</label>
+            <label htmlFor="checkout-sim-generated-url" className="block text-[10px] font-medium text-zinc-600 dark:text-zinc-500 mb-1.5">Link gerado</label>
             <input
+              id="checkout-sim-generated-url"
               readOnly
               value={checkoutGeneratedUrl || ''}
               className="w-full rounded-lg bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 px-3 py-2 text-[11px] font-mono text-zinc-600 dark:text-zinc-400 outline-none"
@@ -737,9 +755,11 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
                     <div className="flex-1 max-w-lg">
                       <div className="flex gap-2">
                         <input
+                          id={`custom-webhook-url-${hook.id}`}
                           readOnly
                           className="flex-1 rounded-md bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 px-3 py-1.5 text-[11px] font-mono text-zinc-600 dark:text-zinc-400 outline-none"
                           value={`${apiBaseUrl}/webhooks/custom/${hook.id}`}
+                          aria-label={`URL do webhook personalizado ${hook.name}`}
                         />
                         <button
                           onClick={() => {
@@ -814,8 +834,9 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
                               { label: 'Método de pagamento (PIX / boleto — título do push)', field: 'payment_method' }
                             ].map(mapField => (
                               <div key={mapField.field}>
-                                <label className="block text-[10px] font-medium text-zinc-500 mb-1">{mapField.label}</label>
+                                <label htmlFor={`webhook-map-${hook.id}-${mapField.field}`} className="block text-[10px] font-medium text-zinc-500 mb-1">{mapField.label}</label>
                                 <select
+                                  id={`webhook-map-${hook.id}-${mapField.field}`}
                                   value={currentMap[mapField.field] || ''}
                                   onChange={e => setFieldMap(mapField.field, e.target.value)}
                                   className="w-full rounded bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 px-2 py-1.5 text-[11px] outline-none"

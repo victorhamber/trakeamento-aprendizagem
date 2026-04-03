@@ -301,6 +301,17 @@ async function processPurchaseWebhook({
   const dbEmailHash = email ? CapiService.hash(email.toLowerCase()) : null;
   const visitorExtId = mergedExternalId || dbEmailHash || `buyer_${orderId}`;
 
+  let rawPayloadForDb: Record<string, unknown> = {};
+  try {
+    rawPayloadForDb =
+      payload && typeof payload === 'object'
+        ? (JSON.parse(JSON.stringify(payload)) as Record<string, unknown>)
+        : {};
+  } catch {
+    rawPayloadForDb = { _ingest_note: 'payload could not be serialized for storage' };
+  }
+  rawPayloadForDb._capi_debug = capiPayload;
+
   if (dbEmailHash || mergedFbp || mergedExternalId) {
     pool.query(`
       INSERT INTO site_visitors (
@@ -326,19 +337,21 @@ async function processPurchaseWebhook({
       site_key, order_id, platform, amount, currency, status, 
       customer_email, customer_phone, customer_name,
       fbc, fbp, external_id, utm_source, utm_medium, utm_campaign,
-      platform_date, user_data, custom_data
+      platform_date, user_data, custom_data, raw_payload
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19::jsonb)
     ON CONFLICT (site_key, order_id) DO UPDATE SET
       status = EXCLUDED.status,
       amount = EXCLUDED.amount,
       currency = EXCLUDED.currency,
-      platform_date = EXCLUDED.platform_date
+      platform_date = EXCLUDED.platform_date,
+      raw_payload = EXCLUDED.raw_payload
   `, [
     siteKey, orderId, platform, value, currency, finalStatus,
     email, phone, `${firstName || ''} ${lastName || ''}`.trim(),
     mergedFbc, mergedFbp, mergedExternalId, utmSource, utmMedium, utmCampaign,
-    platformDate, JSON.stringify(capiPayload.user_data), JSON.stringify(capiPayload.custom_data)
+    platformDate, JSON.stringify(capiPayload.user_data), JSON.stringify(capiPayload.custom_data),
+    JSON.stringify(rawPayloadForDb),
   ]);
 
   // 4. Dispatch

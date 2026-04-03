@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -235,6 +235,48 @@ const StatCard = ({ label, value }: { label: string; value: string }) => (
     <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 tabular-nums">{value}</div>
   </div>
 );
+
+function MetricQualityBarFill({ pct, toneClass }: { pct: number; toneClass: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    ref.current?.style.setProperty('--metric-quality-pct', `${pct}%`);
+  }, [pct]);
+  return <div ref={ref} className={`h-full rounded-full ${toneClass} transition-all metric-quality-bar-fill`} />;
+}
+
+function ProgressBarFill({ pct, className }: { pct: number; className: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    ref.current?.style.setProperty('--metric-quality-pct', `${pct}%`);
+  }, [pct]);
+  return <div ref={ref} className={`${className} metric-quality-bar-fill`} />;
+}
+
+function FormPreviewSubmitChip({
+  bg,
+  fg,
+  children,
+}: {
+  bg: string;
+  fg: string;
+  children: React.ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.setProperty('--form-preview-bg', bg);
+    el.style.setProperty('--form-preview-fg', fg);
+  }, [bg, fg]);
+  return (
+    <div
+      ref={ref}
+      className="h-10 rounded flex items-center justify-center font-bold text-sm form-preview-submit-appearance"
+    >
+      {children}
+    </div>
+  );
+}
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 
@@ -1933,6 +1975,7 @@ ${scriptContent}
   const periodSelector = (
     <div className="flex flex-wrap items-center gap-2">
       <select
+        aria-label="Intervalo de tempo das métricas"
         value={metricsPreset}
         onChange={(e) => setMetricsPreset(e.target.value as typeof metricsPreset)}
         className={selectClsCompact}
@@ -1949,13 +1992,17 @@ ${scriptContent}
         <div className="flex items-center gap-2">
           <input
             type="date"
+            aria-label="Data inicial do período personalizado"
             value={metricsSince}
             onChange={(e) => setMetricsSince(e.target.value)}
             className="rounded-lg bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 px-3 py-2 text-xs text-zinc-700 dark:text-zinc-300 outline-none focus:border-zinc-600"
           />
-          <span className="text-zinc-600 dark:text-zinc-500 text-xs">→</span>
+          <span className="text-zinc-600 dark:text-zinc-500 text-xs" aria-hidden>
+            →
+          </span>
           <input
             type="date"
+            aria-label="Data final do período personalizado"
             value={metricsUntil}
             onChange={(e) => setMetricsUntil(e.target.value)}
             className="rounded-lg bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 px-3 py-2 text-xs text-zinc-700 dark:text-zinc-300 outline-none focus:border-zinc-600"
@@ -2162,6 +2209,7 @@ ${scriptContent}
                   <div className="flex items-center justify-between mb-1">
                     <h3 className="text-sm font-semibold text-zinc-100">Qualidade dos Dados</h3>
                     <select
+                      aria-label="Período dos dados de qualidade"
                       value={qualityPeriod}
                       onChange={(e) => setQualityPeriod(e.target.value)}
                       className="text-xs bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 rounded px-2 py-1 outline-none focus:border-emerald-500/50"
@@ -2186,7 +2234,7 @@ ${scriptContent}
                           <div className="text-[10px] text-zinc-600 dark:text-zinc-500 uppercase tracking-wider">{m.label}</div>
                           <div className={`text-xl font-bold ${color} mt-1`}>{pct}%</div>
                           <div className="mt-2 h-1.5 rounded-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden">
-                            <div className={`h-full rounded-full ${bg} transition-all`} style={{ width: `${pct}%` }} />
+                            <MetricQualityBarFill pct={pct} toneClass={bg} />
                           </div>
                           <div className="text-[9px] text-zinc-600 dark:text-zinc-500 mt-1">{m.desc}</div>
                         </div>
@@ -2598,8 +2646,11 @@ ${scriptContent}
                   </div>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">URL base</label>
+                  <label htmlFor="dash-site-utm-base-url" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
+                    URL base
+                  </label>
                   <input
+                    id="dash-site-utm-base-url"
                     value={utmBaseUrl}
                     onChange={(e) => setUtmBaseUrl(e.target.value)}
                     placeholder="https://seusite.com/pagina"
@@ -2608,28 +2659,40 @@ ${scriptContent}
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">utm_source</label>
-                    <input value={utmSource} onChange={(e) => setUtmSource(e.target.value)} className={inputCls} />
+                    <label htmlFor="dash-site-utm-source" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
+                      utm_source
+                    </label>
+                    <input id="dash-site-utm-source" value={utmSource} onChange={(e) => setUtmSource(e.target.value)} className={inputCls} />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">utm_medium</label>
-                    <input value={utmMedium} onChange={(e) => setUtmMedium(e.target.value)} className={inputCls} />
+                    <label htmlFor="dash-site-utm-medium" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
+                      utm_medium
+                    </label>
+                    <input id="dash-site-utm-medium" value={utmMedium} onChange={(e) => setUtmMedium(e.target.value)} className={inputCls} />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">utm_campaign</label>
-                    <input value={utmCampaign} onChange={(e) => setUtmCampaign(e.target.value)} className={inputCls} />
+                    <label htmlFor="dash-site-utm-campaign" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
+                      utm_campaign
+                    </label>
+                    <input id="dash-site-utm-campaign" value={utmCampaign} onChange={(e) => setUtmCampaign(e.target.value)} className={inputCls} />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">utm_content</label>
-                    <input value={utmContent} onChange={(e) => setUtmContent(e.target.value)} className={inputCls} />
+                    <label htmlFor="dash-site-utm-content" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
+                      utm_content
+                    </label>
+                    <input id="dash-site-utm-content" value={utmContent} onChange={(e) => setUtmContent(e.target.value)} className={inputCls} />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">utm_term</label>
-                    <input value={utmTerm} onChange={(e) => setUtmTerm(e.target.value)} className={inputCls} />
+                    <label htmlFor="dash-site-utm-term" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
+                      utm_term
+                    </label>
+                    <input id="dash-site-utm-term" value={utmTerm} onChange={(e) => setUtmTerm(e.target.value)} className={inputCls} />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">click_id</label>
-                    <input value={utmClickId} onChange={(e) => setUtmClickId(e.target.value)} className={inputCls} />
+                    <label htmlFor="dash-site-utm-click-id" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
+                      click_id
+                    </label>
+                    <input id="dash-site-utm-click-id" value={utmClickId} onChange={(e) => setUtmClickId(e.target.value)} className={inputCls} />
                   </div>
                 </div>
               </div>
@@ -2861,8 +2924,11 @@ ${scriptContent}
 
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end bg-zinc-50 dark:bg-zinc-900/30 p-5 rounded-xl border border-zinc-200 dark:border-zinc-800">
                     <div className="md:col-span-4">
-                      <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Se a URL contém:</label>
+                      <label htmlFor="dash-site-url-rule-contains" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
+                        Se a URL contém:
+                      </label>
                       <input
+                        id="dash-site-url-rule-contains"
                         value={urlRuleValue}
                         onChange={(e) => setUrlRuleValue(e.target.value)}
                         placeholder="Ex: /obrigado-compra"
@@ -2870,8 +2936,11 @@ ${scriptContent}
                       />
                     </div>
                     <div className="md:col-span-3">
-                      <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Disparar Evento:</label>
+                      <label htmlFor="dash-site-url-rule-event-type" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
+                        Disparar Evento:
+                      </label>
                       <select
+                        id="dash-site-url-rule-event-type"
                         value={urlRuleEventType}
                         onChange={(e) => setUrlRuleEventType(e.target.value)}
                         className={selectCls}
@@ -2899,8 +2968,11 @@ ${scriptContent}
                     </div>
                     {urlRuleEventType === 'Custom' && (
                       <div className="md:col-span-3">
-                        <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Nome do Evento:</label>
+                        <label htmlFor="dash-site-url-rule-custom-name" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
+                          Nome do Evento:
+                        </label>
                         <input
+                          id="dash-site-url-rule-custom-name"
                           value={urlRuleCustomName}
                           onChange={(e) => setUrlRuleCustomName(e.target.value)}
                           placeholder="Ex: StartTrial"
@@ -2911,8 +2983,11 @@ ${scriptContent}
                     {(urlRuleEventType === 'Purchase' || urlRuleEventType === 'Custom') && (
                       <div className="md:col-span-3 grid grid-cols-2 gap-2">
                         <div>
-                          <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Valor:</label>
+                          <label htmlFor="dash-site-url-rule-event-value" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
+                            Valor:
+                          </label>
                           <input
+                            id="dash-site-url-rule-event-value"
                             type="number"
                             step="0.01"
                             value={urlRuleEventValue}
@@ -2922,8 +2997,11 @@ ${scriptContent}
                           />
                         </div>
                         <div>
-                          <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Moeda:</label>
+                          <label htmlFor="dash-site-url-rule-event-currency" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
+                            Moeda:
+                          </label>
                           <select
+                            id="dash-site-url-rule-event-currency"
                             value={urlRuleEventCurrency}
                             onChange={(e) => setUrlRuleEventCurrency(e.target.value)}
                             className={selectCls}
@@ -2943,7 +3021,9 @@ ${scriptContent}
                       </button>
                       {selectedRuleId && (
                         <button
+                          type="button"
                           onClick={handleCancelEditRule}
+                          aria-label="Cancelar edição da regra"
                           className="bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-400 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors"
                         >
                           ✕
@@ -3009,8 +3089,11 @@ ${scriptContent}
 
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end bg-zinc-50 dark:bg-zinc-900/30 p-5 rounded-xl border border-zinc-200 dark:border-zinc-800">
                     <div className="md:col-span-3">
-                      <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Se a URL contém:</label>
+                      <label htmlFor="dash-site-btn-rule-url" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
+                        Se a URL contém:
+                      </label>
                       <input
+                        id="dash-site-btn-rule-url"
                         value={buttonRuleUrl}
                         onChange={(e) => setButtonRuleUrl(e.target.value)}
                         placeholder="Ex: / ou /obrigado"
@@ -3018,8 +3101,11 @@ ${scriptContent}
                       />
                     </div>
                     <div className="md:col-span-3">
-                      <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Texto do Botão contém:</label>
+                      <label htmlFor="dash-site-btn-rule-text" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
+                        Texto do Botão contém:
+                      </label>
                       <input
+                        id="dash-site-btn-rule-text"
                         value={buttonRuleText}
                         onChange={(e) => setButtonRuleText(e.target.value)}
                         placeholder="Ex: Comprar Agora"
@@ -3027,8 +3113,11 @@ ${scriptContent}
                       />
                     </div>
                     <div className="md:col-span-3">
-                      <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Evento:</label>
+                      <label htmlFor="dash-site-btn-rule-event-type" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
+                        Evento:
+                      </label>
                       <select
+                        id="dash-site-btn-rule-event-type"
                         value={buttonRuleEventType}
                         onChange={(e) => setButtonRuleEventType(e.target.value)}
                         className={selectCls}
@@ -3056,8 +3145,11 @@ ${scriptContent}
                     </div>
                     {buttonRuleEventType === 'Custom' && (
                       <div className="md:col-span-3">
-                        <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Personalizado:</label>
+                        <label htmlFor="dash-site-btn-rule-custom-name" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
+                          Personalizado:
+                        </label>
                         <input
+                          id="dash-site-btn-rule-custom-name"
                           value={buttonRuleCustomName}
                           onChange={(e) => setButtonRuleCustomName(e.target.value)}
                           placeholder="Ex: Zap"
@@ -3068,8 +3160,11 @@ ${scriptContent}
                     {(buttonRuleEventType === 'Purchase' || buttonRuleEventType === 'Custom') && (
                       <div className="md:col-span-3 grid grid-cols-2 gap-2">
                         <div>
-                          <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Valor:</label>
+                          <label htmlFor="dash-site-btn-rule-event-value" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
+                            Valor:
+                          </label>
                           <input
+                            id="dash-site-btn-rule-event-value"
                             type="number"
                             step="0.01"
                             value={buttonRuleEventValue}
@@ -3079,8 +3174,11 @@ ${scriptContent}
                           />
                         </div>
                         <div>
-                          <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Moeda:</label>
+                          <label htmlFor="dash-site-btn-rule-event-currency" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
+                            Moeda:
+                          </label>
                           <select
+                            id="dash-site-btn-rule-event-currency"
                             value={buttonRuleEventCurrency}
                             onChange={(e) => setButtonRuleEventCurrency(e.target.value)}
                             className={selectCls}
@@ -3100,7 +3198,9 @@ ${scriptContent}
                       </button>
                       {selectedRuleId && (
                         <button
+                          type="button"
                           onClick={handleCancelEditRule}
+                          aria-label="Cancelar edição da regra"
                           className="bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-400 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors"
                         >
                           ✕
@@ -3170,7 +3270,15 @@ ${scriptContent}
                         <div key={form.id} className={`relative p-4 rounded-xl border transition-all ${selectedFormId === form.id ? 'bg-blue-500/10 border-blue-500/50' : 'bg-zinc-900/30 border-zinc-200 dark:border-zinc-800 hover:border-zinc-700'}`}>
                           <div className="flex justify-between items-start mb-2">
                             <h4 className="font-medium text-zinc-800 dark:text-zinc-200 truncate pr-6">{form.name}</h4>
-                            <button onClick={(e) => { e.stopPropagation(); deleteForm(form.id); }} className="text-zinc-600 dark:text-zinc-500 hover:text-red-400 transition-colors">
+                            <button
+                              type="button"
+                              aria-label={`Excluir formulário ${form.name}`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                deleteForm(form.id);
+                              }}
+                              className="text-zinc-600 dark:text-zinc-500 hover:text-red-400 transition-colors"
+                            >
                               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" /></svg>
                             </button>
                           </div>
@@ -3194,9 +3302,12 @@ ${scriptContent}
 
                         {/* Form Name */}
                         <div>
-                          <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Nome do Formulário (para salvar)</label>
+                          <label htmlFor="dash-site-form-name" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
+                            Nome do Formulário (para salvar)
+                          </label>
                           <div className="flex gap-2">
                             <input
+                              id="dash-site-form-name"
                               value={formName}
                               onChange={e => setFormName(e.target.value)}
                               placeholder="Ex: Captura Ebook V1"
@@ -3275,8 +3386,11 @@ ${scriptContent}
 
                         {/* Button Text */}
                         <div>
-                          <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Texto do Botão</label>
+                          <label htmlFor="dash-site-form-button-text" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
+                            Texto do Botão
+                          </label>
                           <input
+                            id="dash-site-form-button-text"
                             value={formButtonText}
                             onChange={(e) => setFormButtonText(e.target.value)}
                             className={inputCls}
@@ -3286,15 +3400,20 @@ ${scriptContent}
                         {/* Button Colors */}
                         <div className="grid grid-cols-2 gap-4">
                           <div>
-                            <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Cor do Botão</label>
+                            <span id="dash-site-form-btn-bg-label" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
+                              Cor do Botão
+                            </span>
                             <div className="flex gap-2 items-center">
                               <input
                                 type="color"
+                                aria-labelledby="dash-site-form-btn-bg-label"
                                 value={formButtonBgColor}
                                 onChange={(e) => setFormButtonBgColor(e.target.value)}
                                 className="h-9 w-12 p-0.5 rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 cursor-pointer"
                               />
                               <input
+                                id="dash-site-form-btn-bg-hex"
+                                aria-labelledby="dash-site-form-btn-bg-label"
                                 value={formButtonBgColor}
                                 onChange={(e) => setFormButtonBgColor(e.target.value)}
                                 className={inputCls}
@@ -3303,15 +3422,20 @@ ${scriptContent}
                             </div>
                           </div>
                           <div>
-                            <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Cor do Texto</label>
+                            <span id="dash-site-form-btn-fg-label" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
+                              Cor do Texto
+                            </span>
                             <div className="flex gap-2 items-center">
                               <input
                                 type="color"
+                                aria-labelledby="dash-site-form-btn-fg-label"
                                 value={formButtonTextColor}
                                 onChange={(e) => setFormButtonTextColor(e.target.value)}
                                 className="h-9 w-12 p-0.5 rounded border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 cursor-pointer"
                               />
                               <input
+                                id="dash-site-form-btn-fg-hex"
+                                aria-labelledby="dash-site-form-btn-fg-label"
                                 value={formButtonTextColor}
                                 onChange={(e) => setFormButtonTextColor(e.target.value)}
                                 className={inputCls}
@@ -3323,8 +3447,11 @@ ${scriptContent}
 
                         {/* Event Type */}
                         <div>
-                          <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Evento ao Enviar</label>
+                          <label htmlFor="dash-site-form-event-type" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
+                            Evento ao Enviar
+                          </label>
                           <select
+                            id="dash-site-form-event-type"
                             value={formEventType}
                             onChange={(e) => setFormEventType(e.target.value)}
                             className={selectCls}
@@ -3353,8 +3480,11 @@ ${scriptContent}
 
                         {formEventType === 'Custom' && (
                           <div>
-                            <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Nome do Evento</label>
+                            <label htmlFor="dash-site-form-custom-event-name" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
+                              Nome do Evento
+                            </label>
                             <input
+                              id="dash-site-form-custom-event-name"
                               value={formCustomEventName}
                               onChange={(e) => setFormCustomEventName(e.target.value)}
                               className={inputCls}
@@ -3365,8 +3495,11 @@ ${scriptContent}
                         {(formEventType === 'Purchase' || formEventType === 'Custom') && (
                           <div className="grid grid-cols-2 gap-2">
                             <div>
-                              <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Valor</label>
+                              <label htmlFor="dash-site-form-event-value" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
+                                Valor
+                              </label>
                               <input
+                                id="dash-site-form-event-value"
                                 type="number"
                                 step="0.01"
                                 value={formEventValue}
@@ -3376,15 +3509,18 @@ ${scriptContent}
                               />
                             </div>
                             <div>
-                              <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Moeda</label>
+                              <label htmlFor="dash-site-form-event-currency" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
+                                Moeda
+                              </label>
                               <select
+                                id="dash-site-form-event-currency"
                                 value={formEventCurrency}
                                 onChange={(e) => setFormEventCurrency(e.target.value)}
                                 className={selectCls}
                               >
                                 <option value="BRL">BRL</option>
                                 <option value="USD">USD</option>
-                                  </select>
+                              </select>
                             </div>
                           </div>
                         )}
@@ -3405,16 +3541,46 @@ ${scriptContent}
                             </label>
                           </div>
                           {postSubmitAction === 'message' ? (
-                            <textarea value={postSubmitMessage} onChange={e => setPostSubmitMessage(e.target.value)} className={`${inputCls} min-h-[80px]`} placeholder="Digite a mensagem de agradecimento..." />
+                            <>
+                              <label htmlFor="dash-site-form-post-message" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
+                                Mensagem de agradecimento
+                              </label>
+                              <textarea
+                                id="dash-site-form-post-message"
+                                value={postSubmitMessage}
+                                onChange={e => setPostSubmitMessage(e.target.value)}
+                                className={`${inputCls} min-h-[80px]`}
+                                placeholder="Digite a mensagem de agradecimento..."
+                              />
+                            </>
                           ) : (
-                            <input value={postSubmitRedirectUrl} onChange={e => setPostSubmitRedirectUrl(e.target.value)} className={inputCls} placeholder="https://..." />
+                            <>
+                              <label htmlFor="dash-site-form-redirect-url" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
+                                URL de redirecionamento
+                              </label>
+                              <input
+                                id="dash-site-form-redirect-url"
+                                value={postSubmitRedirectUrl}
+                                onChange={e => setPostSubmitRedirectUrl(e.target.value)}
+                                className={inputCls}
+                                placeholder="https://..."
+                              />
+                            </>
                           )}
                         </div>
 
                         {/* Webhook */}
                         <div>
-                          <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Webhook URL (Opcional)</label>
-                          <input value={formWebhookUrl} onChange={e => setFormWebhookUrl(e.target.value)} className={inputCls} placeholder="https://seu-crm.com/webhook..." />
+                          <label htmlFor="dash-site-form-webhook-url" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
+                            Webhook URL (Opcional)
+                          </label>
+                          <input
+                            id="dash-site-form-webhook-url"
+                            value={formWebhookUrl}
+                            onChange={e => setFormWebhookUrl(e.target.value)}
+                            className={inputCls}
+                            placeholder="https://seu-crm.com/webhook..."
+                          />
                           <p className="text-[10px] text-zinc-600 dark:text-zinc-500 mt-1">Enviaremos os dados do lead para esta URL via POST JSON.</p>
                         </div>
                       </div>
@@ -3432,12 +3598,9 @@ ${scriptContent}
                               <div className={`h-10 rounded border px-3 flex items-center text-sm flex-1 ${formTheme === 'dark' ? 'bg-[#222] border-[#444] text-white' : 'bg-white border-gray-300 text-gray-500'}`}>Telefone</div>
                             </div>
                           )}
-                          <div
-                            className="h-10 rounded flex items-center justify-center font-bold text-sm"
-                            style={{ backgroundColor: formButtonBgColor, color: formButtonTextColor }}
-                          >
+                          <FormPreviewSubmitChip bg={formButtonBgColor} fg={formButtonTextColor}>
                             {formButtonText}
-                          </div>
+                          </FormPreviewSubmitChip>
                         </div>
                         {postSubmitAction === 'message' && (
                           <div className="mt-4 p-3 bg-green-500/10 text-green-500 text-xs border border-green-500/20 rounded">
@@ -3529,6 +3692,7 @@ ${scriptContent}
                     <div className="px-4 py-2.5 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-white dark:bg-zinc-950/60 flex flex-wrap items-center gap-2">
                       {periodSelector}
                       <select
+                        aria-label="Filtrar campanhas por status"
                         value={metaStatusFilter}
                         onChange={(e) => setMetaStatusFilter(e.target.value as 'active' | 'all')}
                         className={selectClsCompact}
@@ -3776,10 +3940,11 @@ ${scriptContent}
 
                     <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 items-end">
                       <div>
-                        <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-500 mb-1.5">
+                        <label htmlFor="dash-site-report-campaign" className="block text-xs font-medium text-zinc-600 dark:text-zinc-500 mb-1.5">
                           Campanha
                         </label>
                         <select
+                          id="dash-site-report-campaign"
                           value={selectedCampaignId}
                           onChange={(e) => setSelectedCampaignId(e.target.value)}
                           className={selectCls}
@@ -3818,6 +3983,7 @@ ${scriptContent}
                         <div className="flex items-center gap-2">
                           {savedUtms.length > 0 && (
                             <select
+                              aria-label="Carregar configuração UTM salva"
                               className="rounded-lg bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 px-2 py-1.5 text-xs text-zinc-900 dark:text-zinc-200 outline-none focus:border-zinc-600 max-w-[240px] truncate"
                               onChange={(e) => {
                                 const utm = savedUtms.find((u) => u.id === Number(e.target.value));
@@ -3838,6 +4004,7 @@ ${scriptContent}
                           {showUrlPaster ? (
                             <div className="flex items-center gap-1.5 animate-in fade-in slide-in-from-right-4 duration-300">
                               <input
+                                aria-label="URL para extrair parâmetros UTM"
                                 value={pastedUrl}
                                 onChange={(e) => setPastedUrl(e.target.value)}
                                 placeholder="https://..."
@@ -4217,10 +4384,7 @@ ${scriptContent}
                                   <span>{pct}%</span>
                                 </div>
                                 <div className="h-2 rounded-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden">
-                                  <div
-                                    className="h-full bg-amber-500/90 rounded-full transition-all"
-                                    style={{ width: `${pct}%` }}
-                                  />
+                                  <ProgressBarFill pct={pct} className="h-full bg-amber-500/90 rounded-full transition-all" />
                                 </div>
                               </div>
                             );
