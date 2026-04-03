@@ -28,6 +28,12 @@ export function agentDebugLog(entry: AgentDebugEntry): void {
     ...entry,
   };
   const line = `${JSON.stringify(body)}\n`;
+  // Também imprime no stdout para ambientes remotos (VPS) onde não temos acesso ao filesystem local.
+  // Prefixo fixo para facilitar o grep em pm2/docker/journalctl.
+  try {
+    // eslint-disable-next-line no-console
+    console.log(`[AGENTDBG] ${line.trimEnd()}`);
+  } catch {}
   void appendFile(workspaceDebugLogPath(), line).catch(() => {});
   if (typeof fetch !== 'undefined') {
     void fetch(INGEST_URL, {
