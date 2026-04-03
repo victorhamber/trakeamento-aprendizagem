@@ -2,6 +2,7 @@ import geoip from 'geoip-lite';
 import { pool } from '../db/pool';
 import { CapiService } from './capi';
 import { DDI_LIST } from '../lib/ddi';
+import { agentDebugLog } from '../lib/agent-debug-log';
 
 interface EnrichedData {
   fbp?: string;
@@ -20,7 +21,7 @@ interface EnrichedData {
 
 export class EnrichmentService {
   static async findVisitorData(siteKey: string, email?: string, phone?: string, externalId?: string, options?: { ip?: string, country?: string }): Promise<EnrichedData | null> {
-    if (!email && !phone && !externalId) return null;
+    if (!email && !phone && !externalId && !options?.ip) return null;
 
     const emailHash = email ? CapiService.hash(email) : null;
     
@@ -45,7 +46,28 @@ export class EnrichmentService {
       phoneHash = CapiService.hash(p);
     }
 
-    if (!emailHash && !phoneHash && !externalId) return null;
+    if (!emailHash && !phoneHash && !externalId && !options?.ip) return null;
+
+    // #region agent log
+    try {
+      agentDebugLog({
+        hypothesisId: 'H3',
+        location: 'enrichment.ts:findVisitorData:entry',
+        message: 'enrichment_lookup_keys',
+        data: {
+          hasEmail: !!emailHash,
+          hasPhone: !!phoneHash,
+          hasExternalId: !!externalId,
+          externalIdLooksLikeTrackerEid:
+            typeof externalId === 'string' && externalId.startsWith('eid_'),
+          siteKeySuffix: siteKey?.length > 6 ? String(siteKey).slice(-6) : siteKey,
+        },
+        runId: 'pre-fix',
+      });
+    } catch {
+      /* ignore */
+    }
+    // #endregion
 
     // 1. Tentar buscar em site_visitors (Perfil consolidado)
     // Prioridade: IDs diretos > IP (Se habilitado)
@@ -57,7 +79,7 @@ export class EnrichmentService {
           ($2::text IS NOT NULL AND email_hash = $2::text) OR
           ($3::text IS NOT NULL AND phone_hash = $3::text) OR
           ($4::text IS NOT NULL AND external_id = $4::text) OR
-          (external_id IS NOT NULL AND last_ip = $5::text)
+          ($5::text IS NOT NULL AND last_ip = $5::text)
         )
       ORDER BY 
         CASE 
@@ -82,6 +104,20 @@ export class EnrichmentService {
       
       let visitorData: any = {};
       
+      // #region agent log
+      try {
+        agentDebugLog({
+          hypothesisId: 'H3',
+          location: 'enrichment.ts:findVisitorData:afterVisitorQuery',
+          message: 'enrichment_site_visitors_rows',
+          data: { visitorRows: visitorRes.rowCount ?? 0 },
+          runId: 'pre-fix',
+        });
+      } catch {
+        /* ignore */
+      }
+      // #endregion
+
       if (visitorRes.rowCount && visitorRes.rowCount > 0) {
         const row = visitorRes.rows[0];
         const utms = this.parseUtmString(row.last_traffic_source);
@@ -102,6 +138,23 @@ export class EnrichmentService {
       }
 
       if (Object.keys(visitorData).length > 0 || metadata) {
+        // #region agent log
+        try {
+          agentDebugLog({
+            hypothesisId: 'H4',
+            location: 'enrichment.ts:findVisitorData:exitVisitor',
+            message: 'enrichment_matched_site_visitors',
+            data: {
+              outHasFbp: !!visitorData.fbp,
+              outHasFbc: !!visitorData.fbc,
+              usedMetadata: !!metadata,
+            },
+            runId: 'pre-fix',
+          });
+        } catch {
+          /* ignore */
+        }
+        // #endregion
         return {
           ...visitorData,
           clientIp: visitorData.clientIp || metadata?.ip,
@@ -117,21 +170,57 @@ export class EnrichmentService {
         FROM web_events
         WHERE site_key = $1
           AND (
-            ($2::text IS NOT NULL AND user_data->>'em' = $2::text) OR
-            ($3::text IS NOT NULL AND user_data->>'ph' = $3::text) OR
-            ($4::text IS NOT NULL AND user_data->>'external_id' = $4::text)
+            ($2::text IS NOT NULL AND (
+              user_data->>'em' = $2::text OR
+              (jsonb_typeof(user_data->'em') = 'array' AND user_data->'em'->>0 = $2::text)
+            )) OR
+            ($3::text IS NOT NULL AND (
+              user_data->>'ph' = $3::text OR
+              (jsonb_typeof(user_data->'ph') = 'array' AND user_data->'ph'->>0 = $3::text)
+            )) OR
+            ($4::text IS NOT NULL AND (
+              user_data->>'external_id' = $4::text OR
+              (jsonb_typeof(user_data->'external_id') = 'array' AND user_data->'external_id'->>0 = $4::text)
+            ))
           )
         ORDER BY event_time DESC
         LIMIT 1
       `;
 
       const eventRes = await pool.query(eventQuery, [siteKey, emailHash, phoneHash, externalId || null]);
+
+      // #region agent log
+      try {
+        agentDebugLog({
+          hypothesisId: 'H4',
+          location: 'enrichment.ts:findVisitorData:afterWebEventsQuery',
+          message: 'enrichment_web_events_rows',
+          data: { eventRows: eventRes.rowCount ?? 0 },
+          runId: 'pre-fix',
+        });
+      } catch {
+        /* ignore */
+      }
+      // #endregion
       
       if (eventRes.rowCount && eventRes.rowCount > 0) {
         const row = eventRes.rows[0];
         const ud = row.user_data || {};
         const cd = row.custom_data || {};
         
+        // #region agent log
+        try {
+          agentDebugLog({
+            hypothesisId: 'H4',
+            location: 'enrichment.ts:findVisitorData:exitWebEvents',
+            message: 'enrichment_matched_web_events',
+            data: { outHasFbp: !!ud.fbp, outHasFbc: !!ud.fbc },
+            runId: 'pre-fix',
+          });
+        } catch {
+          /* ignore */
+        }
+        // #endregion
         return {
           fbp: ud.fbp,
           fbc: ud.fbc,
@@ -152,6 +241,20 @@ export class EnrichmentService {
       console.error('[Enrichment] Error searching for visitor data:', err);
     }
 
+    // #region agent log
+    try {
+      agentDebugLog({
+        hypothesisId: 'H2',
+        location: 'enrichment.ts:findVisitorData:exitNull',
+        message: 'enrichment_no_match',
+        data: {},
+        runId: 'pre-fix',
+      });
+    } catch {
+      /* ignore */
+    }
+    // #endregion
+
     return null;
   }
 
@@ -166,9 +269,18 @@ export class EnrichmentService {
       WHERE site_key = $1
         AND (
           ($2::text IS NOT NULL AND user_data->>'fbp' = $2::text) OR
-          ($3::text IS NOT NULL AND user_data->>'external_id' = $3::text) OR
-          ($4::text IS NOT NULL AND user_data->>'em' = $4::text) OR
-          ($5::text IS NOT NULL AND user_data->>'ph' = $5::text)
+          ($3::text IS NOT NULL AND (
+            user_data->>'external_id' = $3::text OR
+            (jsonb_typeof(user_data->'external_id') = 'array' AND user_data->'external_id'->>0 = $3::text)
+          )) OR
+          ($4::text IS NOT NULL AND (
+            user_data->>'em' = $4::text OR
+            (jsonb_typeof(user_data->'em') = 'array' AND user_data->'em'->>0 = $4::text)
+          )) OR
+          ($5::text IS NOT NULL AND (
+            user_data->>'ph' = $5::text OR
+            (jsonb_typeof(user_data->'ph') = 'array' AND user_data->'ph'->>0 = $5::text)
+          ))
         )
       ORDER BY event_time DESC
       LIMIT 1

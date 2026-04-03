@@ -10,13 +10,16 @@ import { notifyAccountNewSale } from '../services/expo-push';
 import { notifyAccountWebPushSale } from '../services/web-push-notify';
 import type { SaleNotifyKind } from '../services/sale-notification';
 import { DDI_LIST } from '../lib/ddi';
+import { agentDebugLog } from '../lib/agent-debug-log';
 
 const router = Router();
 
 function decodeTrkToken(token: string) {
   if (!token || !token.startsWith('trk_')) return null;
   try {
-    const b64 = token.substring(4);
+    let b64 = token.substring(4).replace(/-/g, '+').replace(/_/g, '/');
+    const pad = b64.length % 4;
+    if (pad) b64 += '='.repeat(4 - pad);
     const decoded = Buffer.from(b64, 'base64').toString('utf-8');
     const parts = decoded.split('|');
     return {
@@ -27,6 +30,40 @@ function decodeTrkToken(token: string) {
   } catch (e) {
     return null;
   }
+}
+
+/** Campos onde plataformas costumam embutir o token `trk_` (incl. utm_source — ver CAPI debug). */
+function collectTrkSearchHaystack(payload: Record<string, unknown>): string {
+  const d = (payload.data as Record<string, unknown>) || payload;
+  const purchase = (d.purchase as Record<string, unknown>) || (payload.purchase as Record<string, unknown>) || {};
+  const tp = (payload.trackingParameters as Record<string, unknown>) || (payload.tracking_parameters as Record<string, unknown>) || {};
+  const cd = (payload.custom_data as Record<string, unknown>) || (payload.custom_args as Record<string, unknown>) || {};
+  const trackingObj = (d.tracking as Record<string, unknown>) || (payload.tracking as Record<string, unknown>) || (purchase.tracking as Record<string, unknown>) || {};
+
+  const parts: unknown[] = [
+    payload.sck,
+    payload.src,
+    payload.utm_source,
+    tp.utm_source,
+    tp.sck,
+    tp.src,
+    cd.utm_source,
+    cd.sck,
+    cd.src,
+    cd.fbc,
+    cd.fbp,
+    trackingObj.utm_source,
+    trackingObj.sck,
+    trackingObj.src,
+    trackingObj.fbc,
+    trackingObj.fbp,
+    purchase.sck,
+    purchase.src,
+    purchase.utm_source,
+    (d as any).fbc,
+    (d as any).fbp,
+  ];
+  return parts.filter((x) => x != null && String(x).trim() !== '').map(String).join('\n');
 }
 
 /** URL válida para CAPI (website): prioriza page_url/referrer do checkout; fallback no domínio do site. */
@@ -434,17 +471,48 @@ async function processPurchaseWebhook({
   } = siteRes.rows[0];
   const capiToken = capi_token_enc ? decryptString(capi_token_enc) : null;
 
-  // 1. Attribute Recovery (trk_ token in sck/src)
-  const sckRaw = String(payload.sck || payload.src || payload.trackingParameters?.utm_source || payload.tracking_parameters?.utm_source || '');
+  // 1. Attribute Recovery: trk_ em sck, src, utm_source, custom_data, etc. (base64url)
+  const trkHaystack = collectTrkSearchHaystack(payload);
+  const sckRaw = trkHaystack.split('\n')[0] || '';
   let trkData = null;
-  if (sckRaw.includes('trk_')) {
-    const match = sckRaw.match(/trk_[A-Za-z0-9+/=]+/);
+  if (trkHaystack.includes('trk_')) {
+    const match = trkHaystack.match(/trk_[A-Za-z0-9+/=_-]+/);
     if (match) trkData = decodeTrkToken(match[0]);
   }
 
   const finalFbc = fbc || trkData?.fbc;
   const finalFbp = fbp || trkData?.fbp;
-  const finalExternalId = externalId || trkData?.externalId;
+  const finalExternalId =
+    (trkData?.externalId != null && String(trkData.externalId).trim() !== ''
+      ? String(trkData.externalId).trim()
+      : null) || externalId;
+
+  // #region agent log
+  try {
+    const utmRaw = payload.utm_source;
+    const utmStr = utmRaw != null ? String(utmRaw) : '';
+    agentDebugLog({
+      hypothesisId: 'H1',
+      location: 'webhooks.ts:processPurchaseWebhook:afterTrk',
+      message: 'purchase_trk_and_payload_hints',
+      data: {
+        orderId: String(orderId),
+        siteKeySuffix: siteKey?.length > 6 ? String(siteKey).slice(-6) : siteKey,
+        trkHaystackHasTrk: trkHaystack.includes('trk_'),
+        sckRawHasTrk: sckRaw.includes('trk_'),
+        utmSourceHasTrk: utmStr.includes('trk_'),
+        trkDecoded: !!trkData,
+        webhookHadFbp: !!fbp,
+        webhookHadFbc: !!fbc,
+        finalExternalIdLooksLikeTracker:
+          typeof finalExternalId === 'string' && finalExternalId.startsWith('eid_'),
+      },
+      runId: 'post-trk-fix',
+    });
+  } catch {
+    /* ignore */
+  }
+  // #endregion
 
   // 2. Enrichment: Missing attribution data or geolocation
   let enriched = null;
@@ -460,6 +528,29 @@ async function processPurchaseWebhook({
   const mergedIp = clientIp || enriched?.clientIp;
   const mergedUa = clientUa || enriched?.clientUa;
   const mergedExternalId = finalExternalId || enriched?.externalId || (email ? CapiService.hash(email) : undefined);
+
+  // #region agent log
+  try {
+    agentDebugLog({
+      hypothesisId: 'H2',
+      location: 'webhooks.ts:processPurchaseWebhook:afterMerge',
+      message: 'purchase_enrichment_merge',
+      data: {
+        orderId: String(orderId),
+        enrichmentRan:
+          !finalFbp || !finalFbc || !clientIp || !clientUa || (!city && !state),
+        enrichedNonNull: !!enriched,
+        mergedHasFbp: !!mergedFbp,
+        mergedHasFbc: !!mergedFbc,
+        mergedHasIp: !!mergedIp,
+        mergedHasUa: !!mergedUa,
+      },
+      runId: 'post-trk-fix',
+    });
+  } catch {
+    /* ignore */
+  }
+  // #endregion
 
   // Location recovery: Priority Webhook > Enriched (history) > GeoIP (current IP)
   let finalCity = city || enriched?.city;
