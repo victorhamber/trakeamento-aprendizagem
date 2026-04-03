@@ -515,11 +515,18 @@ async function processPurchaseWebhook({
   }
 
   // UTMs priority (Strip trk_ token from UTM source if present)
-  let baseUtmSource = payload.utm_source || payload.trackingParameters?.utm_source || payload.tracking_parameters?.utm_source || (payload.sck && !String(payload.sck).startsWith('trk_') ? payload.sck : undefined) || (payload.src && !String(payload.src).startsWith('trk_') ? payload.src : undefined) || enriched?.utmSource || undefined;
+  let baseUtmSource = payload.utm_source || payload.trackingParameters?.utm_source || payload.tracking_parameters?.utm_source || (payload.sck && !String(payload.sck).startsWith('trk_') ? payload.sck : undefined) || (payload.src && !String(payload.src).startsWith('trk_') ? payload.src : undefined) || undefined;
+  
+  // Se o utm_source vindo do payload for um token trk_, ignoramos ele para usar o do banco
+  if (baseUtmSource && typeof baseUtmSource === 'string' && baseUtmSource.startsWith('trk_')) {
+    baseUtmSource = undefined;
+  }
+
   if (baseUtmSource && typeof baseUtmSource === 'string' && baseUtmSource.includes('-trk_')) {
     baseUtmSource = baseUtmSource.split('-trk_')[0];
   }
-  const utmSource = baseUtmSource;
+
+  const utmSource = baseUtmSource || enriched?.utmSource || undefined;
   const utmMedium = payload.utm_medium || payload.trackingParameters?.utm_medium || payload.tracking_parameters?.utm_medium || enriched?.utmMedium || undefined;
   const utmCampaign = payload.utm_campaign || payload.trackingParameters?.utm_campaign || payload.tracking_parameters?.utm_campaign || enriched?.utmCampaign || undefined;
   const utmContent =

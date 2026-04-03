@@ -84,7 +84,6 @@ export class EnrichmentService {
       
       let visitorData: any = {};
       
-
       if (visitorRes.rowCount && visitorRes.rowCount > 0) {
         const row = visitorRes.rows[0];
         const utms = this.parseUtmString(row.last_traffic_source);
@@ -98,75 +97,37 @@ export class EnrichmentService {
         };
       }
 
-      // Buscar metadados (IP/UA) mais recentes em web_events APENAS se não tiver no visitorData
-      let metadata: any = null;
-      if (!visitorData.clientIp || !visitorData.clientUa) {
-         metadata = await this.findLatestMetadata(siteKey, visitorData.fbp, visitorData.externalId, emailHash, phoneHash);
-      }
+      // Buscar metadados (IP/UA) mais recentes em web_events caso falte no visitorData
+      // ou se o match foi por IP e queremos dados de UA/Geolocalização mais completos
+      const metadata = await this.findLatestMetadata(
+        siteKey, 
+        visitorData.fbp, 
+        visitorData.externalId || externalId, 
+        emailHash, 
+        phoneHash
+      );
 
       if (Object.keys(visitorData).length > 0 || metadata) {
         return {
           ...visitorData,
-          clientIp: visitorData.clientIp || metadata?.ip,
+          clientIp: visitorData.clientIp || metadata?.ip || options?.ip,
           clientUa: visitorData.clientUa || metadata?.ua,
           city: visitorData.city || metadata?.city,
-          state: visitorData.state || metadata?.state
+          state: visitorData.state || metadata?.state,
+          utmSource: visitorData.utmSource || metadata?.utm_source,
+          utmMedium: visitorData.utmMedium || metadata?.utm_medium,
+          utmCampaign: visitorData.utmCampaign || metadata?.utm_campaign,
+          utmContent: visitorData.utmContent || metadata?.utm_content,
+          utmTerm: visitorData.utmTerm || metadata?.utm_term
         };
       }
 
-      // 2. Se não achou em visitors, tentar match direto em web_events
-      const eventQuery = `
-        SELECT user_data, custom_data, user_data->>'client_ip_address' as ip, user_data->>'client_user_agent' as ua
-        FROM web_events
-        WHERE site_key = $1
-          AND (
-            ($2::text IS NOT NULL AND (
-              user_data->>'em' = $2::text OR
-              (jsonb_typeof(user_data->'em') = 'array' AND user_data->'em'->>0 = $2::text)
-            )) OR
-            ($3::text IS NOT NULL AND (
-              user_data->>'ph' = $3::text OR
-              (jsonb_typeof(user_data->'ph') = 'array' AND user_data->'ph'->>0 = $3::text)
-            )) OR
-            ($4::text IS NOT NULL AND (
-              user_data->>'external_id' = $4::text OR
-              (jsonb_typeof(user_data->'external_id') = 'array' AND user_data->'external_id'->>0 = $4::text)
-            ))
-          )
-        ORDER BY event_time DESC
-        LIMIT 1
-      `;
-
-      const eventRes = await pool.query(eventQuery, [siteKey, emailHash, phoneHash, externalId || null]);
-
-      
-      if (eventRes.rowCount && eventRes.rowCount > 0) {
-        const row = eventRes.rows[0];
-        const ud = row.user_data || {};
-        const cd = row.custom_data || {};
-        
-        return {
-          fbp: ud.fbp,
-          fbc: ud.fbc,
-          externalId: ud.external_id,
-          clientIp: row.ip,
-          clientUa: row.ua,
-          city: ud.ct || cd.city,
-          state: ud.st || cd.state,
-          utmSource: cd.utm_source,
-          utmMedium: cd.utm_medium,
-          utmCampaign: cd.utm_campaign,
-          utmContent: cd.utm_content,
-          utmTerm: cd.utm_term
-        };
-      }
-
+      // 2. Se não achou de jeito nenhum, retornar null para que o webhook use o que tem no payload
+      return null;
     } catch (err) {
       console.error('[Enrichment] Error searching for visitor data:', err);
+      return null;
     }
-
-
-    return null;
   }
 
   private static async findLatestMetadata(siteKey: string, fbp?: string, externalId?: string, emailHash?: string | null, phoneHash?: string | null) {
@@ -175,7 +136,12 @@ export class EnrichmentService {
         user_data->>'client_ip_address' as ip, 
         user_data->>'client_user_agent' as ua,
         user_data->>'ct' as city,
-        user_data->>'st' as state
+        user_data->>'st' as state,
+        custom_data->>'utm_source' as utm_source,
+        custom_data->>'utm_medium' as utm_medium,
+        custom_data->>'utm_campaign' as utm_campaign,
+        custom_data->>'utm_content' as utm_content,
+        custom_data->>'utm_term' as utm_term
       FROM web_events
       WHERE site_key = $1
         AND (
@@ -207,14 +173,31 @@ export class EnrichmentService {
   private static parseUtmString(source?: string) {
     if (!source) return {};
     try {
-      const urlParams = new URLSearchParams(source);
-      return {
-        utmSource: urlParams.get('utm_source') || undefined,
-        utmMedium: urlParams.get('utm_medium') || undefined,
-        utmCampaign: urlParams.get('utm_campaign') || undefined,
-        utmContent: urlParams.get('utm_content') || undefined,
-        utmTerm: urlParams.get('utm_term') || undefined,
-      };
+      // Extrair apenas a query string se for uma URL completa
+      let queryString = source;
+      if (source.includes('?')) {
+        queryString = source.split('?')[1];
+      }
+      
+      const urlParams = new URLSearchParams(queryString);
+      const utms: any = {};
+      
+      const sourceVal = urlParams.get('utm_source');
+      if (sourceVal && !sourceVal.startsWith('trk_')) utms.utmSource = sourceVal;
+      
+      const mediumVal = urlParams.get('utm_medium');
+      if (mediumVal) utms.utmMedium = mediumVal;
+      
+      const campaignVal = urlParams.get('utm_campaign');
+      if (campaignVal) utms.utmCampaign = campaignVal;
+      
+      const contentVal = urlParams.get('utm_content');
+      if (contentVal) utms.utmContent = contentVal;
+      
+      const termVal = urlParams.get('utm_term');
+      if (termVal) utms.utmTerm = termVal;
+      
+      return utms;
     } catch (e) {
       return {};
     }
