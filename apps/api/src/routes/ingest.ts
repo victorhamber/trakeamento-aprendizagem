@@ -9,7 +9,6 @@ import rateLimit from 'express-rate-limit'; // Added import for express-rate-lim
 import cors from 'cors'; // Added import for cors
 import { DDI_LIST } from '../lib/ddi';
 import { getClientIp } from '../lib/ip';
-import { agentDebugLog } from '../lib/agent-debug-log';
 
 const LRUCache = require('lru-cache').LRUCache || require('lru-cache');
 
@@ -799,34 +798,8 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
           : {}),
       };
 
-      // #region agent log
-      if (eventName === 'InitiateCheckout') {
-        try {
-          const ud = event.user_data ?? {};
-          const cd = event.custom_data ?? {};
-          agentDebugLog({
-            hypothesisId: 'H6',
-            location: 'ingest.ts:/events:InitiateCheckout:capiPayload',
-            message: 'initiate_checkout_attribution_signals',
-            data: {
-              rawPayloadFbc: !!ud.fbc,
-              rawPayloadFbp: !!ud.fbp,
-              capiUserFbc: !!capiUser.fbc,
-              capiUserFbp: !!capiUser.fbp,
-              hasClientIp: !!capiUser.client_ip_address,
-              hasClientUa: !!capiUser.client_user_agent,
-              telemetryPixelLoaded: !!(event.telemetry as { pixel_loaded?: boolean })?.pixel_loaded,
-              hasTrafficSource: !!(cd.traffic_source || (event.telemetry as { traffic_source?: string })?.traffic_source),
-              eventIdSuffix: String(eventId).slice(-10),
-              siteKeySuffix: siteKey?.length > 6 ? String(siteKey).slice(-6) : siteKey,
-            },
-            runId: 'pre-fix',
-          });
-        } catch {
-          /* ignore */
-        }
-      }
-      // #endregion
+
+
 
       // Fire-and-forget com retry — não bloqueia a resposta HTTP
       sendCapiWithRetry(siteKey, capiPayload).catch(() => { });
