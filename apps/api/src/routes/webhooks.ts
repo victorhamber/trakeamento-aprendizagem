@@ -10,7 +10,6 @@ import { notifyAccountNewSale } from '../services/expo-push';
 import { notifyAccountWebPushSale } from '../services/web-push-notify';
 import type { SaleNotifyKind } from '../services/sale-notification';
 import { DDI_LIST } from '../lib/ddi';
-import { agentDebugLog } from '../lib/agent-debug-log';
 
 const router = Router();
 
@@ -195,24 +194,6 @@ async function processPurchaseWebhook({
   } = siteRes.rows[0];
   const capiToken = capi_token_enc ? decryptString(capi_token_enc) : null;
 
-  // #region agent log
-  agentDebugLog({
-    runId: 'pre-fix',
-    hypothesisId: 'A',
-    location: 'apps/api/src/routes/webhooks.ts:processPurchaseWebhook:siteConfig',
-    message: 'Webhook purchase site meta config',
-    data: {
-      siteKey,
-      platform,
-      orderId: String(orderId || ''),
-      metaEnabled: !!metaEnabled,
-      hasPixelId: !!(pixel_id && String(pixel_id).trim()),
-      hasCapiToken: !!(capiToken && String(capiToken).trim()),
-      hasTestEventCode: !!(capi_test_event_code && String(capi_test_event_code).trim()),
-    },
-  });
-  // #endregion agent log
-
   // 1. Attribute Recovery (trk_ token in sck/src)
   const sckRaw = String(payload.sck || payload.src || payload.trackingParameters?.utm_source || payload.tracking_parameters?.utm_source || '');
   let trkData = null;
@@ -239,29 +220,6 @@ async function processPurchaseWebhook({
   const mergedIp = clientIp || enriched?.clientIp;
   const mergedUa = clientUa || enriched?.clientUa;
   const mergedExternalId = finalExternalId || enriched?.externalId || (email ? CapiService.hash(email) : undefined);
-
-  // #region agent log
-  agentDebugLog({
-    runId: 'pre-fix',
-    hypothesisId: 'B',
-    location: 'apps/api/src/routes/webhooks.ts:processPurchaseWebhook:attributionMerge',
-    message: 'Webhook purchase attribution merge',
-    data: {
-      siteKey,
-      platform,
-      orderId: String(orderId || ''),
-      sckRawHasTrk: String(sckRaw || '').includes('trk_'),
-      hasTrkExternalId: !!trkData?.externalId,
-      hasTrkFbp: !!trkData?.fbp,
-      hasTrkFbc: !!trkData?.fbc,
-      hasMergedFbp: !!mergedFbp,
-      hasMergedFbc: !!mergedFbc,
-      hasMergedIp: !!mergedIp,
-      hasMergedUa: !!mergedUa,
-      hasMergedExternalId: !!mergedExternalId,
-    },
-  });
-  // #endregion agent log
 
   // Location recovery: Priority Webhook > Enriched (history) > GeoIP (current IP)
   let finalCity = city || enriched?.city;
@@ -339,36 +297,6 @@ async function processPurchaseWebhook({
 
   if (capi_test_event_code) capiPayload.test_event_code = capi_test_event_code;
 
-  // #region agent log
-  agentDebugLog({
-    runId: 'pre-fix',
-    hypothesisId: 'C',
-    location: 'apps/api/src/routes/webhooks.ts:processPurchaseWebhook:capiPayload',
-    message: 'Webhook purchase CAPI payload summary',
-    data: {
-      siteKey,
-      platform,
-      orderId: String(orderId || ''),
-      eventId: String(capiPayload.event_id || ''),
-      eventTime: Number(capiPayload.event_time || 0),
-      eventTimeSkewSec: Number(capiPayload.event_time || 0)
-        ? Math.floor(Date.now() / 1000) - Number(capiPayload.event_time || 0)
-        : null,
-      eventSourceUrl:
-        typeof capiPayload.event_source_url === 'string'
-          ? capiPayload.event_source_url.slice(0, 180)
-          : null,
-      hasEventSourceUrl: !!capiPayload.event_source_url,
-      hasFbp: !!mergedFbp,
-      hasFbc: !!mergedFbc,
-      value: Number(capiPayload.custom_data?.value || 0),
-      currency: String(capiPayload.custom_data?.currency || ''),
-      willSendGraphTestEventCode:
-        !!(capi_test_event_code && String(capi_test_event_code).trim()) || !!process.env.META_TEST_EVENT_CODE?.trim(),
-    },
-  });
-  // #endregion agent log
-
   // 3. Database Persistence
   const dbEmailHash = email ? CapiService.hash(email.toLowerCase()) : null;
   const visitorExtId = mergedExternalId || dbEmailHash || `buyer_${orderId}`;
@@ -415,48 +343,7 @@ async function processPurchaseWebhook({
 
   // 4. Dispatch
   if (sendToCapi && metaEnabled && pixel_id && capiToken) {
-    // #region agent log
-    agentDebugLog({
-      runId: 'pre-fix',
-      hypothesisId: 'E',
-      location: 'apps/api/src/routes/webhooks.ts:processPurchaseWebhook:dispatch',
-      message: 'Dispatching Purchase to CAPI',
-      data: {
-        siteKey,
-        platform,
-        orderId: String(orderId || ''),
-        willSend: true,
-        sendToCapi: !!sendToCapi,
-        metaEnabled: !!metaEnabled,
-        hasPixelId: !!(pixel_id && String(pixel_id).trim()),
-        hasToken: !!(capiToken && String(capiToken).trim()),
-        eventId: String(capiPayload.event_id || ''),
-        hasFbp: !!mergedFbp,
-        hasFbc: !!mergedFbc,
-        hasEventSourceUrl: !!capiPayload.event_source_url,
-      },
-    });
-    // #endregion agent log
     capiService.sendEvent(siteKey, capiPayload).catch(err => console.error(`[Webhook] CAPI error for ${orderId}:`, err));
-  } else {
-    // #region agent log
-    agentDebugLog({
-      runId: 'pre-fix',
-      hypothesisId: 'A',
-      location: 'apps/api/src/routes/webhooks.ts:processPurchaseWebhook:dispatchSkip',
-      message: 'Skipping CAPI dispatch for Purchase',
-      data: {
-        siteKey,
-        platform,
-        orderId: String(orderId || ''),
-        willSend: false,
-        sendToCapi: !!sendToCapi,
-        metaEnabled: !!metaEnabled,
-        hasPixelId: !!(pixel_id && String(pixel_id).trim()),
-        hasToken: !!(capiToken && String(capiToken).trim()),
-      },
-    });
-    // #endregion agent log
   }
 
   if (sendToCapi && siteAccountId) {

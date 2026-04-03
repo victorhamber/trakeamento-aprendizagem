@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { api } from '../lib/api';
+import { formatDateTimeBrt } from '../lib/utils';
 import { DDI_LIST } from '../lib/ddi';
 import { Layout } from '../components/Layout';
 import WebhooksTab from '../components/site/WebhooksTab';
@@ -2416,7 +2417,7 @@ ${scriptContent}
                   </div>
                   {meta?.last_capi_attempt_at && (
                     <div className="text-[11px] text-zinc-600 dark:text-zinc-500">
-                      Última tentativa: {new Date(meta.last_capi_attempt_at).toLocaleString()}
+                      Última tentativa: {formatDateTimeBrt(meta.last_capi_attempt_at)}
                     </div>
                   )}
                   {meta?.last_capi_error && (
@@ -2428,7 +2429,7 @@ ${scriptContent}
                   {meta?.last_ingest_at ? (
                     <>
                       <div className="text-[11px] text-zinc-600 dark:text-zinc-500">
-                        {new Date(meta.last_ingest_at).toLocaleString()}
+                        {formatDateTimeBrt(meta.last_ingest_at)}
                       </div>
                       <div className="text-[11px] text-zinc-700 dark:text-zinc-300">
                         {meta.last_ingest_event_name || 'Evento'}

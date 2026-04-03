@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { api } from '../../lib/api';
+import { formatDateTimeBrt } from '../../lib/utils';
 
 interface WebhooksTabProps {
   site: any;
@@ -562,7 +563,7 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
                           {log.status === 'approved' ? 'Aprovado' : (log.status === 'refunded' ? 'Reembolso' : (log.status || 'Pendente'))}
                         </span>
                         <span className="hidden sm:inline text-zinc-300 dark:text-zinc-700">|</span>
-                        <span className="text-zinc-400">{new Date(log.created_at).toLocaleString()}</span>
+                        <span className="text-zinc-400">{formatDateTimeBrt(log.created_at)}</span>
                       </div>
                       <svg className="h-4 w-4 text-zinc-400 transition-transform group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
