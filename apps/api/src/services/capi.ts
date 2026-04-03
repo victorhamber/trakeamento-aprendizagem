@@ -2,6 +2,7 @@ import axios from 'axios';
 import crypto from 'crypto';
 import { pool } from '../db/pool';
 import { decryptString } from '../lib/crypto';
+import { agentDebugLog } from '../lib/agent-debug-log';
 
 export type CapiCustomData = Record<string, unknown>;
 export interface CapiEvent {
@@ -306,6 +307,27 @@ export class CapiService {
       );
       console.log(`[CAPI] Success ${event.event_name} (ID: ${event.event_id}) - FB Trace: ${response.data?.fbtrace_id} - Messages: ${JSON.stringify(response.data?.messages || [])}`);
 
+      // #region agent log
+      agentDebugLog({
+        runId: 'pre-fix',
+        hypothesisId: 'E',
+        location: 'apps/api/src/services/capi.ts:sendEvent:success',
+        message: 'Meta CAPI success',
+        data: {
+          siteKey,
+          eventName: event.event_name,
+          eventId: event.event_id,
+          pixelId: String(cfg.pixelId || ''),
+          graphHasTestEventCode: Boolean((payload as { test_event_code?: string }).test_event_code),
+          hasMessages: Array.isArray((response.data as { messages?: unknown[] })?.messages)
+            ? ((response.data as { messages: unknown[] }).messages.length > 0)
+            : false,
+          messages: (response.data as { messages?: unknown[] })?.messages || [],
+          fbtrace_id: (response.data as { fbtrace_id?: string })?.fbtrace_id || null,
+        },
+      });
+      // #endregion agent log
+
       await this.updateLastStatus(siteKey, { ok: true, data: response.data });
       return response.data;
     } catch (error: unknown) {
@@ -321,6 +343,27 @@ export class CapiService {
           return { ok: false, error: `Token inválido no Meta. ${message || ''}`.trim() };
         }
         console.error(`CAPI Error for event_time=${event.event_time}:`, error.response?.data || error.message);
+
+        // #region agent log
+        agentDebugLog({
+          runId: 'pre-fix',
+          hypothesisId: 'E',
+          location: 'apps/api/src/services/capi.ts:sendEvent:error',
+          message: 'Meta CAPI error',
+          data: {
+            siteKey,
+            eventName: event.event_name,
+            eventId: event.event_id,
+            pixelId: String(cfg.pixelId || ''),
+            graphHasTestEventCode: Boolean((payload as { test_event_code?: string }).test_event_code),
+            httpStatus: error.response?.status ?? null,
+            metaCode: code ?? null,
+            metaMessage: message ?? null,
+            metaError: error.response?.data ?? null,
+          },
+        });
+        // #endregion agent log
+
         await this.updateLastStatus(siteKey, { ok: false, error: message || 'Erro ao enviar para o Meta', details: error.response?.data });
         return { ok: false, error: message || 'Erro ao enviar para o Meta' };
       } else {

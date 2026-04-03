@@ -353,17 +353,18 @@ router.get('/tracker.js', async (req, res) => {
   }
 
   // ─── Time helpers ─────────────────────────────────────────────────────────
+  // Alinhado ao event_time Unix (UTC) da Meta — usa getters UTC, não o fuso do navegador.
   function getTimeFields(epochSec) {
     try {
       var d = new Date(epochSec * 1000);
       var days   = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
       var months = ['January','February','March','April','May','June','July',
                     'August','September','October','November','December'];
-      var h = d.getHours();
+      var h = d.getUTCHours();
       return {
-        event_day:           days[d.getDay()],
-        event_day_in_month:  d.getDate(),
-        event_month:         months[d.getMonth()],
+        event_day:           days[d.getUTCDay()],
+        event_day_in_month:  d.getUTCDate(),
+        event_month:         months[d.getUTCMonth()],
         event_time_interval: String(h) + '-' + String(h + 1),
         event_hour:          h
       };

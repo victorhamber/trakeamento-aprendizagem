@@ -240,12 +240,12 @@ function getTimeDimensions(eventTimeSec: number) {
     'July', 'August', 'September', 'October', 'November', 'December'
   ];
 
-  const hour = d.getHours();
+  const hour = d.getUTCHours();
 
   return {
-    event_day: days[d.getDay()],
-    event_day_in_month: d.getDate(),
-    event_month: months[d.getMonth()],
+    event_day: days[d.getUTCDay()],
+    event_day_in_month: d.getUTCDate(),
+    event_month: months[d.getUTCMonth()],
     event_time_interval: `${hour}-${hour + 1}`,
     event_hour: hour,
   };
