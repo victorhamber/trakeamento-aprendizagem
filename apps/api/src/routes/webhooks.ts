@@ -161,7 +161,7 @@ const normalizeStatus = (rawStatus: unknown) => {
   const pendingStatuses = [
     'waiting_payment', 'pending', 'pending_payment',
     // Hotmart: boleto gerado / aguardando pagamento
-    'billet_printed',
+    'billet_printed', 'purchase_billet_printed'
   ];
 
   // Status que indicam reembolso/cancelamento — NÃO gerar Purchase CAPI
