@@ -8,6 +8,7 @@ import { Ga4Service } from '../services/ga4';
 import rateLimit from 'express-rate-limit'; // Added import for express-rate-limit
 import cors from 'cors'; // Added import for cors
 import { DDI_LIST } from '../lib/ddi';
+import { getClientIp } from '../lib/ip';
 
 const LRUCache = require('lru-cache').LRUCache || require('lru-cache');
 
@@ -297,17 +298,14 @@ function isDuplicate(siteKey: string, eventId: string): boolean {
 // ─── CAPI payload builder ─────────────────────────────────────────────────────
 
 function resolveClientIp(req: Request, userData: NonNullable<IngestEvent['user_data']>) {
-  return (req.headers['cf-connecting-ip'] as string)?.trim()
-    || (req.headers['x-real-ip'] as string)?.trim()
-    || (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim()
-    || req.ip
-    || userData.client_ip_address
-    || '';
+  return getClientIp(req) || userData.client_ip_address || '';
 }
 
 function resolveGeo(clientIp: string) {
   const cleanIp = clientIp.replace(/^::ffff:/, '');
   if (!cleanIp || cleanIp.length <= 6) return {};
+  // geoip-lite não resolve IPv6 puro; evita gerar dado errado.
+  if (cleanIp.includes(':')) return {};
   const geo = geoip.lookup(cleanIp);
   if (!geo) return {};
   return {

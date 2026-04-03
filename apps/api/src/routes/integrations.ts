@@ -5,6 +5,7 @@ import { requireAuth } from '../middleware/auth';
 import { encryptString } from '../lib/crypto';
 import { decryptString } from '../lib/crypto';
 import { CapiEvent, capiService } from '../services/capi';
+import { getClientIp } from '../lib/ip';
 
 const router = Router();
 const fbApiVersion = 'v19.0';
@@ -120,10 +121,7 @@ router.post('/sites/:siteId/meta/test-capi', requireAuth, async (req, res) => {
   const eventSourceUrl = domain
     ? (domain.startsWith('http://') || domain.startsWith('https://') ? domain : `https://${domain}`)
     : ((req.headers.origin as string | undefined) || 'https://example.com');
-  const clientIp =
-    (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim()
-    || req.ip
-    || '127.0.0.1';
+  const clientIp = getClientIp(req) || '127.0.0.1';
   const clientUserAgent = (req.headers['user-agent'] as string | undefined) || 'server_test';
   const eventId = `test_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const eventTime = Math.floor(Date.now() / 1000);

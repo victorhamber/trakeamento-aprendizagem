@@ -4,6 +4,7 @@ import { pool } from '../db/pool';
 import { requireAuth } from '../middleware/auth';
 import { encryptString, decryptString } from '../lib/crypto';
 import { capiService, CapiService } from '../services/capi';
+import { getClientIp } from '../lib/ip';
 
 const router = Router();
 
@@ -224,7 +225,7 @@ router.post('/:siteId/checkout-simulator/lead', requireAuth, async (req, res) =>
   const eventId = `lead_${eventTimeSec}_${crypto.randomBytes(3).toString('hex')}`;
 
   const userData = {
-    client_ip_address: (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip || '',
+    client_ip_address: getClientIp(req),
     client_user_agent: (req.headers['user-agent'] as string) || '',
     em: email ? [CapiService.hash(email.trim().toLowerCase())] : undefined,
     ph: phone ? [CapiService.hash(phone.replace(/[^0-9]/g, ''))] : undefined,

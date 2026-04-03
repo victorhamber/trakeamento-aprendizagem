@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { pool } from '../db/pool';
 import { requireAuth } from '../middleware/auth';
 import { capiService, CapiService } from '../services/capi';
+import { getClientIp } from '../lib/ip';
 
 const router = Router();
 
@@ -120,7 +121,7 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
       }
 
       const userData: any = {
-        client_ip_address: req.ip || (req.headers['x-forwarded-for'] as string)?.split(',')[0],
+        client_ip_address: getClientIp(req),
         client_user_agent: req.headers['user-agent'] || undefined,
       };
 
