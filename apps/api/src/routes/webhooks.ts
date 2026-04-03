@@ -30,6 +30,26 @@ function decodeTrkToken(token: string) {
   }
 }
 
+/** URL válida para CAPI (website): prioriza page_url/referrer do checkout; fallback no domínio do site. */
+function resolvePurchaseEventSourceUrl(
+  payload: Record<string, unknown>,
+  siteDomain: string | null | undefined,
+  siteTrackingDomain: string | null | undefined
+): string {
+  for (const key of ['page_url', 'referrer'] as const) {
+    const c = payload[key];
+    if (typeof c === 'string') {
+      const t = c.trim();
+      if (t.startsWith('http://') || t.startsWith('https://')) return t;
+    }
+  }
+  const rawHost = (siteTrackingDomain || siteDomain || '').trim();
+  if (!rawHost) return '';
+  const hostOnly = rawHost.replace(/^https?:\/\//i, '').split('/')[0]?.trim();
+  if (!hostOnly) return '';
+  return `https://${hostOnly}`;
+}
+
 function coerceWebhookStr(v: unknown): string {
   if (v == null) return '';
   if (typeof v === 'string') return v.trim();
@@ -147,7 +167,10 @@ async function processPurchaseWebhook({
 
   // Fetch site settings (Pixel, Token)
   const siteRes = await pool.query(
-    `SELECT sites.id, sites.account_id, m.capi_token_enc, m.pixel_id, m.capi_test_event_code, m.enabled as meta_enabled
+    `SELECT sites.id, sites.account_id,
+            NULLIF(TRIM(sites.domain), '') AS site_domain,
+            NULLIF(TRIM(sites.tracking_domain), '') AS site_tracking_domain,
+            m.capi_token_enc, m.pixel_id, m.capi_test_event_code, m.enabled as meta_enabled
      FROM sites 
      LEFT JOIN integrations_meta m ON m.site_id = sites.id
      WHERE sites.site_key = $1`,
@@ -159,7 +182,15 @@ async function processPurchaseWebhook({
     return { success: false, status: 404, error: 'Site not found' };
   }
 
-  const { account_id: siteAccountId, pixel_id, capi_token_enc, capi_test_event_code, meta_enabled: metaEnabled } = siteRes.rows[0];
+  const {
+    account_id: siteAccountId,
+    pixel_id,
+    capi_token_enc,
+    capi_test_event_code,
+    meta_enabled: metaEnabled,
+    site_domain: siteDomain,
+    site_tracking_domain: siteTrackingDomain,
+  } = siteRes.rows[0];
   const capiToken = capi_token_enc ? decryptString(capi_token_enc) : null;
 
   // #region agent log
@@ -251,11 +282,18 @@ async function processPurchaseWebhook({
   const utmCampaign = payload.utm_campaign || payload.trackingParameters?.utm_campaign || payload.tracking_parameters?.utm_campaign || enriched?.utmCampaign || undefined;
 
   // 2. CAPI Payload
+  const purchasePayload = payload as Record<string, unknown>;
+  const purchaseEventSourceUrl = resolvePurchaseEventSourceUrl(
+    purchasePayload,
+    siteDomain,
+    siteTrackingDomain
+  );
+
   const capiPayload: any = {
     event_name: 'Purchase',
     event_time: Math.floor((platformDate?.getTime() || Date.now()) / 1000),
     event_id: `purchase_${orderId}`,
-    event_source_url: payload.page_url || payload.referrer || undefined,
+    event_source_url: purchaseEventSourceUrl || undefined,
     action_source: 'website',
     user_data: {
       client_ip_address: mergedIp,
@@ -323,7 +361,8 @@ async function processPurchaseWebhook({
       hasFbc: !!mergedFbc,
       value: Number(capiPayload.custom_data?.value || 0),
       currency: String(capiPayload.custom_data?.currency || ''),
-      willSendGraphTestEventCode: !!(capi_test_event_code && String(capi_test_event_code).trim()) || !!process.env.META_TEST_EVENT_CODE?.trim(),
+      willSendGraphTestEventCode:
+        !!(capi_test_event_code && String(capi_test_event_code).trim()) || !!process.env.META_TEST_EVENT_CODE?.trim(),
     },
   });
   // #endregion agent log
