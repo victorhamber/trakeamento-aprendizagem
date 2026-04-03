@@ -9,6 +9,7 @@ import rateLimit from 'express-rate-limit'; // Added import for express-rate-lim
 import cors from 'cors'; // Added import for cors
 import { DDI_LIST } from '../lib/ddi';
 import { getClientIp } from '../lib/ip';
+import { agentDebugLog } from '../lib/agent-debug-log';
 
 const LRUCache = require('lru-cache').LRUCache || require('lru-cache');
 
@@ -613,6 +614,13 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
   // DB dedup is handled by ON CONFLICT — no need for a separate SELECT query
   try {
     const eventSourceUrl = await resolveEventSourceUrlForIngest(event, req, siteKey);
+
+    // Build enriched user data BEFORE persisting to DB
+    // This ensures the server-side IP is saved in web_events for later recovery by Enrichment
+    const rawUserData = event.user_data ?? {};
+    const capiUser = buildCapiUserData(req, rawUserData, siteKey, event.custom_data ?? {});
+    const enrichedUserData = { ...rawUserData, ...capiUser };
+
     let result;
     if (eventName === 'PageEngagement') {
       result = await pool.query(`
@@ -628,7 +636,7 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
         RETURNING id
       `, [
         siteKey, eventId, eventName, new Date(eventTimeMs), eventSourceUrl,
-        event.user_data ?? null, event.custom_data ?? null, event.telemetry ?? null,
+        enrichedUserData, event.custom_data ?? null, event.telemetry ?? null,
       ]);
     } else {
       result = await pool.query(`
@@ -641,7 +649,7 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
         RETURNING id
       `, [
         siteKey, eventId, eventName, new Date(eventTimeMs), eventSourceUrl,
-        event.user_data ?? null, event.custom_data ?? null, event.telemetry ?? null,
+        enrichedUserData, event.custom_data ?? null, event.telemetry ?? null,
       ]);
     }
 
@@ -651,8 +659,7 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
 
     // ── Visitor profile + integrations_meta update (parallel, non-blocking for response) ──
     {
-      const userData = event.user_data ?? {};
-      const capiUser = buildCapiUserData(req, userData, siteKey, event.custom_data ?? {});
+      // capiUser already built above (before INSERT)
 
       const fbc = capiUser.fbc;
       const fbp = capiUser.fbp;
@@ -791,6 +798,35 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
           ? { custom_data: metaCustomData }
           : {}),
       };
+
+      // #region agent log
+      if (eventName === 'InitiateCheckout') {
+        try {
+          const ud = event.user_data ?? {};
+          const cd = event.custom_data ?? {};
+          agentDebugLog({
+            hypothesisId: 'H6',
+            location: 'ingest.ts:/events:InitiateCheckout:capiPayload',
+            message: 'initiate_checkout_attribution_signals',
+            data: {
+              rawPayloadFbc: !!ud.fbc,
+              rawPayloadFbp: !!ud.fbp,
+              capiUserFbc: !!capiUser.fbc,
+              capiUserFbp: !!capiUser.fbp,
+              hasClientIp: !!capiUser.client_ip_address,
+              hasClientUa: !!capiUser.client_user_agent,
+              telemetryPixelLoaded: !!(event.telemetry as { pixel_loaded?: boolean })?.pixel_loaded,
+              hasTrafficSource: !!(cd.traffic_source || (event.telemetry as { traffic_source?: string })?.traffic_source),
+              eventIdSuffix: String(eventId).slice(-10),
+              siteKeySuffix: siteKey?.length > 6 ? String(siteKey).slice(-6) : siteKey,
+            },
+            runId: 'pre-fix',
+          });
+        } catch {
+          /* ignore */
+        }
+      }
+      // #endregion
 
       // Fire-and-forget com retry — não bloqueia a resposta HTTP
       sendCapiWithRetry(siteKey, capiPayload).catch(() => { });
