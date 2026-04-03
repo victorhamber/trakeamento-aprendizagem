@@ -353,22 +353,53 @@ router.get('/tracker.js', async (req, res) => {
   }
 
   // ─── Time helpers ─────────────────────────────────────────────────────────
-  // Alinhado ao event_time Unix (UTC) da Meta — usa getters UTC, não o fuso do navegador.
+  // Campos enviados como custom_data no Pixel: alinhados ao fuso do Brasil (anúncios locais).
+  // event_time oficial do Meta continua em Unix UTC; só estes rótulos (dia/hora) são BRT.
+  var META_CUSTOM_TIMEZONE = 'America/Sao_Paulo';
   function getTimeFields(epochSec) {
     try {
       var d = new Date(epochSec * 1000);
-      var days   = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-      var months = ['January','February','March','April','May','June','July',
-                    'August','September','October','November','December'];
-      var h = d.getUTCHours();
+      if (typeof Intl !== 'undefined' && Intl.DateTimeFormat) {
+        var fmt = new Intl.DateTimeFormat('en-US', {
+          timeZone: META_CUSTOM_TIMEZONE,
+          weekday: 'long',
+          month: 'long',
+          day: 'numeric',
+          hour: 'numeric',
+          hour12: false
+        });
+        var parts = fmt.formatToParts(d);
+        var map = {};
+        for (var i = 0; i < parts.length; i++) {
+          var p = parts[i];
+          if (p.type !== 'literal') map[p.type] = p.value;
+        }
+        var h = parseInt(map.hour, 10);
+        var dom = parseInt(map.day, 10);
+        if (!isFinite(h) || !isFinite(dom)) throw new Error('bad time parts');
+        return {
+          event_day:           map.weekday,
+          event_day_in_month:  dom,
+          event_month:         map.month,
+          event_time_interval: String(h) + '-' + String(h + 1),
+          event_hour:          h
+        };
+      }
+    } catch(_e) {}
+    try {
+      var d2 = new Date(epochSec * 1000);
+      var daysfb = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+      var monthsfb = ['January','February','March','April','May','June','July',
+        'August','September','October','November','December'];
+      var hf = d2.getHours();
       return {
-        event_day:           days[d.getUTCDay()],
-        event_day_in_month:  d.getUTCDate(),
-        event_month:         months[d.getUTCMonth()],
-        event_time_interval: String(h) + '-' + String(h + 1),
-        event_hour:          h
+        event_day:           daysfb[d2.getDay()],
+        event_day_in_month:  d2.getDate(),
+        event_month:         monthsfb[d2.getMonth()],
+        event_time_interval: String(hf) + '-' + String(hf + 1),
+        event_hour:          hf
       };
-    } catch(_e) { return {}; }
+    } catch(_e2) { return {}; }
   }
 
   function genEventId() {

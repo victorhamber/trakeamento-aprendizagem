@@ -232,6 +232,8 @@ function computeEngagement(event: IngestEvent): { score: number; bucket: Engagem
   return { score, bucket };
 }
 
+const META_CUSTOM_TIMEZONE = 'America/Sao_Paulo';
+
 function getTimeDimensions(eventTimeSec: number) {
   const d = new Date(eventTimeSec * 1000);
   const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -240,8 +242,35 @@ function getTimeDimensions(eventTimeSec: number) {
     'July', 'August', 'September', 'October', 'November', 'December'
   ];
 
-  const hour = d.getUTCHours();
+  try {
+    const fmt = new Intl.DateTimeFormat('en-US', {
+      timeZone: META_CUSTOM_TIMEZONE,
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric',
+      hour: 'numeric',
+      hour12: false,
+    });
+    const map: Record<string, string> = {};
+    for (const p of fmt.formatToParts(d)) {
+      if (p.type !== 'literal') map[p.type] = p.value;
+    }
+    const hour = parseInt(map.hour ?? '', 10);
+    const dom = parseInt(map.day ?? '', 10);
+    if (Number.isFinite(hour) && Number.isFinite(dom)) {
+      return {
+        event_day: map.weekday,
+        event_day_in_month: dom,
+        event_month: map.month,
+        event_time_interval: `${hour}-${hour + 1}`,
+        event_hour: hour,
+      };
+    }
+  } catch {
+    // fall through
+  }
 
+  const hour = d.getUTCHours();
   return {
     event_day: days[d.getUTCDay()],
     event_day_in_month: d.getUTCDate(),
