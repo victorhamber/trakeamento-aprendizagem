@@ -10,7 +10,6 @@ import { notifyAccountNewSale } from '../services/expo-push';
 import { notifyAccountWebPushSale } from '../services/web-push-notify';
 import type { SaleNotifyKind } from '../services/sale-notification';
 import { DDI_LIST } from '../lib/ddi';
-import { agentDebugLog } from '../lib/agent-debug-log';
 
 const router = Router();
 
@@ -487,32 +486,6 @@ async function processPurchaseWebhook({
       ? String(trkData.externalId).trim()
       : null) || externalId;
 
-  // #region agent log
-  try {
-    const utmRaw = payload.utm_source;
-    const utmStr = utmRaw != null ? String(utmRaw) : '';
-    agentDebugLog({
-      hypothesisId: 'H1',
-      location: 'webhooks.ts:processPurchaseWebhook:afterTrk',
-      message: 'purchase_trk_and_payload_hints',
-      data: {
-        orderId: String(orderId),
-        siteKeySuffix: siteKey?.length > 6 ? String(siteKey).slice(-6) : siteKey,
-        trkHaystackHasTrk: trkHaystack.includes('trk_'),
-        sckRawHasTrk: sckRaw.includes('trk_'),
-        utmSourceHasTrk: utmStr.includes('trk_'),
-        trkDecoded: !!trkData,
-        webhookHadFbp: !!fbp,
-        webhookHadFbc: !!fbc,
-        finalExternalIdLooksLikeTracker:
-          typeof finalExternalId === 'string' && finalExternalId.startsWith('eid_'),
-      },
-      runId: 'post-trk-fix',
-    });
-  } catch {
-    /* ignore */
-  }
-  // #endregion
 
   // 2. Enrichment: Missing attribution data or geolocation
   let enriched = null;
@@ -529,28 +502,6 @@ async function processPurchaseWebhook({
   const mergedUa = clientUa || enriched?.clientUa;
   const mergedExternalId = finalExternalId || enriched?.externalId || (email ? CapiService.hash(email) : undefined);
 
-  // #region agent log
-  try {
-    agentDebugLog({
-      hypothesisId: 'H2',
-      location: 'webhooks.ts:processPurchaseWebhook:afterMerge',
-      message: 'purchase_enrichment_merge',
-      data: {
-        orderId: String(orderId),
-        enrichmentRan:
-          !finalFbp || !finalFbc || !clientIp || !clientUa || (!city && !state),
-        enrichedNonNull: !!enriched,
-        mergedHasFbp: !!mergedFbp,
-        mergedHasFbc: !!mergedFbc,
-        mergedHasIp: !!mergedIp,
-        mergedHasUa: !!mergedUa,
-      },
-      runId: 'post-trk-fix',
-    });
-  } catch {
-    /* ignore */
-  }
-  // #endregion
 
   // Location recovery: Priority Webhook > Enriched (history) > GeoIP (current IP)
   let finalCity = city || enriched?.city;
