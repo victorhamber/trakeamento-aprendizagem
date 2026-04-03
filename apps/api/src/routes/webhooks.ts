@@ -124,7 +124,9 @@ const normalizeStatus = (rawStatus: unknown) => {
 
   // Status de Boleto/PIX Aguardando (NÃO somam no Dashboard, mas enviam CAPI)
   const pendingStatuses = [
-    'waiting_payment', 'pending', 'pending_payment'
+    'waiting_payment', 'pending', 'pending_payment',
+    // Hotmart: boleto gerado / aguardando pagamento
+    'billet_printed',
   ];
 
   // Status que indicam reembolso/cancelamento — NÃO gerar Purchase CAPI
