@@ -531,7 +531,9 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
           <div className="flex items-center justify-between">
             <div>
               <h4 className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 uppercase tracking-wider">Última Captura do Webhook</h4>
-              <p className="text-xs text-zinc-600 dark:text-zinc-500 mt-1">Mostra o último evento de compra registrado.</p>
+              <p className="text-xs text-zinc-600 dark:text-zinc-500 mt-1">
+                Ordena pelo último POST recebido — um segundo webhook do mesmo pedido (ex.: boleto e depois aprovado) atualiza este registro e sobe para o topo.
+              </p>
             </div>
             <button
               onClick={loadCheckoutWebhookLogs}
@@ -581,7 +583,12 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
                           {log.status === 'approved' ? 'Aprovado' : (log.status === 'refunded' ? 'Reembolso' : (log.status || 'Pendente'))}
                         </span>
                         <span className="hidden sm:inline text-zinc-300 dark:text-zinc-700">|</span>
-                        <span className="text-zinc-400">{formatDateTimeBrt(log.created_at)}</span>
+                        <span
+                          className="text-zinc-400"
+                          title={log.updated_at ? 'Horário do último POST (mesmo pedido pode atualizar)' : undefined}
+                        >
+                          {formatDateTimeBrt(log.updated_at || log.created_at)}
+                        </span>
                       </div>
                       <svg className="h-4 w-4 text-zinc-400 transition-transform group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />

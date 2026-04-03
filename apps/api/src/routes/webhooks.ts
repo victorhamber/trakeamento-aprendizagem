@@ -132,7 +132,7 @@ const normalizeStatus = (rawStatus: unknown) => {
   const refundStatuses = [
     'refunded', 'refund', 'cancelled', 'canceled', 'dispute',
     'chargeback', 'chargedback', 'expired', 'blocked',
-    'purchase_refunded', 'purchase_chargeback', 'purchase_canceled',
+    'purchase_refunded', 'purchase_refund', 'purchase_chargeback', 'purchase_canceled', 'purchase_cancelled',
     'purchase_expired', 'purchase_protest', 'purchase_delayed',
   ];
 
@@ -152,6 +152,246 @@ const normalizeStatus = (rawStatus: unknown) => {
   console.warn(`[Webhook] Unknown status "${s}" — treating as pending_payment.`);
   return { finalStatus: 'pending_payment', isApproved: false, sendToCapi: true };
 };
+
+/** Hotmart: `purchase.status` pode continuar pendente no 2º POST enquanto `event` já indica compra concluída. */
+function resolveHotmartStatusFromEvent(
+  eventRaw: unknown,
+  purchaseStatus: unknown,
+  d: Record<string, unknown>,
+  payload: Record<string, unknown>
+): string {
+  const ev = String(eventRaw || d.event || payload.event || '')
+    .toUpperCase()
+    .replace(/[\s-]+/g, '_')
+    .trim();
+
+  const completionEvents = new Set([
+    'PURCHASE_COMPLETE',
+    'PURCHASE_APPROVED',
+    'SUBSCRIPTION_PURCHASE_COMPLETE',
+    'SUBSCRIPTION_PURCHASE_APPROVED',
+  ]);
+
+  if (completionEvents.has(ev)) {
+    return 'purchase_complete';
+  }
+
+  const refundOrCancelEvents = new Set([
+    'PURCHASE_REFUNDED',
+    'PURCHASE_REFUND',
+    'PURCHASE_CANCELED',
+    'PURCHASE_CANCELLED',
+    'PURCHASE_CHARGEBACK',
+    'PURCHASE_EXPIRED',
+    'PURCHASE_DELAYED',
+    'PURCHASE_PROTEST',
+  ]);
+
+  if (refundOrCancelEvents.has(ev)) {
+    return ev.toLowerCase();
+  }
+
+  return String(purchaseStatus || eventRaw || d.status || payload.event || '');
+}
+
+function recordOf(v: unknown): Record<string, unknown> {
+  return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+}
+
+/** Primeiro valor textual não vazio (Hotmart espalha fbp/fbc/UTM em vários nós). */
+function firstNonEmptyStr(...vals: unknown[]): string {
+  for (const v of vals) {
+    const s = coerceWebhookStr(v);
+    if (s) return s;
+  }
+  return '';
+}
+
+function extractHotmartBrowserAndUtm(
+  payload: Record<string, unknown>,
+  d: Record<string, unknown>,
+  purchase: Record<string, unknown>,
+  buyer: Record<string, unknown>,
+  trackingObj: Record<string, unknown>,
+  origin: Record<string, unknown>
+) {
+  const customArgs = recordOf(d.custom_args ?? purchase.custom_args ?? payload.custom_args);
+  const checkout = recordOf(d.checkout ?? purchase.checkout);
+  const purchaseTracking = recordOf(purchase.tracking);
+  const dataTracking = recordOf(d.tracking);
+
+  const tp = (k: string) =>
+    firstNonEmptyStr(
+      (payload.trackingParameters as Record<string, unknown>)?.[k],
+      (payload.tracking_parameters as Record<string, unknown>)?.[k],
+      trackingObj[k],
+      origin[k],
+      d[k],
+      purchase[k]
+    );
+
+  const fbp = firstNonEmptyStr(
+    d.fbp,
+    payload.fbp,
+    customArgs.fbp,
+    trackingObj.fbp,
+    origin.fbp,
+    checkout.fbp,
+    purchaseTracking.fbp,
+    dataTracking.fbp,
+    (d as { fbp_cookie?: unknown }).fbp_cookie
+  );
+
+  const fbc = firstNonEmptyStr(
+    d.fbc,
+    payload.fbc,
+    customArgs.fbc,
+    trackingObj.fbc,
+    origin.fbc,
+    checkout.fbc,
+    purchaseTracking.fbc,
+    dataTracking.fbc,
+    (d as { fbc_cookie?: unknown }).fbc_cookie
+  );
+
+  const clientIp = firstNonEmptyStr(
+    d.client_ip_address,
+    (payload as { ip?: unknown }).ip,
+    (payload as { client_ip?: unknown }).client_ip,
+    buyer.client_ip_address,
+    (buyer as { ip?: unknown }).ip,
+    checkout.client_ip_address,
+    purchase.client_ip_address,
+    (purchase as { buyer_ip?: unknown }).buyer_ip
+  );
+
+  const clientUa = firstNonEmptyStr(
+    d.client_user_agent,
+    (payload as { user_agent?: unknown }).user_agent,
+    (payload as { client_user_agent?: unknown }).client_user_agent,
+    buyer.client_user_agent,
+    checkout.client_user_agent,
+    purchase.client_user_agent
+  );
+
+  const utm_source = firstNonEmptyStr(
+    tp('utm_source'),
+    origin.sck,
+    origin.src,
+    origin.utm_source,
+    purchase.sck,
+    purchase.src,
+    customArgs.utm_source
+  );
+
+  const utm_medium = firstNonEmptyStr(
+    tp('utm_medium'),
+    origin.utm_medium,
+    purchase.utm_medium,
+    customArgs.utm_medium
+  );
+
+  const utm_campaign = firstNonEmptyStr(
+    tp('utm_campaign'),
+    origin.utm_campaign,
+    purchase.utm_campaign,
+    customArgs.utm_campaign
+  );
+
+  const utm_content = firstNonEmptyStr(
+    tp('utm_content'),
+    origin.utm_content,
+    purchase.utm_content,
+    customArgs.utm_content
+  );
+
+  const utm_term = firstNonEmptyStr(
+    tp('utm_term'),
+    origin.utm_term,
+    purchase.utm_term,
+    customArgs.utm_term
+  );
+
+  return { fbp, fbc, clientIp, clientUa, utm_source, utm_medium, utm_campaign, utm_content, utm_term };
+}
+
+/**
+ * Mesmo pedido na Hotmart; campos variam entre eventos (boleto vs compra aprovada).
+ * Sem um id estável, cada POST viraria linha nova ou não faria merge no ON CONFLICT.
+ */
+function resolveHotmartOrderId(
+  payload: Record<string, unknown>,
+  d: Record<string, unknown>,
+  purchase: Record<string, unknown>
+): string {
+  const orderBlock = recordOf(purchase.order);
+  const subs = recordOf(purchase.subscription);
+  const dataRoot = recordOf(payload.data);
+  const dOrder = recordOf(d.order);
+
+  const candidates: unknown[] = [
+    purchase.transaction,
+    purchase.transaction_id,
+    purchase.order_id,
+    purchase.orderId,
+    purchase.id,
+    orderBlock.transaction,
+    orderBlock.transaction_id,
+    orderBlock.id,
+    orderBlock.order_id,
+    orderBlock.orderId,
+    subs.transaction,
+    subs.id,
+    d.transaction,
+    (d as { transaction_id?: unknown }).transaction_id,
+    d.order_id,
+    dOrder.transaction,
+    dOrder.transaction_id,
+    dOrder.id,
+    dOrder.order_id,
+    dataRoot.transaction,
+    dataRoot.order_id,
+  ];
+
+  for (const c of candidates) {
+    const s = coerceWebhookStr(c);
+    if (s) return s;
+  }
+
+  const rootId = coerceWebhookStr(payload.id);
+  if (rootId) return rootId;
+
+  const fallback = `hot_${Date.now()}`;
+  console.warn(
+    '[Hotmart] Nenhum order_id estável no payload; usando id efêmero (não mescla com webhook anterior). Event:',
+    String(payload.event || '').slice(0, 80)
+  );
+  return fallback;
+}
+
+function resolveHotmartPurchaseTimestamp(
+  payload: Record<string, unknown>,
+  d: Record<string, unknown>,
+  purchase: Record<string, unknown>
+): string | number | undefined {
+  const candidates: unknown[] = [
+    purchase.approved_date,
+    (purchase as { approval_date?: unknown }).approval_date,
+    purchase.creation_date,
+    purchase.date,
+    d.creation_date,
+    d.date,
+    payload.creation_date,
+    payload.date,
+  ];
+
+  for (const c of candidates) {
+    if (c == null) continue;
+    if (typeof c === 'number' && Number.isFinite(c)) return c;
+    if (typeof c === 'string' && c.trim()) return c.trim();
+  }
+  return undefined;
+}
 
 // ─── Core Ingestion Engine for all Webhooks ──────────────────────────────────
 async function processPurchaseWebhook({
@@ -240,6 +480,18 @@ async function processPurchaseWebhook({
   const utmSource = baseUtmSource;
   const utmMedium = payload.utm_medium || payload.trackingParameters?.utm_medium || payload.tracking_parameters?.utm_medium || enriched?.utmMedium || undefined;
   const utmCampaign = payload.utm_campaign || payload.trackingParameters?.utm_campaign || payload.tracking_parameters?.utm_campaign || enriched?.utmCampaign || undefined;
+  const utmContent =
+    payload.utm_content ||
+    payload.trackingParameters?.utm_content ||
+    payload.tracking_parameters?.utm_content ||
+    enriched?.utmContent ||
+    undefined;
+  const utmTerm =
+    payload.utm_term ||
+    payload.trackingParameters?.utm_term ||
+    payload.tracking_parameters?.utm_term ||
+    enriched?.utmTerm ||
+    undefined;
 
   // 2. CAPI Payload
   const purchasePayload = payload as Record<string, unknown>;
@@ -292,6 +544,8 @@ async function processPurchaseWebhook({
       utm_source: utmSource || undefined,
       utm_medium: utmMedium || undefined,
       utm_campaign: utmCampaign || undefined,
+      utm_content: utmContent || undefined,
+      utm_term: utmTerm || undefined,
     },
   };
 
@@ -323,6 +577,7 @@ async function processPurchaseWebhook({
         fbp = COALESCE(EXCLUDED.fbp, site_visitors.fbp),
         email_hash = COALESCE(EXCLUDED.email_hash, site_visitors.email_hash),
         last_ip = COALESCE(EXCLUDED.last_ip, site_visitors.last_ip),
+        last_user_agent = COALESCE(EXCLUDED.last_user_agent, site_visitors.last_user_agent),
         city = COALESCE(EXCLUDED.city, site_visitors.city),
         state = COALESCE(EXCLUDED.state, site_visitors.state),
         last_traffic_source = COALESCE(EXCLUDED.last_traffic_source, site_visitors.last_traffic_source),
@@ -345,7 +600,19 @@ async function processPurchaseWebhook({
       amount = EXCLUDED.amount,
       currency = EXCLUDED.currency,
       platform_date = EXCLUDED.platform_date,
-      raw_payload = EXCLUDED.raw_payload
+      fbc = COALESCE(NULLIF(BTRIM(EXCLUDED.fbc), ''), purchases.fbc),
+      fbp = COALESCE(NULLIF(BTRIM(EXCLUDED.fbp), ''), purchases.fbp),
+      external_id = COALESCE(NULLIF(BTRIM(EXCLUDED.external_id::text), ''), purchases.external_id),
+      utm_source = COALESCE(NULLIF(BTRIM(EXCLUDED.utm_source), ''), purchases.utm_source),
+      utm_medium = COALESCE(NULLIF(BTRIM(EXCLUDED.utm_medium), ''), purchases.utm_medium),
+      utm_campaign = COALESCE(NULLIF(BTRIM(EXCLUDED.utm_campaign), ''), purchases.utm_campaign),
+      customer_email = COALESCE(NULLIF(TRIM(EXCLUDED.customer_email), ''), purchases.customer_email),
+      customer_phone = COALESCE(NULLIF(TRIM(EXCLUDED.customer_phone), ''), purchases.customer_phone),
+      customer_name = COALESCE(NULLIF(TRIM(EXCLUDED.customer_name), ''), purchases.customer_name),
+      user_data = purchases.user_data || EXCLUDED.user_data,
+      custom_data = purchases.custom_data || EXCLUDED.custom_data,
+      raw_payload = EXCLUDED.raw_payload,
+      updated_at = NOW()
   `, [
     siteKey, orderId, platform, value, currency, finalStatus,
     email, phone, `${firstName || ''} ${lastName || ''}`.trim(),
@@ -495,8 +762,8 @@ router.post('/hotmart', async (req, res) => {
   const d = payload.data || payload;
   const buyer = d.buyer || payload.buyer || {};
   const purchase = d.purchase || payload.purchase || {};
-  const trackingObj = d.tracking || payload.tracking || {};
-  const origin = purchase.origin || trackingObj || {};
+  const trackingObj = recordOf(d.tracking || payload.tracking || {});
+  const origin = recordOf(purchase.origin || trackingObj || {});
 
   const email = buyer.email || payload.email;
   const firstName = buyer.first_name || buyer.name?.split(' ')[0];
@@ -517,18 +784,45 @@ router.post('/hotmart', async (req, res) => {
   }
 
   const value = parseFloat(String(rawValue)) || 0;
-  const status = purchase.status || d.status || payload.event;
-  const orderId = purchase.transaction || d.transaction || payload.id || `hot_${Date.now()}`;
+  const purchaseStatus = purchase.status || d.status;
+  const status = resolveHotmartStatusFromEvent(payload.event, purchaseStatus, d, payload);
+  const orderId = resolveHotmartOrderId(payload, d, purchase);
+  const evLog = String(payload.event || d.event || '')
+    .toUpperCase()
+    .replace(/[\s-]+/g, '_');
+  if (
+    ['PURCHASE_COMPLETE', 'PURCHASE_APPROVED', 'SUBSCRIPTION_PURCHASE_COMPLETE'].includes(evLog) &&
+    String(purchaseStatus || '')
+      .toLowerCase()
+      .includes('pending')
+  ) {
+    console.log(
+      `[Hotmart] Usando evento ${evLog} como aprovado (purchase.status ainda pendente) order=${orderId}`
+    );
+  }
   const buyerAddr = buyer.address || d.address || {};
 
+  const hmTrack = extractHotmartBrowserAndUtm(payload, recordOf(d), recordOf(purchase), recordOf(buyer), trackingObj, origin);
+  const payloadForProcess =
+    payload && typeof payload === 'object'
+      ? ({ ...payload } as Record<string, unknown>)
+      : ({} as Record<string, unknown>);
+  if (hmTrack.utm_source) payloadForProcess.utm_source = hmTrack.utm_source;
+  if (hmTrack.utm_medium) payloadForProcess.utm_medium = hmTrack.utm_medium;
+  if (hmTrack.utm_campaign) payloadForProcess.utm_campaign = hmTrack.utm_campaign;
+  if (hmTrack.utm_content) payloadForProcess.utm_content = hmTrack.utm_content;
+  if (hmTrack.utm_term) payloadForProcess.utm_term = hmTrack.utm_term;
+
   const result = await processPurchaseWebhook({
-    siteKey, payload, email, phone, firstName, lastName, city: buyerAddr.city, state: buyerAddr.state, zip: buyerAddr.zipcode, country: buyerAddr.country_iso || buyerAddr.country || 'BR',
-    fbp: d.fbp || d.custom_args?.fbp || payload.fbp, fbc: d.fbc || d.custom_args?.fbc || payload.fbc,
+    siteKey, payload: payloadForProcess, email, phone, firstName, lastName, city: buyerAddr.city, state: buyerAddr.state, zip: buyerAddr.zipcode, country: buyerAddr.country_iso || buyerAddr.country || 'BR',
+    fbp: hmTrack.fbp || undefined,
+    fbc: hmTrack.fbc || undefined,
     externalId: d.user_id || buyer.document || buyer.id,
-    clientIp: d.client_ip_address || payload.ip || undefined,
-    clientUa: d.client_user_agent || payload.user_agent || undefined,
+    clientIp: hmTrack.clientIp || undefined,
+    clientUa: hmTrack.clientUa || undefined,
     value, currency, status, orderId, platform: 'hotmart',
     contentName: d.product?.name || payload.product?.name,
+    purchaseTimestamp: resolveHotmartPurchaseTimestamp(payload, d, purchase),
     paymentMethodRaw: extractPaymentMethodRaw(payload),
   });
 

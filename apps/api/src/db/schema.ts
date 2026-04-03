@@ -163,6 +163,7 @@ const schemaSql = `
     raw_payload JSONB,
     platform_date TIMESTAMP,
     created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW(),
     UNIQUE(site_key, order_id)
   );
 
@@ -603,6 +604,13 @@ export const ensureSchema = async (pool: Pool) => {
     await pool.query('ALTER TABLE purchases ADD COLUMN IF NOT EXISTS utm_campaign TEXT');
     await pool.query('ALTER TABLE purchases ADD COLUMN IF NOT EXISTS user_data JSONB');
     await pool.query('ALTER TABLE purchases ADD COLUMN IF NOT EXISTS custom_data JSONB');
+    await pool.query('ALTER TABLE purchases ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP');
+    await pool.query(
+      "UPDATE purchases SET updated_at = COALESCE(updated_at, created_at) WHERE updated_at IS NULL"
+    );
+    await pool.query(
+      'ALTER TABLE purchases ALTER COLUMN updated_at SET DEFAULT NOW()'
+    ).catch(() => {});
       await pool.query('ALTER TABLE recommendation_reports ALTER COLUMN site_key TYPE VARCHAR(100)');
       await pool.query('ALTER TABLE capi_outbox ALTER COLUMN site_key TYPE VARCHAR(100)');
       await pool.query('ALTER TABLE site_visitors ALTER COLUMN site_key TYPE VARCHAR(100)');
