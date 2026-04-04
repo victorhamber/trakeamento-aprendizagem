@@ -202,17 +202,21 @@ router.get('/tracker.js', async (req, res) => {
     try {
       var url     = new URL(location.href);
       var fbclid  = url.searchParams.get('fbclid');
+      var fbc     = getCookie('_fbc');
       
       if (fbclid) {
-        // Se houver um novo fbclid na URL, ele SEMPRE tem prioridade sobre o cookie antigo.
-        // Isso garante que a atribuição vá para o clique mais recente do anúncio.
+        // Se o cookie atual já contém o exato mesmo fbclid, reaproveita.
+        // Isso evita gerar um novo timestamp (Date.now()) caso o usuário clique no botão
+        // 5 minutos após acessar a página, o que faria o CAPI ter um timestamp diferente do Pixel.
+        if (fbc && fbc.indexOf(fbclid) > -1) {
+          return fbc;
+        }
+        
         var generated = 'fb.1.' + Date.now() + '.' + fbclid;
         setCookie('_fbc', generated, COOKIE_TTL_90D);
         return generated;
       }
       
-      // Se não houver clique na URL, tenta recuperar o que já está salvo
-      var fbc = getCookie('_fbc');
       if (fbc) return fbc;
     } catch(_e) {}
     return undefined;

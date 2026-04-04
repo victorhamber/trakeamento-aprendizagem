@@ -516,7 +516,7 @@ function buildCapiUserData(
     db: wrap(db),
     fbp,
     fbc,
-    external_id: externalIdRaw ? hashPii(String(externalIdRaw)) : undefined,
+    external_id: externalIdRaw ? String(externalIdRaw).trim() : undefined,
   };
 }
 
