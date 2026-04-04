@@ -48,8 +48,6 @@ export class EnrichmentService {
     if (!emailHash && !phoneHash && !externalId && !options?.ip) return null;
 
     // 1. Tentar buscar em site_visitors (Perfil consolidado)
-
-    // 1. Tentar buscar em site_visitors (Perfil consolidado)
     // Prioridade: IDs diretos > IP (Se habilitado)
     const visitorQuery = `
       SELECT fbp, fbc, external_id, last_traffic_source, last_ip, last_user_agent
@@ -73,15 +71,57 @@ export class EnrichmentService {
       LIMIT 1
     `;
 
+    // Cross-site fallback: busca nos outros sites da mesma conta que compartilham o MESMO pixel
+    const crossSiteQuery = `
+      SELECT sv.fbp, sv.fbc, sv.external_id, sv.last_traffic_source, sv.last_ip, sv.last_user_agent
+      FROM site_visitors sv
+      JOIN sites s ON s.site_key = sv.site_key
+      JOIN integrations_meta m ON m.site_id = s.id
+      WHERE s.account_id = (SELECT account_id FROM sites WHERE site_key = $1)
+        AND sv.site_key != $1
+        AND m.pixel_id = (
+          SELECT m2.pixel_id FROM sites s2
+          JOIN integrations_meta m2 ON m2.site_id = s2.id
+          WHERE s2.site_key = $1
+        )
+        AND (
+          ($2::text IS NOT NULL AND sv.email_hash = $2::text) OR
+          ($3::text IS NOT NULL AND sv.phone_hash = $3::text) OR
+          ($4::text IS NOT NULL AND sv.external_id = $4::text) OR
+          ($5::text IS NOT NULL AND sv.last_ip = $5::text)
+        )
+      ORDER BY 
+        CASE 
+          WHEN sv.email_hash = $2::text THEN 1
+          WHEN sv.phone_hash = $3::text THEN 2
+          WHEN sv.external_id = $4::text THEN 3
+          WHEN sv.last_ip = $5::text THEN 4
+          ELSE 5
+        END ASC,
+        sv.last_seen_at DESC
+      LIMIT 1
+    `;
+
     try {
-      const visitorRes = await pool.query(visitorQuery, [
+      const queryParams = [
         siteKey, 
         emailHash, 
         phoneHash, 
         externalId || null,
         options?.ip || null
-      ]);
+      ];
+
+      let visitorRes = await pool.query(visitorQuery, queryParams);
       
+      // Cross-site fallback: se não achou no site atual, busca nos irmãos da mesma conta
+      if (!visitorRes.rowCount || visitorRes.rowCount === 0) {
+        console.log(`[Enrichment] No visitor found in site ${siteKey}, trying cross-site fallback...`);
+        visitorRes = await pool.query(crossSiteQuery, queryParams);
+        if (visitorRes.rowCount && visitorRes.rowCount > 0) {
+          console.log(`[Enrichment] Cross-site match found! Recovered visitor data from sibling site.`);
+        }
+      }
+
       let visitorData: any = {};
       
       if (visitorRes.rowCount && visitorRes.rowCount > 0) {

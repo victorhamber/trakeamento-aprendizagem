@@ -680,9 +680,48 @@ async function processPurchaseWebhook({
     JSON.stringify(rawPayloadForDb),
   ]);
 
-  // 4. Dispatch
+  // 4. Dispatch — with cross-site pixel dedup
   if (sendToCapi && metaEnabled && pixel_id && capiToken) {
-    capiService.sendEvent(siteKey, capiPayload).catch(err => console.error(`[Webhook] CAPI error for ${orderId}:`, err));
+    // Dedup: verifica se outro site com o MESMO pixel já enviou este pedido com dados mais ricos
+    let shouldSendCapi = true;
+    try {
+      const dupCheck = await pool.query(`
+        SELECT p.fbc, p.fbp, p.site_key,
+               (p.user_data->>'client_ip_address') as has_ip
+        FROM purchases p
+        JOIN sites s ON s.site_key = p.site_key
+        JOIN integrations_meta m ON m.site_id = s.id
+        WHERE p.order_id = $1
+          AND p.site_key != $2
+          AND m.pixel_id = $3
+        LIMIT 1
+      `, [orderId, siteKey, pixel_id]);
+
+      if (dupCheck.rowCount && dupCheck.rowCount > 0) {
+        const sibling = dupCheck.rows[0];
+        const siblingHasRichData = !!(sibling.fbc && sibling.fbp && sibling.has_ip);
+        const currentHasRichData = !!(mergedFbc && mergedFbp && mergedIp);
+
+        if (siblingHasRichData && !currentHasRichData) {
+          // O outro site já mandou com dados melhores — pula este envio
+          console.log(`[Webhook] CAPI dedup: skipping weaker Purchase for ${orderId} on ${siteKey} (sibling ${sibling.site_key} already sent richer data to pixel ${pixel_id})`);
+          shouldSendCapi = false;
+        } else if (!siblingHasRichData && currentHasRichData) {
+          // Este site tem dados melhores — envia normalmente (vai sobrescrever o fraco via event_id)
+          console.log(`[Webhook] CAPI dedup: sending richer Purchase for ${orderId} on ${siteKey} (overriding weaker sibling data)`);
+        } else {
+          // Ambos iguais — o primeiro ganha, segundo pula
+          console.log(`[Webhook] CAPI dedup: skipping duplicate Purchase for ${orderId} on ${siteKey} (sibling ${sibling.site_key} already sent to pixel ${pixel_id})`);
+          shouldSendCapi = false;
+        }
+      }
+    } catch (err) {
+      console.error('[Webhook] CAPI dedup check error (proceeding with send):', err);
+    }
+
+    if (shouldSendCapi) {
+      capiService.sendEvent(siteKey, capiPayload).catch(err => console.error(`[Webhook] CAPI error for ${orderId}:`, err));
+    }
   }
 
   if (sendToCapi && siteAccountId) {
