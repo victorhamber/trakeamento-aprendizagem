@@ -542,8 +542,9 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
           ) : (
             <div className="space-y-3">
               {checkoutWebhookLogs.map((log, index) => {
+                const capi = log.raw_payload?._capi_debug;
                 const hasUser = !!log.buyer_email_hash;
-                const hasPixel = !!(log.fbp || log.fbc);
+                const hasPixel = !!(log.fbp || log.fbc || capi?.user_data?.fbp || capi?.user_data?.fbc);
                 let statusColor = 'bg-red-500';
                 let statusTitle = 'Dados insuficientes (Falta Email e FBP/FBC)';
 
@@ -554,8 +555,6 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
                   statusColor = 'bg-amber-500';
                   statusTitle = 'Dados parciais (Falta Email ou FBP/FBC)';
                 }
-
-                const capi = log.raw_payload?._capi_debug;
 
                 return (
                   <details key={log.id || index} className="group rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 overflow-hidden" open>
