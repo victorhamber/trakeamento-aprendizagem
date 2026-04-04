@@ -438,7 +438,17 @@ async function processPurchaseWebhook({
   paymentMethodRaw,
 }: any) {
   const { finalStatus, sendToCapi } = normalizeStatus(status);
-  const platformDate = purchaseTimestamp ? new Date(purchaseTimestamp) : null;
+  
+  let platformDate = purchaseTimestamp ? new Date(purchaseTimestamp) : null;
+  const nowMs = Date.now();
+  if (platformDate) {
+    const pTime = platformDate.getTime();
+    if (Number.isNaN(pTime) || pTime > nowMs || nowMs - pTime > 6 * 24 * 60 * 60 * 1000) {
+      platformDate = new Date(nowMs);
+    }
+  } else {
+    platformDate = new Date(nowMs);
+  }
 
   console.log(`[Webhook] processPurchaseWebhook called: value=${value} currency=${currency} status=${finalStatus} orderId=${orderId} platform=${platform} siteKey=${siteKey}`);
 
