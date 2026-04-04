@@ -5,9 +5,17 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-const DASHBOARD_TZ = "America/Sao_Paulo";
+/** Fuso usado no painel — usa o timezone do navegador do usuário. */
+const DASHBOARD_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Sao_Paulo";
 
-/** Horários da API/DB em pt-BR (São Paulo); timestamps sem fuso vêm como UTC. */
+/** O servidor roda com TZ=America/Sao_Paulo. Timestamps sem offset são nesse fuso. */
+const SERVER_TZ_OFFSET = "-03:00";
+
+/**
+ * Formata instante vindo da API/Postgres no fuso local do navegador.
+ * - Strings com offset (Z, +00:00, etc.) são usadas como estão.
+ * - Strings SEM offset são tratadas como horário do servidor (São Paulo, -03:00).
+ */
 export function formatDateTimeBrt(input: string | Date | null | undefined): string {
   if (input == null || input === "") return "—";
   if (input instanceof Date) {
@@ -23,7 +31,7 @@ export function formatDateTimeBrt(input: string | Date | null | undefined): stri
   const hasOffset = /Z$/i.test(s) || /[+-]\d{2}:?\d{2}$/.test(s);
   if (!hasOffset) {
     if (s.includes(" ") && !s.includes("T")) s = s.replace(" ", "T");
-    s += s.endsWith("Z") ? "" : "Z";
+    s += SERVER_TZ_OFFSET;
   }
   const d = new Date(s);
   if (Number.isNaN(d.getTime())) return String(input);

@@ -79,10 +79,11 @@ export class EnrichmentService {
       JOIN integrations_meta m ON m.site_id = s.id
       WHERE s.account_id = (SELECT account_id FROM sites WHERE site_key = $1)
         AND sv.site_key != $1
-        AND m.pixel_id = (
+        AND m.pixel_id IN (
           SELECT m2.pixel_id FROM sites s2
           JOIN integrations_meta m2 ON m2.site_id = s2.id
           WHERE s2.site_key = $1
+          LIMIT 1
         )
         AND (
           ($2::text IS NOT NULL AND sv.email_hash = $2::text) OR
@@ -116,9 +117,15 @@ export class EnrichmentService {
       // Cross-site fallback: se não achou no site atual, busca nos irmãos da mesma conta
       if (!visitorRes.rowCount || visitorRes.rowCount === 0) {
         console.log(`[Enrichment] No visitor found in site ${siteKey}, trying cross-site fallback...`);
-        visitorRes = await pool.query(crossSiteQuery, queryParams);
-        if (visitorRes.rowCount && visitorRes.rowCount > 0) {
-          console.log(`[Enrichment] Cross-site match found! Recovered visitor data from sibling site.`);
+        try {
+          visitorRes = await pool.query(crossSiteQuery, queryParams);
+          if (visitorRes.rowCount && visitorRes.rowCount > 0) {
+            console.log(`[Enrichment] Cross-site match found! Recovered visitor data from sibling site.`);
+          } else {
+            console.log(`[Enrichment] Cross-site fallback: no match found for email=${!!emailHash} phone=${!!phoneHash} extId=${!!externalId} ip=${!!options?.ip}`);
+          }
+        } catch (csErr) {
+          console.error(`[Enrichment] Cross-site query FAILED for site ${siteKey}:`, csErr);
         }
       }
 
@@ -165,7 +172,7 @@ export class EnrichmentService {
       // 2. Se não achou de jeito nenhum, retornar null para que o webhook use o que tem no payload
       return null;
     } catch (err) {
-      console.error('[Enrichment] Error searching for visitor data:', err);
+      console.error(`[Enrichment] Error searching for visitor data (site=${siteKey}):`, err);
       return null;
     }
   }
