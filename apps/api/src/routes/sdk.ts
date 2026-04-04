@@ -734,11 +734,15 @@ router.get('/tracker.js', async (req, res) => {
   }
 
   // ─── Send (fetch primary, beacon fallback) ─────────────────────────────
-  function send(apiUrl, siteKey, payload) {
+  function send(apiUrl, siteKey, payload, forceBeacon) {
     try {
       var url  = apiUrl + '/ingest/events?key=' + encodeURIComponent(siteKey);
       var body = JSON.stringify(payload);
       var ok = false;
+      
+      if (forceBeacon && navigator.sendBeacon) {
+        navigator.sendBeacon(url, new Blob([body], { type: 'text/plain' }));
+      }
       
       // Tenta fetch com keepalive primeiro (mais robusto hoje em dia)
       if (typeof fetch !== 'undefined') {
@@ -961,10 +965,15 @@ router.get('/tracker.js', async (req, res) => {
         telemetry:        telemetry
       };
 
-      getFingerprintHash(function(fp) {
-        payload.telemetry.device_fingerprint = fp;
-        send(cfg.apiUrl, cfg.siteKey, payload);
-      });
+      var isInstant = (eventName === 'InitiateCheckout' || eventName === 'AddToCart' || eventName === 'Purchase');
+      if (isInstant) {
+        send(cfg.apiUrl, cfg.siteKey, payload, true);
+      } else {
+        getFingerprintHash(function(fp) {
+          payload.telemetry.device_fingerprint = fp;
+          send(cfg.apiUrl, cfg.siteKey, payload);
+        });
+      }
 
       if (cfg.metaPixelId) {
         loadMetaPixel(cfg.metaPixelId);
@@ -1061,8 +1070,12 @@ router.get('/tracker.js', async (req, res) => {
       }
       if (!el || (el.tagName !== 'A' && el.tagName !== 'BUTTON' && el.tagName !== 'INPUT')) return;
 
-      var clickedText = (el.innerText || el.value || el.textContent || '').toString().trim().toLowerCase();
-      if (!clickedText && el.getAttribute) clickedText = (el.getAttribute('aria-label') || el.getAttribute('title') || '').toLowerCase();
+      var clickedText = (el.innerText || el.textContent || el.value || '').toString().trim().toLowerCase();
+      if (!clickedText && el.getAttribute) clickedText = (el.getAttribute('title') || el.getAttribute('aria-label') || '').toLowerCase();
+      if (!clickedText) {
+        var img = el.querySelector('img');
+        if (img) clickedText = (img.getAttribute('alt') || img.getAttribute('title') || img.getAttribute('src') || '').toLowerCase();
+      }
       
       if (!clickedText) return;
 
