@@ -171,7 +171,7 @@ export class EnrichmentService {
   }
 
   private static async findLatestMetadata(siteKey: string, fbp?: string, externalId?: string, emailHash?: string | null, phoneHash?: string | null) {
-    const query = `
+    const baseQuery = (whereClause: string) => `
       SELECT 
         user_data->>'client_ip_address' as ip, 
         user_data->>'client_user_agent' as ua,
@@ -183,7 +183,7 @@ export class EnrichmentService {
         custom_data->>'utm_content' as utm_content,
         custom_data->>'utm_term' as utm_term
       FROM web_events
-      WHERE site_key = $1
+      ${whereClause}
         AND (
           ($2::text IS NOT NULL AND user_data->>'fbp' = $2::text) OR
           ($3::text IS NOT NULL AND (
@@ -203,8 +203,25 @@ export class EnrichmentService {
       LIMIT 1
     `;
 
+    const params = [siteKey, fbp || null, externalId || null, emailHash || null, phoneHash || null];
+
     try {
-      const res = await pool.query(query, [siteKey, fbp || null, externalId || null, emailHash || null, phoneHash || null]);
+      // 1. Buscar no site atual
+      let res = await pool.query(baseQuery('WHERE site_key = $1'), params);
+      
+      // 2. Cross-site fallback: buscar nos sites irmãos com o mesmo pixel
+      if (!res.rowCount || res.rowCount === 0) {
+        const crossSiteWhere = `
+          WHERE site_key IN (
+            SELECT s2.site_key FROM sites s1
+            JOIN integrations_meta m1 ON m1.site_id = s1.id
+            JOIN integrations_meta m2 ON m2.pixel_id = m1.pixel_id
+            JOIN sites s2 ON s2.id = m2.site_id
+            WHERE s1.site_key = $1 AND s2.site_key != $1
+          )`;
+        res = await pool.query(baseQuery(crossSiteWhere), params);
+      }
+      
       if (res.rowCount && res.rowCount > 0) return res.rows[0];
     } catch (e) { /* ignore */ }
     return null;
