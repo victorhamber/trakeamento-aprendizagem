@@ -791,18 +791,9 @@ router.get('/tracker.js', async (req, res) => {
       if (window.__TA_PAGE_VIEW_URL === currentUrlNoHash) return;
       window.__TA_PAGE_VIEW_URL = currentUrlNoHash;
 
-      // 2. Evita disparos no F5 (Refresh) ou retornando para a mesma página na mesma sessão
-      try {
-        var currentPathOnly = location.pathname + (location.search || '');
-        var visited = window.sessionStorage.getItem('_ta_visited_paths');
-        var visitedArr = visited ? visited.split('|') : [];
-        if (visitedArr.indexOf(currentPathOnly) > -1) {
-          // console.log('[TRK] Dedup: PageView já disparado nesta sessão para ' + currentPathOnly);
-          return;
-        }
-        visitedArr.push(currentPathOnly);
-        window.sessionStorage.setItem('_ta_visited_paths', visitedArr.join('|'));
-      } catch(_e) {}
+      // Memory debounce already covers double-fires in the same page lifecycle.
+      // We removed sessionStorage deduplication to allow PageView on refresh (F5),
+      // matching industry standards and the standard Meta Pixel behavior.
 
       var nav         = performance && performance.timing ? performance.timing : null;
       var loadTimeMs  = nav && nav.domContentLoadedEventEnd > 0 ? (nav.domContentLoadedEventEnd - nav.navigationStart) : undefined;
@@ -928,16 +919,8 @@ router.get('/tracker.js', async (req, res) => {
         return;
       }
 
-      // Hard dedup for manual PageView rules to prevent duplicating native pageView() 
-      if (eventName === 'PageView') {
-        try {
-          var visited = window.sessionStorage.getItem('_ta_visited_paths');
-          var visitedArr = visited ? visited.split('|') : [];
-          if (visitedArr.indexOf(location.pathname) > -1) return;
-          visitedArr.push(location.pathname);
-          window.sessionStorage.setItem('_ta_visited_paths', visitedArr.join('|'));
-        } catch(_e) {}
-      }
+      // Manual PageView rules are now subject to the same memory debounce as native PageView.
+      // Refreshes will trigger the rule again, as expected.
 
       _lastRuleFire[evKey] = nowMs;
 
