@@ -1,4 +1,3 @@
-process.env.TZ = 'America/Sao_Paulo';
 import dotenv from 'dotenv';
 dotenv.config({ path: '../../.env' });
 import express from 'express';
