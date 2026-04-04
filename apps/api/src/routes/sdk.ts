@@ -357,15 +357,14 @@ router.get('/tracker.js', async (req, res) => {
   }
 
   // ─── Time helpers ─────────────────────────────────────────────────────────
-  // Campos enviados como custom_data no Pixel: alinhados ao fuso do Brasil (anúncios locais).
-  // event_time oficial do Meta continua em Unix UTC; só estes rótulos (dia/hora) são BRT.
-  var META_CUSTOM_TIMEZONE = 'America/Sao_Paulo';
+  // event_time oficial do Meta continua em Unix UTC; só estes rótulos (dia/hora) são fuso do lead.
   function getTimeFields(epochSec) {
     try {
       var d = new Date(epochSec * 1000);
       if (typeof Intl !== 'undefined' && Intl.DateTimeFormat) {
+        var tz = Intl.DateTimeFormat().resolvedOptions().timeZone || undefined;
         var fmt = new Intl.DateTimeFormat('en-US', {
-          timeZone: META_CUSTOM_TIMEZONE,
+          timeZone: tz,
           weekday: 'long',
           month: 'long',
           day: 'numeric',
