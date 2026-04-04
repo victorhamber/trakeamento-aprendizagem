@@ -651,9 +651,9 @@ async function processPurchaseWebhook({
       site_key, order_id, platform, amount, currency, status, 
       customer_email, customer_phone, customer_name,
       fbc, fbp, external_id, utm_source, utm_medium, utm_campaign,
-      platform_date, user_data, custom_data, raw_payload
+      platform_date, user_data, custom_data, raw_payload, buyer_email_hash
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19::jsonb)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19::jsonb, $20)
     ON CONFLICT (site_key, order_id) DO UPDATE SET
       status = EXCLUDED.status,
       amount = EXCLUDED.amount,
@@ -671,6 +671,7 @@ async function processPurchaseWebhook({
       user_data = purchases.user_data || EXCLUDED.user_data,
       custom_data = purchases.custom_data || EXCLUDED.custom_data,
       raw_payload = EXCLUDED.raw_payload,
+      buyer_email_hash = COALESCE(EXCLUDED.buyer_email_hash, purchases.buyer_email_hash),
       updated_at = NOW()
   `, [
     siteKey, orderId, platform, value, currency, finalStatus,
@@ -678,6 +679,7 @@ async function processPurchaseWebhook({
     mergedFbc, mergedFbp, mergedExternalId, utmSource, utmMedium, utmCampaign,
     platformDate, JSON.stringify(capiPayload.user_data), JSON.stringify(capiPayload.custom_data),
     JSON.stringify(rawPayloadForDb),
+    dbEmailHash
   ]);
 
   // 4. Dispatch — with cross-site pixel dedup

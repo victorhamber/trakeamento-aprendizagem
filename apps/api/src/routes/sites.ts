@@ -294,7 +294,7 @@ router.get('/:siteId/checkout-simulator/webhooks', requireAuth, async (req, res)
 
   const result = await pool.query(
     `SELECT p.id, p.order_id, p.platform, p.amount, p.currency, p.status, p.created_at, p.updated_at, p.raw_payload,
-            p.buyer_email_hash, p.fbp, p.fbc
+            p.buyer_email_hash, p.customer_email, p.fbp, p.fbc
      FROM purchases p
      JOIN sites s ON s.site_key = p.site_key
      WHERE s.id = $1 AND s.account_id = $2
