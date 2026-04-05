@@ -430,10 +430,13 @@ async function resolveEventSourceUrlForIngest(
     if (isValidHttpUrl(fromDb)) return fromDb;
   }
 
-  console.warn('[Ingest] event_source_url ausente para evento website (CAPI).', {
-    siteKey,
-    event_name: event.event_name,
-  });
+  const envFallback = process.env.CAPI_FALLBACK_EVENT_SOURCE_URL?.trim();
+  if (isValidHttpUrl(envFallback)) return envFallback!;
+
+  console.warn(
+    '[Ingest] event_source_url ausente para evento website (CAPI). Defina domain/tracking_domain no site ou CAPI_FALLBACK_EVENT_SOURCE_URL.',
+    { siteKey, event_name: event.event_name }
+  );
   return '';
 }
 
@@ -494,9 +497,8 @@ function buildCapiUserData(
   const zp = pick('zp');
   const db = pick('db');
 
-  // Log diagnostic for attribution
-  if (fbc || fbp) {
-    console.log(`[Ingest] Site Event Attribution - fbc: ${!!fbc}, fbp: ${!!fbp}`);
+  if (process.env.DEBUG_ATTRIBUTION === '1' && (fbc || fbp)) {
+    console.log(`[Ingest] Attribution debug — fbc: ${!!fbc}, fbp: ${!!fbp}`);
   }
 
   // Helper to wrap in array (Meta CAPI requires arrays for PII fields, except for external_id/fbc/fbp)
@@ -666,7 +668,7 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
       const ph = capiUser.ph;
       const fn = capiUser.fn;
       const ln = capiUser.ln;
-      // external_id vem de buildCapiUserData como string (hash SHA-256), não array — o check anterior falhava sempre e gerava anon_* por evento.
+      // external_id em buildCapiUserData é ID em claro (ex.: eid_*); hash para Meta CAPI em CapiService.buildPayload.
       const rawExt = capiUser.external_id;
       const extId =
         rawExt != null && String(rawExt).trim() !== ''

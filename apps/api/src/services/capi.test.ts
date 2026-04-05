@@ -36,6 +36,15 @@ describe('CapiService', () => {
     expect(hash).toBe(expected);
   });
 
+  it('externalIdForCapiPayload hasheia ID em claro e preserva hex de 64 chars', () => {
+    const plain = 'eid_test123';
+    expect(CapiService.externalIdForCapiPayload(plain)).toBe(CapiService.hash(plain));
+    const already = 'a'.repeat(64);
+    expect(CapiService.externalIdForCapiPayload(already)).toBe(already);
+    expect(CapiService.externalIdForCapiPayload('')).toBeUndefined();
+    expect(CapiService.externalIdForCapiPayload(undefined)).toBeUndefined();
+  });
+
   it('deve salvar evento na outbox em caso de erro', async () => {
     const siteKey = 'test-site-key';
     const event: CapiEvent = {

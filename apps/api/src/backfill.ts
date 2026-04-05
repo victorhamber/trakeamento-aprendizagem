@@ -53,7 +53,7 @@ async function backfill() {
 
             let externalIdRaw = userData.external_id || customData.external_id;
             let extId = Array.isArray(externalIdRaw) ? externalIdRaw[0] : externalIdRaw;
-            if (extId) extId = hashPii(String(extId));
+            if (extId != null && String(extId).trim() !== '') extId = String(extId).trim();
             else extId = `anon_${event.event_id}`;
 
             const ts = customData.ta_ts ? String(customData.ta_ts) : undefined;

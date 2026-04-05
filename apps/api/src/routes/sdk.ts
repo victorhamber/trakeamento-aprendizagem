@@ -30,12 +30,21 @@ router.get('/tracker.js', async (req, res) => {
           process.env.API_BASE_URL ||
           `${req.headers['x-forwarded-proto'] || req.protocol}://${req.headers['x-forwarded-host'] || req.get('host')}`;
 
+        const rawSckMax = process.env.HOTMART_SCK_MAX_CHARS;
+        let hotmartSckMaxChars: number | null = 280;
+        if (rawSckMax !== undefined && rawSckMax !== '') {
+          const n = parseInt(rawSckMax, 10);
+          hotmartSckMaxChars = Number.isFinite(n) && n > 0 ? n : null;
+        }
+
         const configObj = {
           apiUrl,
           siteKey,
           metaPixelId,
           gaMeasurementId,
-          eventRules
+          eventRules,
+          /** Limite aproximado do campo sck da Hotmart; acima disso usa trk_ só com eid e manda fbp/fbc na query. Aumente com HOTMART_SCK_MAX_CHARS na API se a Hotmart permitir mais. */
+          hotmartSckMaxChars,
         };
 
         configJs = `window.TRACKING_CONFIG = ${JSON.stringify(configObj)};\n\n`;
@@ -75,7 +84,10 @@ router.get('/tracker.js', async (req, res) => {
   var gaLoaded     = false;
   var _lastRuleFire = {};  // dedup guard: { eventName: timestamp }
   var RULE_DEDUP_MS = 5000; // 5s cooldown for same event name
-  var pendingQueue = []; // batch queue para beforeunload
+  /** UTMs em links de checkout (ids fbc/fbp/fbclid não truncamos — quebraria atribuição). */
+  var CHECKOUT_UTM_MAX   = 120;
+  var CHECKOUT_ID_MAX    = 120;
+  var CHECKOUT_TA_TS_MAX = 200;
   var webVitals    = { lcp: 0, fid: 0, cls: 0, fcp: 0 };
   var pageEngagementEventId = null;
 
@@ -335,6 +347,71 @@ router.get('/tracker.js', async (req, res) => {
       }
     } catch(_e) {}
     return out;
+  }
+
+  function truncateCheckoutParam(val, maxLen) {
+    if (val == null || val === '') return '';
+    var s = String(val);
+    if (s.length <= maxLen) return s;
+    return s.slice(0, maxLen);
+  }
+
+  /**
+   * Anexa UTMs e ids ao checkout sem sobrescrever o que já veio no HTML/Hotmart.
+   * UTMs vêm da land (URL ou sessionStorage); com tráfego Meta só fbclid/fbc, injeta utm_source/medium mínimos.
+   */
+  function mergeCheckoutAttributionQueryParams(url, eid, fbc, fbp) {
+    try {
+      var attrs = getAttributionParams();
+      if (!attrs.utm_source && (attrs.fbclid || fbc)) {
+        if (!attrs.utm_source) attrs.utm_source = 'facebook';
+        if (!attrs.utm_medium) attrs.utm_medium = 'cpc';
+      }
+      var utmKeys = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'];
+      for (var ui = 0; ui < utmKeys.length; ui++) {
+        var uk = utmKeys[ui];
+        var uv = attrs[uk];
+        if (!uv) continue;
+        if (!url.searchParams.has(uk)) {
+          url.searchParams.set(uk, truncateCheckoutParam(uv, CHECKOUT_UTM_MAX));
+        }
+      }
+      var idKeys = ['gclid', 'ttclid', 'twclid'];
+      for (var ii = 0; ii < idKeys.length; ii++) {
+        var ik = idKeys[ii];
+        var iv = attrs[ik];
+        if (!iv) continue;
+        if (!url.searchParams.has(ik)) {
+          url.searchParams.set(ik, truncateCheckoutParam(iv, CHECKOUT_ID_MAX));
+        }
+      }
+      if (attrs.fbclid && !url.searchParams.has('fbclid')) {
+        url.searchParams.set('fbclid', String(attrs.fbclid));
+      }
+      if (attrs.click_id && !url.searchParams.has('click_id')) {
+        url.searchParams.set('click_id', truncateCheckoutParam(attrs.click_id, CHECKOUT_ID_MAX));
+      }
+      if (fbp && !url.searchParams.has('fbp')) url.searchParams.set('fbp', fbp);
+      if (fbc && !url.searchParams.has('fbc')) url.searchParams.set('fbc', fbc);
+      if (eid && !url.searchParams.has('external_id')) url.searchParams.set('external_id', eid);
+      var ts = getTrafficSource();
+      if (ts && !url.searchParams.has('ta_ts')) {
+        url.searchParams.set('ta_ts', truncateCheckoutParam(ts, CHECKOUT_TA_TS_MAX));
+      }
+    } catch (_e) {}
+  }
+
+  /** trk_ = base64(eid|fbc|fbp) como antes; se passar maxChars (Hotmart ~280), usa só eid|| — fbc/fbp ficam na query. */
+  function buildHotmartTrkToken(eid, fbc, fbp, maxChars) {
+    try {
+      var payload = eid + '|' + (fbc || '') + '|' + (fbp || '');
+      var full = 'trk_' + btoa(payload).replace(/=+$/, '');
+      if (!maxChars || full.length <= maxChars) return full;
+      var shortPayload = eid + '||';
+      return 'trk_' + btoa(shortPayload).replace(/=+$/, '');
+    } catch (_e) {
+      return '';
+    }
   }
 
   // ─── Connection / device info ─────────────────────────────────────────────
@@ -1136,16 +1213,10 @@ router.get('/tracker.js', async (req, res) => {
         var fbp = getFbp();
         var fbc = getFbc();
         var eid = getOrCreateExternalId();
-        var ts  = getTrafficSource();
-        if (fbp) url.searchParams.set('fbp', fbp);
-        if (fbc) url.searchParams.set('fbc', fbc);
-        if (eid) url.searchParams.set('external_id', eid);
-        if (ts)  url.searchParams.set('ta_ts', ts);
-        var attrs = getAttributionParams();
-        for (var k in attrs) { if (attrs[k]) url.searchParams.set(k, attrs[k]); }
+        mergeCheckoutAttributionQueryParams(url, eid, fbc, fbp);
         return url.toString();
       } catch(_e) {
-        return targetUrl; // Fallback to raw string if invalid URL
+        return targetUrl;
       }
     };
 
@@ -1157,16 +1228,15 @@ router.get('/tracker.js', async (req, res) => {
   } catch(_e) {}
 
   // ─── Auto-Tagging Checkout Links ──────────────────────────────────────────
-  // Injeta tracking params (EID, FBC, FBP) nos links de checkout (sck/src)
+  // UTMs + fbp/fbc/external_id na query; sck com trk_ respeitando hotmartSckMaxChars (env HOTMART_SCK_MAX_CHARS).
   function decorateCheckoutLinks() {
     var eid = getOrCreateExternalId();
     var fbc = getFbc() || '';
     var fbp = getFbp() || '';
-    
-    // trk_ + Base64(eid|fbc|fbp)
-    var trackValue = eid;
-    if (fbc || fbp) trackValue += '|' + (fbc || '') + '|' + (fbp || '');
-    var safeTrackValue = 'trk_' + btoa(trackValue).replace(/=+$/, '');
+    var cfg = window.TRACKING_CONFIG || {};
+    var sckMax = cfg.hotmartSckMaxChars;
+    if (sckMax === 0) sckMax = null;
+    var defaultTrk = buildHotmartTrkToken(eid, fbc, fbp, sckMax);
 
     var checkoutDomains = [
       'pay.hotmart.com', 'hotmart.com/product', 'go.hotmart.com',
@@ -1192,21 +1262,24 @@ router.get('/tracker.js', async (req, res) => {
         }
 
         if (isCheckout) {
+          mergeCheckoutAttributionQueryParams(url, eid, fbc, fbp);
+
           var hasSck = url.searchParams.has('sck');
           var hasSrc = url.searchParams.has('src');
-          
+
           if (!hasSck && !hasSrc) {
             var paramName = url.hostname.indexOf('hotmart') > -1 ? 'sck' : 'src';
-            url.searchParams.set(paramName, safeTrackValue);
-            link.href = url.toString();
+            if (defaultTrk) url.searchParams.set(paramName, defaultTrk);
           } else {
             var existingParam = hasSck ? 'sck' : 'src';
-            var existingVal = url.searchParams.get(existingParam);
-            if (existingVal && existingVal.indexOf('trk_') === -1) {
-              url.searchParams.set(existingParam, existingVal + '-' + safeTrackValue);
-              link.href = url.toString();
+            var existingVal = url.searchParams.get(existingParam) || '';
+            if (existingVal && existingVal.indexOf('trk_') === -1 && defaultTrk) {
+              var budget = sckMax ? sckMax - existingVal.length - 1 : null;
+              var tok = buildHotmartTrkToken(eid, fbc, fbp, budget && budget > 8 ? budget : null);
+              if (tok) url.searchParams.set(existingParam, existingVal + '-' + tok);
             }
           }
+          link.href = url.toString();
         }
       } catch (e) {}
     }

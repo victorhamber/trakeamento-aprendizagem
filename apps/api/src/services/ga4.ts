@@ -1,5 +1,6 @@
 import { Pool } from 'pg';
-import { decryptString, encryptString } from '../lib/crypto';
+import { decryptString } from '../lib/crypto';
+import { CapiService } from './capi';
 import { v4 as uuidv4 } from 'uuid';
 
 interface Ga4EventPayload {
@@ -67,14 +68,8 @@ export class Ga4Service {
         user_agent: userData.user_agent,  // Suporte a UA override (requer api_secret)
       };
 
-      // Adicionar parâmetros de origem se disponíveis (UTMs)
-      if (eventData.traffic_source) {
-        params.campaign = eventData.traffic_source.campaign;
-        params.source = eventData.traffic_source.source;
-        params.medium = eventData.traffic_source.medium;
-        params.term = eventData.traffic_source.term;
-        params.content = eventData.traffic_source.content;
-      }
+      // UTMs: o ingest manda traffic_source como string (query); antes lia-se como objeto e não preenchia nada.
+      this.applyTrafficSourceToGa4Params(params, eventData);
 
       // 4. Montar Payload
       const payload: Ga4EventPayload = {
@@ -151,6 +146,55 @@ export class Ga4Service {
   }
 
   /**
+   * Preenche campaign/source/medium/term/content a partir de traffic_source (string ou objeto) sem sobrescrever utm_* já normalizados.
+   */
+  private applyTrafficSourceToGa4Params(params: Record<string, any>, eventData: Record<string, any>): void {
+    const ts = eventData.traffic_source;
+    if (ts == null || ts === '') return;
+
+    const setIfEmpty = (key: string, val: string | null | undefined) => {
+      if (val == null || val === '') return;
+      if (params[key] != null && params[key] !== '') return;
+      params[key] = val;
+    };
+
+    if (typeof ts === 'object' && !Array.isArray(ts)) {
+      setIfEmpty('campaign', ts.campaign);
+      setIfEmpty('source', ts.source);
+      setIfEmpty('medium', ts.medium);
+      setIfEmpty('term', ts.term);
+      setIfEmpty('content', ts.content);
+      return;
+    }
+
+    if (typeof ts !== 'string') return;
+    const raw = ts.trim();
+    if (!raw || raw.toLowerCase().startsWith('trk_')) return;
+
+    let search = raw;
+    try {
+      if (/^https?:\/\//i.test(raw)) {
+        search = new URL(raw).search.slice(1);
+      } else if (raw.includes('?')) {
+        search = (raw.split('?')[1] || '').split('#')[0];
+      }
+    } catch {
+      return;
+    }
+
+    try {
+      const sp = new URLSearchParams(search);
+      setIfEmpty('campaign', sp.get('utm_campaign') ?? undefined);
+      setIfEmpty('source', sp.get('utm_source') ?? undefined);
+      setIfEmpty('medium', sp.get('utm_medium') ?? undefined);
+      setIfEmpty('term', sp.get('utm_term') ?? undefined);
+      setIfEmpty('content', sp.get('utm_content') ?? undefined);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  /**
    * Normaliza nomes de eventos para o padrão GA4 (snake_case)
    */
   private normalizeEventName(name: string): string {
@@ -223,7 +267,11 @@ export class Ga4Service {
     // Enviar dados de identificação como User Properties para criar audiências
     if (userData.fbp) props.fbp = { value: userData.fbp };
     if (userData.fbc) props.fbc = { value: userData.fbc };
-    if (userData.external_id) props.external_id_hash = { value: userData.external_id };
+    if (userData.external_id) {
+      const raw = String(userData.external_id).trim();
+      const hashed = /^[0-9a-f]{64}$/i.test(raw) ? raw.toLowerCase() : CapiService.hash(raw);
+      props.external_id_hash = { value: hashed };
+    }
     
     // Tipo de Cliente (ex: se tiver user_id é logado)
     props.customer_type = { value: userData.user_id ? 'logged_in' : 'guest' };

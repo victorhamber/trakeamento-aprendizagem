@@ -8,7 +8,8 @@ export interface CapiEvent {
   event_name: string;
   event_time: number;
   event_id: string;
-  event_source_url: string;
+  /** Preferência http(s) válida; se ausente/inválida, buildPayload usa CAPI_FALLBACK_EVENT_SOURCE_URL ou omite (website). */
+  event_source_url?: string;
   user_data: {
     client_ip_address?: string;
     client_user_agent?: string;
@@ -39,6 +40,29 @@ export class CapiService {
   // Função auxiliar para hash SHA256
   public static hash(input: string): string {
     return crypto.createHash('sha256').update(input.toLowerCase().trim()).digest('hex');
+  }
+
+  /**
+   * Meta CAPI: external_id como SHA-256 do ID de primeiro partido.
+   * Se já for hex de 64 caracteres (ex.: hash de email no webhook), não re-hasheia.
+   */
+  public static externalIdForCapiPayload(raw: string | undefined | null): string | undefined {
+    if (raw == null) return undefined;
+    const s = String(raw).trim();
+    if (!s) return undefined;
+    if (/^[0-9a-f]{64}$/i.test(s)) return s.toLowerCase();
+    return CapiService.hash(s);
+  }
+
+  public static isValidHttpEventSourceUrl(s: string | undefined | null): boolean {
+    if (!s || typeof s !== 'string') return false;
+    const t = s.trim();
+    if (!t.startsWith('http://') && !t.startsWith('https://')) return false;
+    try {
+      return Boolean(new URL(t).hostname);
+    } catch {
+      return false;
+    }
   }
 
   private isProbablyValidToken(token: string): boolean {
@@ -128,12 +152,31 @@ export class CapiService {
   }
 
   private buildPayload(cfg: { pixelId: string; capiToken: string; testEventCode?: string | null }, event: CapiEvent) {
-    // Limpa user_data — o Meta penaliza campos vazios/nulos
+    const userDataIn = event.user_data ? ({ ...event.user_data } as Record<string, unknown>) : {};
+    const ext = userDataIn.external_id;
+    if (ext != null && String(ext).trim() !== '') {
+      const hashed = CapiService.externalIdForCapiPayload(String(ext));
+      if (hashed) userDataIn.external_id = hashed;
+      else delete userDataIn.external_id;
+    }
+
     const cleanedUserData = CapiService.normalizeUserDataForGraphApi(
-      CapiService.cleanObject(event.user_data) as Record<string, unknown>
+      CapiService.cleanObject(userDataIn) as Record<string, unknown>
     );
-    // Limpa custom_data também
     const cleanedCustomData = event.custom_data ? CapiService.cleanObject(event.custom_data) : undefined;
+
+    const actionSource = event.action_source || 'website';
+    let eventSourceUrl = (event.event_source_url || '').trim();
+    if (!CapiService.isValidHttpEventSourceUrl(eventSourceUrl)) {
+      const envUrl = (process.env.CAPI_FALLBACK_EVENT_SOURCE_URL || '').trim();
+      if (CapiService.isValidHttpEventSourceUrl(envUrl)) eventSourceUrl = envUrl;
+    }
+    if (!CapiService.isValidHttpEventSourceUrl(eventSourceUrl) && actionSource === 'website') {
+      console.warn(
+        '[CAPI] event_source_url inválido ou vazio para evento website; defina CAPI_FALLBACK_EVENT_SOURCE_URL ou corrija o ingest.',
+        { event_name: event.event_name, event_id: event.event_id }
+      );
+    }
 
     return {
       data: [
@@ -141,8 +184,8 @@ export class CapiService {
           event_name: event.event_name,
           event_time: event.event_time,
           event_id: event.event_id,
-          event_source_url: event.event_source_url,
-          action_source: event.action_source || 'website',
+          ...(CapiService.isValidHttpEventSourceUrl(eventSourceUrl) ? { event_source_url: eventSourceUrl } : {}),
+          action_source: actionSource,
           user_data: cleanedUserData,
           ...(cleanedCustomData && Object.keys(cleanedCustomData).length > 0
             ? { custom_data: cleanedCustomData }
