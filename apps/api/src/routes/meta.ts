@@ -549,7 +549,7 @@ router.get('/campaigns/funnel-breakdown', requireAuth, async (req, res) => {
     );
     if (!owns.rowCount) return res.status(404).json({ error: 'Site not found' });
 
-    const { since, until, days, preset } = parseMetaCampaignDateWindow(req);
+    const { since, until, days, preset, hasCustomRange, sinceRaw, untilRaw } = parseMetaCampaignDateWindow(req);
 
     let groupBy: string;
     let nameField: string;
@@ -579,8 +579,7 @@ router.get('/campaigns/funnel-breakdown', requireAuth, async (req, res) => {
       }
     }
 
-    const result = await pool.query(
-      `
+    const funnelSql = `
       SELECT
         ${idField},
         ${nameField},
@@ -601,11 +600,58 @@ router.get('/campaigns/funnel-breakdown', requireAuth, async (req, res) => {
         ${levelFilter}
       GROUP BY ${groupBy}
       ORDER BY spend DESC NULLS LAST, impressions DESC
-      `,
-      params
-    );
+    `;
 
-    const rows = result.rows.map((r) => {
+    let result = await pool.query(funnelSql, params);
+
+    /** Campanhas novas podem ainda não estar no DB; a lista de métricas só sincroniza se o resultado global estiver vazio. */
+    if (!(result.rowCount || 0)) {
+      try {
+        await metaMarketingService.syncDailyInsights(
+          siteId,
+          preset,
+          hasCustomRange ? { since: sinceRaw, until: untilRaw } : undefined
+        );
+        result = await pool.query(funnelSql, params);
+      } catch (syncErr) {
+        console.warn('[funnel-breakdown] syncDailyInsights failed:', syncErr);
+      }
+    }
+
+    let rawRows = result.rows as Record<string, unknown>[];
+
+    if (!rawRows.length && level === 'campaign') {
+      try {
+        const live = await metaMarketingService.fetchCampaignInsights(
+          siteId,
+          preset,
+          hasCustomRange ? { since: sinceRaw, until: untilRaw } : undefined
+        );
+        const match = live.find((x) => String(x.campaign_id ?? '') === campaignId);
+        if (match) {
+          rawRows = [
+            {
+              id: match.campaign_id,
+              name: match.campaign_name,
+              spend: match.spend,
+              impressions: match.impressions,
+              clicks: match.clicks,
+              link_clicks: match.link_clicks ?? 0,
+              unique_link_clicks: match.unique_link_clicks,
+              landing_page_views: match.landing_page_views,
+              leads: match.leads,
+              adds_to_cart: match.adds_to_cart,
+              initiates_checkout: match.initiates_checkout,
+              purchases: match.purchases,
+            },
+          ];
+        }
+      } catch (liveErr) {
+        console.warn('[funnel-breakdown] fetchCampaignInsights failed:', liveErr);
+      }
+    }
+
+    const rows = rawRows.map((r) => {
       const o = { ...r, spend: Number(r.spend || 0) };
       const { bottleneck, bottleneck_plain } = analyzeFunnelBottleneck(o);
       const hints = presentAndFutureHints(o);

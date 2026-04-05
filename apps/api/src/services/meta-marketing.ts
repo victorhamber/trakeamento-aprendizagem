@@ -600,6 +600,7 @@ export class MetaMarketingService {
         frequency,
         clicks,
         unique_clicks: uniqueClicks,
+        link_clicks: linkClicks,
         unique_link_clicks: uniqueLinkClicks,
         ctr,
         cpc,

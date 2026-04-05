@@ -215,10 +215,6 @@ export const SitePage = () => {
 
   const [metaLevel, setMetaLevel] = useState<'campaign' | 'adset' | 'ad'>('campaign');
   const [metaParentId, setMetaParentId] = useState<string | null>(null);
-  const [metaBreadcrumbs, setMetaBreadcrumbs] = useState<
-    { id: string | null; name: string; level: string }[]
-  >([{ id: null, name: 'Campanhas', level: 'campaign' }]);
-  const [metaStatusFilter, setMetaStatusFilter] = useState<'active' | 'all'>('all');
   const [showAdAccountSelector, setShowAdAccountSelector] = useState(false);
   const [utmBaseUrl, setUtmBaseUrl] = useState('');
   const [utmSource, setUtmSource] = useState('{{site_source_name}}');
@@ -1289,12 +1285,6 @@ ${scriptContent}
               is_active: String(c.effective_status || c.status || '').toUpperCase() === 'ACTIVE',
             }))
           );
-          if (metaStatusFilter === 'active') {
-            rows = rows.filter((row) => {
-              const display = String(row.effective_status || row.status || '').toUpperCase();
-              return display === 'ACTIVE';
-            });
-          }
         } catch (err) {
           console.error(err);
         }
@@ -1325,12 +1315,6 @@ ${scriptContent}
           });
           if (metaList.length) {
             rows = rows.filter((row) => Boolean(metaMap[row.id]));
-          }
-          if (metaStatusFilter === 'active') {
-            rows = rows.filter((row) => {
-              const display = String(row.status || row.effective_status || '').toUpperCase();
-              return display === 'ACTIVE';
-            });
           }
         } catch (err) {
           console.error(err);
@@ -1363,12 +1347,6 @@ ${scriptContent}
           if (metaList.length) {
             rows = rows.filter((row) => Boolean(metaMap[row.id]));
           }
-          if (metaStatusFilter === 'active') {
-            rows = rows.filter((row) => {
-              const display = String(row.status || row.effective_status || '').toUpperCase();
-              return display === 'ACTIVE';
-            });
-          }
         } catch (err) {
           console.error(err);
         }
@@ -1386,7 +1364,7 @@ ${scriptContent}
     } finally {
       setLoading(false);
     }
-  }, [id, metricsPreset, metricsSince, metricsUntil, metaLevel, metaParentId, metaStatusFilter]);
+  }, [id, metricsPreset, metricsSince, metricsUntil, metaLevel, metaParentId]);
 
   const loadUtmOptions = useCallback(async () => {
     try {
@@ -1424,53 +1402,9 @@ ${scriptContent}
       loadSavedUtms().catch(() => { });
       setMetaLevel('campaign');
       setMetaParentId(null);
-      setMetaBreadcrumbs([{ id: null, name: 'Campanhas', level: 'campaign' }]);
       loadMeta().catch(() => { });
     }
   }, [tab, site, loadSnippet, loadMeta, loadGa, loadMatching, loadWebhookSecret, loadUtmOptions, loadDataQuality]);
-
-  const handleMetaDrillDown = (item: any) => {
-    if (metaLevel === 'campaign') {
-      setMetaLevel('adset');
-      setMetaParentId(item.id);
-      setMetaBreadcrumbs((prev) => [...prev, { id: item.id, name: item.name, level: 'adset' }]);
-    } else if (metaLevel === 'adset') {
-      setMetaLevel('ad');
-      setMetaParentId(item.id);
-      setMetaBreadcrumbs((prev) => [...prev, { id: item.id, name: item.name, level: 'ad' }]);
-    }
-  };
-
-  const toggleMetaStatus = async (item: any) => {
-    const current = resolveDisplayStatus(item);
-    const nextStatus = current === 'ACTIVE' ? 'PAUSED' : 'ACTIVE';
-    const label = metaLevel === 'campaign' ? 'campanha' : metaLevel === 'adset' ? 'conjunto' : 'anúncio';
-    const path =
-      metaLevel === 'campaign'
-        ? `/integrations/sites/${id}/meta/campaigns/${item.id}`
-        : metaLevel === 'adset'
-          ? `/integrations/sites/${id}/meta/adsets/${item.id}`
-          : `/integrations/sites/${id}/meta/ads/${item.id}`;
-    try {
-      await api.patch(path, { status: nextStatus });
-      await loadCampaigns();
-      showFlash(
-        nextStatus === 'ACTIVE'
-          ? `${label} ativada com sucesso.`
-          : `${label} pausada com sucesso.`
-      );
-    } catch (err) {
-      console.error(err);
-      showFlash(`Erro ao atualizar status do ${label}.`, 'error');
-    }
-  };
-
-  const handleMetaBreadcrumbClick = (index: number) => {
-    const target = metaBreadcrumbs[index];
-    setMetaLevel(target.level as any);
-    setMetaParentId(target.id);
-    setMetaBreadcrumbs(metaBreadcrumbs.slice(0, index + 1));
-  };
 
   useEffect(() => {
     if (!site) return;
@@ -3490,8 +3424,8 @@ ${scriptContent}
                 <div>
                   <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Campanhas</h2>
                   <p className="mt-0.5 text-xs text-zinc-600 dark:text-zinc-500 leading-relaxed">
-                    Em cima, o funil explicado em frases curtas. Abaixo, a lista completa da Meta (CTR, pausar anúncio,
-                    etc.).
+                    Funil com os mesmos números da Meta. Se acabou de criar a campanha ou mudou o período, use{' '}
+                    <strong>Atualizar funil</strong> — os dados são puxados e guardados automaticamente quando precisam.
                   </p>
                 </div>
 
@@ -3530,243 +3464,6 @@ ${scriptContent}
                       Meta Ads
                     </button>{' '}
                     para listar campanhas.
-                  </div>
-                )}
-
-                {meta?.has_facebook_connection && meta?.ad_account_id && (
-                  <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 overflow-hidden">
-                    <div className="px-4 py-2 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/80 dark:bg-zinc-900/40">
-                      <h3 className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">Lista detalhada (Meta)</h3>
-                      <p className="text-[11px] text-zinc-500 dark:text-zinc-500 mt-0.5">
-                        Mesmos dados do painel; use para pausar, ver CTR e métricas finas.
-                      </p>
-                    </div>
-                    {/* Breadcrumbs */}
-                    <div className="flex items-center gap-1.5 px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60">
-                      {metaBreadcrumbs.map((crumb, idx) => (
-                        <React.Fragment key={idx}>
-                          <button
-                            onClick={() => handleMetaBreadcrumbClick(idx)}
-                            className={`text-xs transition-colors ${idx === metaBreadcrumbs.length - 1
-                              ? 'text-zinc-200 font-medium'
-                              : 'text-zinc-600 dark:text-zinc-500 hover:text-zinc-700 dark:text-zinc-300'
-                              }`}
-                          >
-                            {crumb.name}
-                          </button>
-                          {idx < metaBreadcrumbs.length - 1 && (
-                            <svg
-                              xmlns="http://www.w3.org/2000/svg"
-                              width="10"
-                              height="10"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              className="text-zinc-700"
-                            >
-                              <path d="m9 18 6-6-6-6" />
-                            </svg>
-                          )}
-                        </React.Fragment>
-                      ))}
-                    </div>
-
-                    {/* Toolbar */}
-                    <div className="px-4 py-2.5 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-white dark:bg-zinc-950/60 flex flex-wrap items-center gap-2">
-                      {periodSelector}
-                      <select
-                        aria-label="Filtrar campanhas por status"
-                        value={metaStatusFilter}
-                        onChange={(e) => setMetaStatusFilter(e.target.value as 'active' | 'all')}
-                        className={selectClsCompact}
-                      >
-                        <option value="active">Somente ativos</option>
-                        <option value="all">Todos</option>
-                      </select>
-                      <button
-                        onClick={() => {
-                          loadCampaigns({ force: true }).catch(() => { });
-                        }}
-                        disabled={loading}
-                        className="flex items-center gap-1.5 bg-zinc-50 dark:bg-zinc-900/60 hover:bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 px-3.5 py-2 rounded-lg text-xs transition-colors disabled:opacity-40"
-                      >
-                        {loading ? (
-                          <svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                          </svg>
-                        ) : (
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            width="12"
-                            height="12"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2.5"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          >
-                            <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                            <path d="M3 3v5h5" />
-                          </svg>
-                        )}
-                        Atualizar
-                      </button>
-                    </div>
-
-                    {/* Table */}
-                    <div className="max-h-[60vh] overflow-x-auto overflow-y-auto custom-scrollbar">
-                      <table className="w-full min-w-[1100px] text-xs">
-                        <thead>
-                          <tr className="border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/80">
-                            {[
-                              'Nome',
-                              'Status',
-                              'Investido',
-                              'Objetivo',
-                              'Custo/res.',
-                              'Alcance',
-                              'Impressões',
-                              'Cliques',
-                              'CTR',
-                              'Hook Rate',
-                              'LP Views',
-                              'Taxa LP View',
-                              'Custo LP View',
-                              'CPC',
-                              'CPM',
-                              'Frequência',
-                              'Finalização',
-                              'Compras',
-                              '',
-                            ].map((h, index) => (
-                              <th
-                                key={h}
-                                className={`text-left text-[10px] font-medium uppercase tracking-widest text-zinc-600 px-4 py-3 whitespace-nowrap ${index === 0
-                                  ? 'sticky left-0 z-10 bg-white dark:bg-zinc-950/95 border-r border-zinc-200 dark:border-zinc-800'
-                                  : ''
-                                  }`}
-                              >
-                                {h}
-                              </th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {campaigns.length === 0 && (
-                            <tr>
-                              <td
-                                colSpan={18}
-                                className="px-4 py-12 text-center text-sm text-zinc-600 dark:text-zinc-500"
-                              >
-                                Nenhum item encontrado neste nível.
-                              </td>
-                            </tr>
-                          )}
-                          {campaigns.map((c) => {
-                            const metrics = campaignMetrics[c.id];
-                            const resultVal = metrics ? getResultValue(c, metrics) : 0;
-                            const objectiveLabel = getObjectiveMetricLabel(c, metrics);
-                            const cpr =
-                              resultVal > 0 && metrics?.spend ? metrics.spend / resultVal : 0;
-                            const statusVariant = getStatusVariant(c);
-
-                            return (
-                              <tr
-                                key={c.id}
-                                className="border-b border-zinc-200 dark:border-zinc-800/40 last:border-0 hover:bg-zinc-50 dark:bg-zinc-900/40 transition-colors"
-                              >
-                                <td className="px-4 py-3 max-w-[220px] sticky left-0 z-10 bg-white dark:bg-zinc-950/95 border-r border-zinc-200 dark:border-zinc-800">
-                                  <button
-                                    onClick={() => handleMetaDrillDown(c)}
-                                    disabled={metaLevel === 'ad'}
-                                    className="text-left hover:text-blue-400 transition-colors truncate w-full block font-medium text-zinc-800 dark:text-zinc-200 text-xs"
-                                  >
-                                    {c.name}
-                                  </button>
-                                  <div className="text-[10px] text-zinc-700 font-mono truncate mt-0.5">
-                                    {c.id}
-                                  </div>
-                                </td>
-                                <td className="px-4 py-3">
-                                  <Badge variant={statusVariant}>{getStatusLabel(c)}</Badge>
-                                </td>
-                                <td className="px-4 py-3 text-zinc-700 dark:text-zinc-300 tabular-nums">
-                                  {metrics ? formatMoney(metrics.spend) : '—'}
-                                </td>
-                                <td className="px-4 py-3 text-zinc-800 dark:text-zinc-200 font-semibold tabular-nums">
-                                  {metrics ? formatNumber(resultVal) : '—'}
-                                  <div className="text-[10px] text-zinc-600 dark:text-zinc-500 font-normal">
-                                    {objectiveLabel}
-                                  </div>
-                                </td>
-                                <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400 tabular-nums">
-                                  {metrics && resultVal > 0 ? formatMoney(cpr) : '—'}
-                                </td>
-                                <td className="px-4 py-3 text-zinc-600 dark:text-zinc-500 tabular-nums">
-                                  {metrics ? formatNumber(metrics.reach || 0) : '—'}
-                                </td>
-                                <td className="px-4 py-3 text-zinc-600 dark:text-zinc-500 tabular-nums">
-                                  {metrics ? formatNumber(metrics.impressions) : '—'}
-                                </td>
-                                <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400 tabular-nums">
-                                  {metrics ? formatNumber(metrics.clicks) : '—'}
-                                </td>
-                                <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400 tabular-nums">
-                                  {metrics ? `${formatPercent(metrics.ctr)}%` : '—'}
-                                </td>
-                                <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400 tabular-nums">
-                                  {metrics ? `${formatPercent(metrics.hook_rate || 0)}%` : '—'}
-                                </td>
-                                <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400 tabular-nums">
-                                  {metrics ? formatNumber(metrics.landing_page_views) : '—'}
-                                </td>
-                                <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400 tabular-nums">
-                                  {metrics ? `${formatPercent(getLpViewRate(metrics))}%` : '—'}
-                                </td>
-                                <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400 tabular-nums">
-                                  {metrics && metrics.landing_page_views > 0
-                                    ? formatMoney(metrics.spend / metrics.landing_page_views)
-                                    : '—'}
-                                </td>
-                                <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400 tabular-nums">
-                                  {metrics ? formatMoney(metrics.cpc) : '—'}
-                                </td>
-                                <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400 tabular-nums">
-                                  {metrics ? formatMoney(metrics.cpm) : '—'}
-                                </td>
-                                <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400 tabular-nums">
-                                  {metrics ? formatNumber(metrics.frequency || 0) : '—'}
-                                </td>
-                                <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400 tabular-nums">
-                                  {metrics ? formatNumber(metrics.initiates_checkout) : '—'}
-                                </td>
-                                <td className="px-4 py-3 text-zinc-700 dark:text-zinc-300 tabular-nums">
-                                  {metrics ? formatNumber(metrics.purchases) : '—'}
-                                </td>
-                                <td className="px-4 py-3">
-                                  <div className="flex items-center gap-1.5 justify-end">
-                                    <button
-                                      onClick={() => toggleMetaStatus(c)}
-                                      className={`text-[11px] px-2.5 py-1 rounded-md border transition-colors ${resolveDisplayStatus(c) === 'ACTIVE'
-                                        ? 'bg-zinc-900 border-zinc-700 text-zinc-400 hover:text-amber-300 hover:border-amber-500/40'
-                                        : 'bg-zinc-900 border-zinc-700 text-zinc-400 hover:text-emerald-300 hover:border-emerald-500/40'
-                                        }`}
-                                    >
-                                      {resolveDisplayStatus(c) === 'ACTIVE' ? 'Pausar' : 'Ativar'}
-                                    </button>
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
                   </div>
                 )}
               </div>

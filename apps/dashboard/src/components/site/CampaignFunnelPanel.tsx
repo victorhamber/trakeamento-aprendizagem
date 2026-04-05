@@ -222,8 +222,8 @@ export function CampaignFunnelPanel({
   if (!hasMetaConnection || !hasAdAccount) {
     return (
       <div className="rounded-2xl border border-zinc-200 dark:border-zinc-700/60 bg-zinc-50 dark:bg-zinc-900/40 p-6 text-sm text-zinc-600 dark:text-zinc-400">
-        Conecte a Meta e defina a conta de anúncios para ver o funil por campanha, conjunto e anúncio — os números batem com
-        a tabela técnica (compras, checkout, etc.).
+        Conecte a Meta e defina a conta de anúncios para ver o funil por campanha, conjunto e anúncio — os números são os mesmos
+        do Gerenciador de Anúncios (compras, checkout, etc.).
       </div>
     );
   }
@@ -231,7 +231,7 @@ export function CampaignFunnelPanel({
   if (!campaigns.length) {
     return (
       <div className="rounded-2xl border border-zinc-200 dark:border-zinc-700/60 bg-zinc-50 dark:bg-zinc-900/40 p-6 text-sm text-zinc-600 dark:text-zinc-400">
-        Nenhuma campanha carregada ainda. Use <strong>Atualizar</strong> na lista abaixo ou mude o período.
+        Nenhuma campanha carregada ainda. Confira a aba <strong>Meta Ads</strong> ou mude o período (ex.: últimos 7 dias).
       </div>
     );
   }
@@ -329,7 +329,10 @@ export function CampaignFunnelPanel({
         {loading && rows.length === 0 ? (
           <div className="h-48 animate-pulse rounded-xl bg-zinc-200 dark:bg-zinc-800/50" />
         ) : rows.length === 0 ? (
-          <p className="text-sm text-zinc-500 py-8 text-center">Sem dados de insights para esta campanha neste período.</p>
+          <p className="text-sm text-zinc-500 py-8 text-center px-4">
+            Ainda não há números guardados para esta campanha neste período. Toque em <strong>Atualizar funil</strong> para
+            buscar direto na Meta (demora alguns segundos na primeira vez).
+          </p>
         ) : level === 'campaign' && primary ? (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div>
