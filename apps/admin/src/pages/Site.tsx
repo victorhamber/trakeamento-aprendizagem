@@ -8,8 +8,7 @@ import { DDI_LIST } from '../lib/ddi';
 import { Layout } from '../components/Layout';
 import WebhooksTab from '../components/site/WebhooksTab';
 import { ReportWizard } from '../components/site/ReportWizard';
-import { CampaignsVitrine, type FirstPartyCampaignRow } from '../components/site/CampaignsVitrine';
-import { CampaignFunnelPanel } from '../components/site/CampaignFunnelPanel';
+import { CampaignFunnelPanel, type FunnelCampaignOption } from '../components/site/CampaignFunnelPanel';
 type Site = {
   id: number;
   name: string;
@@ -202,11 +201,7 @@ export const SitePage = () => {
   const [report, setReport] = useState<DiagnosisReport | null>(null);
   const [reportLoadedFromStorage, setReportLoadedFromStorage] = useState(false);
   const [campaigns, setCampaigns] = useState<any[]>([]);
-  const [firstPartyRows, setFirstPartyRows] = useState<FirstPartyCampaignRow[]>([]);
-  const [firstPartySpendSource, setFirstPartySpendSource] = useState<'matched' | 'unmatched' | 'none'>('none');
-  const [firstPartyTopLabel, setFirstPartyTopLabel] = useState<string | null>(null);
-  const [firstPartyLoading, setFirstPartyLoading] = useState(false);
-  const [showTechnicalCampaigns, setShowTechnicalCampaigns] = useState(false);
+  const [funnelCampaignPicklist, setFunnelCampaignPicklist] = useState<FunnelCampaignOption[]>([]);
   const [campaignMetrics, setCampaignMetrics] = useState<Record<string, any>>({});
   const [selectedCampaignId, setSelectedCampaignId] = useState<string>('');
   const [metricsPreset, setMetricsPreset] = useState<
@@ -1287,6 +1282,13 @@ ${scriptContent}
               });
             }
           }
+          setFunnelCampaignPicklist(
+            rows.map((c: any) => ({
+              id: String(c.id),
+              name: String(c.name || c.id || ''),
+              is_active: String(c.effective_status || c.status || '').toUpperCase() === 'ACTIVE',
+            }))
+          );
           if (metaStatusFilter === 'active') {
             rows = rows.filter((row) => {
               const display = String(row.effective_status || row.status || '').toUpperCase();
@@ -1386,31 +1388,6 @@ ${scriptContent}
     }
   }, [id, metricsPreset, metricsSince, metricsUntil, metaLevel, metaParentId, metaStatusFilter]);
 
-  const loadFirstParty = useCallback(async () => {
-    if (metricsPreset === 'custom' && (!metricsSince || !metricsUntil)) return;
-    setFirstPartyLoading(true);
-    try {
-      const params: Record<string, string | number> = { site_id: id };
-      if (metricsPreset === 'custom') {
-        params.since = metricsSince;
-        params.until = metricsUntil;
-      } else {
-        params.date_preset = metricsPreset;
-      }
-      const res = await api.get('/meta/campaigns/first-party', { params });
-      setFirstPartyRows(res.data?.data ?? []);
-      setFirstPartySpendSource(res.data?.spend_source ?? 'none');
-      setFirstPartyTopLabel(res.data?.top_label ?? null);
-    } catch (err) {
-      console.error(err);
-      setFirstPartyRows([]);
-      setFirstPartySpendSource('none');
-      setFirstPartyTopLabel(null);
-    } finally {
-      setFirstPartyLoading(false);
-    }
-  }, [id, metricsPreset, metricsSince, metricsUntil]);
-
   const loadUtmOptions = useCallback(async () => {
     try {
       const res = await api.get(`/sites/${id}/utms`);
@@ -1501,13 +1478,6 @@ ${scriptContent}
     if (metricsPreset === 'custom' && (!metricsSince || !metricsUntil)) return;
     loadCampaigns().catch(() => { });
   }, [site, tab, metricsPreset, metricsSince, metricsUntil, loadCampaigns]);
-
-  useEffect(() => {
-    if (!site) return;
-    if (tab !== 'campaigns') return;
-    if (metricsPreset === 'custom' && (!metricsSince || !metricsUntil)) return;
-    loadFirstParty().catch(() => { });
-  }, [site, tab, metricsPreset, metricsSince, metricsUntil, loadFirstParty]);
 
   useEffect(() => {
     const connected = searchParams.get('connected');
@@ -1624,10 +1594,6 @@ ${scriptContent}
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     }).format(value);
-  const funnelCampaignOptions = useMemo(
-    () => campaigns.map((c) => ({ id: String(c.id), name: String(c.name || c.id || '') })),
-    [campaigns]
-  );
   const utmUrl = useMemo(() => {
     if (!utmBaseUrl) return '';
     try {
@@ -3524,15 +3490,14 @@ ${scriptContent}
                 <div>
                   <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Campanhas</h2>
                   <p className="mt-0.5 text-xs text-zinc-600 dark:text-zinc-500 leading-relaxed">
-                    <strong>Funil</strong>: escolha a campanha e veja campanha inteira, conjuntos ou anúncios — números
-                    iguais à Meta (compras, checkout). <strong>UTM</strong>: compara nomes do link. <strong>Tabela</strong>
-                    : detalhe técnico (CTR, pausar…).
+                    Em cima, o funil explicado em frases curtas. Abaixo, a lista completa da Meta (CTR, pausar anúncio,
+                    etc.).
                   </p>
                 </div>
 
                 <CampaignFunnelPanel
                   siteId={id}
-                  campaigns={funnelCampaignOptions}
+                  campaigns={funnelCampaignPicklist}
                   hasMetaConnection={!!meta?.has_facebook_connection}
                   hasAdAccount={!!meta?.ad_account_id}
                   metricsPreset={metricsPreset}
@@ -3542,32 +3507,7 @@ ${scriptContent}
                   selectClsCompact={selectClsCompact}
                 />
 
-                <CampaignsVitrine
-                  rows={firstPartyRows}
-                  loading={firstPartyLoading}
-                  spendSource={firstPartySpendSource}
-                  topLabel={firstPartyTopLabel}
-                  periodSelector={periodSelector}
-                  onRefresh={() => loadFirstParty().catch(() => { })}
-                  refreshing={firstPartyLoading}
-                />
-
-                <div className="rounded-xl border border-dashed border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-900/20 px-4 py-3">
-                  <button
-                    type="button"
-                    onClick={() => setShowTechnicalCampaigns((v) => !v)}
-                    className="text-xs font-semibold text-zinc-800 dark:text-zinc-200 hover:text-violet-700 dark:hover:text-violet-300 transition-colors flex items-center gap-2"
-                    aria-expanded={showTechnicalCampaigns ? 'true' : 'false'}
-                  >
-                    <span className="tabular-nums">{showTechnicalCampaigns ? '▼' : '▶'}</span>
-                    {showTechnicalCampaigns ? 'Ocultar tabela técnica (Meta)' : 'Ver tabela técnica (Meta)'}
-                  </button>
-                  <p className="text-[11px] text-zinc-500 dark:text-zinc-500 mt-1.5">
-                    Gestor de anúncios em formato planilha: só abra se precisar dos números “de painel”.
-                  </p>
-                </div>
-
-                {showTechnicalCampaigns && !meta?.has_facebook_connection && (
+                {!meta?.has_facebook_connection && (
                   <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/30 p-4 text-sm text-zinc-600 dark:text-zinc-500 dark:text-zinc-400">
                     Conecte o Facebook na aba{' '}
                     <button
@@ -3580,7 +3520,7 @@ ${scriptContent}
                   </div>
                 )}
 
-                {showTechnicalCampaigns && meta?.has_facebook_connection && !meta?.ad_account_id && (
+                {meta?.has_facebook_connection && !meta?.ad_account_id && (
                   <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/30 p-4 text-sm text-zinc-600 dark:text-zinc-500 dark:text-zinc-400">
                     Defina a conta de anúncios na aba{' '}
                     <button
@@ -3593,8 +3533,14 @@ ${scriptContent}
                   </div>
                 )}
 
-                {showTechnicalCampaigns && meta?.has_facebook_connection && meta?.ad_account_id && (
+                {meta?.has_facebook_connection && meta?.ad_account_id && (
                   <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 overflow-hidden">
+                    <div className="px-4 py-2 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/80 dark:bg-zinc-900/40">
+                      <h3 className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">Lista detalhada (Meta)</h3>
+                      <p className="text-[11px] text-zinc-500 dark:text-zinc-500 mt-0.5">
+                        Mesmos dados do painel; use para pausar, ver CTR e métricas finas.
+                      </p>
+                    </div>
                     {/* Breadcrumbs */}
                     <div className="flex items-center gap-1.5 px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60">
                       {metaBreadcrumbs.map((crumb, idx) => (
@@ -3643,7 +3589,6 @@ ${scriptContent}
                       <button
                         onClick={() => {
                           loadCampaigns({ force: true }).catch(() => { });
-                          loadFirstParty().catch(() => { });
                         }}
                         disabled={loading}
                         className="flex items-center gap-1.5 bg-zinc-50 dark:bg-zinc-900/60 hover:bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 px-3.5 py-2 rounded-lg text-xs transition-colors disabled:opacity-40"

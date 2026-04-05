@@ -389,233 +389,6 @@ router.get('/campaigns/metrics', requireAuth, async (req, res) => {
   }
 });
 
-/** Métricas do site por utm_campaign (Pixel/CAPI) + investido quando bate com nome de campanha na Meta. */
-router.get('/campaigns/first-party', requireAuth, async (req, res) => {
-  try {
-    const siteId = Number(req.query.site_id);
-    if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Missing site_id' });
-
-    const auth = req.auth!;
-    const siteRow = await pool.query(
-      'SELECT site_key FROM sites WHERE id = $1 AND account_id = $2',
-      [siteId, auth.accountId]
-    );
-    if (!siteRow.rowCount) return res.status(404).json({ error: 'Site not found' });
-
-    const siteKey = siteRow.rows[0].site_key as string;
-    const { since, until, preset, days } = parseMetaCampaignDateWindow(req);
-
-    const normKey = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
-
-    const eventsResult = await pool.query(
-      `
-      SELECT
-        COALESCE(NULLIF(TRIM(we.custom_data->>'utm_campaign'), ''), '') AS utm_key,
-        COUNT(*) FILTER (WHERE we.event_name = 'PageView')::bigint AS visits,
-        COUNT(*) FILTER (WHERE we.event_name = 'Lead')::bigint AS leads,
-        COUNT(*) FILTER (WHERE we.event_name = 'InitiateCheckout')::bigint AS initiate_checkout,
-        COUNT(*) FILTER (WHERE we.event_name = 'Purchase')::bigint AS purchases,
-        COUNT(*) FILTER (WHERE we.event_name = 'AddToCart')::bigint AS add_to_cart,
-        COUNT(*) FILTER (WHERE we.event_name = 'PageEngagement')::bigint AS page_engagement,
-        COUNT(DISTINCT NULLIF(TRIM(COALESCE(we.user_data->>'fbp', we.user_data->>'external_id', '')), ''))::bigint AS unique_visitors
-      FROM web_events we
-      WHERE we.site_key = $1
-        AND we.event_time >= $2
-        AND we.event_time < $3
-      GROUP BY 1
-      ORDER BY
-        COUNT(*) FILTER (WHERE we.event_name = 'PageView') DESC,
-        COUNT(*) FILTER (WHERE we.event_name = 'Purchase') DESC
-      `,
-      [siteKey, since, until]
-    );
-
-    const metaCampaignAgg = await pool.query(
-      `
-      SELECT
-        campaign_id,
-        MAX(NULLIF(TRIM(campaign_name), '')) AS campaign_name,
-        COALESCE(SUM(spend), 0)::numeric AS spend,
-        COALESCE(SUM(purchases), 0)::bigint AS purchases,
-        COALESCE(SUM(initiates_checkout), 0)::bigint AS initiates_checkout,
-        COALESCE(SUM(leads), 0)::bigint AS leads,
-        COALESCE(SUM(adds_to_cart), 0)::bigint AS adds_to_cart,
-        COALESCE(SUM(landing_page_views), 0)::bigint AS landing_page_views,
-        COALESCE(SUM(link_clicks), 0)::bigint AS link_clicks,
-        COALESCE(SUM(unique_link_clicks), 0)::bigint AS unique_link_clicks,
-        COALESCE(SUM(clicks), 0)::bigint AS clicks,
-        COALESCE(SUM(impressions), 0)::bigint AS impressions
-      FROM meta_insights_daily
-      WHERE site_id = $1
-        AND campaign_id IS NOT NULL
-        AND adset_id IS NULL
-        AND ad_id IS NULL
-        AND date_start >= $2
-        AND date_start < $3
-      GROUP BY campaign_id
-      `,
-      [siteId, since, until]
-    );
-
-    type MetaCampRollup = {
-      campaign_id: string;
-      spend: number;
-      purchases: number;
-      initiates_checkout: number;
-      leads: number;
-      adds_to_cart: number;
-      landing_page_views: number;
-      link_clicks: number;
-      unique_link_clicks: number;
-      clicks: number;
-      impressions: number;
-    };
-
-    const metaByNorm = new Map<string, MetaCampRollup>();
-    for (const r of metaCampaignAgg.rows) {
-      const name = String(r.campaign_name || '');
-      const k = normKey(name);
-      if (!k) continue;
-      const prev = metaByNorm.get(k);
-      const row: MetaCampRollup = {
-        campaign_id: String(r.campaign_id),
-        spend: Number(r.spend || 0),
-        purchases: Number(r.purchases || 0),
-        initiates_checkout: Number(r.initiates_checkout || 0),
-        leads: Number(r.leads || 0),
-        adds_to_cart: Number(r.adds_to_cart || 0),
-        landing_page_views: Number(r.landing_page_views || 0),
-        link_clicks: Number(r.link_clicks || 0),
-        unique_link_clicks: Number(r.unique_link_clicks || 0),
-        clicks: Number(r.clicks || 0),
-        impressions: Number(r.impressions || 0),
-      };
-      if (!prev) {
-        metaByNorm.set(k, row);
-      } else {
-        metaByNorm.set(k, {
-          campaign_id: prev.campaign_id,
-          spend: prev.spend + row.spend,
-          purchases: prev.purchases + row.purchases,
-          initiates_checkout: prev.initiates_checkout + row.initiates_checkout,
-          leads: prev.leads + row.leads,
-          adds_to_cart: prev.adds_to_cart + row.adds_to_cart,
-          landing_page_views: prev.landing_page_views + row.landing_page_views,
-          link_clicks: prev.link_clicks + row.link_clicks,
-          unique_link_clicks: prev.unique_link_clicks + row.unique_link_clicks,
-          clicks: prev.clicks + row.clicks,
-          impressions: prev.impressions + row.impressions,
-        });
-      }
-    }
-
-    const purchaseOrdersResult = await pool.query(
-      `
-      SELECT
-        COALESCE(NULLIF(TRIM(utm_campaign), ''), '') AS utm_key,
-        COUNT(*)::bigint AS n
-      FROM purchases
-      WHERE site_key = $1
-        AND COALESCE(platform_date, created_at) >= $2
-        AND COALESCE(platform_date, created_at) < $3
-        AND (
-          status IS NULL
-          OR LOWER(status) IN ('approved', 'paid', 'completed', 'active', 'confirmed', 'complete')
-        )
-      GROUP BY 1
-      `,
-      [siteKey, since, until]
-    );
-    const ordersByUtm = new Map<string, number>();
-    for (const r of purchaseOrdersResult.rows) {
-      ordersByUtm.set(String(r.utm_key || ''), Number(r.n || 0));
-    }
-
-    type Tier = 'strong' | 'medium' | 'low' | 'none';
-    const raw = eventsResult.rows.map((row) => {
-      const utmKey = String(row.utm_key || '');
-      const visits = Number(row.visits || 0);
-      const leadsWeb = Number(row.leads || 0);
-      const purchasesWeb = Number(row.purchases || 0);
-      const initiateWeb = Number(row.initiate_checkout || 0);
-      const addToCartWeb = Number(row.add_to_cart || 0);
-      const page_engagement = Number(row.page_engagement || 0);
-      const unique_visitors = Number(row.unique_visitors || 0);
-      const label = utmKey === '' ? 'Tráfego sem nome no link' : utmKey;
-      const mk = normKey(utmKey);
-      const metaM = mk && metaByNorm.has(mk) ? metaByNorm.get(mk)! : null;
-      const ordersN = ordersByUtm.get(utmKey) ?? 0;
-
-      const funnel_source: 'meta' | 'site' = metaM ? 'meta' : 'site';
-      const leads = metaM ? metaM.leads : leadsWeb;
-      const purchases = metaM
-        ? metaM.purchases
-        : Math.max(purchasesWeb, ordersN);
-      const initiate_checkout = metaM ? metaM.initiates_checkout : initiateWeb;
-      const add_to_cart = metaM ? metaM.adds_to_cart : addToCartWeb;
-      const investido = metaM != null ? Math.round(metaM.spend * 100) / 100 : null;
-
-      const convNumerator = purchases > 0 ? purchases : leads;
-      const conversion_rate = visits > 0 ? (convNumerator / visits) * 100 : 0;
-      const score =
-        purchases * 10000 + leads * 100 + initiate_checkout * 10 + visits * 0.001 + add_to_cart;
-      return {
-        utm_campaign: utmKey || null,
-        label,
-        visits,
-        unique_visitors,
-        leads,
-        purchases,
-        initiate_checkout,
-        add_to_cart,
-        page_engagement,
-        conversion_rate: Math.round(conversion_rate * 100) / 100,
-        investido,
-        funnel_source,
-        meta_campaign_id: metaM?.campaign_id ?? null,
-        purchases_web_events: purchasesWeb,
-        purchases_orders_table: ordersN,
-        score,
-      };
-    });
-
-    const nonzero = raw.filter(
-      (r) =>
-        r.visits + r.leads + r.purchases + r.initiate_checkout + r.add_to_cart + r.page_engagement > 0
-    );
-    const sorted = [...nonzero].sort((a, b) => b.score - a.score);
-    const n = sorted.length;
-    const data = sorted.map((r, i) => {
-      const { score, ...rest } = r;
-      const total = r.visits + r.leads + r.purchases;
-      let performance_tier: Tier = 'none';
-      if (total === 0) performance_tier = 'none';
-      else if (n <= 1) performance_tier = 'strong';
-      else if (i < Math.ceil(n / 3)) performance_tier = 'strong';
-      else if (i < Math.ceil((2 * n) / 3)) performance_tier = 'medium';
-      else performance_tier = 'low';
-      return { ...rest, performance_tier, rank: i + 1 };
-    });
-
-    const hasInsights = metaCampaignAgg.rows.length > 0;
-    const matchedAny = data.some((row) => row.investido != null);
-    const spend_source = matchedAny ? 'matched' : hasInsights ? 'unmatched' : 'none';
-
-    res.json({
-      data,
-      days,
-      preset,
-      spend_source,
-      meta_campaign_rows: metaCampaignAgg.rows.length,
-      spend_matched_count: data.filter((row) => row.investido != null).length,
-      top_label: data[0]?.label ?? null,
-    });
-  } catch (err: any) {
-    console.error('campaigns/first-party error:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
 function linkBaseFromRow(row: Record<string, unknown>) {
   const link = Number(row.link_clicks || 0);
   const ulink = Number(row.unique_link_clicks || 0);
@@ -623,24 +396,47 @@ function linkBaseFromRow(row: Record<string, unknown>) {
   return link > 0 ? link : ulink > 0 ? ulink : clicks;
 }
 
-/** Maior “perda” relativa entre etapas do funil Meta (para destacar gargalo). */
-function computeFunnelBottleneck(row: Record<string, unknown>) {
+/**
+ * Funil usado no gargalo: clique → página → checkout → compra.
+ * Não usamos “carrinho” da Meta aqui — muitas contas têm 0 nesse campo mesmo com checkout cheio,
+ * o que gerava alerta falso de “100% de perda”.
+ */
+function analyzeFunnelBottleneck(row: Record<string, unknown>): {
+  bottleneck: { from: string; to: string; drop_pct: number; severity: 'high' | 'medium' | 'low' } | null;
+  bottleneck_plain: string;
+} {
   const impressions = Number(row.impressions || 0);
   const link = linkBaseFromRow(row);
   const lp = Number(row.landing_page_views || 0);
-  const cart = Number(row.adds_to_cart || 0);
   const checkout = Number(row.initiates_checkout || 0);
   const purchases = Number(row.purchases || 0);
 
-  const stages: { key: string; label: string; v: number }[] = [];
-  if (impressions >= 50) stages.push({ key: 'imp', label: 'Impressões', v: impressions });
-  if (link > 0) stages.push({ key: 'clk', label: 'Cliques no link', v: link });
-  if (lp > 0 || link > 0) stages.push({ key: 'lp', label: 'Página (LP)', v: lp });
-  if (cart > 0 || checkout > 0 || purchases > 0) stages.push({ key: 'cart', label: 'Carrinho', v: cart });
-  stages.push({ key: 'co', label: 'Checkout', v: checkout });
-  stages.push({ key: 'pur', label: 'Compras', v: purchases });
+  const minFrom = 5;
 
-  const minFrom = 8;
+  if (checkout >= 1 && purchases === 0) {
+    const sev: 'high' | 'medium' | 'low' = checkout >= 5 ? 'high' : 'medium';
+    const plain =
+      checkout === 1
+        ? 'Uma pessoa começou o checkout, mas ninguém concluiu compra neste período. Vale olhar pagamento (cartão, Pix, boleto), preço final e se a página de pagamento abre bem no celular.'
+        : `Foram ${checkout} inícios de checkout e nenhuma compra concluída no período. O problema costuma estar depois da página de venda: forma de pagamento, surpresa de preço ou erro na finalização — não é falta de clique no anúncio.`;
+    return {
+      bottleneck: {
+        from: 'Checkout',
+        to: 'Compra concluída',
+        drop_pct: 100,
+        severity: sev,
+      },
+      bottleneck_plain: plain,
+    };
+  }
+
+  const stages: { label: string; v: number }[] = [];
+  if (impressions >= 200) stages.push({ label: 'Quem viu o anúncio', v: impressions });
+  if (link > 0) stages.push({ label: 'Cliques no link', v: link });
+  stages.push({ label: 'Visitas à página', v: lp });
+  stages.push({ label: 'Checkout', v: checkout });
+  stages.push({ label: 'Compras', v: purchases });
+
   let worst: { from: string; to: string; drop_pct: number; severity: 'high' | 'medium' | 'low' } | null =
     null;
   for (let i = 0; i < stages.length - 1; i++) {
@@ -661,16 +457,25 @@ function computeFunnelBottleneck(row: Record<string, unknown>) {
     }
   }
 
-  if (checkout >= 5 && purchases === 0 && (!worst || worst.drop_pct < 50)) {
-    worst = {
-      from: 'Checkout',
-      to: 'Compra',
-      drop_pct: 100,
-      severity: 'high',
-    };
+  let bottleneck_plain =
+    'Ainda são poucos dados para apontar um problema claro; tente um período maior ou espere mais cliques.';
+
+  if (worst) {
+    if (worst.from === 'Cliques no link' && worst.to === 'Visitas à página') {
+      const kept = Math.round((lp / Math.max(link, 1)) * 100);
+      bottleneck_plain = `Dos ${link} cliques no anúncio, só ${lp} chegaram a contar como visita na página (${kept}%). Quem clica e some rápido costuma ser página lenta, site fora do ar ou anúncio que não combina com a página.`;
+    } else if (worst.from === 'Visitas à página' && worst.to === 'Checkout') {
+      const pct = lp > 0 ? Math.round((checkout / lp) * 100) : 0;
+      bottleneck_plain = `Na página, ${checkout} de ${lp} pessoas foram para o checkout (cerca de ${pct}%). Quem lê a página mas não avança costuma ser texto confuso, oferta fraca ou botão difícil de achar no celular.`;
+    } else if (worst.from === 'Quem viu o anúncio' && worst.to === 'Cliques no link') {
+      const ctr = Math.round((link / Math.max(impressions, 1)) * 10000) / 100;
+      bottleneck_plain = `Pouca gente clica no anúncio em relação a quem viu (cerca de ${ctr}% de cliques). Vale testar outra imagem, outro texto ou outro público.`;
+    } else {
+      bottleneck_plain = `O maior desnível está entre “${worst.from}” e “${worst.to}”: cai cerca de ${worst.drop_pct}% da etapa anterior. É aí que vale focar primeiro.`;
+    }
   }
 
-  return worst;
+  return { bottleneck: worst, bottleneck_plain };
 }
 
 function presentAndFutureHints(row: Record<string, unknown>) {
@@ -701,11 +506,11 @@ function presentAndFutureHints(row: Record<string, unknown>) {
     present_label = 'Cliques altos, pouca gente na página — criativo ou promessa pode não bater com a página.';
   } else if (link >= 20) {
     present = 'ok';
-    present_label = 'Tem tráfego; ainda convertendo pouco — teste página e oferta.';
+    present_label = 'Tem gente clicando; se a venda ainda é baixa, mexa na página e na oferta.';
   }
 
   let future: 'promising' | 'uncertain' | 'limited' = 'uncertain';
-  let future_label = 'Resultado depende de testes de página e oferta.';
+  let future_label = 'O próximo passo é testar página, preço e pagamento.';
   if (purchases === 0 && impressions > 2000 && link / Math.max(impressions, 1) < 0.008) {
     future = 'limited';
     future_label = 'CTR muito baixo: difícil escalar sem mudar criativo ou público.';
@@ -802,7 +607,7 @@ router.get('/campaigns/funnel-breakdown', requireAuth, async (req, res) => {
 
     const rows = result.rows.map((r) => {
       const o = { ...r, spend: Number(r.spend || 0) };
-      const bottleneck = computeFunnelBottleneck(o);
+      const { bottleneck, bottleneck_plain } = analyzeFunnelBottleneck(o);
       const hints = presentAndFutureHints(o);
       const link = linkBaseFromRow(o);
       const lp = Number(r.landing_page_views || 0);
@@ -831,6 +636,7 @@ router.get('/campaigns/funnel-breakdown', requireAuth, async (req, res) => {
           purchase_from_checkout_pct: purchase_rate_pct,
         },
         bottleneck,
+        bottleneck_plain,
         ...hints,
       };
     });

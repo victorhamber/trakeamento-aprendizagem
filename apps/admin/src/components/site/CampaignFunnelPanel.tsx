@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../../lib/api';
 
-export type FunnelCampaignOption = { id: string; name: string };
+export type FunnelCampaignOption = { id: string; name: string; is_active?: boolean };
 
 type FunnelRow = {
   id: string;
@@ -21,6 +21,7 @@ type FunnelRow = {
     purchase_from_checkout_pct: number;
   };
   bottleneck: { from: string; to: string; drop_pct: number; severity: string } | null;
+  bottleneck_plain?: string;
   present: 'strong' | 'ok' | 'weak' | 'idle';
   present_label: string;
   future: 'promising' | 'uncertain' | 'limited';
@@ -114,11 +115,17 @@ export function CampaignFunnelPanel({
   selectClsCompact,
 }: Props) {
   const [campaignId, setCampaignId] = useState('');
+  const [campaignStatusFilter, setCampaignStatusFilter] = useState<'active' | 'all'>('active');
   const [level, setLevel] = useState<'campaign' | 'adset' | 'ad'>('campaign');
   const [adsetFilter, setAdsetFilter] = useState('');
   const [rows, setRows] = useState<FunnelRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [adsetOptions, setAdsetOptions] = useState<FunnelCampaignOption[]>([]);
+
+  const filteredCampaigns = useMemo(() => {
+    if (campaignStatusFilter === 'all') return campaigns;
+    return campaigns.filter((c) => c.is_active !== false);
+  }, [campaigns, campaignStatusFilter]);
 
   const dateParams = useCallback(() => {
     const p: Record<string, string | number> = { site_id: siteId };
@@ -144,7 +151,8 @@ export function CampaignFunnelPanel({
       };
       if (level === 'ad' && adsetFilter) params.adset_id = adsetFilter;
       const res = await api.get('/meta/campaigns/funnel-breakdown', { params });
-      setRows(res.data?.rows || []);
+      const list = (res.data?.rows || []) as FunnelRow[];
+      setRows(list.map((r) => ({ ...r, bottleneck_plain: r.bottleneck_plain ?? '' })));
     } catch (e) {
       console.error(e);
       setRows([]);
@@ -164,10 +172,13 @@ export function CampaignFunnelPanel({
   ]);
 
   useEffect(() => {
-    if (campaigns.length && !campaignId) {
-      setCampaignId(String(campaigns[0].id));
+    if (!filteredCampaigns.length) {
+      if (campaignId) setCampaignId('');
+      return;
     }
-  }, [campaigns, campaignId]);
+    const ok = filteredCampaigns.some((c) => c.id === campaignId);
+    if (!campaignId || !ok) setCampaignId(String(filteredCampaigns[0].id));
+  }, [filteredCampaigns, campaignId]);
 
   useEffect(() => {
     setRows([]);
@@ -220,7 +231,24 @@ export function CampaignFunnelPanel({
   if (!campaigns.length) {
     return (
       <div className="rounded-2xl border border-zinc-200 dark:border-zinc-700/60 bg-zinc-50 dark:bg-zinc-900/40 p-6 text-sm text-zinc-600 dark:text-zinc-400">
-        Nenhuma campanha listada ainda. Abra a tabela técnica abaixo ou atualize o período para carregar campanhas da Meta.
+        Nenhuma campanha carregada ainda. Use <strong>Atualizar</strong> na lista abaixo ou mude o período.
+      </div>
+    );
+  }
+
+  if (!filteredCampaigns.length) {
+    return (
+      <div className="rounded-2xl border border-zinc-200 dark:border-zinc-700/60 bg-zinc-50 dark:bg-zinc-900/40 p-6 text-sm text-zinc-600 dark:text-zinc-400 space-y-3">
+        <p>Nenhuma campanha <strong>ativa</strong> aparece na lista. Mude o filtro para “Ativas e pausadas” ou reative uma campanha na Meta.</p>
+        <select
+          aria-label="Campanhas ativas ou todas"
+          value={campaignStatusFilter}
+          onChange={(e) => setCampaignStatusFilter(e.target.value as 'active' | 'all')}
+          className={selectClsCompact}
+        >
+          <option value="active">Só campanhas ativas</option>
+          <option value="all">Ativas e pausadas</option>
+        </select>
       </div>
     );
   }
@@ -233,8 +261,8 @@ export function CampaignFunnelPanel({
         <div className="min-w-0 space-y-1">
           <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Funil da campanha</h3>
           <p className="text-xs text-zinc-600 dark:text-zinc-500 max-w-xl leading-relaxed">
-            Escolha a campanha e o nível. O funil usa os mesmos dados da Meta (compras = coluna da tabela). O destaque
-            mostra onde mais “vaza” entre etapas.
+            Mesmos números da Meta. A caixa colorida explica em linguagem simples onde mais gente desiste — sem siglas
+            difíceis.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">{periodSelector}</div>
@@ -242,14 +270,23 @@ export function CampaignFunnelPanel({
 
       <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 flex flex-wrap gap-2 items-center bg-zinc-50/80 dark:bg-zinc-900/50">
         <select
+          aria-label="Campanhas ativas ou todas"
+          value={campaignStatusFilter}
+          onChange={(e) => setCampaignStatusFilter(e.target.value as 'active' | 'all')}
+          className={selectClsCompact}
+        >
+          <option value="active">Só campanhas ativas</option>
+          <option value="all">Ativas e pausadas</option>
+        </select>
+        <select
           aria-label="Campanha para análise do funil"
           value={campaignId}
           onChange={(e) => setCampaignId(e.target.value)}
           className={selectClsCompact + ' min-w-[200px] max-w-[280px]'}
         >
-          {campaigns.map((c) => (
+          {filteredCampaigns.map((c) => (
             <option key={c.id} value={c.id}>
-              {c.name || c.id}
+              {(c.name || c.id) + (c.is_active === false ? ' (pausada)' : '')}
             </option>
           ))}
         </select>
@@ -299,19 +336,19 @@ export function CampaignFunnelPanel({
               <FunnelBars f={primary.funnel} />
               <div className="mt-4 grid grid-cols-3 gap-2 text-[10px] text-zinc-500">
                 <div className="rounded-lg bg-zinc-100 dark:bg-zinc-800/50 p-2 border border-zinc-200 dark:border-zinc-700/50">
-                  <div className="text-zinc-600 dark:text-zinc-400">Clique → Página</div>
+                  <div className="text-zinc-600 dark:text-zinc-400">Clique → página</div>
                   <div className="text-zinc-900 dark:text-zinc-200 font-semibold tabular-nums">
                     {primary.funnel_rates.lp_from_clicks_pct}%
                   </div>
                 </div>
                 <div className="rounded-lg bg-zinc-100 dark:bg-zinc-800/50 p-2 border border-zinc-200 dark:border-zinc-700/50">
-                  <div className="text-zinc-600 dark:text-zinc-400">Página → Checkout</div>
+                  <div className="text-zinc-600 dark:text-zinc-400">Página → checkout</div>
                   <div className="text-zinc-900 dark:text-zinc-200 font-semibold tabular-nums">
                     {primary.funnel_rates.checkout_from_lp_pct}%
                   </div>
                 </div>
                 <div className="rounded-lg bg-zinc-100 dark:bg-zinc-800/50 p-2 border border-zinc-200 dark:border-zinc-700/50">
-                  <div className="text-zinc-600 dark:text-zinc-400">Checkout → Compra</div>
+                  <div className="text-zinc-600 dark:text-zinc-400">Checkout → compra</div>
                   <div className="text-zinc-900 dark:text-zinc-200 font-semibold tabular-nums">
                     {primary.funnel_rates.purchase_from_checkout_pct}%
                   </div>
@@ -319,19 +356,14 @@ export function CampaignFunnelPanel({
               </div>
             </div>
             <div className="space-y-3">
-              {primary.bottleneck && (
-                <div
-                  className={`rounded-xl border px-4 py-3 ${severityBorder(primary.bottleneck.severity)}`}
-                >
-                  <div className="text-[10px] font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-1">
-                    Onde está o gargalo
+              {primary.bottleneck_plain ? (
+                <div className={`rounded-xl border px-4 py-3 ${severityBorder(primary.bottleneck?.severity)}`}>
+                  <div className="text-[10px] font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-2">
+                    O que isso quer dizer
                   </div>
-                  <p className="text-sm text-zinc-800 dark:text-zinc-100 leading-snug">
-                    Entre <strong>{primary.bottleneck.from}</strong> e <strong>{primary.bottleneck.to}</strong> perde-se
-                    cerca de <strong>{primary.bottleneck.drop_pct}%</strong> do que passava na etapa anterior.
-                  </p>
+                  <p className="text-sm text-zinc-800 dark:text-zinc-100 leading-relaxed">{primary.bottleneck_plain}</p>
                 </div>
-              )}
+              ) : null}
               <div className="flex flex-wrap gap-2">
                 <span
                   className={`text-[11px] px-2.5 py-1 rounded-lg border font-medium ${presentBadgeClass(primary.present)}`}
@@ -380,13 +412,11 @@ export function CampaignFunnelPanel({
                   <FunnelBars f={r.funnel} />
                 </div>
                 <div className="text-xs space-y-2">
-                  {r.bottleneck && (
-                    <div className={`rounded-lg border px-3 py-2 ${severityBorder(r.bottleneck.severity)}`}>
-                      <span className="text-zinc-700 dark:text-zinc-300">
-                        Gargalo: {r.bottleneck.from} → {r.bottleneck.to} (~{r.bottleneck.drop_pct}%)
-                      </span>
+                  {r.bottleneck_plain ? (
+                    <div className={`rounded-lg border px-3 py-2 ${severityBorder(r.bottleneck?.severity)}`}>
+                      <span className="text-zinc-700 dark:text-zinc-300 leading-relaxed">{r.bottleneck_plain}</span>
                     </div>
-                  )}
+                  ) : null}
                   <div className="flex flex-wrap gap-1.5">
                     <span className={`px-2 py-0.5 rounded border text-[10px] ${presentBadgeClass(r.present)}`}>
                       {r.present === 'strong' ? 'Bom' : r.present === 'weak' ? 'Atenção' : r.present === 'ok' ? 'Ok' : '—'}
