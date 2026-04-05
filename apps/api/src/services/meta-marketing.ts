@@ -141,6 +141,35 @@ export class MetaMarketingService {
     return found;
   }
 
+  /**
+   * Maior valor entre vários action_type (cada um avaliado à parte).
+   * Útil quando o Ads Manager mostra um número sob um alias (ex.: pixel offsite)
+   * e outro campo da API traz só initiate_checkout — getActionCount pegaria só o primeiro.
+   */
+  private getMaxActionCountAcross(actions: unknown, actionTypes: string[]): number {
+    const list = MetaMarketingService.asArray(actions);
+    let max = 0;
+    for (const actionType of actionTypes) {
+      const matches = list.filter(
+        (a) => MetaMarketingService.getActionType(a) === actionType
+      );
+      if (matches.length === 0) continue;
+      const val = Math.max(
+        ...matches.map((m) => this.asInt(MetaMarketingService.getValueField(m)) ?? 0)
+      );
+      if (val > max) max = val;
+    }
+    return max;
+  }
+
+  private getInitiateCheckoutCount(actions: unknown): number {
+    return this.getMaxActionCountAcross(actions, [
+      'initiate_checkout',
+      'omni_initiated_checkout',
+      'offsite_conversion.fb_pixel_initiate_checkout',
+    ]);
+  }
+
   private getCostPerAction(costs: unknown, actionType: string): number | null {
     const list = MetaMarketingService.asArray(costs);
     const found = list.find((a) => MetaMarketingService.getActionType(a) === actionType);
@@ -582,8 +611,7 @@ export class MetaMarketingService {
 
       const leads = this.getActionCount(actions, 'lead', 'omni_lead') ?? 0;
       const addsToCart = this.getActionCount(actions, 'add_to_cart', 'omni_add_to_cart') ?? 0;
-      const initiatesCheckout =
-        this.getActionCount(actions, 'initiate_checkout', 'omni_initiated_checkout') ?? 0;
+      const initiatesCheckout = this.getInitiateCheckoutCount(actions);
       const purchases = this.getActionCount(actions, 'purchase', 'omni_purchase') ?? 0;
       const costPerLead = this.getCostPerAction(costs, 'lead');
       const costPerPurchase = this.getCostPerAction(costs, 'purchase');
@@ -693,11 +721,7 @@ export class MetaMarketingService {
     );
     const purchases = this.getActionCount(actions, 'purchase', 'omni_purchase');
     const addsToCart = this.getActionCount(actions, 'add_to_cart', 'omni_add_to_cart');
-    const initiatesCheckout = this.getActionCount(
-      actions,
-      'initiate_checkout',
-      'omni_initiated_checkout'
-    );
+    const initiatesCheckout = this.getInitiateCheckoutCount(actions);
 
     const costPerLead = this.getCostPerAction(costs, 'lead');
     const costPerPurchase = this.getCostPerAction(costs, 'purchase');

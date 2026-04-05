@@ -720,6 +720,20 @@ router.get('/campaigns/funnel-breakdown', requireAuth, async (req, res) => {
 
     const { since, until, days, preset, hasCustomRange, sinceRaw, untilRaw } = parseMetaCampaignDateWindow(req);
 
+    const forceRefresh =
+      req.query.force === '1' || req.query.force === 'true' || req.query.force === 'yes';
+    if (forceRefresh) {
+      try {
+        await metaMarketingService.syncDailyInsights(
+          siteId,
+          preset,
+          hasCustomRange ? { since: sinceRaw, until: untilRaw } : undefined
+        );
+      } catch (syncErr) {
+        console.warn('[funnel-breakdown] force syncDailyInsights failed:', syncErr);
+      }
+    }
+
     let groupBy: string;
     let nameField: string;
     let idField: string;

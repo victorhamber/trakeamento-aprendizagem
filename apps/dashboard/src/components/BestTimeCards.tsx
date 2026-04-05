@@ -151,9 +151,14 @@ const Card = ({ title, data, color, textColor }: { title: string; data: PeakData
 
           {data.top_locations && data.top_locations.length > 0 && (
             <div className="mt-4 pt-4 border-t border-zinc-100 dark:border-zinc-800/50">
-              <h4 className="text-[10px] font-semibold tracking-wider uppercase text-zinc-500 mb-2">
+              <h4 className="text-[10px] font-semibold tracking-wider uppercase text-zinc-500 mb-1">
                 Top Regiões
               </h4>
+              <p className="text-[9px] text-zinc-500 dark:text-zinc-500 leading-snug mb-2">
+                Quando o pixel envia <strong>país</strong> (advanced matching / identify), usamos isso primeiro
+                (rótulos &quot;· pixel&quot;). O restante é estimativa por IP — não é o país de segmentação do
+                anúncio; VPN, CDN e datacenters podem parecer EUA/Europa.
+              </p>
               <div className="space-y-1.5">
                 {data.top_locations.map((loc, idx) => (
                   <div key={idx} className="flex items-center justify-between text-xs">

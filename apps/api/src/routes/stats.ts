@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { requireAuth } from '../middleware/auth';
 import { pool } from '../db/pool';
 import geoip from 'geoip-lite';
+import { resolvePixelCountryToken } from '../lib/pixel-country';
 
 const router = Router();
 
@@ -432,7 +433,8 @@ router.get('/best-times', requireAuth, async (req, res) => {
           ),
           attributed AS (
             SELECT
-              COALESCE(sv_loc.ip, ev_ip.ip, pb.capi_ip) as ip
+              COALESCE(sv_loc.ip, ev_ip.ip, pb.capi_ip) as ip,
+              ev_country.pixel_country AS pixel_country
             FROM purchases_base pb
             LEFT JOIN LATERAL (
               SELECT sv.last_ip as ip
@@ -460,12 +462,39 @@ router.get('/best-times', requireAuth, async (req, res) => {
               ORDER BY e.event_time DESC
               LIMIT 1
             ) ev_ip ON sv_loc.ip IS NULL
+            LEFT JOIN LATERAL (
+              SELECT
+                CASE
+                  WHEN NOT (e.user_data ? 'country') THEN NULL::text
+                  WHEN jsonb_typeof(e.user_data->'country') = 'array'
+                    THEN NULLIF(btrim(e.user_data->'country'->>0), '')
+                  ELSE NULLIF(btrim(e.user_data->>'country'), '')
+                END AS pixel_country
+              FROM web_events e
+              WHERE e.site_key = pb.site_key
+                AND (
+                  (pb.buyer_email_hash IS NOT NULL AND e.user_data->>'em' = pb.buyer_email_hash)
+                  OR (pb.fbp IS NOT NULL AND e.user_data->>'fbp' = pb.fbp)
+                  OR (pb.fbc IS NOT NULL AND e.user_data->>'fbc' = pb.fbc)
+                  OR (pb.extracted_external_id IS NOT NULL AND e.user_data->>'external_id' = pb.extracted_external_id)
+                )
+                AND e.user_data->'country' IS NOT NULL
+                AND (
+                  (jsonb_typeof(e.user_data->'country') = 'array'
+                    AND jsonb_array_length(COALESCE(e.user_data->'country', '[]'::jsonb)) > 0)
+                  OR (jsonb_typeof(e.user_data->'country') = 'string'
+                    AND length(btrim(e.user_data->>'country')) > 0)
+                )
+              ORDER BY e.event_time DESC
+              LIMIT 1
+            ) ev_country ON TRUE
           )
-          SELECT ip, COUNT(*)::int as count
+          SELECT ip, pixel_country, COUNT(*)::int as count
           FROM attributed
-          WHERE ip IS NOT NULL AND ip != ''
-          GROUP BY 1
-          ORDER BY 2 DESC
+          WHERE (ip IS NOT NULL AND btrim(ip::text) <> '')
+             OR (pixel_country IS NOT NULL AND btrim(pixel_country) <> '')
+          GROUP BY ip, pixel_country
+          ORDER BY 3 DESC
           LIMIT 100
         `;
       } else {
@@ -576,7 +605,16 @@ router.get('/best-times', requireAuth, async (req, res) => {
           ),
           attributed AS (
             SELECT
-              sv_loc.ip
+              COALESCE(
+                NULLIF(btrim(COALESCE(eb.user_data->>'client_ip_address', '')), ''),
+                sv_loc.ip
+              ) as ip,
+              CASE
+                WHEN NOT (eb.user_data ? 'country') THEN NULL::text
+                WHEN jsonb_typeof(eb.user_data->'country') = 'array'
+                  THEN NULLIF(btrim(eb.user_data->'country'->>0), '')
+                ELSE NULLIF(btrim(eb.user_data->>'country'), '')
+              END AS pixel_country
             FROM events_base eb
             LEFT JOIN LATERAL (
               SELECT sv.last_ip as ip
@@ -593,11 +631,12 @@ router.get('/best-times', requireAuth, async (req, res) => {
               LIMIT 1
             ) sv_loc ON TRUE
           )
-          SELECT ip, COUNT(*)::int as count
+          SELECT ip, pixel_country, COUNT(*)::int as count
           FROM attributed
-          WHERE ip IS NOT NULL AND ip != ''
-          GROUP BY 1
-          ORDER BY 2 DESC
+          WHERE (ip IS NOT NULL AND btrim(ip::text) <> '')
+             OR (pixel_country IS NOT NULL AND btrim(pixel_country) <> '')
+          GROUP BY ip, pixel_country
+          ORDER BY 3 DESC
           LIMIT 100
         `;
       }
@@ -615,26 +654,33 @@ router.get('/best-times', requireAuth, async (req, res) => {
       // Resolve IPs em Localizações em memória (rápido com geoip-lite)
       const locationCounts = new Map<string, number>();
       
-      locationResult.rows.forEach(row => {
-        let ip = row.ip;
-        if (ip.includes(',')) ip = ip.split(',')[0].trim();
-        ip = ip.replace(/^::ffff:/, '');
-        
-        const geo = geoip.lookup(ip);
-        let locName = 'Desconhecido';
-        if (geo) {
-          const parts = [];
-          if (geo.city && geo.city !== 'null') parts.push(geo.city);
-          if (geo.region && geo.region !== 'null') parts.push(geo.region);
-          if (parts.length > 0) {
-            locName = `${parts.join(', ')} - ${geo.country || 'BR'}`;
-          } else if (geo.country && geo.country !== 'null') {
-            locName = geo.country;
+      locationResult.rows.forEach((row) => {
+        const pixelLabel = resolvePixelCountryToken(
+          row.pixel_country != null ? String(row.pixel_country) : undefined
+        );
+        let locName: string | null = pixelLabel;
+        const ipRaw = row.ip != null ? String(row.ip).trim() : '';
+        if (!locName && ipRaw !== '') {
+          let ip = ipRaw;
+          if (ip.includes(',')) ip = ip.split(',')[0].trim();
+          ip = ip.replace(/^::ffff:/, '');
+
+          const geo = geoip.lookup(ip);
+          if (geo) {
+            const parts: string[] = [];
+            if (geo.city && geo.city !== 'null') parts.push(geo.city);
+            if (geo.region && geo.region !== 'null') parts.push(geo.region);
+            if (parts.length > 0) {
+              locName = `${parts.join(', ')} - ${geo.country || 'BR'}`;
+            } else if (geo.country && geo.country !== 'null') {
+              locName = geo.country;
+            }
           }
         }
-        
-        if (locName !== 'Desconhecido') {
-          locationCounts.set(locName, (locationCounts.get(locName) || 0) + row.count);
+
+        if (locName) {
+          const n = Number(row.count);
+          locationCounts.set(locName, (locationCounts.get(locName) || 0) + (Number.isFinite(n) ? n : 0));
         }
       });
       

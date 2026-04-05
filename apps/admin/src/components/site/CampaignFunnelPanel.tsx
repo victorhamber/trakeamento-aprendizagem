@@ -268,7 +268,7 @@ export function CampaignFunnelPanel({
     return p;
   }, [siteId, metricsPreset, metricsSince, metricsUntil]);
 
-  const loadFunnel = useCallback(async () => {
+  const loadFunnel = useCallback(async (opts?: { force?: boolean }) => {
     if (!hasMetaConnection || !hasAdAccount) return;
     if (!campaignId) return;
     if (metricsPreset === 'custom' && (!metricsSince || !metricsUntil)) return;
@@ -283,6 +283,7 @@ export function CampaignFunnelPanel({
       if (level === 'campaign' && compareEnabled && metricsPreset !== 'maximum') {
         params.compare = '1';
       }
+      if (opts?.force) params.force = '1';
       const res = await api.get('/meta/campaigns/funnel-breakdown', { params });
       const list = (res.data?.rows || []) as FunnelRow[];
       setRows(list.map((r) => ({ ...r, bottleneck_plain: r.bottleneck_plain ?? '' })));
@@ -538,7 +539,7 @@ export function CampaignFunnelPanel({
         ) : null}
         <button
           type="button"
-          onClick={() => loadFunnel().catch(() => {})}
+          onClick={() => loadFunnel({ force: true }).catch(() => {})}
           disabled={loading}
           className="text-xs px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-40"
         >
