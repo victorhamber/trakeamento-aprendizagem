@@ -156,6 +156,20 @@ router.get('/tracker.js', async (req, res) => {
   function normCityState(v) { return (v || '').toString().trim().toLowerCase(); }
   function normZip(v)       { return (v || '').toString().trim().toLowerCase().replace(/\s+/g, ''); }
   function normDob(v)       { return (v || '').toString().replace(/[^0-9]/g, ''); } // YYYYMMDD
+  /** ISO 3166-1 alpha-2 em minúsculas (ex.: br) — padrão Meta para country hasheado. */
+  function normCountry(v) {
+    var s = (v || '').toString().trim().toLowerCase().replace(/\s+/g, '');
+    if (!s) return '';
+    if (/^[a-z]{2}$/.test(s)) return s;
+    if (s === 'brasil' || s === 'brazil') return 'br';
+    if (s === 'portugal') return 'pt';
+    if (s === 'usa' || s === 'us') return 'us';
+    var m = s.match(/^[a-z]{2}-([a-z]{2})$/);
+    if (m) return m[1];
+    var letters = s.replace(/[^a-z]/g, '');
+    if (letters.length === 2) return letters;
+    return '';
+  }
 
   // ─── Hashed cookie helpers ────────────────────────────────────────────────
   function setHashedCookie(cookieName, rawValue, normalizer) {
@@ -171,7 +185,7 @@ router.get('/tracker.js', async (req, res) => {
   function getMetaUserDataFromCookies() {
     var out = {};
     var fields = { em:'_ta_em', ph:'_ta_ph', fn:'_ta_fn', ln:'_ta_ln',
-                   ct:'_ta_ct', st:'_ta_st', zp:'_ta_zp', db:'_ta_db' };
+                   ct:'_ta_ct', st:'_ta_st', zp:'_ta_zp', db:'_ta_db', country:'_ta_country' };
     for (var k in fields) {
       var v = getCookie(fields[k]);
       if (v) out[k] = v;
@@ -608,6 +622,9 @@ router.get('/tracker.js', async (req, res) => {
         if (/state|estado|\\buf\\b/.test(meta)) {
           setHashedCookie('_ta_st', val, normCityState); continue;
         }
+        if (/country|pais|país|country-name|country_code|countrycode/.test(meta)) {
+          setHashedCookie('_ta_country', val, normCountry); continue;
+        }
         if (/zip|cep|postal/.test(meta)) {
           setHashedCookie('_ta_zp', val, normZip); continue;
         }
@@ -639,7 +656,7 @@ router.get('/tracker.js', async (req, res) => {
   }
 
   function autoExtractIdentify(raw) {
-    var out  = { email:'', phone:'', fn:'', ln:'', ct:'', st:'', zp:'', db:'' };
+    var out  = { email:'', phone:'', fn:'', ln:'', ct:'', st:'', zp:'', db:'', country:'' };
     var seen = [];
     function consider(key, val) {
       var s = coerceString(val);
@@ -651,6 +668,7 @@ router.get('/tracker.js', async (req, res) => {
       if (!out.ln     && /\\bln\\b|last|sobrenome|lastname/.test(k))    { out.ln    = s; return; }
       if (!out.ct     && /\\bct\\b|city|cidade/.test(k))                { out.ct    = s; return; }
       if (!out.st     && /\\bst\\b|state|estado|\\buf\\b/.test(k))      { out.st    = s; return; }
+      if (!out.country && /country|pais|país|country_code|countrycode/.test(k)) { out.country = s; return; }
       if (!out.zp     && /\\bzp\\b|zip|cep|postal/.test(k))             { out.zp    = s; return; }
       if (!out.db     && /\\bdb\\b|birth|nasc|\\bdob\\b/.test(k))       { out.db    = s; return; }
     }
@@ -690,12 +708,15 @@ router.get('/tracker.js', async (req, res) => {
       if (fn) setHashedCookie('_ta_fn', fn, normName);
       var ln = pick(['ln','last_name','lastname','sobrenome']);
       if (ln) setHashedCookie('_ta_ln', ln, normName);
+      var country = pick(['country','country_code','countryCode','pais','país']);
+      if (country) setHashedCookie('_ta_country', country, normCountry);
 
       var auto = autoExtractIdentify(raw);
       if (!fn && auto.fn) setHashedCookie('_ta_fn', auto.fn, normName);
       if (!ln && auto.ln) setHashedCookie('_ta_ln', auto.ln, normName);
       if (auto.ct) setHashedCookie('_ta_ct', auto.ct, normCityState);
       if (auto.st) setHashedCookie('_ta_st', auto.st, normCityState);
+      if (auto.country) setHashedCookie('_ta_country', auto.country, normCountry);
       if (auto.zp) setHashedCookie('_ta_zp', auto.zp, normZip);
       if (auto.db) setHashedCookie('_ta_db', auto.db, normDob);
     } catch(_e) {}
@@ -776,7 +797,8 @@ router.get('/tracker.js', async (req, res) => {
       ct:  metaUser.ct,
       st:  metaUser.st,
       zp:  metaUser.zp,
-      db:  metaUser.db
+      db:  metaUser.db,
+      country: metaUser.country
     };
   }
 
