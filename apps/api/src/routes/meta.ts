@@ -577,124 +577,68 @@ function mapRawRowToFunnelResponse(r: Record<string, unknown>) {
     bottleneck,
     bottleneck_plain,
     ...hints,
+    adset_name:
+      typeof r.adset_name === 'string' && r.adset_name.trim() ? String(r.adset_name).trim() : null,
+    first_party_page:
+      typeof r.first_party_page === 'string' && r.first_party_page.trim()
+        ? String(r.first_party_page).trim()
+        : null,
   };
 }
 
-type OptimizationContext = {
-  utm_matched: boolean;
-  pixel: {
-    page_views: number;
-    initiate_checkout: number;
-    purchases: number;
-    unique_visitors: number;
-  };
-  orders_confirmed: number;
-  hints: string[];
-};
-
-async function buildOptimizationContext(
-  siteId: number,
-  accountId: number,
+/** Página mais vista no site por anúncio, quando utm_campaign = nome da campanha e utm_content = id do anúncio. */
+async function loadFirstPartyTopPagePerAd(
+  siteKey: string,
   since: Date,
   until: Date,
-  campaignName: string,
-  meta: {
-    link_clicks: number;
-    landing_page_views: number;
-    initiates_checkout: number;
-    purchases: number;
-  }
-): Promise<OptimizationContext | null> {
-  const siteRes = await pool.query(
-    'SELECT site_key FROM sites WHERE id = $1 AND account_id = $2',
-    [siteId, accountId]
-  );
-  const siteKey = siteRes.rows[0]?.site_key as string | undefined;
-  if (!siteKey) return null;
+  campaignNameTrimmed: string,
+  adIds: string[]
+): Promise<Map<string, string>> {
+  if (campaignNameTrimmed.length < 2 || adIds.length === 0) return new Map();
 
-  const trimmed = campaignName.trim();
-  const utm_matched = trimmed.length >= 2;
-
-  const pixelRes = await pool.query(
+  const pageRes = await pool.query(
     `
-    SELECT
-      COUNT(*) FILTER (WHERE we.event_name = 'PageView')::bigint AS page_views,
-      COUNT(*) FILTER (WHERE we.event_name = 'InitiateCheckout')::bigint AS initiate_checkout,
-      COUNT(*) FILTER (WHERE we.event_name = 'Purchase')::bigint AS purchases,
-      COUNT(DISTINCT NULLIF(TRIM(COALESCE(we.user_data->>'fbp', we.user_data->>'external_id', '')), ''))::bigint AS unique_visitors
-    FROM web_events we
-    WHERE we.site_key = $1
-      AND we.event_time >= $2
-      AND we.event_time < $3
-      AND (
-        $4::boolean = false
-        OR lower(trim(regexp_replace(coalesce(we.custom_data->>'utm_campaign',''), '\\s+', ' ', 'g')))
-           = lower(trim(regexp_replace($5, '\\s+', ' ', 'g')))
-      )
+    WITH ranked AS (
+      SELECT
+        trim(both from coalesce(we.custom_data->>'utm_content', '')) AS ad_ref,
+        nullif(
+          trim(both from coalesce(
+            nullif(trim(both from coalesce(we.custom_data->>'page_path', '')), ''),
+            nullif(trim(both from coalesce(we.custom_data->>'page_title', '')), '')
+          )),
+          ''
+        ) AS page_label,
+        count(*)::bigint AS c,
+        row_number() OVER (
+          PARTITION BY trim(both from coalesce(we.custom_data->>'utm_content', ''))
+          ORDER BY count(*) DESC
+        ) AS rn
+      FROM web_events we
+      WHERE we.site_key = $1
+        AND we.event_time >= $2
+        AND we.event_time < $3
+        AND we.event_name = 'PageView'
+        AND length(trim($4)) >= 2
+        AND lower(trim(regexp_replace(coalesce(we.custom_data->>'utm_campaign', ''), '\\s+', ' ', 'g')))
+           = lower(trim(regexp_replace($4, '\\s+', ' ', 'g')))
+        AND trim(coalesce(we.custom_data->>'utm_content', '')) <> ''
+        AND trim(coalesce(we.custom_data->>'utm_content', '')) = any($5::text[])
+      GROUP BY 1, 2
+    )
+    SELECT ad_ref, page_label
+    FROM ranked
+    WHERE rn = 1 AND page_label IS NOT NULL
     `,
-    [siteKey, since, until, utm_matched, trimmed]
+    [siteKey, since, until, campaignNameTrimmed, adIds]
   );
 
-  const pr = pixelRes.rows[0] || {};
-  const pixel = {
-    page_views: Number(pr.page_views || 0),
-    initiate_checkout: Number(pr.initiate_checkout || 0),
-    purchases: Number(pr.purchases || 0),
-    unique_visitors: Number(pr.unique_visitors || 0),
-  };
-
-  const ordRes = await pool.query(
-    `
-    SELECT COUNT(*)::bigint AS n
-    FROM purchases p
-    WHERE p.site_key = $1
-      AND COALESCE(p.platform_date, p.created_at) >= $2
-      AND COALESCE(p.platform_date, p.created_at) < $3
-      AND (
-        p.status IS NULL
-        OR lower(p.status) IN ('approved', 'paid', 'completed', 'active', 'confirmed', 'complete')
-      )
-      AND (
-        $4::boolean = false
-        OR lower(trim(regexp_replace(coalesce(p.utm_campaign,''), '\\s+', ' ', 'g')))
-           = lower(trim(regexp_replace($5, '\\s+', ' ', 'g')))
-      )
-    `,
-    [siteKey, since, until, utm_matched, trimmed]
-  );
-  const orders_confirmed = Number(ordRes.rows[0]?.n || 0);
-
-  const hints: string[] = [];
-  if (utm_matched && meta.link_clicks > 25 && pixel.page_views < 8) {
-    hints.push(
-      'Muitos cliques na Meta, mas poucos pageviews no pixel com o mesmo texto em utm_campaign. Confira se o link do anúncio envia utm_campaign alinhado ao nome da campanha.'
-    );
+  const m = new Map<string, string>();
+  for (const row of pageRes.rows) {
+    const ref = String(row.ad_ref || '');
+    const label = String(row.page_label || '');
+    if (ref && label) m.set(ref, label);
   }
-  if (pixel.purchases > meta.purchases + 1) {
-    hints.push(
-      'O pixel registrou mais compras do que a Meta neste período — pode ser atribuição, atraso do CAPI ou vendas de outros canais. Vale revisar eventos e janela de conversão.'
-    );
-  }
-  if (orders_confirmed > meta.purchases + 1) {
-    hints.push(
-      'Há mais pedidos confirmados no Trajettu (com mesma UTM) do que compras na Meta — confira se o nome da campanha na UTM bate com o que chega no site.'
-    );
-  }
-  if (meta.landing_page_views > 10 && pixel.page_views > meta.landing_page_views * 2) {
-    hints.push(
-      'O site recebeu bem mais visitas (pixel) do que “visualizações de LP” na Meta — parte do tráfego pode ser orgânico, direto ou outro canal na mesma página.'
-    );
-  }
-  if (utm_matched && pixel.unique_visitors > 0 && meta.link_clicks > 0) {
-    const ratio = pixel.unique_visitors / meta.link_clicks;
-    if (ratio > 2.5) {
-      hints.push(
-        'Há mais “rostos” únicos no pixel (com esta UTM) do que cliques contados na Meta — pode haver dupla contagem no site ou cliques que não viraram sessão rastreada igual.'
-      );
-    }
-  }
-
-  return { utm_matched, pixel, orders_confirmed, hints: hints.slice(0, 5) };
+  return m;
 }
 
 /** Funil por campanha / conjunto / anúncio (dados Meta Insights no DB). */
@@ -762,6 +706,12 @@ router.get('/campaigns/funnel-breakdown', requireAuth, async (req, res) => {
       }
     }
 
+    const extraAdFields = level === 'ad' ? ', MAX(adset_name) AS adset_name' : '';
+    const orderByFunnel =
+      level === 'ad'
+        ? `ORDER BY COALESCE(SUM(purchases), 0) DESC, COALESCE(SUM(initiates_checkout), 0) DESC, COALESCE(SUM(spend), 0) DESC NULLS LAST, COALESCE(SUM(impressions), 0) DESC`
+        : `ORDER BY COALESCE(SUM(spend), 0) DESC NULLS LAST, COALESCE(SUM(impressions), 0) DESC`;
+
     const funnelSql = `
       SELECT
         ${idField},
@@ -776,13 +726,14 @@ router.get('/campaigns/funnel-breakdown', requireAuth, async (req, res) => {
         COALESCE(SUM(adds_to_cart), 0)::bigint AS adds_to_cart,
         COALESCE(SUM(initiates_checkout), 0)::bigint AS initiates_checkout,
         COALESCE(SUM(purchases), 0)::bigint AS purchases
+        ${extraAdFields}
       FROM meta_insights_daily
       WHERE site_id = $1
         AND date_start >= $2
         AND date_start < $3
         ${levelFilter}
       GROUP BY ${groupBy}
-      ORDER BY spend DESC NULLS LAST, impressions DESC
+      ${orderByFunnel}
     `;
 
     let result = await pool.query(funnelSql, params);
@@ -834,6 +785,39 @@ router.get('/campaigns/funnel-breakdown', requireAuth, async (req, res) => {
       }
     }
 
+    if (level === 'ad' && rawRows.length > 0) {
+      try {
+        const siteKeyRes = await pool.query(
+          'SELECT site_key FROM sites WHERE id = $1 AND account_id = $2',
+          [siteId, auth.accountId]
+        );
+        const siteKey = siteKeyRes.rows[0]?.site_key as string | undefined;
+        const cnRes = await pool.query(
+          `SELECT MAX(campaign_name) AS cn FROM meta_insights_daily
+           WHERE site_id = $1 AND date_start >= $2 AND date_start < $3 AND campaign_id = $4`,
+          [siteId, since, until, campaignId]
+        );
+        const campaignNameUtm = String(cnRes.rows[0]?.cn || '').trim();
+        const adIds = rawRows.map((r) => String(r.id || '')).filter(Boolean);
+        if (siteKey && campaignNameUtm.length >= 2 && adIds.length > 0) {
+          const pageMap = await loadFirstPartyTopPagePerAd(
+            siteKey,
+            since,
+            until,
+            campaignNameUtm,
+            adIds
+          );
+          for (const r of rawRows) {
+            const id = String(r.id || '');
+            const pg = pageMap.get(id);
+            if (pg) (r as Record<string, unknown>).first_party_page = pg;
+          }
+        }
+      } catch (fpErr) {
+        console.warn('[funnel-breakdown] first-party page per ad failed:', fpErr);
+      }
+    }
+
     const rows = rawRows.map((r) => mapRawRowToFunnelResponse(r));
 
     const wantCompare =
@@ -850,28 +834,6 @@ router.get('/campaigns/funnel-breakdown', requireAuth, async (req, res) => {
       compare_label = funnelCompareLabel(preset, hasCustomRange);
     }
 
-    let optimization_context: OptimizationContext | null = null;
-    if (level === 'campaign' && rows.length > 0) {
-      const primary = rows[0];
-      try {
-        optimization_context = await buildOptimizationContext(
-          siteId,
-          auth.accountId,
-          since,
-          until,
-          String(primary.name || ''),
-          {
-            link_clicks: primary.funnel.link_clicks,
-            landing_page_views: primary.funnel.landing_page_views,
-            initiates_checkout: primary.funnel.initiates_checkout,
-            purchases: primary.funnel.purchases,
-          }
-        );
-      } catch (ctxErr) {
-        console.warn('[funnel-breakdown] optimization_context failed:', ctxErr);
-      }
-    }
-
     res.json({
       campaign_id: campaignId,
       level,
@@ -882,7 +844,6 @@ router.get('/campaigns/funnel-breakdown', requireAuth, async (req, res) => {
       rows,
       compare_rows,
       compare_label,
-      optimization_context,
     });
   } catch (err: any) {
     console.error('campaigns/funnel-breakdown error:', err);

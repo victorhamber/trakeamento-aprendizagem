@@ -26,18 +26,10 @@ type FunnelRow = {
   present_label: string;
   future: 'promising' | 'uncertain' | 'limited';
   future_label: string;
-};
-
-type OptimizationContext = {
-  utm_matched: boolean;
-  pixel: {
-    page_views: number;
-    initiate_checkout: number;
-    purchases: number;
-    unique_visitors: number;
-  };
-  orders_confirmed: number;
-  hints: string[];
+  /** Só nível «anúncio» (Meta). */
+  adset_name?: string | null;
+  /** Página mais vista no site quando UTM bate com campanha + id do anúncio. */
+  first_party_page?: string | null;
 };
 
 type Props = {
@@ -117,9 +109,8 @@ function buildFunnelSummary(args: {
   comparePrimary?: FunnelRow;
   compareLabel?: string | null;
   generatedAt?: string | null;
-  optimization?: OptimizationContext | null;
 }): string {
-  const { campaignName, periodLabel, primary, comparePrimary, compareLabel, generatedAt, optimization } = args;
+  const { campaignName, periodLabel, primary, comparePrimary, compareLabel, generatedAt } = args;
   const f = primary.funnel;
   const lines = [
     `📊 Resumo — ${campaignName}`,
@@ -146,10 +137,6 @@ function buildFunnelSummary(args: {
       `Cliques: ${formatNumber(p.funnel.link_clicks)} | LP: ${formatNumber(p.funnel.landing_page_views)} | Checkout: ${formatNumber(p.funnel.initiates_checkout)} | Compras: ${formatNumber(p.funnel.purchases)}`,
       `Investido: ${formatMoney(p.spend)}`
     );
-  }
-
-  if (optimization?.hints?.length) {
-    lines.push('', '— Dicas (site/pixel) —', ...optimization.hints.map((h) => `• ${h}`));
   }
 
   if (generatedAt) {
@@ -239,7 +226,6 @@ export function CampaignFunnelPanel({
   const [compareEnabled, setCompareEnabled] = useState(false);
   const [compareRows, setCompareRows] = useState<FunnelRow[]>([]);
   const [compareLabel, setCompareLabel] = useState<string | null>(null);
-  const [optimizationContext, setOptimizationContext] = useState<OptimizationContext | null>(null);
   const [copyFeedback, setCopyFeedback] = useState(false);
 
   const filteredCampaigns = useMemo(() => {
@@ -295,19 +281,12 @@ export function CampaignFunnelPanel({
         setCompareRows([]);
         setCompareLabel(null);
       }
-      const oc = res.data?.optimization_context;
-      if (oc && typeof oc === 'object' && level === 'campaign') {
-        setOptimizationContext(oc as OptimizationContext);
-      } else {
-        setOptimizationContext(null);
-      }
     } catch (e) {
       console.error(e);
       setRows([]);
       setGeneratedAt(null);
       setCompareRows([]);
       setCompareLabel(null);
-      setOptimizationContext(null);
     } finally {
       setLoading(false);
     }
@@ -382,7 +361,6 @@ export function CampaignFunnelPanel({
       comparePrimary: compareRows[0],
       compareLabel,
       generatedAt,
-      optimization: optimizationContext,
     });
     try {
       await navigator.clipboard.writeText(text);
@@ -391,7 +369,7 @@ export function CampaignFunnelPanel({
     } catch {
       /* ignore */
     }
-  }, [rows, selectedCampaignName, periodLabel, compareRows, compareLabel, generatedAt, optimizationContext]);
+  }, [rows, selectedCampaignName, periodLabel, compareRows, compareLabel, generatedAt]);
 
   const openWhatsAppSummary = useCallback(() => {
     const primary = rows[0];
@@ -403,10 +381,9 @@ export function CampaignFunnelPanel({
       comparePrimary: compareRows[0],
       compareLabel,
       generatedAt,
-      optimization: optimizationContext,
     });
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
-  }, [rows, selectedCampaignName, periodLabel, compareRows, compareLabel, generatedAt, optimizationContext]);
+  }, [rows, selectedCampaignName, periodLabel, compareRows, compareLabel, generatedAt]);
 
   const openEmailSummary = useCallback(() => {
     const primary = rows[0];
@@ -418,11 +395,10 @@ export function CampaignFunnelPanel({
       comparePrimary: compareRows[0],
       compareLabel,
       generatedAt,
-      optimization: optimizationContext,
     });
     const subject = `Funil — ${selectedCampaignName || primary.name || 'campanha'} (${periodLabel})`;
     window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(text)}`;
-  }, [rows, selectedCampaignName, periodLabel, compareRows, compareLabel, generatedAt, optimizationContext]);
+  }, [rows, selectedCampaignName, periodLabel, compareRows, compareLabel, generatedAt]);
 
   if (!hasMetaConnection || !hasAdAccount) {
     return (
@@ -671,42 +647,70 @@ export function CampaignFunnelPanel({
               </div>
             </div>
 
-            {optimizationContext &&
-            (optimizationContext.hints.length > 0 ||
-              optimizationContext.pixel.page_views > 0 ||
-              optimizationContext.orders_confirmed > 0) ? (
-              <div className="rounded-xl border border-violet-200/80 dark:border-violet-500/30 bg-violet-500/5 dark:bg-violet-950/20 px-4 py-3">
-                <div className="text-[10px] font-bold uppercase tracking-wide text-violet-700 dark:text-violet-300 mb-2">
-                  Site e pixel (para otimizar anúncios)
-                </div>
-                <p className="text-[11px] text-zinc-600 dark:text-zinc-400 mb-2 leading-relaxed">
-                  {optimizationContext.utm_matched
-                    ? 'Números cruzados com eventos no site onde utm_campaign é igual ao nome desta campanha.'
-                    : 'Tráfego total do site no período (nome da campanha muito curto para cruzar UTM).'}
-                </p>
-                <div className="text-xs text-zinc-700 dark:text-zinc-300 tabular-nums space-y-0.5 mb-2">
-                  <div>
-                    Pixel: {formatNumber(optimizationContext.pixel.page_views)} visitas ·{' '}
-                    {formatNumber(optimizationContext.pixel.initiate_checkout)} checkouts ·{' '}
-                    {formatNumber(optimizationContext.pixel.purchases)} compras (evento)
-                    {optimizationContext.pixel.unique_visitors > 0 ? (
-                      <> · ~{formatNumber(optimizationContext.pixel.unique_visitors)} visitantes únicos</>
-                    ) : null}
-                  </div>
-                  {optimizationContext.orders_confirmed > 0 ? (
-                    <div>Pedidos confirmados (Trajettu): {formatNumber(optimizationContext.orders_confirmed)}</div>
-                  ) : null}
-                </div>
-                {optimizationContext.hints.length > 0 ? (
-                  <ul className="text-xs text-zinc-700 dark:text-zinc-300 list-disc pl-4 space-y-1">
-                    {optimizationContext.hints.map((h, i) => (
-                      <li key={i}>{h}</li>
-                    ))}
-                  </ul>
-                ) : null}
-              </div>
-            ) : null}
+            <p className="text-xs text-zinc-600 dark:text-zinc-400 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/30 px-3 py-2 leading-relaxed">
+              Para ver <strong>conjunto, anúncio, página no site, checkout e compras</strong> por criativo, escolha{' '}
+              <strong>Por anúncio</strong> acima. A lista ordena primeiro quem tem mais <strong>compras</strong> na Meta.
+            </p>
           </>
+        ) : level === 'ad' ? (
+          <div className="space-y-3">
+            <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">
+              <span className="font-medium text-zinc-800 dark:text-zinc-200">Campanha:</span>{' '}
+              {selectedCampaignName || '—'} · Ordenado por compras e checkouts (Meta).{' '}
+              <span className="font-medium text-zinc-800 dark:text-zinc-200">Página (site)</span> aparece quando o link do
+              anúncio envia <code className="text-[10px] bg-zinc-200/80 dark:bg-zinc-800 px-1 rounded">utm_campaign</code>{' '}
+              igual ao nome da campanha e{' '}
+              <code className="text-[10px] bg-zinc-200/80 dark:bg-zinc-800 px-1 rounded">utm_content</code> com o id do
+              anúncio (parâmetros dinâmicos).
+            </p>
+            <div className="overflow-x-auto max-h-[55vh] overflow-y-auto rounded-xl border border-zinc-200 dark:border-zinc-700 custom-scrollbar">
+              <table className="w-full text-xs text-left min-w-[640px]">
+                <thead className="sticky top-0 z-10 bg-zinc-100 dark:bg-zinc-800/95 text-zinc-600 dark:text-zinc-400 border-b border-zinc-200 dark:border-zinc-700">
+                  <tr>
+                    <th className="px-3 py-2 font-semibold">Conjunto</th>
+                    <th className="px-3 py-2 font-semibold">Anúncio</th>
+                    <th className="px-3 py-2 font-semibold">Página (site)</th>
+                    <th className="px-3 py-2 font-semibold text-right whitespace-nowrap">Checkout</th>
+                    <th className="px-3 py-2 font-semibold text-right whitespace-nowrap">Compras</th>
+                    <th className="px-3 py-2 font-semibold text-right whitespace-nowrap">Investido</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-200 dark:divide-zinc-700">
+                  {rows.map((r) => (
+                    <tr key={r.id} className="bg-white dark:bg-zinc-900/40 hover:bg-zinc-50 dark:hover:bg-zinc-800/30">
+                      <td className="px-3 py-2 align-top max-w-[160px]">
+                        <span className="line-clamp-2" title={r.adset_name || ''}>
+                          {r.adset_name || '—'}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 align-top max-w-[200px]">
+                        <span className="line-clamp-2 font-medium text-zinc-900 dark:text-zinc-100" title={r.name}>
+                          {r.name}
+                        </span>
+                        <div className="text-[10px] text-zinc-500 font-mono truncate mt-0.5" title={r.id}>
+                          {r.id}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 align-top max-w-[200px] text-zinc-600 dark:text-zinc-400">
+                        <span className="line-clamp-2" title={r.first_party_page || ''}>
+                          {r.first_party_page || '—'}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 align-top text-right tabular-nums font-medium text-zinc-900 dark:text-zinc-100">
+                        {formatNumber(r.funnel.initiates_checkout)}
+                      </td>
+                      <td className="px-3 py-2 align-top text-right tabular-nums font-medium text-emerald-700 dark:text-emerald-400">
+                        {formatNumber(r.funnel.purchases)}
+                      </td>
+                      <td className="px-3 py-2 align-top text-right tabular-nums text-zinc-600 dark:text-zinc-400">
+                        {formatMoney(r.spend)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
         ) : (
           <div className="space-y-3 max-h-[55vh] overflow-y-auto custom-scrollbar pr-1">
             {rows.map((r) => (
