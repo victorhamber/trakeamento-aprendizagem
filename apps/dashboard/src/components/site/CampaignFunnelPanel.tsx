@@ -28,6 +28,18 @@ type FunnelRow = {
   future_label: string;
 };
 
+type OptimizationContext = {
+  utm_matched: boolean;
+  pixel: {
+    page_views: number;
+    initiate_checkout: number;
+    purchases: number;
+    unique_visitors: number;
+  };
+  orders_confirmed: number;
+  hints: string[];
+};
+
 type Props = {
   siteId: number;
   campaigns: FunnelCampaignOption[];
@@ -44,6 +56,108 @@ const formatMoney = (value: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 2 }).format(value);
 
 const formatNumber = (value: number) => new Intl.NumberFormat('pt-BR').format(value);
+
+function formatGeneratedAt(iso: string) {
+  try {
+    const d = new Date(iso);
+    return new Intl.DateTimeFormat('pt-BR', {
+      dateStyle: 'short',
+      timeStyle: 'short',
+    }).format(d);
+  } catch {
+    return iso;
+  }
+}
+
+function periodPresetLabel(preset: string, since: string, until: string): string {
+  switch (preset) {
+    case 'today':
+      return 'Hoje';
+    case 'yesterday':
+      return 'Ontem';
+    case 'last_7d':
+      return 'Últimos 7 dias';
+    case 'last_14d':
+      return 'Últimos 14 dias';
+    case 'last_30d':
+      return 'Últimos 30 dias';
+    case 'maximum':
+      return 'Período máximo';
+    case 'custom':
+      return since && until ? `${since} → ${until}` : 'Período personalizado';
+    default:
+      return preset;
+  }
+}
+
+function PctDelta({ cur, prev }: { cur: number; prev: number | undefined }) {
+  if (prev === undefined) return null;
+  const d = Math.round((cur - prev) * 10) / 10;
+  if (Math.abs(d) < 0.05) {
+    return <span className="text-zinc-500 tabular-nums">(=)</span>;
+  }
+  if (d > 0) {
+    return <span className="text-emerald-600 dark:text-emerald-400 tabular-nums">(↑{d}%)</span>;
+  }
+  return <span className="text-rose-600 dark:text-rose-400 tabular-nums">(↓{Math.abs(d)}%)</span>;
+}
+
+function SpendDelta({ cur, prev }: { cur: number; prev: number | undefined }) {
+  if (prev === undefined) return null;
+  const d = cur - prev;
+  if (Math.abs(d) < 0.01) return <span className="text-zinc-500">(=)</span>;
+  if (d > 0) return <span className="text-rose-600 dark:text-rose-400">(+{formatMoney(d)})</span>;
+  return <span className="text-emerald-600 dark:text-emerald-400">({formatMoney(d)})</span>;
+}
+
+function buildFunnelSummary(args: {
+  campaignName: string;
+  periodLabel: string;
+  primary: FunnelRow;
+  comparePrimary?: FunnelRow;
+  compareLabel?: string | null;
+  generatedAt?: string | null;
+  optimization?: OptimizationContext | null;
+}): string {
+  const { campaignName, periodLabel, primary, comparePrimary, compareLabel, generatedAt, optimization } = args;
+  const f = primary.funnel;
+  const lines = [
+    `📊 Resumo — ${campaignName}`,
+    `Período: ${periodLabel}`,
+    '',
+    `Cliques no link: ${formatNumber(f.link_clicks)}`,
+    `Ver página (LP): ${formatNumber(f.landing_page_views)}`,
+    `Checkout: ${formatNumber(f.initiates_checkout)}`,
+    `Compras (Meta): ${formatNumber(f.purchases)}`,
+    '',
+    `Taxas: clique→página ${primary.funnel_rates.lp_from_clicks_pct}% | página→checkout ${primary.funnel_rates.checkout_from_lp_pct}% | checkout→compra ${primary.funnel_rates.purchase_from_checkout_pct}%`,
+    `Investido: ${formatMoney(primary.spend)}`,
+    '',
+    primary.bottleneck_plain ? `O que importa: ${primary.bottleneck_plain}` : '',
+    primary.present_label ? `Situação: ${primary.present_label}` : '',
+    primary.future_label ? `Próximo passo: ${primary.future_label}` : '',
+  ];
+
+  if (comparePrimary && compareLabel) {
+    const p = comparePrimary;
+    lines.push(
+      '',
+      `— Comparativo (${compareLabel}) —`,
+      `Cliques: ${formatNumber(p.funnel.link_clicks)} | LP: ${formatNumber(p.funnel.landing_page_views)} | Checkout: ${formatNumber(p.funnel.initiates_checkout)} | Compras: ${formatNumber(p.funnel.purchases)}`,
+      `Investido: ${formatMoney(p.spend)}`
+    );
+  }
+
+  if (optimization?.hints?.length) {
+    lines.push('', '— Dicas (site/pixel) —', ...optimization.hints.map((h) => `• ${h}`));
+  }
+
+  if (generatedAt) {
+    lines.push('', `Atualizado: ${formatGeneratedAt(generatedAt)}`);
+  }
+
+  return lines.filter(Boolean).join('\n');
+}
 
 function presentBadgeClass(p: FunnelRow['present']) {
   switch (p) {
@@ -121,11 +235,27 @@ export function CampaignFunnelPanel({
   const [rows, setRows] = useState<FunnelRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [adsetOptions, setAdsetOptions] = useState<FunnelCampaignOption[]>([]);
+  const [generatedAt, setGeneratedAt] = useState<string | null>(null);
+  const [compareEnabled, setCompareEnabled] = useState(false);
+  const [compareRows, setCompareRows] = useState<FunnelRow[]>([]);
+  const [compareLabel, setCompareLabel] = useState<string | null>(null);
+  const [optimizationContext, setOptimizationContext] = useState<OptimizationContext | null>(null);
+  const [copyFeedback, setCopyFeedback] = useState(false);
 
   const filteredCampaigns = useMemo(() => {
     if (campaignStatusFilter === 'all') return campaigns;
     return campaigns.filter((c) => c.is_active !== false);
   }, [campaigns, campaignStatusFilter]);
+
+  const selectedCampaignName = useMemo(() => {
+    const c = filteredCampaigns.find((x) => x.id === campaignId);
+    return c?.name || '';
+  }, [filteredCampaigns, campaignId]);
+
+  const periodLabel = useMemo(
+    () => periodPresetLabel(metricsPreset, metricsSince, metricsUntil),
+    [metricsPreset, metricsSince, metricsUntil]
+  );
 
   const dateParams = useCallback(() => {
     const p: Record<string, string | number> = { site_id: siteId };
@@ -150,12 +280,33 @@ export function CampaignFunnelPanel({
         level,
       };
       if (level === 'ad' && adsetFilter) params.adset_id = adsetFilter;
+      if (level === 'campaign' && compareEnabled && metricsPreset !== 'maximum') {
+        params.compare = '1';
+      }
       const res = await api.get('/meta/campaigns/funnel-breakdown', { params });
       const list = (res.data?.rows || []) as FunnelRow[];
       setRows(list.map((r) => ({ ...r, bottleneck_plain: r.bottleneck_plain ?? '' })));
+      setGeneratedAt(typeof res.data?.generated_at === 'string' ? res.data.generated_at : null);
+      if (level === 'campaign' && compareEnabled) {
+        setCompareRows((res.data?.compare_rows as FunnelRow[]) || []);
+        setCompareLabel(typeof res.data?.compare_label === 'string' ? res.data.compare_label : null);
+      } else {
+        setCompareRows([]);
+        setCompareLabel(null);
+      }
+      const oc = res.data?.optimization_context;
+      if (oc && typeof oc === 'object' && level === 'campaign') {
+        setOptimizationContext(oc as OptimizationContext);
+      } else {
+        setOptimizationContext(null);
+      }
     } catch (e) {
       console.error(e);
       setRows([]);
+      setGeneratedAt(null);
+      setCompareRows([]);
+      setCompareLabel(null);
+      setOptimizationContext(null);
     } finally {
       setLoading(false);
     }
@@ -169,6 +320,7 @@ export function CampaignFunnelPanel({
     metricsPreset,
     metricsSince,
     metricsUntil,
+    compareEnabled,
   ]);
 
   useEffect(() => {
@@ -219,6 +371,58 @@ export function CampaignFunnelPanel({
     if (level !== 'ad') setAdsetFilter('');
   }, [level]);
 
+  const copySummary = useCallback(async () => {
+    const primary = rows[0];
+    if (!primary) return;
+    const text = buildFunnelSummary({
+      campaignName: selectedCampaignName || primary.name || 'Campanha',
+      periodLabel,
+      primary,
+      comparePrimary: compareRows[0],
+      compareLabel,
+      generatedAt,
+      optimization: optimizationContext,
+    });
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopyFeedback(true);
+      window.setTimeout(() => setCopyFeedback(false), 2000);
+    } catch {
+      /* ignore */
+    }
+  }, [rows, selectedCampaignName, periodLabel, compareRows, compareLabel, generatedAt, optimizationContext]);
+
+  const openWhatsAppSummary = useCallback(() => {
+    const primary = rows[0];
+    if (!primary) return;
+    const text = buildFunnelSummary({
+      campaignName: selectedCampaignName || primary.name || 'Campanha',
+      periodLabel,
+      primary,
+      comparePrimary: compareRows[0],
+      compareLabel,
+      generatedAt,
+      optimization: optimizationContext,
+    });
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
+  }, [rows, selectedCampaignName, periodLabel, compareRows, compareLabel, generatedAt, optimizationContext]);
+
+  const openEmailSummary = useCallback(() => {
+    const primary = rows[0];
+    if (!primary) return;
+    const text = buildFunnelSummary({
+      campaignName: selectedCampaignName || primary.name || 'Campanha',
+      periodLabel,
+      primary,
+      comparePrimary: compareRows[0],
+      compareLabel,
+      generatedAt,
+      optimization: optimizationContext,
+    });
+    const subject = `Funil — ${selectedCampaignName || primary.name || 'campanha'} (${periodLabel})`;
+    window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(text)}`;
+  }, [rows, selectedCampaignName, periodLabel, compareRows, compareLabel, generatedAt, optimizationContext]);
+
   if (!hasMetaConnection || !hasAdAccount) {
     return (
       <div className="rounded-2xl border border-zinc-200 dark:border-zinc-700/60 bg-zinc-50 dark:bg-zinc-900/40 p-6 text-sm text-zinc-600 dark:text-zinc-400">
@@ -254,6 +458,7 @@ export function CampaignFunnelPanel({
   }
 
   const primary = rows[0];
+  const comparePrimary = compareRows[0];
 
   return (
     <div className="rounded-2xl border border-zinc-200 dark:border-zinc-700/60 bg-gradient-to-b from-white to-zinc-50 dark:from-zinc-900/80 dark:to-zinc-950/90 overflow-hidden shadow-sm dark:shadow-lg">
@@ -264,6 +469,11 @@ export function CampaignFunnelPanel({
             Mesmos números da Meta. A caixa colorida explica em linguagem simples onde mais gente desiste — sem siglas
             difíceis.
           </p>
+          {generatedAt && !loading ? (
+            <p className="text-[10px] text-zinc-500 dark:text-zinc-500 pt-0.5">
+              Dados da Meta: <span className="font-medium text-zinc-700 dark:text-zinc-300">{formatGeneratedAt(generatedAt)}</span>
+            </p>
+          ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-2">{periodSelector}</div>
       </div>
@@ -315,6 +525,17 @@ export function CampaignFunnelPanel({
             ))}
           </select>
         )}
+        {level === 'campaign' && metricsPreset !== 'maximum' ? (
+          <label className="flex items-center gap-2 text-[11px] text-zinc-600 dark:text-zinc-400 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={compareEnabled}
+              onChange={(e) => setCompareEnabled(e.target.checked)}
+              className="rounded border-zinc-400"
+            />
+            Comparar período anterior
+          </label>
+        ) : null}
         <button
           type="button"
           onClick={() => loadFunnel().catch(() => {})}
@@ -325,7 +546,7 @@ export function CampaignFunnelPanel({
         </button>
       </div>
 
-      <div className="p-4">
+      <div className="p-4 space-y-4">
         {loading && rows.length === 0 ? (
           <div className="h-48 animate-pulse rounded-xl bg-zinc-200 dark:bg-zinc-800/50" />
         ) : rows.length === 0 ? (
@@ -334,73 +555,157 @@ export function CampaignFunnelPanel({
             buscar direto na Meta (demora alguns segundos na primeira vez).
           </p>
         ) : level === 'campaign' && primary ? (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div>
-              <FunnelBars f={primary.funnel} />
-              <div className="mt-4 grid grid-cols-3 gap-2 text-[10px] text-zinc-500">
-                <div className="rounded-lg bg-zinc-100 dark:bg-zinc-800/50 p-2 border border-zinc-200 dark:border-zinc-700/50">
-                  <div className="text-zinc-600 dark:text-zinc-400">Clique → página</div>
-                  <div className="text-zinc-900 dark:text-zinc-200 font-semibold tabular-nums">
-                    {primary.funnel_rates.lp_from_clicks_pct}%
+          <>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div>
+                <FunnelBars f={primary.funnel} />
+                {compareEnabled && compareLabel ? (
+                  <p className="text-[10px] text-zinc-500 mt-2">
+                    Comparativo: <strong>{compareLabel}</strong>
+                    {!comparePrimary ? ' — sem dados salvos nesse intervalo.' : null}
+                  </p>
+                ) : null}
+                <div className="mt-4 grid grid-cols-3 gap-2 text-[10px] text-zinc-500">
+                  <div className="rounded-lg bg-zinc-100 dark:bg-zinc-800/50 p-2 border border-zinc-200 dark:border-zinc-700/50">
+                    <div className="text-zinc-600 dark:text-zinc-400">Clique → página</div>
+                    <div className="text-zinc-900 dark:text-zinc-200 font-semibold tabular-nums flex flex-wrap items-center gap-1">
+                      {primary.funnel_rates.lp_from_clicks_pct}%
+                      <PctDelta cur={primary.funnel_rates.lp_from_clicks_pct} prev={comparePrimary?.funnel_rates.lp_from_clicks_pct} />
+                    </div>
+                  </div>
+                  <div className="rounded-lg bg-zinc-100 dark:bg-zinc-800/50 p-2 border border-zinc-200 dark:border-zinc-700/50">
+                    <div className="text-zinc-600 dark:text-zinc-400">Página → checkout</div>
+                    <div className="text-zinc-900 dark:text-zinc-200 font-semibold tabular-nums flex flex-wrap items-center gap-1">
+                      {primary.funnel_rates.checkout_from_lp_pct}%
+                      <PctDelta
+                        cur={primary.funnel_rates.checkout_from_lp_pct}
+                        prev={comparePrimary?.funnel_rates.checkout_from_lp_pct}
+                      />
+                    </div>
+                  </div>
+                  <div className="rounded-lg bg-zinc-100 dark:bg-zinc-800/50 p-2 border border-zinc-200 dark:border-zinc-700/50">
+                    <div className="text-zinc-600 dark:text-zinc-400">Checkout → compra</div>
+                    <div className="text-zinc-900 dark:text-zinc-200 font-semibold tabular-nums flex flex-wrap items-center gap-1">
+                      {primary.funnel_rates.purchase_from_checkout_pct}%
+                      <PctDelta
+                        cur={primary.funnel_rates.purchase_from_checkout_pct}
+                        prev={comparePrimary?.funnel_rates.purchase_from_checkout_pct}
+                      />
+                    </div>
                   </div>
                 </div>
-                <div className="rounded-lg bg-zinc-100 dark:bg-zinc-800/50 p-2 border border-zinc-200 dark:border-zinc-700/50">
-                  <div className="text-zinc-600 dark:text-zinc-400">Página → checkout</div>
-                  <div className="text-zinc-900 dark:text-zinc-200 font-semibold tabular-nums">
-                    {primary.funnel_rates.checkout_from_lp_pct}%
+              </div>
+              <div className="space-y-3">
+                {primary.bottleneck_plain ? (
+                  <div className={`rounded-xl border px-4 py-3 ${severityBorder(primary.bottleneck?.severity)}`}>
+                    <div className="text-[10px] font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-2">
+                      O que isso quer dizer
+                    </div>
+                    <p className="text-sm text-zinc-800 dark:text-zinc-100 leading-relaxed">{primary.bottleneck_plain}</p>
                   </div>
+                ) : null}
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => copySummary()}
+                    className="text-[11px] px-2.5 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-800"
+                  >
+                    {copyFeedback ? 'Copiado!' : 'Copiar resumo'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openWhatsAppSummary()}
+                    className="text-[11px] px-2.5 py-1.5 rounded-lg border border-emerald-600/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200 hover:bg-emerald-500/20"
+                  >
+                    WhatsApp
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openEmailSummary()}
+                    className="text-[11px] px-2.5 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-800"
+                  >
+                    E-mail
+                  </button>
                 </div>
-                <div className="rounded-lg bg-zinc-100 dark:bg-zinc-800/50 p-2 border border-zinc-200 dark:border-zinc-700/50">
-                  <div className="text-zinc-600 dark:text-zinc-400">Checkout → compra</div>
-                  <div className="text-zinc-900 dark:text-zinc-200 font-semibold tabular-nums">
-                    {primary.funnel_rates.purchase_from_checkout_pct}%
-                  </div>
+                <div className="flex flex-wrap gap-2">
+                  <span
+                    className={`text-[11px] px-2.5 py-1 rounded-lg border font-medium ${presentBadgeClass(primary.present)}`}
+                  >
+                    Agora:{' '}
+                    {primary.present === 'strong'
+                      ? 'performando bem'
+                      : primary.present === 'ok'
+                        ? 'no caminho'
+                        : primary.present === 'weak'
+                          ? 'precisa atenção'
+                          : 'pouco dado'}
+                  </span>
+                  <span
+                    className={`text-[11px] px-2.5 py-1 rounded-lg border font-medium ${futureBadgeClass(primary.future)}`}
+                  >
+                    Futuro:{' '}
+                    {primary.future === 'promising'
+                      ? 'potencial'
+                      : primary.future === 'limited'
+                        ? 'arriscado escalar'
+                        : 'depende de testes'}
+                  </span>
+                </div>
+                <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">{primary.present_label}</p>
+                <p className="text-xs text-zinc-500 leading-relaxed border-t border-zinc-200 dark:border-zinc-800 pt-3">
+                  {primary.future_label}
+                </p>
+                <div className="text-xs text-zinc-500 pt-2 flex flex-wrap items-center gap-2">
+                  <span>
+                    Investido:{' '}
+                    <strong className="text-zinc-900 dark:text-zinc-200 tabular-nums">{formatMoney(primary.spend)}</strong>
+                  </span>
+                  {comparePrimary ? (
+                    <span className="text-zinc-500">
+                      vs. anterior <strong className="tabular-nums">{formatMoney(comparePrimary.spend)}</strong>{' '}
+                      <SpendDelta cur={primary.spend} prev={comparePrimary.spend} />
+                    </span>
+                  ) : null}
                 </div>
               </div>
             </div>
-            <div className="space-y-3">
-              {primary.bottleneck_plain ? (
-                <div className={`rounded-xl border px-4 py-3 ${severityBorder(primary.bottleneck?.severity)}`}>
-                  <div className="text-[10px] font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-2">
-                    O que isso quer dizer
-                  </div>
-                  <p className="text-sm text-zinc-800 dark:text-zinc-100 leading-relaxed">{primary.bottleneck_plain}</p>
+
+            {optimizationContext &&
+            (optimizationContext.hints.length > 0 ||
+              optimizationContext.pixel.page_views > 0 ||
+              optimizationContext.orders_confirmed > 0) ? (
+              <div className="rounded-xl border border-violet-200/80 dark:border-violet-500/30 bg-violet-500/5 dark:bg-violet-950/20 px-4 py-3">
+                <div className="text-[10px] font-bold uppercase tracking-wide text-violet-700 dark:text-violet-300 mb-2">
+                  Site e pixel (para otimizar anúncios)
                 </div>
-              ) : null}
-              <div className="flex flex-wrap gap-2">
-                <span
-                  className={`text-[11px] px-2.5 py-1 rounded-lg border font-medium ${presentBadgeClass(primary.present)}`}
-                >
-                  Agora:{' '}
-                  {primary.present === 'strong'
-                    ? 'performando bem'
-                    : primary.present === 'ok'
-                      ? 'no caminho'
-                      : primary.present === 'weak'
-                        ? 'precisa atenção'
-                        : 'pouco dado'}
-                </span>
-                <span
-                  className={`text-[11px] px-2.5 py-1 rounded-lg border font-medium ${futureBadgeClass(primary.future)}`}
-                >
-                  Futuro:{' '}
-                  {primary.future === 'promising'
-                    ? 'potencial'
-                    : primary.future === 'limited'
-                      ? 'arriscado escalar'
-                      : 'depende de testes'}
-                </span>
+                <p className="text-[11px] text-zinc-600 dark:text-zinc-400 mb-2 leading-relaxed">
+                  {optimizationContext.utm_matched
+                    ? 'Números cruzados com eventos no site onde utm_campaign é igual ao nome desta campanha.'
+                    : 'Tráfego total do site no período (nome da campanha muito curto para cruzar UTM).'}
+                </p>
+                <div className="text-xs text-zinc-700 dark:text-zinc-300 tabular-nums space-y-0.5 mb-2">
+                  <div>
+                    Pixel: {formatNumber(optimizationContext.pixel.page_views)} visitas ·{' '}
+                    {formatNumber(optimizationContext.pixel.initiate_checkout)} checkouts ·{' '}
+                    {formatNumber(optimizationContext.pixel.purchases)} compras (evento)
+                    {optimizationContext.pixel.unique_visitors > 0 ? (
+                      <> · ~{formatNumber(optimizationContext.pixel.unique_visitors)} visitantes únicos</>
+                    ) : null}
+                  </div>
+                  {optimizationContext.orders_confirmed > 0 ? (
+                    <div>Pedidos confirmados (Trajettu): {formatNumber(optimizationContext.orders_confirmed)}</div>
+                  ) : null}
+                </div>
+                {optimizationContext.hints.length > 0 ? (
+                  <ul className="text-xs text-zinc-700 dark:text-zinc-300 list-disc pl-4 space-y-1">
+                    {optimizationContext.hints.map((h, i) => (
+                      <li key={i}>{h}</li>
+                    ))}
+                  </ul>
+                ) : null}
               </div>
-              <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">{primary.present_label}</p>
-              <p className="text-xs text-zinc-500 leading-relaxed border-t border-zinc-200 dark:border-zinc-800 pt-3">
-                {primary.future_label}
-              </p>
-              <div className="text-xs text-zinc-500 pt-2">
-                Investido no período:{' '}
-                <strong className="text-zinc-900 dark:text-zinc-200 tabular-nums">{formatMoney(primary.spend)}</strong>
-              </div>
-            </div>
-          </div>
+            ) : null}
+          </>
         ) : (
           <div className="space-y-3 max-h-[55vh] overflow-y-auto custom-scrollbar pr-1">
             {rows.map((r) => (

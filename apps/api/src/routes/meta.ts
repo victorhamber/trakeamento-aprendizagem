@@ -528,6 +528,175 @@ function presentAndFutureHints(row: Record<string, unknown>) {
   return { present, present_label, future, future_label };
 }
 
+/** Janela imediatamente anterior com a mesma duração [prevSince, prevUntil) alinhada ao funil. */
+export function previousMetaCampaignWindow(since: Date, until: Date): { prevSince: Date; prevUntil: Date } {
+  const dur = until.getTime() - since.getTime();
+  return { prevUntil: since, prevSince: new Date(since.getTime() - dur) };
+}
+
+function funnelCompareLabel(preset: string, hasCustom: boolean): string {
+  if (hasCustom) return 'Período anterior (mesma duração)';
+  if (preset === 'today') return 'Ontem';
+  if (preset === 'yesterday') return 'Dia anterior ao mostrado';
+  if (preset === 'last_7d') return '7 dias anteriores';
+  if (preset === 'last_14d') return '14 dias anteriores';
+  if (preset === 'last_30d') return '30 dias anteriores';
+  return 'Período anterior';
+}
+
+function mapRawRowToFunnelResponse(r: Record<string, unknown>) {
+  const o = { ...r, spend: Number(r.spend || 0) };
+  const { bottleneck, bottleneck_plain } = analyzeFunnelBottleneck(o);
+  const hints = presentAndFutureHints(o);
+  const link = linkBaseFromRow(o);
+  const lp = Number(r.landing_page_views || 0);
+  const checkout = Number(r.initiates_checkout || 0);
+  const purchases = Number(r.purchases || 0);
+  const funnel = {
+    link_clicks: link,
+    landing_page_views: lp,
+    adds_to_cart: Number(r.adds_to_cart || 0),
+    initiates_checkout: checkout,
+    purchases,
+    impressions: Number(r.impressions || 0),
+  };
+  const lp_rate_pct = link > 0 ? Math.round((lp / link) * 1000) / 10 : 0;
+  const checkout_rate_pct = lp > 0 ? Math.round((checkout / lp) * 1000) / 10 : 0;
+  const purchase_rate_pct = checkout > 0 ? Math.round((purchases / checkout) * 1000) / 10 : 0;
+
+  return {
+    id: r.id,
+    name: r.name || '—',
+    spend: o.spend,
+    funnel,
+    funnel_rates: {
+      lp_from_clicks_pct: lp_rate_pct,
+      checkout_from_lp_pct: checkout_rate_pct,
+      purchase_from_checkout_pct: purchase_rate_pct,
+    },
+    bottleneck,
+    bottleneck_plain,
+    ...hints,
+  };
+}
+
+type OptimizationContext = {
+  utm_matched: boolean;
+  pixel: {
+    page_views: number;
+    initiate_checkout: number;
+    purchases: number;
+    unique_visitors: number;
+  };
+  orders_confirmed: number;
+  hints: string[];
+};
+
+async function buildOptimizationContext(
+  siteId: number,
+  accountId: number,
+  since: Date,
+  until: Date,
+  campaignName: string,
+  meta: {
+    link_clicks: number;
+    landing_page_views: number;
+    initiates_checkout: number;
+    purchases: number;
+  }
+): Promise<OptimizationContext | null> {
+  const siteRes = await pool.query(
+    'SELECT site_key FROM sites WHERE id = $1 AND account_id = $2',
+    [siteId, accountId]
+  );
+  const siteKey = siteRes.rows[0]?.site_key as string | undefined;
+  if (!siteKey) return null;
+
+  const trimmed = campaignName.trim();
+  const utm_matched = trimmed.length >= 2;
+
+  const pixelRes = await pool.query(
+    `
+    SELECT
+      COUNT(*) FILTER (WHERE we.event_name = 'PageView')::bigint AS page_views,
+      COUNT(*) FILTER (WHERE we.event_name = 'InitiateCheckout')::bigint AS initiate_checkout,
+      COUNT(*) FILTER (WHERE we.event_name = 'Purchase')::bigint AS purchases,
+      COUNT(DISTINCT NULLIF(TRIM(COALESCE(we.user_data->>'fbp', we.user_data->>'external_id', '')), ''))::bigint AS unique_visitors
+    FROM web_events we
+    WHERE we.site_key = $1
+      AND we.event_time >= $2
+      AND we.event_time < $3
+      AND (
+        $4::boolean = false
+        OR lower(trim(regexp_replace(coalesce(we.custom_data->>'utm_campaign',''), '\\s+', ' ', 'g')))
+           = lower(trim(regexp_replace($5, '\\s+', ' ', 'g')))
+      )
+    `,
+    [siteKey, since, until, utm_matched, trimmed]
+  );
+
+  const pr = pixelRes.rows[0] || {};
+  const pixel = {
+    page_views: Number(pr.page_views || 0),
+    initiate_checkout: Number(pr.initiate_checkout || 0),
+    purchases: Number(pr.purchases || 0),
+    unique_visitors: Number(pr.unique_visitors || 0),
+  };
+
+  const ordRes = await pool.query(
+    `
+    SELECT COUNT(*)::bigint AS n
+    FROM purchases p
+    WHERE p.site_key = $1
+      AND COALESCE(p.platform_date, p.created_at) >= $2
+      AND COALESCE(p.platform_date, p.created_at) < $3
+      AND (
+        p.status IS NULL
+        OR lower(p.status) IN ('approved', 'paid', 'completed', 'active', 'confirmed', 'complete')
+      )
+      AND (
+        $4::boolean = false
+        OR lower(trim(regexp_replace(coalesce(p.utm_campaign,''), '\\s+', ' ', 'g')))
+           = lower(trim(regexp_replace($5, '\\s+', ' ', 'g')))
+      )
+    `,
+    [siteKey, since, until, utm_matched, trimmed]
+  );
+  const orders_confirmed = Number(ordRes.rows[0]?.n || 0);
+
+  const hints: string[] = [];
+  if (utm_matched && meta.link_clicks > 25 && pixel.page_views < 8) {
+    hints.push(
+      'Muitos cliques na Meta, mas poucos pageviews no pixel com o mesmo texto em utm_campaign. Confira se o link do anúncio envia utm_campaign alinhado ao nome da campanha.'
+    );
+  }
+  if (pixel.purchases > meta.purchases + 1) {
+    hints.push(
+      'O pixel registrou mais compras do que a Meta neste período — pode ser atribuição, atraso do CAPI ou vendas de outros canais. Vale revisar eventos e janela de conversão.'
+    );
+  }
+  if (orders_confirmed > meta.purchases + 1) {
+    hints.push(
+      'Há mais pedidos confirmados no Trajettu (com mesma UTM) do que compras na Meta — confira se o nome da campanha na UTM bate com o que chega no site.'
+    );
+  }
+  if (meta.landing_page_views > 10 && pixel.page_views > meta.landing_page_views * 2) {
+    hints.push(
+      'O site recebeu bem mais visitas (pixel) do que “visualizações de LP” na Meta — parte do tráfego pode ser orgânico, direto ou outro canal na mesma página.'
+    );
+  }
+  if (utm_matched && pixel.unique_visitors > 0 && meta.link_clicks > 0) {
+    const ratio = pixel.unique_visitors / meta.link_clicks;
+    if (ratio > 2.5) {
+      hints.push(
+        'Há mais “rostos” únicos no pixel (com esta UTM) do que cliques contados na Meta — pode haver dupla contagem no site ou cliques que não viraram sessão rastreada igual.'
+      );
+    }
+  }
+
+  return { utm_matched, pixel, orders_confirmed, hints: hints.slice(0, 5) };
+}
+
 /** Funil por campanha / conjunto / anúncio (dados Meta Insights no DB). */
 router.get('/campaigns/funnel-breakdown', requireAuth, async (req, res) => {
   try {
@@ -651,41 +820,43 @@ router.get('/campaigns/funnel-breakdown', requireAuth, async (req, res) => {
       }
     }
 
-    const rows = rawRows.map((r) => {
-      const o = { ...r, spend: Number(r.spend || 0) };
-      const { bottleneck, bottleneck_plain } = analyzeFunnelBottleneck(o);
-      const hints = presentAndFutureHints(o);
-      const link = linkBaseFromRow(o);
-      const lp = Number(r.landing_page_views || 0);
-      const checkout = Number(r.initiates_checkout || 0);
-      const purchases = Number(r.purchases || 0);
-      const funnel = {
-        link_clicks: link,
-        landing_page_views: lp,
-        adds_to_cart: Number(r.adds_to_cart || 0),
-        initiates_checkout: checkout,
-        purchases,
-        impressions: Number(r.impressions || 0),
-      };
-      const lp_rate_pct = link > 0 ? Math.round((lp / link) * 1000) / 10 : 0;
-      const checkout_rate_pct = lp > 0 ? Math.round((checkout / lp) * 1000) / 10 : 0;
-      const purchase_rate_pct = checkout > 0 ? Math.round((purchases / checkout) * 1000) / 10 : 0;
+    const rows = rawRows.map((r) => mapRawRowToFunnelResponse(r));
 
-      return {
-        id: r.id,
-        name: r.name || '—',
-        spend: o.spend,
-        funnel,
-        funnel_rates: {
-          lp_from_clicks_pct: lp_rate_pct,
-          checkout_from_lp_pct: checkout_rate_pct,
-          purchase_from_checkout_pct: purchase_rate_pct,
-        },
-        bottleneck,
-        bottleneck_plain,
-        ...hints,
-      };
-    });
+    const wantCompare =
+      req.query.compare === '1' || req.query.compare === 'true' || req.query.compare === 'yes';
+    let compare_rows: ReturnType<typeof mapRawRowToFunnelResponse>[] | null = null;
+    let compare_label: string | null = null;
+    if (wantCompare && preset !== 'maximum') {
+      const { prevSince, prevUntil } = previousMetaCampaignWindow(since, until);
+      const prevParams = [...params];
+      prevParams[1] = prevSince;
+      prevParams[2] = prevUntil;
+      const prevResult = await pool.query(funnelSql, prevParams);
+      compare_rows = (prevResult.rows as Record<string, unknown>[]).map((r) => mapRawRowToFunnelResponse(r));
+      compare_label = funnelCompareLabel(preset, hasCustomRange);
+    }
+
+    let optimization_context: OptimizationContext | null = null;
+    if (level === 'campaign' && rows.length > 0) {
+      const primary = rows[0];
+      try {
+        optimization_context = await buildOptimizationContext(
+          siteId,
+          auth.accountId,
+          since,
+          until,
+          String(primary.name || ''),
+          {
+            link_clicks: primary.funnel.link_clicks,
+            landing_page_views: primary.funnel.landing_page_views,
+            initiates_checkout: primary.funnel.initiates_checkout,
+            purchases: primary.funnel.purchases,
+          }
+        );
+      } catch (ctxErr) {
+        console.warn('[funnel-breakdown] optimization_context failed:', ctxErr);
+      }
+    }
 
     res.json({
       campaign_id: campaignId,
@@ -693,7 +864,11 @@ router.get('/campaigns/funnel-breakdown', requireAuth, async (req, res) => {
       days,
       preset,
       adset_id: adsetId || null,
+      generated_at: new Date().toISOString(),
       rows,
+      compare_rows,
+      compare_label,
+      optimization_context,
     });
   } catch (err: any) {
     console.error('campaigns/funnel-breakdown error:', err);
