@@ -14,6 +14,8 @@ export type FirstPartyCampaignRow = {
   investido: number | null;
   performance_tier: 'strong' | 'medium' | 'low' | 'none';
   rank: number;
+  funnel_source?: 'meta' | 'site';
+  meta_campaign_id?: string | null;
 };
 
 export type SpendSource = 'matched' | 'unmatched' | 'none';
@@ -119,10 +121,10 @@ export function CampaignsVitrine({
     <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/50 overflow-hidden shadow-sm">
       <div className="px-4 py-4 border-b border-zinc-200 dark:border-zinc-800 flex flex-wrap items-start justify-between gap-3 bg-gradient-to-r from-rose-500/[0.06] via-violet-500/[0.06] to-amber-500/[0.08]">
         <div className="min-w-0">
-          <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Vitrine do site</h3>
+          <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Comparar nomes no link (UTM)</h3>
           <p className="text-xs text-zinc-600 dark:text-zinc-400 mt-1 max-w-xl leading-relaxed">
-            Como escolher bolo na padaria: cada cartão é um rótulo que veio no link (utm_campaign). O site usa isso
-            para saber qual campanha mandou cada visita.
+            Cada cartão é o <strong>utm_campaign</strong> que chegou no site. Quando o nome bate com a campanha na Meta,
+            compras e checkout vêm do <strong>mesmo lugar que a tabela técnica</strong> (não só do pixel bruto).
           </p>
           {topLabel && rows.length > 0 && (
             <p className="text-xs font-medium text-violet-800 dark:text-violet-300 mt-2">
@@ -230,6 +232,9 @@ export function CampaignsVitrine({
                     </span>
                     <span>
                       Compras: <strong className="tabular-nums">{formatNumber(row.purchases)}</strong>
+                      {row.funnel_source === 'meta' && (
+                        <span className="text-zinc-500 font-normal"> (Meta)</span>
+                      )}
                     </span>
                     {row.initiate_checkout > 0 && (
                       <span>

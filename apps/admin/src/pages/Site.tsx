@@ -9,6 +9,7 @@ import { Layout } from '../components/Layout';
 import WebhooksTab from '../components/site/WebhooksTab';
 import { ReportWizard } from '../components/site/ReportWizard';
 import { CampaignsVitrine, type FirstPartyCampaignRow } from '../components/site/CampaignsVitrine';
+import { CampaignFunnelPanel } from '../components/site/CampaignFunnelPanel';
 type Site = {
   id: number;
   name: string;
@@ -1623,6 +1624,10 @@ ${scriptContent}
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     }).format(value);
+  const funnelCampaignOptions = useMemo(
+    () => campaigns.map((c) => ({ id: String(c.id), name: String(c.name || c.id || '') })),
+    [campaigns]
+  );
   const utmUrl = useMemo(() => {
     if (!utmBaseUrl) return '';
     try {
@@ -3519,10 +3524,23 @@ ${scriptContent}
                 <div>
                   <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Campanhas</h2>
                   <p className="mt-0.5 text-xs text-zinc-600 dark:text-zinc-500 leading-relaxed">
-                    Veja o que o <strong>site</strong> registrou por nome no link (utm_campaign). Abaixo, se quiser, abra a
-                    tabela técnica da Meta — CTR, alcance, pausar anúncio, etc.
+                    <strong>Funil</strong>: escolha a campanha e veja campanha inteira, conjuntos ou anúncios — números
+                    iguais à Meta (compras, checkout). <strong>UTM</strong>: compara nomes do link. <strong>Tabela</strong>
+                    : detalhe técnico (CTR, pausar…).
                   </p>
                 </div>
+
+                <CampaignFunnelPanel
+                  siteId={id}
+                  campaigns={funnelCampaignOptions}
+                  hasMetaConnection={!!meta?.has_facebook_connection}
+                  hasAdAccount={!!meta?.ad_account_id}
+                  metricsPreset={metricsPreset}
+                  metricsSince={metricsSince}
+                  metricsUntil={metricsUntil}
+                  periodSelector={periodSelector}
+                  selectClsCompact={selectClsCompact}
+                />
 
                 <CampaignsVitrine
                   rows={firstPartyRows}
