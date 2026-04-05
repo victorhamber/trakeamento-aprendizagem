@@ -85,6 +85,51 @@ function resolvePurchaseEventSourceUrl(
   return `https://${hostOnly}`;
 }
 
+/**
+ * `referrer_url` no nível do evento CAPI (parâmetro server event).
+ * Varre formatos comuns de checkout (raiz, data.purchase, tracking, custom_data).
+ */
+function extractPurchaseReferrerUrl(payload: Record<string, unknown>): string | undefined {
+  const d = (payload.data as Record<string, unknown>) || payload;
+  const purchase = (d.purchase as Record<string, unknown>) || (payload.purchase as Record<string, unknown>) || {};
+  const tp =
+    (payload.trackingParameters as Record<string, unknown>) ||
+    (payload.tracking_parameters as Record<string, unknown>) ||
+    {};
+  const cd = (payload.custom_data as Record<string, unknown>) || (payload.custom_args as Record<string, unknown>) || {};
+  const trackingObj =
+    (d.tracking as Record<string, unknown>) ||
+    (payload.tracking as Record<string, unknown>) ||
+    (purchase.tracking as Record<string, unknown>) ||
+    {};
+
+  const candidates: unknown[] = [
+    payload.referrer,
+    payload.referrer_url,
+    payload.document_referrer,
+    d.referrer,
+    d.referrer_url,
+    d.document_referrer,
+    purchase.referrer,
+    purchase.referrer_url,
+    purchase.document_referrer,
+    tp.referrer,
+    tp.referrer_url,
+    cd.referrer,
+    cd.referrer_url,
+    cd.document_referrer,
+    trackingObj.referrer,
+    trackingObj.referrer_url,
+  ];
+
+  for (const c of candidates) {
+    if (typeof c !== 'string') continue;
+    const t = c.trim();
+    if (CapiService.isValidHttpEventSourceUrl(t)) return t;
+  }
+  return undefined;
+}
+
 function coerceWebhookStr(v: unknown): string {
   if (v == null) return '';
   if (typeof v === 'string') return v.trim();
@@ -560,11 +605,20 @@ async function processPurchaseWebhook({
     siteTrackingDomain
   );
 
+  const rawReferrerUrl = extractPurchaseReferrerUrl(purchasePayload);
+  const capiReferrerUrl =
+    rawReferrerUrl &&
+    rawReferrerUrl !== purchaseEventSourceUrl &&
+    CapiService.isValidHttpEventSourceUrl(rawReferrerUrl)
+      ? rawReferrerUrl
+      : undefined;
+
   const capiPayload: any = {
     event_name: 'Purchase',
     event_time: Math.floor((platformDate?.getTime() || Date.now()) / 1000),
     event_id: `purchase_${orderId}`,
     event_source_url: purchaseEventSourceUrl || undefined,
+    ...(capiReferrerUrl ? { referrer_url: capiReferrerUrl } : {}),
     action_source: 'website',
     user_data: {
       client_ip_address: mergedIp,

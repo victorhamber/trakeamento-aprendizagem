@@ -328,6 +328,42 @@ function isValidHttpUrl(s: string | undefined | null): s is string {
   }
 }
 
+/** Valores permitidos em `action_source` (server event). Ingest usa default Zod `website`. */
+const META_CAPI_ACTION_SOURCES = [
+  'email',
+  'website',
+  'app',
+  'phone_call',
+  'chat',
+  'physical_store',
+  'system_generated',
+  'other',
+] as const;
+
+function actionSourceForCapi(raw: string | undefined): CapiEvent['action_source'] | undefined {
+  if (!raw || typeof raw !== 'string') return undefined;
+  const t = raw.trim().toLowerCase();
+  return (META_CAPI_ACTION_SOURCES as readonly string[]).includes(t)
+    ? (t as CapiEvent['action_source'])
+    : undefined;
+}
+
+/** `referrer_url` no nível do evento CAPI (não só em custom_data). @see Meta server-event parameters */
+function pickReferrerUrlForCapi(
+  customData: Record<string, unknown>,
+  telemetry: Record<string, unknown>
+): string | undefined {
+  const candidates = [
+    pickStringField(customData, 'referrer'),
+    pickStringField(telemetry, 'referrer'),
+    pickStringField(customData, 'document_referrer'),
+  ];
+  for (const c of candidates) {
+    if (isValidHttpUrl(c)) return c.trim();
+  }
+  return undefined;
+}
+
 function joinOriginAndPath(originOrBase: string, pagePath: string): string {
   let raw = originOrBase.trim();
   if (!raw.startsWith('http://') && !raw.startsWith('https://')) {
@@ -711,10 +747,13 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
       ]);
 
       // ── 2. Envio CAPI (assíncrono com retry) ─────────────────────────────
-      // custom_data: campos padrão do Meta + dados de atribuição enriquecidos
-      // Ref: https://developers.facebook.com/docs/marketing-api/conversions-api/parameters/custom-data
+      // Mapeamento vs Meta: event_source_url + client_user_agent + action_source (website);
+      // user_data (fbc, fbp, IP, hashes); custom_data (value/currency, UTMs, etc.);
+      // referrer_url no nível do evento quando houver URL absoluta.
+      // @see https://developers.facebook.com/docs/marketing-api/conversions-api/parameters
       const cd = event.custom_data ?? {};
       const tl = event.telemetry ?? {} as Record<string, unknown>;
+      const refUrl = pickReferrerUrlForCapi(cd, tl);
       const metaCustomData: Record<string, unknown> = {};
 
       // Campos padrão do Meta custom_data
@@ -779,7 +818,8 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
         // Dados de página — úteis para content_name fallback
         ['page_path', cd['page_path'] || tl['page_path']],
         ['page_title', cd['page_title'] || tl['page_title']],
-        ['referrer', cd['referrer'] || tl['referrer']],
+        // referrer absoluto vai em referrer_url no corpo do evento (evita duplicar)
+        ...(refUrl ? [] : ([['referrer', cd['referrer'] || tl['referrer']]] as [string, unknown][])),
         // Fonte de tráfego
         ['traffic_source', cd['traffic_source']],
       ];
@@ -789,11 +829,15 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
         }
       }
 
+      const actionSrc = actionSourceForCapi(event.action_source);
+
       const capiPayload: CapiEvent = {
         event_name: eventName,
         event_time: eventTimeSec,
         event_id: eventId,
         event_source_url: eventSourceUrl,
+        ...(actionSrc ? { action_source: actionSrc } : {}),
+        ...(refUrl ? { referrer_url: refUrl } : {}),
         user_data: capiUser,
         ...(Object.keys(metaCustomData).length > 0
           ? { custom_data: metaCustomData }
@@ -1006,9 +1050,10 @@ router.post('/batch', cors(), ingestLimiter, async (req, res) => {
           capiUser.client_ip_address, capiUser.client_user_agent,
         ]).catch(err => console.error('[Ingest/Batch] User Profile UPSERT error:', err));
 
-        // CAPI payload
+        // CAPI payload (espelha POST /events: custom_data + referrer_url + action_source)
         const cd = p.event.custom_data ?? {};
         const tl = p.event.telemetry ?? {} as Record<string, unknown>;
+        const refUrl = pickReferrerUrlForCapi(cd, tl);
         const metaCustomData: Record<string, unknown> = {};
         const metaCustomFields = [
           'value', 'currency', 'content_name', 'content_category',
@@ -1024,23 +1069,33 @@ router.post('/batch', cors(), ingestLimiter, async (req, res) => {
         if (metaCustomData['value'] !== undefined) { if (!metaCustomData['currency']) metaCustomData['currency'] = 'BRL'; }
         else delete metaCustomData['currency'];
         if (!metaCustomData['content_name']) {
-          if (cd['page_title'] && cd['page_title'] !== '') metaCustomData['content_name'] = cd['page_title'];
+          if (cd['content_name'] && cd['content_name'] !== '') metaCustomData['content_name'] = cd['content_name'];
+          else if (cd['page_title'] && cd['page_title'] !== '') metaCustomData['content_name'] = cd['page_title'];
           else if (tl['page_title'] && tl['page_title'] !== '') metaCustomData['content_name'] = tl['page_title'];
+        }
+        if (!metaCustomData['content_type'] && metaCustomData['value'] !== undefined) {
+          metaCustomData['content_type'] = 'product';
         }
         const attributionFields: [string, unknown][] = [
           ['utm_source', cd['utm_source'] || tl['utm_source']], ['utm_medium', cd['utm_medium'] || tl['utm_medium']],
           ['utm_campaign', cd['utm_campaign'] || tl['utm_campaign']], ['utm_term', cd['utm_term'] || tl['utm_term']],
           ['utm_content', cd['utm_content'] || tl['utm_content']], ['page_path', cd['page_path'] || tl['page_path']],
-          ['page_title', cd['page_title'] || tl['page_title']], ['referrer', cd['referrer'] || tl['referrer']],
+          ['page_title', cd['page_title'] || tl['page_title']],
+          ...(refUrl ? [] : ([['referrer', cd['referrer'] || tl['referrer']]] as [string, unknown][])),
           ['traffic_source', cd['traffic_source']],
         ];
         for (const [key, val] of attributionFields) {
           if (val !== undefined && val !== null && val !== '') metaCustomData[key] = val;
         }
 
+        const actionSrc = actionSourceForCapi(p.event.action_source);
+
         sendCapiWithRetry(siteKey, {
           event_name: p.eventName, event_time: p.eventTimeSec, event_id: p.eventId,
-          event_source_url: p.eventSourceUrl, user_data: capiUser,
+          event_source_url: p.eventSourceUrl,
+          ...(actionSrc ? { action_source: actionSrc } : {}),
+          ...(refUrl ? { referrer_url: refUrl } : {}),
+          user_data: capiUser,
           ...(Object.keys(metaCustomData).length > 0 ? { custom_data: metaCustomData } : {}),
         }).catch(() => {});
 

@@ -37,6 +37,49 @@ const sanitizeMapping = (input: unknown) => {
   return mapping;
 };
 
+/** Meta Purchase exige currency + value (Pixel / CAPI). */
+function normalizeEventRuleParameters(
+  eventName: string,
+  parameters: unknown
+): { ok: true; parameters: Record<string, unknown> } | { ok: false; error: string } {
+  const base =
+    parameters && typeof parameters === 'object' && !Array.isArray(parameters)
+      ? { ...(parameters as Record<string, unknown>) }
+      : {};
+
+  if (eventName !== 'Purchase') {
+    return { ok: true, parameters: base };
+  }
+
+  const rawVal = base.value;
+  const num =
+    typeof rawVal === 'number'
+      ? rawVal
+      : typeof rawVal === 'string'
+        ? parseFloat(rawVal.trim())
+        : NaN;
+  if (!Number.isFinite(num) || num < 0) {
+    return {
+      ok: false,
+      error:
+        'Para o evento Purchase é obrigatório informar value (número maior ou igual a 0) e currency (ex.: BRL, USD).',
+    };
+  }
+
+  const cur = typeof base.currency === 'string' ? base.currency.trim() : '';
+  if (!/^[A-Za-z]{3}$/.test(cur)) {
+    return {
+      ok: false,
+      error:
+        'Para Purchase, currency deve ser um código ISO 4217 de 3 letras (ex.: BRL, USD).',
+    };
+  }
+
+  base.value = num;
+  base.currency = cur.toUpperCase();
+  return { ok: true, parameters: base };
+}
+
 const buildFbp = () => `fb.1.${Math.floor(Date.now() / 1000)}.${crypto.randomBytes(8).toString('hex')}`;
 const buildFbcFromFbclid = (fbclid: string) => `fb.1.${Date.now()}.${fbclid}`;
 const buildTrkToken = (externalId: string, fbc?: string | null, fbp?: string | null) =>
@@ -566,7 +609,7 @@ router.get('/:siteId/event-rules', requireAuth, async (req, res) => {
   if (!site.rowCount) return res.status(404).json({ error: 'Site not found' });
 
   const result = await pool.query(
-    'SELECT id, site_id, rule_type, match_value, match_text, event_name, event_type, created_at FROM site_url_rules WHERE site_id = $1 ORDER BY created_at DESC',
+    'SELECT id, site_id, rule_type, match_value, match_text, event_name, event_type, parameters, created_at FROM site_url_rules WHERE site_id = $1 ORDER BY created_at DESC',
     [siteId]
   );
   return res.json({ rules: result.rows });
@@ -584,11 +627,22 @@ router.post('/:siteId/event-rules', requireAuth, async (req, res) => {
   if (!match_value || !event_name) return res.status(400).json({ error: 'Missing fields' });
   if (rule_type === 'button_click' && !match_text) return res.status(400).json({ error: 'Missing button text' });
 
+  const paramNorm = normalizeEventRuleParameters(event_name, parameters);
+  if (!paramNorm.ok) return res.status(400).json({ error: paramNorm.error });
+
   const result = await pool.query(
     `INSERT INTO site_url_rules (site_id, rule_type, match_value, match_text, event_name, event_type, parameters)
      VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING *`,
-    [siteId, rule_type || 'url_contains', match_value, match_text || null, event_name, event_type || 'custom', parameters || {}]
+    [
+      siteId,
+      rule_type || 'url_contains',
+      match_value,
+      match_text || null,
+      event_name,
+      event_type || 'custom',
+      paramNorm.parameters,
+    ]
   );
 
   return res.status(201).json({ rule: result.rows[0] });
@@ -606,6 +660,9 @@ router.put('/:siteId/event-rules/:id', requireAuth, async (req, res) => {
   if (!match_value || !event_name) return res.status(400).json({ error: 'Missing fields' });
   if (rule_type === 'button_click' && !match_text) return res.status(400).json({ error: 'Missing button text' });
 
+  const paramNorm = normalizeEventRuleParameters(event_name, parameters);
+  if (!paramNorm.ok) return res.status(400).json({ error: paramNorm.error });
+
   const result = await pool.query(
     `UPDATE site_url_rules
      SET rule_type = $1, match_value = $2, match_text = $3, event_name = $4, event_type = $5, parameters = $6
@@ -617,7 +674,7 @@ router.put('/:siteId/event-rules/:id', requireAuth, async (req, res) => {
       match_text || null,
       event_name,
       event_type || 'custom',
-      parameters || {},
+      paramNorm.parameters,
       id,
       siteId,
     ]

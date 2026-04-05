@@ -28,6 +28,9 @@ apps/api/verify_*.js
 apps/api/final_check*.js
 apps/api/test_enrichment*.js
 
+# Artefato JS ao lado de pool.ts quebra ts-node (prioriza .js e path.default fica undefined)
+apps/api/src/db/*.js
+
 # Conteúdo sensível ou pastas locais grandes
 App Mobile/chave privada/
 Lp - Hígado Graso/

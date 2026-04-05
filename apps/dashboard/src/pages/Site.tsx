@@ -792,6 +792,19 @@ export const SitePage = () => {
       return;
     }
 
+    if (evtName === 'Purchase') {
+      const v = parseFloat(String(urlRuleEventValue).trim());
+      const cur = String(urlRuleEventCurrency).trim();
+      if (!String(urlRuleEventValue).trim() || !Number.isFinite(v) || v < 0) {
+        showFlash('Purchase exige valor numérico (≥ 0) e moeda (ex.: BRL).', 'error');
+        return;
+      }
+      if (!/^[A-Za-z]{3}$/.test(cur)) {
+        showFlash('Moeda deve ser código ISO de 3 letras (ex.: BRL, USD).', 'error');
+        return;
+      }
+    }
+
     try {
       const payload: any = {
         rule_type: 'url_contains',
@@ -801,7 +814,10 @@ export const SitePage = () => {
         parameters: {}
       };
 
-      if (urlRuleEventType === 'Purchase' || urlRuleEventType === 'Custom') {
+      if (evtName === 'Purchase') {
+        payload.parameters.value = parseFloat(String(urlRuleEventValue).trim());
+        payload.parameters.currency = String(urlRuleEventCurrency).trim().toUpperCase();
+      } else if (urlRuleEventType === 'Custom') {
         if (urlRuleEventValue) {
           payload.parameters.value = parseFloat(urlRuleEventValue);
           payload.parameters.currency = urlRuleEventCurrency;
@@ -822,9 +838,13 @@ export const SitePage = () => {
       setUrlRuleEventCurrency('BRL');
       setSelectedRuleId(null);
       await loadEventRules();
-    } catch (err) {
+    } catch (err: unknown) {
       console.error(err);
-      showFlash('Erro ao salvar regra', 'error');
+      const msg =
+        err && typeof err === 'object' && 'response' in err
+          ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
+          : undefined;
+      showFlash(msg || 'Erro ao salvar regra', 'error');
     }
   };
 
@@ -839,6 +859,19 @@ export const SitePage = () => {
       return;
     }
 
+    if (evtName === 'Purchase') {
+      const v = parseFloat(String(buttonRuleEventValue).trim());
+      const cur = String(buttonRuleEventCurrency).trim();
+      if (!String(buttonRuleEventValue).trim() || !Number.isFinite(v) || v < 0) {
+        showFlash('Purchase exige valor numérico (≥ 0) e moeda (ex.: BRL).', 'error');
+        return;
+      }
+      if (!/^[A-Za-z]{3}$/.test(cur)) {
+        showFlash('Moeda deve ser código ISO de 3 letras (ex.: BRL, USD).', 'error');
+        return;
+      }
+    }
+
     try {
       const payload: any = {
         rule_type: 'button_click',
@@ -849,7 +882,10 @@ export const SitePage = () => {
         parameters: {}
       };
 
-      if (buttonRuleEventType === 'Purchase' || buttonRuleEventType === 'Custom') {
+      if (evtName === 'Purchase') {
+        payload.parameters.value = parseFloat(String(buttonRuleEventValue).trim());
+        payload.parameters.currency = String(buttonRuleEventCurrency).trim().toUpperCase();
+      } else if (buttonRuleEventType === 'Custom') {
         if (buttonRuleEventValue) {
           payload.parameters.value = parseFloat(buttonRuleEventValue);
           payload.parameters.currency = buttonRuleEventCurrency;
@@ -871,9 +907,13 @@ export const SitePage = () => {
       setButtonRuleEventCurrency('BRL');
       setSelectedRuleId(null);
       await loadEventRules();
-    } catch (err) {
+    } catch (err: unknown) {
       console.error(err);
-      showFlash('Erro ao salvar regra de botão', 'error');
+      const msg =
+        err && typeof err === 'object' && 'response' in err
+          ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
+          : undefined;
+      showFlash(msg || 'Erro ao salvar regra de botão', 'error');
     }
   };
 
@@ -2984,7 +3024,7 @@ ${scriptContent}
                       <div className="md:col-span-3 grid grid-cols-2 gap-2">
                         <div>
                           <label htmlFor="dash-site-url-rule-event-value" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
-                            Valor:
+                            Valor{urlRuleEventType === 'Purchase' ? ' (obrigatório para Purchase)' : ''}:
                           </label>
                           <input
                             id="dash-site-url-rule-event-value"
@@ -2998,7 +3038,7 @@ ${scriptContent}
                         </div>
                         <div>
                           <label htmlFor="dash-site-url-rule-event-currency" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
-                            Moeda:
+                            Moeda{urlRuleEventType === 'Purchase' ? ' (obrigatório)' : ''}:
                           </label>
                           <select
                             id="dash-site-url-rule-event-currency"
@@ -3161,7 +3201,7 @@ ${scriptContent}
                       <div className="md:col-span-3 grid grid-cols-2 gap-2">
                         <div>
                           <label htmlFor="dash-site-btn-rule-event-value" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
-                            Valor:
+                            Valor{buttonRuleEventType === 'Purchase' ? ' (obrigatório para Purchase)' : ''}:
                           </label>
                           <input
                             id="dash-site-btn-rule-event-value"
@@ -3175,7 +3215,7 @@ ${scriptContent}
                         </div>
                         <div>
                           <label htmlFor="dash-site-btn-rule-event-currency" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
-                            Moeda:
+                            Moeda{buttonRuleEventType === 'Purchase' ? ' (obrigatório)' : ''}:
                           </label>
                           <select
                             id="dash-site-btn-rule-event-currency"

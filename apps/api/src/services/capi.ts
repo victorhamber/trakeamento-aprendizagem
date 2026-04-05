@@ -4,12 +4,19 @@ import { pool } from '../db/pool';
 import { decryptString } from '../lib/crypto';
 
 export type CapiCustomData = Record<string, unknown>;
+/**
+ * Payload de um evento server-side para Graph `/{pixel-id}/events`.
+ * @see https://developers.facebook.com/docs/marketing-api/conversions-api/parameters
+ * @see https://developers.facebook.com/docs/marketing-api/conversions-api/parameters/server-event
+ */
 export interface CapiEvent {
   event_name: string;
   event_time: number;
   event_id: string;
   /** Preferência http(s) válida; se ausente/inválida, buildPayload usa CAPI_FALLBACK_EVENT_SOURCE_URL ou omite (website). */
   event_source_url?: string;
+  /** Parâmetro de evento web no corpo `data[]` (não confundir com `referrer` só em custom_data). */
+  referrer_url?: string;
   user_data: {
     client_ip_address?: string;
     client_user_agent?: string;
@@ -178,6 +185,9 @@ export class CapiService {
       );
     }
 
+    const refUrl = (event.referrer_url || '').trim();
+    const includeReferrer = CapiService.isValidHttpEventSourceUrl(refUrl);
+
     return {
       data: [
         {
@@ -185,6 +195,7 @@ export class CapiService {
           event_time: event.event_time,
           event_id: event.event_id,
           ...(CapiService.isValidHttpEventSourceUrl(eventSourceUrl) ? { event_source_url: eventSourceUrl } : {}),
+          ...(includeReferrer ? { referrer_url: refUrl } : {}),
           action_source: actionSource,
           user_data: cleanedUserData,
           ...(cleanedCustomData && Object.keys(cleanedCustomData).length > 0

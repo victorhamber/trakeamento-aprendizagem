@@ -8,6 +8,8 @@
     "migrate": "ts-node src/scripts/migrate.ts",
     "migrate:prod": "node dist/scripts/migrate.js",
     "migrate:all": "ts-node src/scripts/migrate_all.ts",
+    "migrate:007": "ts-node src/scripts/migrate_007_fix_purchase_rule_params.ts",
+    "migrate:007:prod": "node dist/scripts/migrate_007_fix_purchase_rule_params.js",
     "backfill": "ts-node src/backfill.ts",
     "backfill:prod": "node dist/backfill.js",
     "cleanup": "ts-node src/scripts/cleanup.ts",
