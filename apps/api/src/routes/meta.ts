@@ -1,10 +1,86 @@
-import { Router } from 'express';
+import { Router, Request } from 'express';
 import { metaMarketingService } from '../services/meta-marketing';
 import { requireAuth } from '../middleware/auth';
 import { pool } from '../db/pool';
 import { encryptString } from '../lib/crypto';
 
 const router = Router();
+
+/** Janela de datas alinhada à aba Campanhas (presets + custom). */
+export function parseMetaCampaignDateWindow(req: Request) {
+  const parseDate = (value: string) => {
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? null : d;
+  };
+
+  const datePresetRaw =
+    typeof req.query.date_preset === 'string' ? req.query.date_preset.trim() : '';
+  const sinceRaw = typeof req.query.since === 'string' ? req.query.since.trim() : '';
+  const untilRaw = typeof req.query.until === 'string' ? req.query.until.trim() : '';
+  const customSince = sinceRaw ? parseDate(sinceRaw) : null;
+  const customUntil = untilRaw ? parseDate(untilRaw) : null;
+  const hasCustomRange = !!customSince && !!customUntil;
+  const now = new Date();
+
+  const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const addDays = (d: Date, n: number) =>
+    new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+
+  let since: Date;
+  let until: Date;
+  let preset = 'last_7d';
+  let days = 7;
+
+  if (hasCustomRange) {
+    const s = startOfDay(customSince!.getTime() <= customUntil!.getTime() ? customSince! : customUntil!);
+    const e = startOfDay(customSince!.getTime() <= customUntil!.getTime() ? customUntil! : customSince!);
+    since = s;
+    until = addDays(e, 1);
+    preset = 'custom';
+    days = Math.max(1, Math.ceil((until.getTime() - since.getTime()) / 86_400_000));
+  } else if (datePresetRaw) {
+    preset = datePresetRaw;
+    const today = startOfDay(now);
+    if (datePresetRaw === 'today') {
+      since = today;
+      until = addDays(today, 1);
+      days = 1;
+    } else if (datePresetRaw === 'yesterday') {
+      since = addDays(today, -1);
+      until = today;
+      days = 1;
+    } else if (datePresetRaw === 'last_7d') {
+      days = 7;
+      since = addDays(today, -days);
+      until = addDays(today, 1);
+    } else if (datePresetRaw === 'last_14d') {
+      days = 14;
+      since = addDays(today, -days);
+      until = addDays(today, 1);
+    } else if (datePresetRaw === 'last_30d') {
+      days = 30;
+      since = addDays(today, -days);
+      until = addDays(today, 1);
+    } else if (datePresetRaw === 'maximum') {
+      since = new Date('2000-01-01T00:00:00Z');
+      until = addDays(today, 1);
+      days = Math.max(1, Math.ceil((until.getTime() - since.getTime()) / 86_400_000));
+    } else {
+      days = 7;
+      since = addDays(startOfDay(now), -days);
+      until = addDays(startOfDay(now), 1);
+      preset = 'last_7d';
+    }
+  } else {
+    const daysRaw = Number(req.query.days || 7);
+    days = Number.isFinite(daysRaw) ? Math.min(90, Math.max(1, Math.trunc(daysRaw))) : 7;
+    since = addDays(startOfDay(now), -days);
+    until = addDays(startOfDay(now), 1);
+    preset = days <= 7 ? 'last_7d' : days <= 14 ? 'last_14d' : 'last_30d';
+  }
+
+  return { since, until, preset, days, hasCustomRange, sinceRaw, untilRaw };
+}
 
 router.put('/', requireAuth, async (req, res) => {
   try {
@@ -61,78 +137,7 @@ router.get('/campaigns/metrics', requireAuth, async (req, res) => {
     const level = (req.query.level as string) || 'campaign';
     const parentId = typeof req.query.parent_id === 'string' ? req.query.parent_id.trim() : null;
 
-    const parseDate = (value: string) => {
-      const d = new Date(value);
-      return Number.isNaN(d.getTime()) ? null : d;
-    };
-
-    const datePresetRaw =
-      typeof req.query.date_preset === 'string' ? req.query.date_preset.trim() : '';
-    const sinceRaw = typeof req.query.since === 'string' ? req.query.since.trim() : '';
-    const untilRaw = typeof req.query.until === 'string' ? req.query.until.trim() : '';
-    const customSince = sinceRaw ? parseDate(sinceRaw) : null;
-    const customUntil = untilRaw ? parseDate(untilRaw) : null;
-    const hasCustomRange = !!customSince && !!customUntil;
-    const now = new Date();
-
-    // Helper: normalize to start-of-day to avoid fractional-hour issues
-    const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
-    const addDays = (d: Date, n: number) =>
-      new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
-
-    let since: Date;
-    let until: Date;
-    let preset = 'last_7d';
-    let days = 7;
-
-    if (hasCustomRange) {
-      const s = startOfDay(customSince!.getTime() <= customUntil!.getTime() ? customSince! : customUntil!);
-      const e = startOfDay(customSince!.getTime() <= customUntil!.getTime() ? customUntil! : customSince!);
-      since = s;
-      until = addDays(e, 1); // exclusive upper bound
-      preset = 'custom';
-      days = Math.max(1, Math.ceil((until.getTime() - since.getTime()) / 86_400_000));
-    } else if (datePresetRaw) {
-      preset = datePresetRaw;
-      const today = startOfDay(now);
-      if (datePresetRaw === 'today') {
-        since = today;
-        until = addDays(today, 1);
-        days = 1;
-      } else if (datePresetRaw === 'yesterday') {
-        since = addDays(today, -1);
-        until = today;
-        days = 1;
-      } else if (datePresetRaw === 'last_7d') {
-        days = 7;
-        since = addDays(today, -days);
-        until = addDays(today, 1);
-      } else if (datePresetRaw === 'last_14d') {
-        days = 14;
-        since = addDays(today, -days);
-        until = addDays(today, 1);
-      } else if (datePresetRaw === 'last_30d') {
-        days = 30;
-        since = addDays(today, -days);
-        until = addDays(today, 1);
-      } else if (datePresetRaw === 'maximum') {
-        since = new Date('2000-01-01T00:00:00Z');
-        until = addDays(today, 1);
-        days = Math.max(1, Math.ceil((until.getTime() - since.getTime()) / 86_400_000));
-      } else {
-        // Unknown preset — default to last_7d
-        days = 7;
-        since = addDays(startOfDay(now), -days);
-        until = addDays(startOfDay(now), 1);
-        preset = 'last_7d';
-      }
-    } else {
-      const daysRaw = Number(req.query.days || 7);
-      days = Number.isFinite(daysRaw) ? Math.min(90, Math.max(1, Math.trunc(daysRaw))) : 7;
-      since = addDays(startOfDay(now), -days);
-      until = addDays(startOfDay(now), 1);
-      preset = days <= 7 ? 'last_7d' : days <= 14 ? 'last_14d' : 'last_30d';
-    }
+    const { since, until, preset, days, hasCustomRange, sinceRaw, untilRaw } = parseMetaCampaignDateWindow(req);
 
     let metaError: string | null = null;
     const forceSync =
@@ -380,6 +385,143 @@ router.get('/campaigns/metrics', requireAuth, async (req, res) => {
     res.json({ data: rows, days, meta_error: metaError });
   } catch (err: any) {
     console.error('campaigns/metrics error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/** Métricas do site por utm_campaign (Pixel/CAPI) + investido quando bate com nome de campanha na Meta. */
+router.get('/campaigns/first-party', requireAuth, async (req, res) => {
+  try {
+    const siteId = Number(req.query.site_id);
+    if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Missing site_id' });
+
+    const auth = req.auth!;
+    const siteRow = await pool.query(
+      'SELECT site_key FROM sites WHERE id = $1 AND account_id = $2',
+      [siteId, auth.accountId]
+    );
+    if (!siteRow.rowCount) return res.status(404).json({ error: 'Site not found' });
+
+    const siteKey = siteRow.rows[0].site_key as string;
+    const { since, until, preset, days } = parseMetaCampaignDateWindow(req);
+
+    const normKey = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
+
+    const eventsResult = await pool.query(
+      `
+      SELECT
+        COALESCE(NULLIF(TRIM(we.custom_data->>'utm_campaign'), ''), '') AS utm_key,
+        COUNT(*) FILTER (WHERE we.event_name = 'PageView')::bigint AS visits,
+        COUNT(*) FILTER (WHERE we.event_name = 'Lead')::bigint AS leads,
+        COUNT(*) FILTER (WHERE we.event_name = 'InitiateCheckout')::bigint AS initiate_checkout,
+        COUNT(*) FILTER (WHERE we.event_name = 'Purchase')::bigint AS purchases,
+        COUNT(*) FILTER (WHERE we.event_name = 'AddToCart')::bigint AS add_to_cart,
+        COUNT(*) FILTER (WHERE we.event_name = 'PageEngagement')::bigint AS page_engagement,
+        COUNT(DISTINCT NULLIF(TRIM(COALESCE(we.user_data->>'fbp', we.user_data->>'external_id', '')), ''))::bigint AS unique_visitors
+      FROM web_events we
+      WHERE we.site_key = $1
+        AND we.event_time >= $2
+        AND we.event_time < $3
+      GROUP BY 1
+      ORDER BY
+        COUNT(*) FILTER (WHERE we.event_name = 'PageView') DESC,
+        COUNT(*) FILTER (WHERE we.event_name = 'Purchase') DESC
+      `,
+      [siteKey, since, until]
+    );
+
+    const spendResult = await pool.query(
+      `
+      SELECT
+        campaign_id,
+        MAX(NULLIF(TRIM(campaign_name), '')) AS campaign_name,
+        COALESCE(SUM(spend), 0)::numeric AS spend
+      FROM meta_insights_daily
+      WHERE site_id = $1
+        AND campaign_id IS NOT NULL
+        AND adset_id IS NULL
+        AND ad_id IS NULL
+        AND date_start >= $2
+        AND date_start < $3
+      GROUP BY campaign_id
+      `,
+      [siteId, since, until]
+    );
+
+    const spendByNorm = new Map<string, number>();
+    for (const r of spendResult.rows) {
+      const name = String(r.campaign_name || '');
+      const k = normKey(name);
+      if (!k) continue;
+      spendByNorm.set(k, (spendByNorm.get(k) || 0) + Number(r.spend || 0));
+    }
+
+    type Tier = 'strong' | 'medium' | 'low' | 'none';
+    const raw = eventsResult.rows.map((row) => {
+      const utmKey = String(row.utm_key || '');
+      const visits = Number(row.visits || 0);
+      const leads = Number(row.leads || 0);
+      const purchases = Number(row.purchases || 0);
+      const initiate_checkout = Number(row.initiate_checkout || 0);
+      const add_to_cart = Number(row.add_to_cart || 0);
+      const page_engagement = Number(row.page_engagement || 0);
+      const unique_visitors = Number(row.unique_visitors || 0);
+      const label = utmKey === '' ? 'Tráfego sem nome no link' : utmKey;
+      const mk = normKey(utmKey);
+      const inv = mk && spendByNorm.has(mk) ? spendByNorm.get(mk)! : null;
+      const convNumerator = purchases > 0 ? purchases : leads;
+      const conversion_rate = visits > 0 ? (convNumerator / visits) * 100 : 0;
+      const score =
+        purchases * 10000 + leads * 100 + initiate_checkout * 10 + visits * 0.001 + add_to_cart;
+      return {
+        utm_campaign: utmKey || null,
+        label,
+        visits,
+        unique_visitors,
+        leads,
+        purchases,
+        initiate_checkout,
+        add_to_cart,
+        page_engagement,
+        conversion_rate: Math.round(conversion_rate * 100) / 100,
+        investido: inv != null ? Math.round(inv * 100) / 100 : null,
+        score,
+      };
+    });
+
+    const nonzero = raw.filter(
+      (r) =>
+        r.visits + r.leads + r.purchases + r.initiate_checkout + r.add_to_cart + r.page_engagement > 0
+    );
+    const sorted = [...nonzero].sort((a, b) => b.score - a.score);
+    const n = sorted.length;
+    const data = sorted.map((r, i) => {
+      const { score, ...rest } = r;
+      const total = r.visits + r.leads + r.purchases;
+      let performance_tier: Tier = 'none';
+      if (total === 0) performance_tier = 'none';
+      else if (n <= 1) performance_tier = 'strong';
+      else if (i < Math.ceil(n / 3)) performance_tier = 'strong';
+      else if (i < Math.ceil((2 * n) / 3)) performance_tier = 'medium';
+      else performance_tier = 'low';
+      return { ...rest, performance_tier, rank: i + 1 };
+    });
+
+    const hasInsights = spendResult.rows.length > 0;
+    const matchedAny = data.some((row) => row.investido != null);
+    const spend_source = matchedAny ? 'matched' : hasInsights ? 'unmatched' : 'none';
+
+    res.json({
+      data,
+      days,
+      preset,
+      spend_source,
+      meta_campaign_rows: spendResult.rows.length,
+      spend_matched_count: data.filter((row) => row.investido != null).length,
+      top_label: data[0]?.label ?? null,
+    });
+  } catch (err: any) {
+    console.error('campaigns/first-party error:', err);
     res.status(500).json({ error: err.message });
   }
 });
