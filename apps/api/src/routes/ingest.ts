@@ -9,6 +9,7 @@ import rateLimit from 'express-rate-limit'; // Added import for express-rate-lim
 import cors from 'cors'; // Added import for cors
 import { DDI_LIST } from '../lib/ddi';
 import { getClientIp } from '../lib/ip';
+import { preserveMetaClickIds } from '../lib/meta-attribution';
 
 const LRUCache = require('lru-cache').LRUCache || require('lru-cache');
 
@@ -527,8 +528,8 @@ function buildCapiUserData(
   const ct = pick('ct') ?? (geo.city ? hashPii(normalizers.ct(geo.city)) : undefined);
   const st = pick('st') ?? (geo.region ? hashPii(normalizers.st(geo.region)) : undefined);
   const country = pick('country') ?? (geo.country ? hashPii(normalizers.country(geo.country)) : undefined);
-  const fbp = userData.fbp || pickCustom('fbp');
-  const fbc = userData.fbc || pickCustom('fbc');
+  const fbp = preserveMetaClickIds(userData.fbp || pickCustom('fbp'));
+  const fbc = preserveMetaClickIds(userData.fbc || pickCustom('fbc'));
   const externalIdRaw = userData.external_id || pickCustom('external_id');
   const zp = pick('zp');
   const db = pick('db');

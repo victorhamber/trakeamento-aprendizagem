@@ -231,13 +231,13 @@ router.get('/tracker.js', async (req, res) => {
       var fbc     = getCookie('_fbc');
       
       if (fbclid) {
-        // Se o cookie atual já contém o exato mesmo fbclid, reaproveita.
-        // Isso evita gerar um novo timestamp (Date.now()) caso o usuário clique no botão
-        // 5 minutos após acessar a página, o que faria o CAPI ter um timestamp diferente do Pixel.
-        if (fbc && fbc.indexOf(fbclid) > -1) {
-          return fbc;
+        // fbclid deve ir idêntico à Meta (sem toLowerCase). Comparamos só o sufixo após o último "." do fbc.
+        // Se o cookie tiver o mesmo clique com caixa errada, regeneramos com o valor da URL atual.
+        if (fbc) {
+          var lastDot = fbc.lastIndexOf('.');
+          var suffix = lastDot >= 0 ? fbc.slice(lastDot + 1) : '';
+          if (suffix === fbclid) return fbc;
         }
-        
         var generated = 'fb.1.' + Date.now() + '.' + fbclid;
         setCookie('_fbc', generated, COOKIE_TTL_90D);
         return generated;

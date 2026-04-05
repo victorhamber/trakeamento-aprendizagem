@@ -2,6 +2,7 @@ import axios from 'axios';
 import crypto from 'crypto';
 import { pool } from '../db/pool';
 import { decryptString } from '../lib/crypto';
+import { preserveMetaClickIds } from '../lib/meta-attribution';
 
 export type CapiCustomData = Record<string, unknown>;
 /**
@@ -160,6 +161,12 @@ export class CapiService {
 
   private buildPayload(cfg: { pixelId: string; capiToken: string; testEventCode?: string | null }, event: CapiEvent) {
     const userDataIn = event.user_data ? ({ ...event.user_data } as Record<string, unknown>) : {};
+    const fbcSafe = preserveMetaClickIds(userDataIn.fbc);
+    const fbpSafe = preserveMetaClickIds(userDataIn.fbp);
+    if (fbcSafe) userDataIn.fbc = fbcSafe;
+    else delete userDataIn.fbc;
+    if (fbpSafe) userDataIn.fbp = fbpSafe;
+    else delete userDataIn.fbp;
     const ext = userDataIn.external_id;
     if (ext != null && String(ext).trim() !== '') {
       const hashed = CapiService.externalIdForCapiPayload(String(ext));

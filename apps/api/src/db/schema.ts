@@ -158,8 +158,8 @@ const schemaSql = `
     currency VARCHAR(3),
     status VARCHAR(20),
     buyer_email_hash VARCHAR(64),
-    fbp VARCHAR(255),
-    fbc VARCHAR(255),
+    fbp TEXT,
+    fbc TEXT,
     raw_payload JSONB,
     platform_date TIMESTAMP,
     created_at TIMESTAMP DEFAULT NOW(),
@@ -320,8 +320,8 @@ const schemaSql = `
     id SERIAL PRIMARY KEY,
     site_key VARCHAR(100) NOT NULL REFERENCES sites(site_key) ON DELETE CASCADE,
     external_id VARCHAR(255) NOT NULL,
-    fbc VARCHAR(255),
-    fbp VARCHAR(255),
+    fbc TEXT,
+    fbp TEXT,
     email_hash VARCHAR(64),
     phone_hash VARCHAR(64),
     first_name_hash VARCHAR(64),
@@ -435,6 +435,16 @@ export const ensureSchema = async (pool: Pool) => {
       await pool.query('ALTER TABLE purchases ALTER COLUMN fbp TYPE VARCHAR(255)');
       await pool.query('ALTER TABLE purchases ALTER COLUMN fbc TYPE VARCHAR(255)');
     } catch { /* already correct size or column doesn't exist */ }
+
+    // fbc pode exceder 255 chars (fbclid longo); truncar quebra o diagnóstico da Meta CAPI.
+    try {
+      await pool.query('ALTER TABLE site_visitors ALTER COLUMN fbp TYPE TEXT');
+      await pool.query('ALTER TABLE site_visitors ALTER COLUMN fbc TYPE TEXT');
+      await pool.query('ALTER TABLE purchases ALTER COLUMN fbp TYPE TEXT');
+      await pool.query('ALTER TABLE purchases ALTER COLUMN fbc TYPE TEXT');
+    } catch (fbcTextErr) {
+      console.warn('fbp/fbc TEXT migration skipped:', fbcTextErr);
+    }
 
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS unique_clicks INTEGER');
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS link_clicks INTEGER');

@@ -3,6 +3,7 @@ import { Router } from 'express';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import { pool } from '../db/pool';
+import { preserveMetaClickIds } from '../lib/meta-attribution';
 import { capiService, CapiService } from '../services/capi';
 import { EnrichmentService } from '../services/enrichment';
 import { decryptString } from '../lib/crypto';
@@ -553,6 +554,8 @@ async function processPurchaseWebhook({
 
   const mergedFbp = finalFbp || enriched?.fbp;
   const mergedFbc = finalFbc || enriched?.fbc;
+  const mergedFbcSafe = preserveMetaClickIds(mergedFbc);
+  const mergedFbpSafe = preserveMetaClickIds(mergedFbp);
   const mergedIp = clientIp || enriched?.clientIp;
   const mergedUa = clientUa || enriched?.clientUa;
   const mergedExternalId = finalExternalId || enriched?.externalId || (email ? CapiService.hash(email) : undefined);
@@ -645,8 +648,8 @@ async function processPurchaseWebhook({
       st: finalState ? [CapiService.hash(finalState.toLowerCase())] : undefined,
       zp: zip ? [CapiService.hash(zip.replace(/\s+/g, '').toLowerCase())] : undefined,
       country: country ? [CapiService.hash(country.toLowerCase())] : undefined,
-      fbc: mergedFbc,
-      fbp: mergedFbp,
+      fbc: mergedFbcSafe,
+      fbp: mergedFbpSafe,
       external_id: mergedExternalId ? String(mergedExternalId) : undefined,
     },
     custom_data: {
@@ -679,7 +682,7 @@ async function processPurchaseWebhook({
   }
   rawPayloadForDb._capi_debug = capiPayload;
 
-  if (dbEmailHash || mergedFbp || mergedExternalId) {
+  if (dbEmailHash || mergedFbpSafe || mergedExternalId) {
     pool.query(`
       INSERT INTO site_visitors (
         site_key, external_id, fbc, fbp, email_hash, phone_hash,
@@ -696,7 +699,7 @@ async function processPurchaseWebhook({
         last_traffic_source = COALESCE(EXCLUDED.last_traffic_source, site_visitors.last_traffic_source),
         total_events = site_visitors.total_events + 1,
         last_seen_at = NOW()
-    `, [siteKey, visitorExtId, mergedFbc, mergedFbp, dbEmailHash, null, mergedIp, mergedUa, finalCity, finalState, utmSource])
+    `, [siteKey, visitorExtId, mergedFbcSafe, mergedFbpSafe, dbEmailHash, null, mergedIp, mergedUa, finalCity, finalState, utmSource])
     .catch(err => console.error('[Webhook] Visitor UPSERT error:', err));
   }
 
@@ -730,7 +733,7 @@ async function processPurchaseWebhook({
   `, [
     siteKey, orderId, platform, value, currency, finalStatus,
     email, phone, `${firstName || ''} ${lastName || ''}`.trim(),
-    mergedFbc, mergedFbp, mergedExternalId, utmSource, utmMedium, utmCampaign,
+    mergedFbcSafe, mergedFbpSafe, mergedExternalId, utmSource, utmMedium, utmCampaign,
     platformDate, JSON.stringify(capiPayload.user_data), JSON.stringify(capiPayload.custom_data),
     JSON.stringify(rawPayloadForDb),
     dbEmailHash
@@ -756,7 +759,7 @@ async function processPurchaseWebhook({
       if (dupCheck.rowCount && dupCheck.rowCount > 0) {
         const sibling = dupCheck.rows[0];
         const siblingHasRichData = !!(sibling.fbc && sibling.fbp && sibling.has_ip);
-        const currentHasRichData = !!(mergedFbc && mergedFbp && mergedIp);
+        const currentHasRichData = !!(mergedFbcSafe && mergedFbpSafe && mergedIp);
 
         if (siblingHasRichData && !currentHasRichData) {
           // O outro site já mandou com dados melhores — pula este envio
