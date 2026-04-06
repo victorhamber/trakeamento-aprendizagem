@@ -1192,6 +1192,30 @@ router.get('/tracker.js', async (req, res) => {
   }
 
   // ─── Button rule engine ──────────────────────────────────────────────────
+  // Normaliza texto para matching resiliente:
+  // - lower case
+  // - remove acentos/diacríticos (NFD)
+  // - remove pontuação comum (ex.: ¡ ¿)
+  // - colapsa espaços
+  function normRuleText(s) {
+    try {
+      if (s == null) return '';
+      var t = String(s).trim().toLowerCase();
+      if (!t) return '';
+      if (t.normalize) {
+        // Remove diacríticos (ex.: á → a, ñ → n)
+        t = t.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      }
+      // Remove pontuação que costuma variar (mantém letras/números/espaços)
+      t = t.replace(/[¡¿]/g, ' ');
+      t = t.replace(/[^\p{L}\p{N}\s]/gu, ' ');
+      t = t.replace(/\s+/g, ' ').trim();
+      return t;
+    } catch (_e) {
+      return '';
+    }
+  }
+
   function checkButtonRules(target) {
     try {
       var cfg = window.TRACKING_CONFIG;
@@ -1209,25 +1233,27 @@ router.get('/tracker.js', async (req, res) => {
       }
       if (!el || (el.tagName !== 'A' && el.tagName !== 'BUTTON' && el.tagName !== 'INPUT')) return;
 
-      var clickedText = (el.innerText || el.textContent || el.value || '').toString().trim().toLowerCase();
-      if (!clickedText && el.getAttribute) clickedText = (el.getAttribute('title') || el.getAttribute('aria-label') || '').toLowerCase();
+      var clickedText = (el.innerText || el.textContent || el.value || '').toString().trim();
+      if (!clickedText && el.getAttribute) clickedText = (el.getAttribute('title') || el.getAttribute('aria-label') || '').toString().trim();
       if (!clickedText) {
         var img = el.querySelector('img');
-        if (img) clickedText = (img.getAttribute('alt') || img.getAttribute('title') || img.getAttribute('src') || '').toLowerCase();
+        if (img) clickedText = (img.getAttribute('alt') || img.getAttribute('title') || img.getAttribute('src') || '').toString().trim();
       }
       
       if (!clickedText) return;
+      var clickedNorm = normRuleText(clickedText);
+      if (!clickedNorm) return;
 
       for (var i = 0; i < cfg.eventRules.length; i++) {
         var rule = cfg.eventRules[i];
         if (rule.rule_type === 'button_click') {
           var ruleUrl = (rule.match_value || '').toLowerCase().trim();
-          var ruleText = (rule.match_text || '').toLowerCase().trim();
+          var ruleText = normRuleText(rule.match_text || '');
 
           // Verifica se está na URL correta (ou global '/')
           if (ruleUrl === '/' || ruleUrl === '' || currentPath.indexOf(ruleUrl) >= 0 || fullUrl.indexOf(ruleUrl) >= 0) {
             // Verifica se o texto bate
-            if (ruleText && clickedText.indexOf(ruleText) >= 0) {
+            if (ruleText && clickedNorm.indexOf(ruleText) >= 0) {
               var customData = rule.parameters || {};
               track(rule.event_name, customData);
             }
