@@ -111,24 +111,6 @@ type CampaignMetrics = {
   promoted_object?: Record<string, unknown> | null;
 };
 
-type MentorChecklistPhase = {
-  id: string;
-  order: number;
-  title: string;
-  badge?: string;
-  icon?: string;
-  color?: string;
-  note?: string;
-  items: Array<{ id: string; text: string; hints?: string[] }>;
-};
-
-type MentorChecklist = {
-  version: number;
-  title: string;
-  subtitle?: string;
-  phases: MentorChecklistPhase[];
-};
-
 function splitMarkdownH2Sections(text: string): Array<{ title: string; body: string }> {
   const trimmed = text.trim();
   if (!trimmed) return [];
@@ -245,14 +227,6 @@ function MetricQualityBarFill({ pct, toneClass }: { pct: number; toneClass: stri
   return <div ref={ref} className={`h-full rounded-full ${toneClass} transition-all metric-quality-bar-fill`} />;
 }
 
-function ProgressBarFill({ pct, className }: { pct: number; className: string }) {
-  const ref = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    ref.current?.style.setProperty('--metric-quality-pct', `${pct}%`);
-  }, [pct]);
-  return <div ref={ref} className={`${className} metric-quality-bar-fill`} />;
-}
-
 function FormPreviewSubmitChip({
   bg,
   fg,
@@ -302,14 +276,6 @@ export const SitePage = () => {
   const [qualityPeriod, setQualityPeriod] = useState('last_7d');
   const [report, setReport] = useState<DiagnosisReport | null>(null);
   const [reportLoadedFromStorage, setReportLoadedFromStorage] = useState(false);
-  const [reportsSubTab, setReportsSubTab] = useState<'campaign' | 'mentor'>('campaign');
-  const [mentorChecklist, setMentorChecklist] = useState<MentorChecklist | null>(null);
-  const [mentorChecklistLoading, setMentorChecklistLoading] = useState(false);
-  const [mentorCompletedIds, setMentorCompletedIds] = useState<string[]>([]);
-  const [mentorFocusPhaseId, setMentorFocusPhaseId] = useState<string | null>(null);
-  const [mentorGuidanceMd, setMentorGuidanceMd] = useState('');
-  const [mentorCoachLoading, setMentorCoachLoading] = useState(false);
-  const [mentorOpenPhases, setMentorOpenPhases] = useState<Record<string, boolean>>({});
   const [campaigns, setCampaigns] = useState<any[]>([]);
   const [funnelCampaignPicklist, setFunnelCampaignPicklist] = useState<FunnelCampaignOption[]>([]);
   const [campaignMetrics, setCampaignMetrics] = useState<Record<string, any>>({});
@@ -568,13 +534,6 @@ export const SitePage = () => {
     () => splitMarkdownH2Sections(report?.analysis_text || ''),
     [report?.analysis_text]
   );
-  const mentorGuidanceSections = useMemo(
-    () =>
-      splitMarkdownH2Sections(mentorGuidanceMd).filter(
-        (section) => !section.title.toLowerCase().includes('tabela de métricas')
-      ),
-    [mentorGuidanceMd]
-  );
   const visibleReportSections = useMemo(
     () =>
       reportSections.filter(
@@ -701,56 +660,6 @@ export const SitePage = () => {
     diagnosisClickId,
     reportStorageKey,
   ]);
-
-  useEffect(() => {
-    if (!id) return;
-    try {
-      const raw = localStorage.getItem(`mentorTrack:${id}`);
-      if (!raw) {
-        setMentorCompletedIds([]);
-        setMentorFocusPhaseId(null);
-        return;
-      }
-      const s = JSON.parse(raw);
-      setMentorCompletedIds(Array.isArray(s.completed) ? s.completed : []);
-      setMentorFocusPhaseId(typeof s.focus_phase_id === 'string' ? s.focus_phase_id : null);
-    } catch {
-      setMentorCompletedIds([]);
-      setMentorFocusPhaseId(null);
-    }
-  }, [id]);
-
-  useEffect(() => {
-    if (tab !== 'reports' || reportsSubTab !== 'mentor') return;
-    let cancelled = false;
-    (async () => {
-      setMentorChecklistLoading(true);
-      try {
-        const res = await api.get('/mentor/checklist');
-        if (!cancelled) setMentorChecklist(res.data);
-      } catch (err) {
-        console.error(err);
-        if (!cancelled) {
-          setMentorChecklist(null);
-          showFlash('Não foi possível carregar o checklist do mentor.', 'error');
-        }
-      } finally {
-        if (!cancelled) setMentorChecklistLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [tab, reportsSubTab, showFlash]);
-
-  useEffect(() => {
-    if (!mentorChecklist?.phases.length) return;
-    setMentorOpenPhases((prev) => {
-      if (Object.keys(prev).length) return prev;
-      const first = mentorChecklist.phases[0]?.id;
-      return first ? { [first]: true } : {};
-    });
-  }, [mentorChecklist]);
 
   const loadSite = useCallback(async () => {
     const res = await api.get(`/sites/${id}`);
@@ -1662,42 +1571,6 @@ ${scriptContent}
       setTab('reports');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const persistMentorLocal = useCallback(
-    (completed: string[], focus: string | null) => {
-      if (!id) return;
-      localStorage.setItem(
-        `mentorTrack:${id}`,
-        JSON.stringify({ completed, focus_phase_id: focus })
-      );
-    },
-    [id]
-  );
-
-  const generateMentorCoach = async () => {
-    if (!site) return;
-    setMentorCoachLoading(true);
-    try {
-      const res = await api.post('/mentor/coach', {
-        site_key: site.site_key,
-        focus_phase_id: mentorFocusPhaseId || undefined,
-        completed_item_ids: mentorCompletedIds,
-        campaign_id: selectedCampaignId || undefined,
-      });
-      const md = typeof res.data?.markdown === 'string' ? res.data.markdown : '';
-      setMentorGuidanceMd(md);
-      showFlash('Orientação do mentor pronta.');
-    } catch (err: unknown) {
-      console.error(err);
-      const apiError =
-        err && typeof err === 'object' && 'response' in err
-          ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
-          : undefined;
-      showFlash(apiError || 'Erro ao gerar orientação.', 'error');
-    } finally {
-      setMentorCoachLoading(false);
     }
   };
 
@@ -3670,30 +3543,12 @@ ${scriptContent}
             tab === 'reports' && (
               <div className="max-w-none space-y-4">
                 <div className="flex flex-wrap gap-2 border-b border-zinc-200 dark:border-zinc-800 pb-3">
-                  <button
-                    type="button"
-                    onClick={() => setReportsSubTab('campaign')}
-                    className={`text-xs font-semibold px-3.5 py-2 rounded-lg border transition-colors ${reportsSubTab === 'campaign'
-                      ? 'bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 border-zinc-900 dark:border-zinc-100'
-                      : 'bg-zinc-50 dark:bg-zinc-900/60 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800 hover:border-zinc-400'
-                      }`}
-                  >
+                  <span className="text-xs font-semibold px-3.5 py-2 rounded-lg border bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 border-zinc-900 dark:border-zinc-100">
                     Análise de campanha
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setReportsSubTab('mentor')}
-                    className={`text-xs font-semibold px-3.5 py-2 rounded-lg border transition-colors ${reportsSubTab === 'mentor'
-                      ? 'bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 border-zinc-900 dark:border-zinc-100'
-                      : 'bg-zinc-50 dark:bg-zinc-900/60 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800 hover:border-zinc-400'
-                      }`}
-                  >
-                    Mentor
-                  </button>
+                  </span>
                 </div>
 
-                {reportsSubTab === 'campaign' && (
-                  <>
+                <>
                 {campaigns.length > 0 && (
                   <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/30 p-5 space-y-4">
                     <div className="flex items-center gap-3">
@@ -4119,251 +3974,7 @@ ${scriptContent}
                     ))}
                   </div>
                 )}
-                  </>
-                )}
-
-                {reportsSubTab === 'mentor' && (
-                  <div className="space-y-4">
-                    {mentorChecklistLoading && (
-                      <div className="text-sm text-zinc-600 dark:text-zinc-400">A carregar o mentor…</div>
-                    )}
-                    {mentorChecklist && !mentorChecklistLoading && (
-                      <>
-                        <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/30 p-5 space-y-4">
-                          <div>
-                            <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">{mentorChecklist.title}</h3>
-                            {mentorChecklist.subtitle && (
-                              <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-1">{mentorChecklist.subtitle}</p>
-                            )}
-                          </div>
-                          {(() => {
-                            const total = mentorChecklist.phases.reduce((n, ph) => n + ph.items.length, 0);
-                            const done = mentorCompletedIds.filter((cid) =>
-                              mentorChecklist.phases.some((ph) => ph.items.some((it) => it.id === cid))
-                            ).length;
-                            const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-                            return (
-                              <div className="space-y-2">
-                                <div className="flex justify-between text-sm text-zinc-600 dark:text-zinc-300">
-                                  <span>
-                                    Progresso: {done} / {total}
-                                  </span>
-                                  <span>{pct}%</span>
-                                </div>
-                                <div className="h-2 rounded-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden">
-                                  <ProgressBarFill pct={pct} className="h-full bg-amber-500/90 rounded-full transition-all" />
-                                </div>
-                              </div>
-                            );
-                          })()}
-
-                          {campaigns.length > 0 ? (
-                            <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 items-end">
-                              <div>
-                                <div className="flex items-center gap-2 mb-1.5">
-                                  <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-500">
-                                    Campanha (opcional)
-                                  </label>
-                                  {selectedCampaign && (
-                                    <Badge variant={getStatusVariant(selectedCampaign)}>
-                                      {getStatusLabel(selectedCampaign)}
-                                    </Badge>
-                                  )}
-                                </div>
-                                <select
-                                  className={selectCls}
-                                  aria-label="Campanha para enriquecer métricas do mentor"
-                                  value={selectedCampaignId}
-                                  onChange={(e) => setSelectedCampaignId(e.target.value)}
-                                >
-                                  <option value="">Nenhuma — só checklist e dados gerais do site</option>
-                                  {[...campaigns]
-                                    .sort((a, b) => {
-                                      const aA = a.status === 'ACTIVE' ? 0 : 1;
-                                      const bA = b.status === 'ACTIVE' ? 0 : 1;
-                                      if (aA !== bA) return aA - bA;
-                                      return a.name.localeCompare(b.name);
-                                    })
-                                    .map((c) => (
-                                      <option key={c.id} value={c.id}>
-                                        {c.name} {c.status === 'ACTIVE' ? '(Ativa)' : '(Pausada)'}
-                                      </option>
-                                    ))}
-                                </select>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => loadCampaigns({ force: true }).catch(() => { })}
-                                className="bg-zinc-50 dark:bg-zinc-900/60 hover:bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 px-3.5 py-2.5 rounded-lg text-xs transition-colors self-end"
-                              >
-                                Atualizar lista
-                              </button>
-                            </div>
-                          ) : (
-                            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-900/20 px-3 py-2.5">
-                              <span className="text-sm text-zinc-600 dark:text-zinc-400">
-                                Nenhuma campanha carregada. Ligue o Meta Ads e sincronize na aba Campanhas, ou atualize aqui.
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => loadCampaigns({ force: true }).catch(() => { })}
-                                className="text-xs font-medium px-3 py-1.5 rounded-lg bg-zinc-200 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 hover:bg-zinc-300 dark:hover:bg-zinc-700"
-                              >
-                                Tentar carregar campanhas
-                              </button>
-                            </div>
-                          )}
-
-                          <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 items-end">
-                            <div>
-                              <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-500 mb-1.5">
-                                Fase em foco (opcional)
-                              </label>
-                              <select
-                                className={selectCls}
-                                aria-label="Fase em foco para o mentor"
-                                value={mentorFocusPhaseId || ''}
-                                onChange={(e) => {
-                                  const v = e.target.value || null;
-                                  setMentorFocusPhaseId(v);
-                                  persistMentorLocal(mentorCompletedIds, v);
-                                }}
-                              >
-                                <option value="">Automático (primeira incompleta)</option>
-                                {[...mentorChecklist.phases]
-                                  .sort((a, b) => a.order - b.order)
-                                  .map((ph) => (
-                                    <option key={ph.id} value={ph.id}>
-                                      {ph.order.toString().padStart(2, '0')} — {ph.title}
-                                    </option>
-                                  ))}
-                              </select>
-                            </div>
-                            <button
-                              type="button"
-                              disabled={mentorCoachLoading}
-                              onClick={() => generateMentorCoach()}
-                              className="text-xs font-semibold px-4 py-2.5 rounded-lg bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white transition-colors"
-                            >
-                              {mentorCoachLoading ? 'A gerar…' : 'Gerar orientação do mentor'}
-                            </button>
-                          </div>
-                          <p className="text-xs sm:text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed">
-                            Se escolher uma campanha acima, a orientação pode usar métricas agregadas dos últimos 14 dias
-                            dessa campanha (além do checklist e da integração Meta do site).
-                          </p>
-                        </div>
-
-                        <div className="space-y-2">
-                          {[...mentorChecklist.phases]
-                            .sort((a, b) => a.order - b.order)
-                            .map((ph) => {
-                              const open = !!mentorOpenPhases[ph.id];
-                              const phDone = ph.items.filter((it) => mentorCompletedIds.includes(it.id)).length;
-                              return (
-                                <div
-                                  key={ph.id}
-                                  className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/40 overflow-hidden"
-                                >
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      setMentorOpenPhases((prev) => ({ ...prev, [ph.id]: !prev[ph.id] }))
-                                    }
-                                    className="w-full flex items-center gap-2 px-4 py-3 text-left bg-zinc-50 dark:bg-zinc-900/50 border-b border-zinc-200 dark:border-zinc-800/60"
-                                  >
-                                    <span className="text-lg">{ph.icon || '•'}</span>
-                                    <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 flex-1">
-                                      {ph.order.toString().padStart(2, '0')} — {ph.title}
-                                    </span>
-                                    {ph.badge && (
-                                      <span className="text-[10px] uppercase tracking-wider text-zinc-500">{ph.badge}</span>
-                                    )}
-                                    <span className="text-[11px] text-zinc-500 tabular-nums">
-                                      {phDone}/{ph.items.length}
-                                    </span>
-                                    <span className="text-zinc-400 text-xs">{open ? '▼' : '▶'}</span>
-                                  </button>
-                                  {open && (
-                                    <div className="px-4 py-3 space-y-3 border-t border-zinc-100 dark:border-zinc-800/40">
-                                      {ph.note && (
-                                        <p className="text-sm text-zinc-600 dark:text-zinc-300 bg-zinc-50 dark:bg-zinc-900/30 rounded-lg px-3 py-2.5 leading-relaxed">
-                                          {ph.note}
-                                        </p>
-                                      )}
-                                      <div className="space-y-2">
-                                        {ph.items.map((it) => {
-                                          const checked = mentorCompletedIds.includes(it.id);
-                                          return (
-                                            <label
-                                              key={it.id}
-                                              className="flex gap-3 items-start cursor-pointer rounded-lg border border-zinc-200 dark:border-zinc-800/80 px-3 py-2 hover:bg-zinc-50 dark:hover:bg-zinc-900/30"
-                                            >
-                                              <input
-                                                type="checkbox"
-                                                checked={checked}
-                                                className="mt-1 rounded border-zinc-400"
-                                                onChange={() => {
-                                                  setMentorCompletedIds((prev) => {
-                                                    const next = checked
-                                                      ? prev.filter((x) => x !== it.id)
-                                                      : [...prev, it.id];
-                                                    persistMentorLocal(next, mentorFocusPhaseId);
-                                                    return next;
-                                                  });
-                                                }}
-                                              />
-                                              <div className="flex-1 min-w-0">
-                                                <div className="text-base text-zinc-800 dark:text-zinc-100 font-medium leading-snug">
-                                                  {it.text}
-                                                </div>
-                                                {it.hints && it.hints.length > 0 && (
-                                                  <ul className="mt-2 space-y-1.5 text-sm leading-relaxed text-zinc-400 dark:text-zinc-300 list-disc list-inside pl-1 marker:text-amber-500/90">
-                                                    {it.hints.map((h, hi) => (
-                                                      <li key={hi} className="pl-0.5">
-                                                        {h}
-                                                      </li>
-                                                    ))}
-                                                  </ul>
-                                                )}
-                                              </div>
-                                            </label>
-                                          );
-                                        })}
-                                      </div>
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })}
-                        </div>
-                      </>
-                    )}
-
-                    {mentorGuidanceMd.trim() && (
-                      <div className="space-y-3">
-                        <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Orientação do mentor</h3>
-                        {mentorGuidanceSections.map((section, index) => (
-                          <div
-                            key={`mentor-${section.title}-${index}`}
-                            className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/50 overflow-hidden"
-                          >
-                            <div className="px-5 py-3.5 border-b border-zinc-200 dark:border-zinc-800/40 bg-zinc-50 dark:bg-zinc-900/40">
-                              <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{section.title}</h3>
-                            </div>
-                            {section.body && (
-                              <div className="px-5 py-4 prose prose-invert max-w-none text-sm prose-headings:tracking-tight prose-h1:text-xl prose-h2:text-lg prose-h3:text-sm prose-p:text-zinc-600 dark:text-zinc-400 prose-p:leading-relaxed prose-strong:text-zinc-800 dark:text-zinc-200 prose-a:text-blue-400 prose-a:no-underline hover:prose-a:text-blue-300">
-                                <ReactMarkdown remarkPlugins={[remarkGfm]} components={reportMarkdownComponents}>
-                                  {section.body}
-                                </ReactMarkdown>
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
+                </>
               </div>
             )
           }
