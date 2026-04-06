@@ -652,78 +652,51 @@ export function CampaignFunnelPanel({
               <strong>Por anúncio</strong> acima. A lista ordena primeiro quem tem mais <strong>compras</strong> na Meta.
             </p>
           </>
-        ) : level === 'ad' ? (
+        ) : (
           <div className="space-y-3">
-            <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">
-              <span className="font-medium text-zinc-800 dark:text-zinc-200">Campanha:</span>{' '}
-              {selectedCampaignName || '—'} · Ordenado por compras e checkouts (Meta).{' '}
-              <span className="font-medium text-zinc-800 dark:text-zinc-200">Página (site)</span> aparece quando o link do
-              anúncio envia <code className="text-[10px] bg-zinc-200/80 dark:bg-zinc-800 px-1 rounded">utm_campaign</code>{' '}
-              igual ao nome da campanha e{' '}
-              <code className="text-[10px] bg-zinc-200/80 dark:bg-zinc-800 px-1 rounded">utm_content</code> com o id do
-              anúncio (parâmetros dinâmicos).
-            </p>
-            <div className="overflow-x-auto max-h-[55vh] overflow-y-auto rounded-xl border border-zinc-200 dark:border-zinc-700 custom-scrollbar">
-              <table className="w-full text-xs text-left min-w-[640px]">
-                <thead className="sticky top-0 z-10 bg-zinc-100 dark:bg-zinc-800/95 text-zinc-600 dark:text-zinc-400 border-b border-zinc-200 dark:border-zinc-700">
-                  <tr>
-                    <th className="px-3 py-2 font-semibold">Conjunto</th>
-                    <th className="px-3 py-2 font-semibold">Anúncio</th>
-                    <th className="px-3 py-2 font-semibold">Página (site)</th>
-                    <th className="px-3 py-2 font-semibold text-right whitespace-nowrap">Checkout</th>
-                    <th className="px-3 py-2 font-semibold text-right whitespace-nowrap">Compras</th>
-                    <th className="px-3 py-2 font-semibold text-right whitespace-nowrap">Investido</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-200 dark:divide-zinc-700">
-                  {rows.map((r) => (
-                    <tr key={r.id} className="bg-white dark:bg-zinc-900/40 hover:bg-zinc-50 dark:hover:bg-zinc-800/30">
-                      <td className="px-3 py-2 align-top max-w-[160px]">
-                        <span className="line-clamp-2" title={r.adset_name || ''}>
-                          {r.adset_name || '—'}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2 align-top max-w-[200px]">
-                        <span className="line-clamp-2 font-medium text-zinc-900 dark:text-zinc-100" title={r.name}>
-                          {r.name}
-                        </span>
-                        <div className="text-[10px] text-zinc-500 font-mono truncate mt-0.5" title={r.id}>
+            {level === 'ad' ? (
+              <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                <span className="font-medium text-zinc-800 dark:text-zinc-200">Campanha:</span>{' '}
+                {selectedCampaignName || '—'} · Ordenado por compras e checkouts (Meta).{' '}
+                <span className="font-medium text-zinc-800 dark:text-zinc-200">Página (site)</span> aparece quando o link do
+                anúncio envia <code className="text-[10px] bg-zinc-200/80 dark:bg-zinc-800 px-1 rounded">utm_campaign</code>{' '}
+                igual ao nome da campanha e{' '}
+                <code className="text-[10px] bg-zinc-200/80 dark:bg-zinc-800 px-1 rounded">utm_content</code> com o id do
+                anúncio (parâmetros dinâmicos).
+              </p>
+            ) : null}
+            <div className="space-y-3 max-h-[55vh] overflow-y-auto custom-scrollbar pr-1">
+              {rows.map((r) => (
+                <div
+                  key={r.id}
+                  className="rounded-xl border border-zinc-200 dark:border-zinc-700/60 bg-zinc-50/80 dark:bg-zinc-900/40 p-4 grid grid-cols-1 md:grid-cols-2 gap-4"
+                >
+                  <div>
+                    <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 mb-2 truncate" title={r.name}>
+                      {r.name}
+                    </div>
+                    {level === 'ad' ? (
+                      <div className="mb-2 space-y-0.5">
+                        {r.adset_name ? (
+                          <div className="text-[11px] text-zinc-500 dark:text-zinc-400 line-clamp-2" title={r.adset_name}>
+                            Conjunto: {r.adset_name}
+                          </div>
+                        ) : null}
+                        {r.first_party_page ? (
+                          <div
+                            className="text-[11px] text-zinc-500 dark:text-zinc-400 truncate"
+                            title={r.first_party_page}
+                          >
+                            Página (site): {r.first_party_page}
+                          </div>
+                        ) : null}
+                        <div className="text-[10px] text-zinc-500 font-mono truncate" title={r.id}>
                           {r.id}
                         </div>
-                      </td>
-                      <td className="px-3 py-2 align-top max-w-[200px] text-zinc-600 dark:text-zinc-400">
-                        <span className="line-clamp-2" title={r.first_party_page || ''}>
-                          {r.first_party_page || '—'}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2 align-top text-right tabular-nums font-medium text-zinc-900 dark:text-zinc-100">
-                        {formatNumber(r.funnel.initiates_checkout)}
-                      </td>
-                      <td className="px-3 py-2 align-top text-right tabular-nums font-medium text-emerald-700 dark:text-emerald-400">
-                        {formatNumber(r.funnel.purchases)}
-                      </td>
-                      <td className="px-3 py-2 align-top text-right tabular-nums text-zinc-600 dark:text-zinc-400">
-                        {formatMoney(r.spend)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-3 max-h-[55vh] overflow-y-auto custom-scrollbar pr-1">
-            {rows.map((r) => (
-              <div
-                key={r.id}
-                className="rounded-xl border border-zinc-200 dark:border-zinc-700/60 bg-zinc-50/80 dark:bg-zinc-900/40 p-4 grid grid-cols-1 md:grid-cols-2 gap-4"
-              >
-                <div>
-                  <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 mb-2 truncate" title={r.name}>
-                    {r.name}
+                      </div>
+                    ) : null}
+                    <FunnelBars f={r.funnel} />
                   </div>
-                  <FunnelBars f={r.funnel} />
-                </div>
                 <div className="text-xs space-y-2">
                   {r.bottleneck_plain ? (
                     <div className={`rounded-lg border px-3 py-2 ${severityBorder(r.bottleneck?.severity)}`}>
@@ -741,8 +714,9 @@ export function CampaignFunnelPanel({
                   </div>
                   <p className="text-zinc-500 leading-relaxed">{r.present_label}</p>
                 </div>
-              </div>
-            ))}
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>

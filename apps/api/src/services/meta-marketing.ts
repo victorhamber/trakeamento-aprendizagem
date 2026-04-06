@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { pool } from '../db/pool';
 import { decryptString } from '../lib/crypto';
+import { addDaysToYmd, getMetaReportTimeZone, getYmdInReportTz } from '../lib/meta-report-timezone';
 
 export class MetaMarketingService {
   private static isRecord(value: unknown): value is Record<string, unknown> {
@@ -274,31 +275,25 @@ export class MetaMarketingService {
   ): { since: string; until: string } {
     if (timeRange) return timeRange;
 
-    const today = new Date();
-    const pad = (n: number) => String(n).padStart(2, '0');
-    const fmt = (d: Date) =>
-      `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-    const addDays = (d: Date, n: number) =>
-      new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
-
-    const todayStr = fmt(today);
+    const tz = getMetaReportTimeZone();
+    const todayStr = getYmdInReportTz(new Date(), tz);
 
     if (datePreset === 'today') return { since: todayStr, until: todayStr };
     if (datePreset === 'yesterday') {
-      const y = fmt(addDays(today, -1));
+      const y = addDaysToYmd(todayStr, -1);
       return { since: y, until: y };
     }
     if (datePreset === 'last_7d')
-      return { since: fmt(addDays(today, -7)), until: todayStr };
+      return { since: addDaysToYmd(todayStr, -7), until: todayStr };
     if (datePreset === 'last_14d')
-      return { since: fmt(addDays(today, -14)), until: todayStr };
+      return { since: addDaysToYmd(todayStr, -14), until: todayStr };
     if (datePreset === 'last_30d')
-      return { since: fmt(addDays(today, -30)), until: todayStr };
+      return { since: addDaysToYmd(todayStr, -30), until: todayStr };
     if (datePreset === 'maximum')
       return { since: '2020-01-01', until: todayStr };
 
     // default
-    return { since: fmt(addDays(today, -7)), until: todayStr };
+    return { since: addDaysToYmd(todayStr, -7), until: todayStr };
   }
 
   private async fetchAllPages(url: string, params: any): Promise<Record<string, unknown>[]> {

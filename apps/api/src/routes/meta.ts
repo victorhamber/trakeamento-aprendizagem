@@ -3,28 +3,38 @@ import { metaMarketingService } from '../services/meta-marketing';
 import { requireAuth } from '../middleware/auth';
 import { pool } from '../db/pool';
 import { encryptString } from '../lib/crypto';
+import {
+  addDaysToYmd,
+  calendarDaysInclusive,
+  getMetaReportTimeZone,
+  getYmdInReportTz,
+  startOfZonedDayUtc,
+} from '../lib/meta-report-timezone';
 
 const router = Router();
 
-/** Janela de datas alinhada à aba Campanhas (presets + custom). */
-export function parseMetaCampaignDateWindow(req: Request) {
-  const parseDate = (value: string) => {
-    const d = new Date(value);
-    return Number.isNaN(d.getTime()) ? null : d;
-  };
+function toReportYmd(raw: string, tz: string): string | null {
+  const t = raw.trim();
+  const m = t.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  const d = new Date(t);
+  if (Number.isNaN(d.getTime())) return null;
+  return getYmdInReportTz(d, tz);
+}
 
+/** Janela de datas alinhada à aba Campanhas (presets + custom). Usa META_INSIGHTS_TIMEZONE (padrão America/Sao_Paulo). */
+export function parseMetaCampaignDateWindow(req: Request) {
   const datePresetRaw =
     typeof req.query.date_preset === 'string' ? req.query.date_preset.trim() : '';
   const sinceRaw = typeof req.query.since === 'string' ? req.query.since.trim() : '';
   const untilRaw = typeof req.query.until === 'string' ? req.query.until.trim() : '';
-  const customSince = sinceRaw ? parseDate(sinceRaw) : null;
-  const customUntil = untilRaw ? parseDate(untilRaw) : null;
-  const hasCustomRange = !!customSince && !!customUntil;
+  const tz = getMetaReportTimeZone();
   const now = new Date();
+  const todayYmd = getYmdInReportTz(now, tz);
 
-  const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  const addDays = (d: Date, n: number) =>
-    new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+  const ymdS = sinceRaw ? toReportYmd(sinceRaw, tz) : null;
+  const ymdE = untilRaw ? toReportYmd(untilRaw, tz) : null;
+  const hasCustomRange = !!ymdS && !!ymdE;
 
   let since: Date;
   let until: Date;
@@ -32,50 +42,50 @@ export function parseMetaCampaignDateWindow(req: Request) {
   let days = 7;
 
   if (hasCustomRange) {
-    const s = startOfDay(customSince!.getTime() <= customUntil!.getTime() ? customSince! : customUntil!);
-    const e = startOfDay(customSince!.getTime() <= customUntil!.getTime() ? customUntil! : customSince!);
-    since = s;
-    until = addDays(e, 1);
+    const startY = ymdS! <= ymdE! ? ymdS! : ymdE!;
+    const endY = ymdS! <= ymdE! ? ymdE! : ymdS!;
+    since = startOfZonedDayUtc(startY, tz);
+    until = startOfZonedDayUtc(addDaysToYmd(endY, 1), tz);
     preset = 'custom';
-    days = Math.max(1, Math.ceil((until.getTime() - since.getTime()) / 86_400_000));
+    days = Math.max(1, calendarDaysInclusive(startY, endY));
   } else if (datePresetRaw) {
     preset = datePresetRaw;
-    const today = startOfDay(now);
     if (datePresetRaw === 'today') {
-      since = today;
-      until = addDays(today, 1);
+      since = startOfZonedDayUtc(todayYmd, tz);
+      until = startOfZonedDayUtc(addDaysToYmd(todayYmd, 1), tz);
       days = 1;
     } else if (datePresetRaw === 'yesterday') {
-      since = addDays(today, -1);
-      until = today;
+      const y = addDaysToYmd(todayYmd, -1);
+      since = startOfZonedDayUtc(y, tz);
+      until = startOfZonedDayUtc(todayYmd, tz);
       days = 1;
     } else if (datePresetRaw === 'last_7d') {
       days = 7;
-      since = addDays(today, -days);
-      until = addDays(today, 1);
+      since = startOfZonedDayUtc(addDaysToYmd(todayYmd, -days), tz);
+      until = startOfZonedDayUtc(addDaysToYmd(todayYmd, 1), tz);
     } else if (datePresetRaw === 'last_14d') {
       days = 14;
-      since = addDays(today, -days);
-      until = addDays(today, 1);
+      since = startOfZonedDayUtc(addDaysToYmd(todayYmd, -days), tz);
+      until = startOfZonedDayUtc(addDaysToYmd(todayYmd, 1), tz);
     } else if (datePresetRaw === 'last_30d') {
       days = 30;
-      since = addDays(today, -days);
-      until = addDays(today, 1);
+      since = startOfZonedDayUtc(addDaysToYmd(todayYmd, -days), tz);
+      until = startOfZonedDayUtc(addDaysToYmd(todayYmd, 1), tz);
     } else if (datePresetRaw === 'maximum') {
       since = new Date('2000-01-01T00:00:00Z');
-      until = addDays(today, 1);
+      until = startOfZonedDayUtc(addDaysToYmd(todayYmd, 1), tz);
       days = Math.max(1, Math.ceil((until.getTime() - since.getTime()) / 86_400_000));
     } else {
       days = 7;
-      since = addDays(startOfDay(now), -days);
-      until = addDays(startOfDay(now), 1);
+      since = startOfZonedDayUtc(addDaysToYmd(todayYmd, -days), tz);
+      until = startOfZonedDayUtc(addDaysToYmd(todayYmd, 1), tz);
       preset = 'last_7d';
     }
   } else {
     const daysRaw = Number(req.query.days || 7);
     days = Number.isFinite(daysRaw) ? Math.min(90, Math.max(1, Math.trunc(daysRaw))) : 7;
-    since = addDays(startOfDay(now), -days);
-    until = addDays(startOfDay(now), 1);
+    since = startOfZonedDayUtc(addDaysToYmd(todayYmd, -days), tz);
+    until = startOfZonedDayUtc(addDaysToYmd(todayYmd, 1), tz);
     preset = days <= 7 ? 'last_7d' : days <= 14 ? 'last_14d' : 'last_30d';
   }
 
