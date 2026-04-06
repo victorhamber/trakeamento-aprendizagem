@@ -186,10 +186,74 @@ router.get('/campaigns/metrics', requireAuth, async (req, res) => {
         }
       } else {
         // campaign (default)
-        groupBy = 'campaign_id';
-        nameField = 'MAX(campaign_name) AS name';
-        idField = 'campaign_id AS id';
-        levelFilter = 'AND campaign_id IS NOT NULL AND adset_id IS NULL AND ad_id IS NULL';
+        groupBy = 'm.campaign_id';
+        nameField = 'MAX(m.campaign_name) AS name';
+        idField = 'm.campaign_id AS id';
+        levelFilter = 'AND m.campaign_id IS NOT NULL AND m.adset_id IS NULL AND m.ad_id IS NULL';
+      }
+
+      // Na visão campanha, optimization_goal / optimized_event_name vêm dos conjuntos (linhas adset).
+      // Usamos o conjunto com maior gasto no período como referência única.
+      if (level === 'campaign') {
+        return pool.query(
+          `
+          WITH adset_opt AS (
+            SELECT DISTINCT ON (campaign_id)
+              campaign_id,
+              optimization_goal,
+              optimized_event_name
+            FROM (
+              SELECT
+                campaign_id,
+                adset_id,
+                COALESCE(SUM(spend), 0)::numeric AS spend_sum,
+                MAX(optimization_goal) AS optimization_goal,
+                MAX(optimized_event_name) AS optimized_event_name
+              FROM meta_insights_daily
+              WHERE site_id = $1
+                AND adset_id IS NOT NULL AND ad_id IS NULL
+                AND date_start >= $2
+                AND date_start < $3
+              GROUP BY campaign_id, adset_id
+            ) t
+            ORDER BY campaign_id, spend_sum DESC NULLS LAST
+          )
+          SELECT
+            ${idField},
+            ${nameField},
+            MAX(m.objective)                                  AS objective,
+            COALESCE(MAX(a.optimization_goal), MAX(m.optimization_goal)) AS optimization_goal,
+            COALESCE(MAX(a.optimized_event_name), MAX(m.optimized_event_name)) AS optimized_event_name,
+            COALESCE(SUM(m.results), 0)::bigint               AS results,
+            COALESCE(SUM(m.spend), 0)::numeric              AS spend,
+            COALESCE(SUM(m.impressions), 0)::bigint          AS impressions,
+            COALESCE(SUM(m.frequency), 0)::numeric           AS frequency,
+            COALESCE(SUM(m.clicks), 0)::bigint               AS clicks,
+            COALESCE(SUM(m.unique_clicks), 0)::bigint        AS unique_clicks,
+            COALESCE(SUM(m.link_clicks), 0)::bigint          AS link_clicks,
+            COALESCE(SUM(m.unique_link_clicks), 0)::bigint   AS unique_link_clicks,
+            COALESCE(SUM(m.outbound_clicks), 0)::bigint      AS outbound_clicks,
+            COALESCE(SUM(m.video_3s_views), 0)::bigint       AS video_3s_views,
+            COALESCE(SUM(m.landing_page_views), 0)::bigint   AS landing_page_views,
+            COALESCE(SUM(m.reach), 0)::bigint                AS reach,
+            COALESCE(SUM(m.leads), 0)::bigint                AS leads,
+            COALESCE(SUM(m.contacts), 0)::bigint             AS contacts,
+            COALESCE(SUM(m.adds_to_cart), 0)::bigint         AS adds_to_cart,
+            COALESCE(SUM(m.initiates_checkout), 0)::bigint   AS initiates_checkout,
+            COALESCE(SUM(m.purchases), 0)::bigint            AS purchases,
+            COALESCE(SUM(m.custom_event_count), 0)::bigint   AS custom_event_count,
+            MAX(m.custom_event_name)                         AS custom_event_name
+          FROM meta_insights_daily m
+          LEFT JOIN adset_opt a ON a.campaign_id = m.campaign_id
+          WHERE m.site_id = $1
+            ${levelFilter}
+            AND m.date_start >= $2
+            AND m.date_start < $3
+          GROUP BY ${groupBy}
+          ORDER BY spend DESC, impressions DESC
+          `,
+          params
+        );
       }
 
       return pool.query(
@@ -389,7 +453,9 @@ function resolveObjectiveMetric(row: Record<string, any>) {
     optimizationGoal.includes('conversion') ||
     optimizationGoal.includes('conversions');
 
-  if (optHintsCustom) {
+  // Se o adset tem um evento otimizado explícito (promoted_object),
+  // mostramos isso mesmo que o optimization_goal não venha com os "hints" esperados.
+  if (optHintsCustom || !!optimizedEventNameRaw) {
     const ev = customEventName || optimizedEventNameRaw;
     return {
       value: results > 0 ? results : customEventCount,
@@ -714,10 +780,10 @@ router.get('/campaigns/funnel-breakdown', requireAuth, async (req, res) => {
     const params: unknown[] = [siteId, since, until, campaignId];
 
     if (level === 'campaign') {
-      groupBy = 'campaign_id';
-      nameField = 'MAX(campaign_name) AS name';
-      idField = 'campaign_id AS id';
-      levelFilter = 'AND campaign_id = $4 AND adset_id IS NULL AND ad_id IS NULL';
+      groupBy = 'm.campaign_id';
+      nameField = 'MAX(m.campaign_name) AS name';
+      idField = 'm.campaign_id AS id';
+      levelFilter = 'AND m.campaign_id = $4 AND m.adset_id IS NULL AND m.ad_id IS NULL';
     } else if (level === 'adset') {
       groupBy = 'adset_id';
       nameField = 'MAX(adset_name) AS name';
@@ -741,7 +807,61 @@ router.get('/campaigns/funnel-breakdown', requireAuth, async (req, res) => {
         ? `ORDER BY COALESCE(SUM(purchases), 0) DESC, COALESCE(SUM(initiates_checkout), 0) DESC, COALESCE(SUM(spend), 0) DESC NULLS LAST, COALESCE(SUM(impressions), 0) DESC`
         : `ORDER BY COALESCE(SUM(spend), 0) DESC NULLS LAST, COALESCE(SUM(impressions), 0) DESC`;
 
-    const funnelSql = `
+    const funnelSql =
+      level === 'campaign'
+        ? `
+      WITH adset_opt AS (
+        SELECT DISTINCT ON (campaign_id)
+          campaign_id,
+          optimization_goal,
+          optimized_event_name
+        FROM (
+          SELECT
+            campaign_id,
+            adset_id,
+            COALESCE(SUM(spend), 0)::numeric AS spend_sum,
+            MAX(optimization_goal) AS optimization_goal,
+            MAX(optimized_event_name) AS optimized_event_name
+          FROM meta_insights_daily
+          WHERE site_id = $1
+            AND campaign_id = $4
+            AND adset_id IS NOT NULL AND ad_id IS NULL
+            AND date_start >= $2
+            AND date_start < $3
+          GROUP BY campaign_id, adset_id
+        ) t
+        ORDER BY campaign_id, spend_sum DESC NULLS LAST
+      )
+      SELECT
+        ${idField},
+        ${nameField},
+        MAX(m.objective) AS objective,
+        COALESCE(MAX(a.optimization_goal), MAX(m.optimization_goal)) AS optimization_goal,
+        COALESCE(MAX(a.optimized_event_name), MAX(m.optimized_event_name)) AS optimized_event_name,
+        COALESCE(SUM(m.results), 0)::bigint AS results,
+        COALESCE(SUM(m.spend), 0)::numeric AS spend,
+        COALESCE(SUM(m.impressions), 0)::bigint AS impressions,
+        COALESCE(SUM(m.clicks), 0)::bigint AS clicks,
+        COALESCE(SUM(m.link_clicks), 0)::bigint AS link_clicks,
+        COALESCE(SUM(m.unique_link_clicks), 0)::bigint AS unique_link_clicks,
+        COALESCE(SUM(m.landing_page_views), 0)::bigint AS landing_page_views,
+        COALESCE(SUM(m.leads), 0)::bigint AS leads,
+        COALESCE(SUM(m.contacts), 0)::bigint AS contacts,
+        COALESCE(SUM(m.adds_to_cart), 0)::bigint AS adds_to_cart,
+        COALESCE(SUM(m.initiates_checkout), 0)::bigint AS initiates_checkout,
+        COALESCE(SUM(m.purchases), 0)::bigint AS purchases,
+        COALESCE(SUM(m.custom_event_count), 0)::bigint AS custom_event_count,
+        MAX(m.custom_event_name) AS custom_event_name
+      FROM meta_insights_daily m
+      LEFT JOIN adset_opt a ON a.campaign_id = m.campaign_id
+      WHERE m.site_id = $1
+        AND m.date_start >= $2
+        AND m.date_start < $3
+        ${levelFilter}
+      GROUP BY ${groupBy}
+      ${orderByFunnel}
+    `
+        : `
       SELECT
         ${idField},
         ${nameField},
