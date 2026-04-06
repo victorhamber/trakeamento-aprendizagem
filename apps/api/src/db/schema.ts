@@ -200,11 +200,12 @@ const schemaSql = `
     cost_per_lead NUMERIC,
     cost_per_purchase NUMERIC,
     objective VARCHAR(100),
-    optimization_goal VARCHAR(120),
     results INTEGER,
     result_rate NUMERIC,
     custom_event_name VARCHAR(120),
     custom_event_count INTEGER,
+    optimization_goal VARCHAR(120),
+    optimized_event_name VARCHAR(120),
     date_start DATE NOT NULL,
     date_stop DATE,
     raw_payload JSONB,
@@ -468,6 +469,7 @@ export const ensureSchema = async (pool: Pool) => {
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS custom_event_name VARCHAR(120)');
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS custom_event_count INTEGER');
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS optimization_goal VARCHAR(120)');
+    await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS optimized_event_name VARCHAR(120)');
 
     // Add missing FK constraints for orphaned data prevention
     try {

@@ -4,6 +4,65 @@ import { decryptString } from '../lib/crypto';
 import { addDaysToYmd, getMetaReportTimeZone, getYmdInReportTz } from '../lib/meta-report-timezone';
 
 export class MetaMarketingService {
+  private async fetchAdSetMetaMap(
+    token: string,
+    adsetIds: string[]
+  ): Promise<Map<string, { optimizationGoal: string | null; optimizedEventName: string | null }>> {
+    const out = new Map<string, { optimizationGoal: string | null; optimizedEventName: string | null }>();
+    const uniq = Array.from(new Set(adsetIds.filter(Boolean)));
+    if (!uniq.length) return out;
+
+    // Graph API batch aceita até 50 itens por request.
+    const chunks: string[][] = [];
+    for (let i = 0; i < uniq.length; i += 50) chunks.push(uniq.slice(i, i + 50));
+
+    for (const chunk of chunks) {
+      const batchPayload = chunk.map((id) => ({
+        method: 'GET',
+        relative_url: `${encodeURIComponent(id)}?fields=optimization_goal,promoted_object`,
+      }));
+
+      const body = new URLSearchParams();
+      body.append('access_token', token);
+      body.append('batch', JSON.stringify(batchPayload));
+
+      const res = await axios.post(`https://graph.facebook.com/v19.0/`, body.toString(), {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        timeout: 120_000,
+      });
+
+      const arr = res.data;
+      if (!Array.isArray(arr)) continue;
+
+      for (let i = 0; i < arr.length; i++) {
+        const item = arr[i];
+        const adsetId = chunk[i];
+        const code = typeof item?.code === 'number' ? item.code : 0;
+        if (code < 200 || code >= 300) continue;
+        if (!item?.body || typeof item.body !== 'string') continue;
+        try {
+          const parsed = JSON.parse(item.body);
+          const optimizationGoal =
+            parsed?.optimization_goal && typeof parsed.optimization_goal === 'string'
+              ? parsed.optimization_goal
+              : null;
+
+          const promoted = parsed?.promoted_object;
+          const optimizedEventName =
+            (promoted?.custom_event_type && String(promoted.custom_event_type)) ||
+            (promoted?.event_name && String(promoted.event_name)) ||
+            (promoted?.custom_event_str && String(promoted.custom_event_str)) ||
+            null;
+
+          out.set(adsetId, { optimizationGoal, optimizedEventName });
+        } catch {
+          // ignore bad JSON
+        }
+      }
+    }
+
+    return out;
+  }
   private static isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null;
   }
@@ -261,7 +320,6 @@ export class MetaMarketingService {
     'date_start',
     'date_stop',
     'objective',
-    'optimization_goal',
     'results',
     'result_rate',
   ] as const;
@@ -507,34 +565,42 @@ export class MetaMarketingService {
         [siteId, range.since, range.until]
       );
 
+      // ── Fetch AdSet metadata (optimization goal + promoted_object) ────────
+      const adsetIds = adSetInsights
+        .map((r) => MetaMarketingService.asString((r as any).adset_id))
+        .filter(Boolean) as string[];
+      const adsetMetaMap = await this.fetchAdSetMetaMap(cfg.token, adsetIds);
+
       // ── Create Map of AdSet -> Objective/OptimizationGoal/CustomEvent ─────
       const adSetMap = new Map<
         string,
-        { objective: string | null; optimizationGoal: string | null; customName: string | null }
+        {
+          objective: string | null;
+          optimizationGoal: string | null;
+          optimizedEventName: string | null;
+          customName: string | null;
+        }
       >();
 
       for (const row of adSetInsights) {
-        const adsetId = MetaMarketingService.asString(row.adset_id);
-        if (adsetId) {
-          const vals = this.getInsightValues(siteId, row);
-          // vals[23] = objective, vals[24] = optimization_goal, vals[30] = custom_event_name
-          // (Check getInsightValues return array order)
-          // Column order in getInsightValues:
-          // ... leads(16), contacts(17), purchases(18), addsToCart(19), initiatesCheckout(20),
-          // costPerLead(21), costPerPurchase(22), objective(23), optimizationGoal(24), results(25), resultRate(26),
-          // dateStart(27), dateStop(28), rawPayload(29), customEventName(30), customEventCount(31)
-
-          adSetMap.set(adsetId, {
-            objective: vals[23] as string | null,
-            optimizationGoal: vals[24] as string | null,
-            customName: vals[30] as string | null,
-          });
-        }
+        const adsetId = MetaMarketingService.asString((row as any).adset_id);
+        if (!adsetId) continue;
+        const vals = this.getInsightValues(siteId, row);
+        // getInsightValues:
+        // ... costPerLead(21), costPerPurchase(22), objective(23), results(24), resultRate(25),
+        // dateStart(26), dateStop(27), rawPayload(28), customEventName(29), customEventCount(30)
+        const meta = adsetMetaMap.get(adsetId) || null;
+        adSetMap.set(adsetId, {
+          objective: vals[23] as string | null,
+          optimizationGoal: meta?.optimizationGoal ?? null,
+          optimizedEventName: meta?.optimizedEventName ?? null,
+          customName: vals[29] as string | null,
+        });
       }
 
       // ── Insert fresh rows ─────────────────────────────────────────────────
       for (const row of campaignInsights) await this.persistCampaignInsight(siteId, row);
-      for (const row of adSetInsights) await this.persistAdSetInsight(siteId, row);
+      for (const row of adSetInsights) await this.persistAdSetInsight(siteId, row, adsetMetaMap);
       for (const row of adInsights) await this.persistAdInsight(siteId, row, adSetMap);
 
       return {
@@ -672,7 +738,7 @@ export class MetaMarketingService {
    *   reach, frequency, cpc, ctr, unique_ctr, cpm,
    *   leads, contacts, purchases, adds_to_cart, initiates_checkout,
    *   cost_per_lead, cost_per_purchase,
-   *   objective, optimization_goal, results, result_rate,
+   *   objective, results, result_rate,
    *   date_start, date_stop, raw_payload,
    *   custom_event_name, custom_event_count
    */
@@ -737,7 +803,6 @@ export class MetaMarketingService {
     const costPerLead = this.getCostPerAction(costs, 'lead');
     const costPerPurchase = this.getCostPerAction(costs, 'purchase');
     const objective = MetaMarketingService.asString(row.objective);
-    const optimizationGoal = MetaMarketingService.asString((row as any).optimization_goal);
     const results = this.normalizeResults(row.results);
     const resultRate = this.asNumber(row.result_rate);
     const customEvent = this.getCustomEvent(actions);
@@ -767,7 +832,6 @@ export class MetaMarketingService {
       costPerLead,
       costPerPurchase,
       objective,
-      optimizationGoal,
       results,
       resultRate,
       MetaMarketingService.asString(row.date_start),
@@ -778,7 +842,19 @@ export class MetaMarketingService {
     ];
   }
 
-  private async persistAdInsight(siteId: number, row: Record<string, unknown>, adSetMap?: Map<string, { objective: string | null; optimizationGoal: string | null; customName: string | null }>) {
+  private async persistAdInsight(
+    siteId: number,
+    row: Record<string, unknown>,
+    adSetMap?: Map<
+      string,
+      {
+        objective: string | null;
+        optimizationGoal: string | null;
+        optimizedEventName: string | null;
+        customName: string | null;
+      }
+    >
+  ) {
     // syncDailyInsights deletes rows for this site+range before calling persist*,
     // so a plain INSERT is safe and avoids fragile partial-index ON CONFLICT logic.
 
@@ -789,20 +865,15 @@ export class MetaMarketingService {
     // Override objective and custom_event_name/count if missing/mismatched but present in parent
     if (parent) {
       // values[23] = objective
-      // values[24] = optimization_goal
-      // values[30] = custom_event_name
-      // values[31] = custom_event_count
+      // values[29] = custom_event_name
+      // values[30] = custom_event_count
 
       if (!values[23] || (values[23] as string).includes('OUTCOME') || (values[23] as string).includes('CONVERSION')) {
         if (parent.objective) values[23] = parent.objective;
       }
 
-      if (!values[24] && parent.optimizationGoal) {
-        values[24] = parent.optimizationGoal;
-      }
-
-      if (!values[30] && parent.customName) {
-        values[30] = parent.customName;
+      if (!values[29] && parent.customName) {
+        values[29] = parent.customName;
         // Se temos o nome do custom event do pai, tentamos buscar nas actions do filho por esse nome específico
         const actions = row.actions;
         if (actions) {
@@ -817,7 +888,7 @@ export class MetaMarketingService {
             if (type.endsWith(parent.customName)) {
               const val = this.asInt(MetaMarketingService.getValueField(item));
               if (val !== null) {
-                values[31] = val; // Atualiza count
+                values[30] = val; // Atualiza count
                 break;
               }
             }
@@ -832,15 +903,17 @@ export class MetaMarketingService {
         spend, impressions, clicks, unique_clicks, link_clicks, unique_link_clicks, inline_link_clicks, outbound_clicks, video_3s_views, landing_page_views,
         reach, frequency, cpc, ctr, unique_ctr, cpm,
         leads, contacts, purchases, adds_to_cart, initiates_checkout, cost_per_lead, cost_per_purchase,
-        objective, optimization_goal, results, result_rate,
-        date_start, date_stop, raw_payload, custom_event_name, custom_event_count
+        objective, results, result_rate,
+        date_start, date_stop, raw_payload, custom_event_name, custom_event_count,
+        optimization_goal, optimized_event_name
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7,
         $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
         $18, $19, $20, $21, $22, $23,
         $24, $25, $26, $27, $28, $29, $30,
-        $31, $32, $33, $34,
-        $35, $36, $37, $38, $39
+        $31, $32, $33,
+        $34, $35, $36, $37, $38,
+        $39, $40
       )`,
       [
         siteId,
@@ -851,26 +924,36 @@ export class MetaMarketingService {
         MetaMarketingService.asString(row.campaign_id),
         MetaMarketingService.asString(row.campaign_name),
         ...values,
+        parent?.optimizationGoal ?? null,
+        parent?.optimizedEventName ?? null,
       ]
     );
   }
 
-  private async persistAdSetInsight(siteId: number, row: Record<string, unknown>) {
+  private async persistAdSetInsight(
+    siteId: number,
+    row: Record<string, unknown>,
+    adsetMetaMap: Map<string, { optimizationGoal: string | null; optimizedEventName: string | null }>
+  ) {
+    const adsetId = MetaMarketingService.asString((row as any).adset_id);
+    const meta = (adsetId ? adsetMetaMap.get(adsetId) : null) || null;
     await pool.query(
       `INSERT INTO meta_insights_daily (
         site_id, adset_id, adset_name, campaign_id, campaign_name,
         spend, impressions, clicks, unique_clicks, link_clicks, unique_link_clicks, inline_link_clicks, outbound_clicks, video_3s_views, landing_page_views,
         reach, frequency, cpc, ctr, unique_ctr, cpm,
         leads, contacts, purchases, adds_to_cart, initiates_checkout, cost_per_lead, cost_per_purchase,
-        objective, optimization_goal, results, result_rate,
-        date_start, date_stop, raw_payload, custom_event_name, custom_event_count
+        objective, results, result_rate,
+        date_start, date_stop, raw_payload, custom_event_name, custom_event_count,
+        optimization_goal, optimized_event_name
       ) VALUES (
         $1, $2, $3, $4, $5,
         $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
         $16, $17, $18, $19, $20, $21,
         $22, $23, $24, $25, $26, $27, $28,
-        $29, $30, $31, $32,
-        $33, $34, $35, $36, $37
+        $29, $30, $31,
+        $32, $33, $34, $35, $36,
+        $37, $38
       )`,
       [
         siteId,
@@ -879,6 +962,8 @@ export class MetaMarketingService {
         MetaMarketingService.asString(row.campaign_id),
         MetaMarketingService.asString(row.campaign_name),
         ...this.getInsightValues(siteId, row),
+        meta?.optimizationGoal ?? null,
+        meta?.optimizedEventName ?? null,
       ]
     );
   }
@@ -890,21 +975,25 @@ export class MetaMarketingService {
         spend, impressions, clicks, unique_clicks, link_clicks, unique_link_clicks, inline_link_clicks, outbound_clicks, video_3s_views, landing_page_views,
         reach, frequency, cpc, ctr, unique_ctr, cpm,
         leads, contacts, purchases, adds_to_cart, initiates_checkout, cost_per_lead, cost_per_purchase,
-        objective, optimization_goal, results, result_rate,
-        date_start, date_stop, raw_payload, custom_event_name, custom_event_count
+        objective, results, result_rate,
+        date_start, date_stop, raw_payload, custom_event_name, custom_event_count,
+        optimization_goal, optimized_event_name
       ) VALUES (
         $1, $2, $3,
         $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
         $14, $15, $16, $17, $18, $19,
         $20, $21, $22, $23, $24, $25, $26,
-        $27, $28, $29, $30,
-        $31, $32, $33, $34, $35
+        $27, $28, $29,
+        $30, $31, $32, $33, $34,
+        $35, $36
       )`,
       [
         siteId,
         MetaMarketingService.asString(row.campaign_id),
         MetaMarketingService.asString(row.campaign_name),
         ...this.getInsightValues(siteId, row),
+        null,
+        null,
       ]
     );
   }

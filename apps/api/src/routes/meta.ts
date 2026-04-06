@@ -199,6 +199,7 @@ router.get('/campaigns/metrics', requireAuth, async (req, res) => {
           ${nameField},
           MAX(objective)                                  AS objective,
           MAX(optimization_goal)                          AS optimization_goal,
+          MAX(optimized_event_name)                       AS optimized_event_name,
           COALESCE(SUM(results), 0)::bigint               AS results,
           COALESCE(SUM(spend), 0)::numeric              AS spend,
           COALESCE(SUM(impressions), 0)::bigint          AS impressions,
@@ -368,6 +369,7 @@ function linkBaseFromRow(row: Record<string, unknown>) {
 function resolveObjectiveMetric(row: Record<string, any>) {
   const objective = String(row.objective || '').toLowerCase();
   const optimizationGoal = String(row.optimization_goal || '').toLowerCase();
+  const optimizedEventNameRaw = row.optimized_event_name ? String(row.optimized_event_name) : '';
   const leads = Number(row.leads || 0);
   const purchases = Number(row.purchases || 0);
   const initiatesCheckout = Number(row.initiates_checkout || 0);
@@ -387,10 +389,11 @@ function resolveObjectiveMetric(row: Record<string, any>) {
     optimizationGoal.includes('conversion') ||
     optimizationGoal.includes('conversions');
 
-  if ((customEventName && optHintsCustom) || (customEventCount > 0 && optHintsCustom)) {
+  if (optHintsCustom) {
+    const ev = customEventName || optimizedEventNameRaw;
     return {
       value: results > 0 ? results : customEventCount,
-      label: customEventName ? `Evento ${customEventName}` : 'Evento personalizado',
+      label: ev ? `Evento ${ev}` : 'Evento personalizado',
     };
   }
   if (objective.includes('lead')) return { value: leads, label: 'Leads' };
@@ -744,6 +747,7 @@ router.get('/campaigns/funnel-breakdown', requireAuth, async (req, res) => {
         ${nameField},
         MAX(objective) AS objective,
         MAX(optimization_goal) AS optimization_goal,
+        MAX(optimized_event_name) AS optimized_event_name,
         COALESCE(SUM(results), 0)::bigint AS results,
         COALESCE(SUM(spend), 0)::numeric AS spend,
         COALESCE(SUM(impressions), 0)::bigint AS impressions,
