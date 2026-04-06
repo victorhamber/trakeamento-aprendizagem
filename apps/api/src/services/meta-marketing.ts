@@ -332,19 +332,22 @@ export class MetaMarketingService {
     datePreset: string,
     timeRange?: { since: string; until: string }
   ): { since: string; until: string } {
-    if (timeRange) return timeRange;
-
     const tz = getMetaReportTimeZone();
     const todayStr = getYmdInReportTz(new Date(), tz);
-    // Meta Insights limita o "since" a no máximo ~37 meses no passado.
-    // Se pedirmos além disso, a API responde (#3018).
-    const maxLookbackSince = (() => {
+    // Meta (#3018): o início do período não pode ser mais antigo que ~37 meses.
+    // Usamos 35 meses a partir do 1º do mês UTC para sobrar margem (evita since tipo 2023-02-28 falhar).
+    const minAllowedSince = (() => {
       const d = new Date();
       d.setUTCDate(1);
       d.setUTCHours(0, 0, 0, 0);
-      d.setUTCMonth(d.getUTCMonth() - 37);
+      d.setUTCMonth(d.getUTCMonth() - 35);
       return getYmdInReportTz(d, tz);
     })();
+
+    if (timeRange) {
+      const since = timeRange.since < minAllowedSince ? minAllowedSince : timeRange.since;
+      return { since, until: timeRange.until };
+    }
 
     if (datePreset === 'today') return { since: todayStr, until: todayStr };
     if (datePreset === 'yesterday') {
@@ -358,7 +361,7 @@ export class MetaMarketingService {
     if (datePreset === 'last_30d')
       return { since: addDaysToYmd(todayStr, -30), until: todayStr };
     if (datePreset === 'maximum')
-      return { since: maxLookbackSince, until: todayStr };
+      return { since: minAllowedSince, until: todayStr };
 
     // default
     return { since: addDaysToYmd(todayStr, -7), until: todayStr };
