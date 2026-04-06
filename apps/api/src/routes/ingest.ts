@@ -317,6 +317,40 @@ function resolveGeo(clientIp: string) {
   };
 }
 
+function pickHeader(req: Request, key: string): string {
+  const v = req.get(key);
+  return typeof v === 'string' ? v.trim() : '';
+}
+
+function resolveGeoFromHeaders(req: Request): { city?: string; region?: string; country?: string } {
+  // País via headers comuns de proxy/CDN (não precisa de DB e funciona em IPv6)
+  const country =
+    pickHeader(req, 'cf-ipcountry') ||
+    pickHeader(req, 'x-vercel-ip-country') ||
+    pickHeader(req, 'x-country-code') ||
+    pickHeader(req, 'cloudfront-viewer-country') ||
+    '';
+
+  // Cidade/estado dependem do provedor; só usamos se vierem explicitamente
+  const city =
+    pickHeader(req, 'cf-ipcity') ||
+    pickHeader(req, 'x-vercel-ip-city') ||
+    pickHeader(req, 'x-geo-city') ||
+    '';
+
+  const region =
+    pickHeader(req, 'cf-region') ||
+    pickHeader(req, 'x-vercel-ip-country-region') ||
+    pickHeader(req, 'x-geo-region') ||
+    '';
+
+  const out: { city?: string; region?: string; country?: string } = {};
+  if (country && /^[A-Za-z]{2}$/.test(country)) out.country = country.toUpperCase();
+  if (city) out.city = city;
+  if (region) out.region = region;
+  return out;
+}
+
 /** URL http(s) válida para event_source_url (CAPI / eventos website). */
 function isValidHttpUrl(s: string | undefined | null): s is string {
   if (!s || typeof s !== 'string') return false;
@@ -504,6 +538,7 @@ function buildCapiUserData(
   const clientIp = resolveClientIp(req, userData);
   const clientUserAgent = resolveClientUserAgentForCapi(req, userData);
   const geo = resolveGeo(clientIp);
+  const geoHdr = resolveGeoFromHeaders(req);
   const pickCustom = (field: string) => {
     const val = customData[field];
     if (typeof val === 'string') return val;
@@ -526,9 +561,18 @@ function buildCapiUserData(
   const pick = (field: string) =>
     normalizeAndHash(field, pickRaw(field), { ip: clientIp, country: pickCustom('country') });
 
-  const ct = pick('ct') ?? (geo.city ? hashPii(normalizers.ct(geo.city)) : undefined);
-  const st = pick('st') ?? (geo.region ? hashPii(normalizers.st(geo.region)) : undefined);
-  const country = pick('country') ?? (geo.country ? hashPii(normalizers.country(geo.country)) : undefined);
+  const ct =
+    pick('ct') ??
+    (geo.city ? hashPii(normalizers.ct(geo.city)) : undefined) ??
+    (geoHdr.city ? hashPii(normalizers.ct(geoHdr.city)) : undefined);
+  const st =
+    pick('st') ??
+    (geo.region ? hashPii(normalizers.st(geo.region)) : undefined) ??
+    (geoHdr.region ? hashPii(normalizers.st(geoHdr.region)) : undefined);
+  const country =
+    pick('country') ??
+    (geo.country ? hashPii(normalizers.country(geo.country)) : undefined) ??
+    (geoHdr.country ? hashPii(normalizers.country(geoHdr.country)) : undefined);
   const fbp = preserveMetaClickIds(userData.fbp || pickCustom('fbp'));
   const fbc = preserveMetaClickIds(userData.fbc || pickCustom('fbc'));
   const externalIdRaw = userData.external_id || pickCustom('external_id');

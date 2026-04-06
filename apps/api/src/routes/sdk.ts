@@ -1,7 +1,31 @@
+import fs from 'fs';
+import path from 'path';
 import { Router } from 'express';
 import { pool } from '../db/pool';
 
 const router = Router();
+
+function readMetaClientParamBuilderBundle(): string {
+  try {
+    const pkgJson = require.resolve('meta-capi-param-builder-clientjs/package.json');
+    const bundlePath = path.join(path.dirname(pkgJson), 'dist', 'clientParamBuilder.bundle.js');
+    return fs.readFileSync(bundlePath, 'utf8');
+  } catch {
+    return '';
+  }
+}
+
+const META_PARAM_BUILDER_BUNDLE = readMetaClientParamBuilderBundle();
+
+router.get('/meta-param-builder.js', (_req, res) => {
+  if (!META_PARAM_BUILDER_BUNDLE.length) {
+    return res.status(404).type('text/plain').send('Meta parameter builder bundle not available');
+  }
+  res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  return res.send(META_PARAM_BUILDER_BUNDLE);
+});
 
 router.get('/tracker.js', async (req, res) => {
   const siteKey = req.query.key as string;
@@ -58,9 +82,37 @@ router.get('/tracker.js', async (req, res) => {
     }
   }
 
+  const sdkBase =
+    process.env.PUBLIC_API_BASE_URL ||
+    process.env.API_BASE_URL ||
+    `${req.headers['x-forwarded-proto'] || req.protocol}://${req.headers['x-forwarded-host'] || req.get('host')}`;
+
+  const metaPbLoader = `
+// Meta Conversions API Parameter Builder (client-side)
+// Carrega o bundle oficial (quando disponível) para manter _fbc/_fbp no formato recomendado pela Meta.
+(function(){
+  try {
+    if (window.__TA_META_PB_LOADED) return;
+    window.__TA_META_PB_LOADED = true;
+    var s = document.createElement('script');
+    s.async = true;
+    s.src = ${JSON.stringify(`${sdkBase}/sdk/meta-param-builder.js`)};
+    s.onload = function(){
+      try {
+        // O bundle expõe 'clientParamBuilder' (documentado pela Meta).
+        if (window.clientParamBuilder && typeof window.clientParamBuilder.processAndCollectAllParams === 'function') {
+          window.clientParamBuilder.processAndCollectAllParams();
+        }
+      } catch(_e) {}
+    };
+    (document.head || document.documentElement).appendChild(s);
+  } catch(_e) {}
+})();\n\n`;
+
   // Ponto e vírgula defensivo antes do IIFE (evita ASI rara se o config terminar com expressão ambígua).
   const js =
     configJs +
+    metaPbLoader +
     `;
 (function(){
   if (window.__TA_INITIALIZED) return;
