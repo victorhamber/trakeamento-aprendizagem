@@ -82,7 +82,9 @@ router.get('/tracker.js', async (req, res) => {
           hotmartSckMaxChars,
         };
 
-        configJs = `window.TRACKING_CONFIG = ${JSON.stringify(configObj)};\n\n`;
+        // Base64 + atob: evita quebras de sintaxe no tracker quando regras/UTMs têm U+2028, aspas, */ , etc.
+        const configB64 = Buffer.from(JSON.stringify(configObj), 'utf8').toString('base64');
+        configJs = `window.TRACKING_CONFIG = JSON.parse(atob(${JSON.stringify(configB64)}));\n\n`;
       } else {
         configJs = `console.warn('[TRK] Site key not found');\n\n`;
       }
@@ -399,10 +401,7 @@ router.get('/tracker.js', async (req, res) => {
     return undefined;
   }
 
-  /**
-   * Carrega o Parameter Builder via <script src> (mesma API que o ingest).
-   * Evita concatenar ~56k da Meta dentro do tracker.js — isso podia falhar parse/bloqueios e impedir fbq.
-   */
+  // Parameter Builder: script externo /sdk/param-builder.js (evita bundle gigante no tracker).
   function loadParamBuilderScript() {
     try {
       if (window.clientParamBuilder) {
