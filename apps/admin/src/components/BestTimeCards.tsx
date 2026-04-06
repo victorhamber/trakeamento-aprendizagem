@@ -19,7 +19,14 @@ type BestTimesData = {
   purchase: PeakData;
   lead: PeakData;
   checkout: PeakData;
+  /** IANA, ex. America/Sao_Paulo — mesmo de META_INSIGHTS_TIMEZONE na API */
+  report_timezone?: string;
 };
+
+function bestTimesTzNote(tz?: string) {
+  if (!tz || tz === 'America/Sao_Paulo') return 'Horários no fuso de Brasília (para planejar suas campanhas daqui).';
+  return `Horários no fuso ${tz.replace(/_/g, ' ')}.`;
+}
 
 interface BestTimeCardsProps {
   siteId?: number;
@@ -185,8 +192,9 @@ export function BestTimeCards({ siteId, period = 'last_30d' }: BestTimeCardsProp
           <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
             Picos de Conversão
           </h3>
-          <p className="text-[11px] text-zinc-500 mt-0.5">
-            Melhores horários de cada dia para anunciar (Base: {PERIOD_LABELS[period] || '30 dias'})
+          <p className="text-[11px] text-zinc-500 mt-0.5 leading-relaxed">
+            Melhores horários de cada dia para anunciar (Base: {PERIOD_LABELS[period] || '30 dias'}).{' '}
+            {bestTimesTzNote(data?.report_timezone)}
           </p>
         </div>
       </div>

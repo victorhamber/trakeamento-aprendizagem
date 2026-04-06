@@ -3,8 +3,50 @@ import { requireAuth } from '../middleware/auth';
 import { pool } from '../db/pool';
 import geoip from 'geoip-lite';
 import { resolvePixelCountryToken } from '../lib/pixel-country';
+import {
+  addDaysToYmd,
+  getMetaReportTimeZone,
+  getYmdInReportTz,
+  startOfZonedDayUtc,
+} from '../lib/meta-report-timezone';
 
 const router = Router();
+
+/** Janela do relatório de picos: calendário em META_INSIGHTS_TIMEZONE (padrão America/Sao_Paulo), não no fuso do servidor Node. */
+function resolveBestTimesRange(period: string): { start: Date; end: Date } {
+  const tz = getMetaReportTimeZone();
+  const now = new Date();
+  const todayYmd = getYmdInReportTz(now, tz);
+  let start: Date;
+  let end: Date = now;
+
+  switch (period) {
+    case 'today':
+      start = startOfZonedDayUtc(todayYmd, tz);
+      break;
+    case 'yesterday': {
+      const y = addDaysToYmd(todayYmd, -1);
+      start = startOfZonedDayUtc(y, tz);
+      end = startOfZonedDayUtc(todayYmd, tz);
+      break;
+    }
+    case 'last_7d':
+      start = startOfZonedDayUtc(addDaysToYmd(todayYmd, -7), tz);
+      break;
+    case 'last_14d':
+      start = startOfZonedDayUtc(addDaysToYmd(todayYmd, -14), tz);
+      break;
+    case 'last_30d':
+      start = startOfZonedDayUtc(addDaysToYmd(todayYmd, -30), tz);
+      break;
+    case 'maximum':
+      start = new Date(0);
+      break;
+    default:
+      start = startOfZonedDayUtc(addDaysToYmd(todayYmd, -30), tz);
+  }
+  return { start, end };
+}
 
 // TEMPORARY: Diagnostic endpoint to debug purchase visibility issues
 router.get('/debug-purchase/:orderId', requireAuth, async (req, res) => {
@@ -244,24 +286,8 @@ router.get('/best-times', requireAuth, async (req, res) => {
   const auth = req.auth!;
   const siteId = req.query.siteId ? Number(req.query.siteId) : null;
   const period = (req.query.period as string) || 'last_30d';
-
-  const now = new Date();
-  let start: Date;
-  let end: Date = now;
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
-  switch (period) {
-    case 'today': start = todayStart; break;
-    case 'yesterday':
-      start = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000);
-      end = todayStart;
-      break;
-    case 'last_7d': start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000); break;
-    case 'last_14d': start = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000); break;
-    case 'last_30d': start = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000); break;
-    case 'maximum': start = new Date(0); break;
-    default: start = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-  }
+  const { start, end } = resolveBestTimesRange(period);
+  const reportTz = getMetaReportTimeZone();
 
   try {
     // Queries para encontrar picos por tipo de evento
@@ -275,8 +301,8 @@ router.get('/best-times', requireAuth, async (req, res) => {
         // Query na tabela purchases — usa subquery ANY para acionar o índice (site_key, status, created_at)
         query = `
           SELECT
-            EXTRACT(DOW FROM (COALESCE(p.platform_date, p.created_at) AT TIME ZONE 'America/Sao_Paulo'))::int as dow,
-            EXTRACT(HOUR FROM (COALESCE(p.platform_date, p.created_at) AT TIME ZONE 'America/Sao_Paulo'))::int as hour,
+            EXTRACT(DOW FROM ((COALESCE(p.platform_date, p.created_at) AT TIME ZONE 'UTC') AT TIME ZONE $5::text))::int as dow,
+            EXTRACT(HOUR FROM ((COALESCE(p.platform_date, p.created_at) AT TIME ZONE 'UTC') AT TIME ZONE $5::text))::int as hour,
             COUNT(*)::int as count
           FROM purchases p
           WHERE p.site_key = ANY(
@@ -501,8 +527,8 @@ router.get('/best-times', requireAuth, async (req, res) => {
         // Query na tabela web_events — usa subquery ANY para acionar o índice (site_key, event_name, event_time)
         query = `
           SELECT
-            EXTRACT(DOW FROM (e.event_time AT TIME ZONE 'America/Sao_Paulo'))::int as dow,
-            EXTRACT(HOUR FROM (e.event_time AT TIME ZONE 'America/Sao_Paulo'))::int as hour,
+            EXTRACT(DOW FROM ((e.event_time AT TIME ZONE 'UTC') AT TIME ZONE $6::text))::int as dow,
+            EXTRACT(HOUR FROM ((e.event_time AT TIME ZONE 'UTC') AT TIME ZONE $6::text))::int as hour,
             COUNT(*)::int as count
           FROM web_events e
           WHERE e.site_key = ANY(
@@ -641,9 +667,9 @@ router.get('/best-times', requireAuth, async (req, res) => {
         `;
       }
 
-      const params = isPurchase 
-        ? [auth.accountId, siteId, start, end]
-        : [auth.accountId, siteId, start, end, eventNames];
+      const params = isPurchase
+        ? [auth.accountId, siteId, start, end, reportTz]
+        : [auth.accountId, siteId, start, end, eventNames, reportTz];
 
       const [peakResult, sourceResult, locationResult] = await Promise.all([
         pool.query(query, params),
@@ -739,7 +765,8 @@ router.get('/best-times', requireAuth, async (req, res) => {
     return res.json({
       purchase,
       lead,
-      checkout
+      checkout,
+      report_timezone: reportTz,
     });
   } catch (e: any) {
     console.error(e);
