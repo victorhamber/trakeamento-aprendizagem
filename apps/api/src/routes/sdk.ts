@@ -19,6 +19,17 @@ const META_PARAM_BUILDER_BUNDLE = readMetaClientParamBuilderBundle();
 
 const router = Router();
 
+/** Bundle Parameter Builder servido à parte para não inflar nem quebrar o tracker.js (Pixel/fbq). */
+router.get('/param-builder.js', (_req, res) => {
+  if (!META_PARAM_BUILDER_BUNDLE.length) {
+    return res.status(404).type('text/plain').send('Parameter builder bundle not available');
+  }
+  res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  return res.send(META_PARAM_BUILDER_BUNDLE);
+});
+
 /** IP público visto pela API (para cookie _fbi / EMQ via Parameter Builder no browser). CORS: rota /sdk pública. */
 router.get('/client-ip.json', (req: Request, res) => {
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -80,15 +91,10 @@ router.get('/tracker.js', async (req, res) => {
     }
   }
 
-  const metaPbPrefix =
-    META_PARAM_BUILDER_BUNDLE.length > 0
-      ? `\n/* meta-capi-param-builder-clientjs (official) */\n${META_PARAM_BUILDER_BUNDLE}\n`
-      : '';
-
+  // Ponto e vírgula defensivo antes do IIFE (evita ASI rara se o config terminar com expressão ambígua).
   const js =
     configJs +
-    metaPbPrefix +
-    `
+    `;
 (function(){
   if (window.__TA_INITIALIZED) return;
   window.__TA_INITIALIZED = true;
@@ -391,6 +397,36 @@ router.get('/tracker.js', async (req, res) => {
       }
     } catch(_e) {}
     return undefined;
+  }
+
+  /**
+   * Carrega o Parameter Builder via <script src> (mesma API que o ingest).
+   * Evita concatenar ~56k da Meta dentro do tracker.js — isso podia falhar parse/bloqueios e impedir fbq.
+   */
+  function loadParamBuilderScript() {
+    try {
+      if (window.clientParamBuilder) {
+        refreshMetaParamBuilder();
+        scheduleMetaParamBuilderFull();
+        return;
+      }
+      if (window.__TA_PB_SCRIPT_REQUESTED) return;
+      var cfg = window.TRACKING_CONFIG;
+      if (!cfg || !cfg.apiUrl) return;
+      window.__TA_PB_SCRIPT_REQUESTED = true;
+      var base = String(cfg.apiUrl).replace(/\/+$/, '');
+      var s = document.createElement('script');
+      s.async = true;
+      s.src = base + '/sdk/param-builder.js';
+      s.onload = function() {
+        try {
+          refreshMetaParamBuilder();
+          scheduleMetaParamBuilderFull();
+        } catch(_e) {}
+      };
+      s.onerror = function() {};
+      (document.head || document.documentElement).appendChild(s);
+    } catch(_e) {}
   }
 
   // ─── Device Fingerprint (para deduplicação no servidor) ───────────────────
@@ -1556,6 +1592,7 @@ router.get('/tracker.js', async (req, res) => {
 
   // ─── Init ─────────────────────────────────────────────────────────────────
   function initTracker() {
+    loadParamBuilderScript();
     scheduleMetaParamBuilderFull();
     pageView();
     checkUrlRules();
