@@ -1,42 +1,7 @@
-import fs from 'fs';
-import path from 'path';
-import { Router, type Request } from 'express';
+import { Router } from 'express';
 import { pool } from '../db/pool';
-import { getClientIp } from '../lib/ip';
-
-/** Bundle oficial Meta Parameter Builder (browser); vazio se o pacote não estiver instalado. */
-function readMetaClientParamBuilderBundle(): string {
-  try {
-    const pkgJson = require.resolve('meta-capi-param-builder-clientjs/package.json');
-    const bundlePath = path.join(path.dirname(pkgJson), 'dist', 'clientParamBuilder.bundle.js');
-    return fs.readFileSync(bundlePath, 'utf8');
-  } catch {
-    return '';
-  }
-}
-
-const META_PARAM_BUILDER_BUNDLE = readMetaClientParamBuilderBundle();
 
 const router = Router();
-
-/** Bundle Parameter Builder servido à parte para não inflar nem quebrar o tracker.js (Pixel/fbq). */
-router.get('/param-builder.js', (_req, res) => {
-  if (!META_PARAM_BUILDER_BUNDLE.length) {
-    return res.status(404).type('text/plain').send('Parameter builder bundle not available');
-  }
-  res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
-  res.setHeader('Cache-Control', 'public, max-age=86400');
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  return res.send(META_PARAM_BUILDER_BUNDLE);
-});
-
-/** IP público visto pela API (para cookie _fbi / EMQ via Parameter Builder no browser). CORS: rota /sdk pública. */
-router.get('/client-ip.json', (req: Request, res) => {
-  res.setHeader('Content-Type', 'application/json; charset=utf-8');
-  res.setHeader('Cache-Control', 'private, no-store');
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.json({ ip: getClientIp(req) });
-});
 
 router.get('/tracker.js', async (req, res) => {
   const siteKey = req.query.key as string;
@@ -130,9 +95,6 @@ router.get('/tracker.js', async (req, res) => {
   var CHECKOUT_TA_TS_MAX = 200;
   var webVitals    = { lcp: 0, fid: 0, cls: 0, fcp: 0 };
   var pageEngagementEventId = null;
-  var _metaPbFullTimer = null;
-  var _metaPbFullRunning = false;
-  var _metaPbFullPending = false;
 
   // ─── VSL Retention State ──────────────────────────────────────────────────
   var vslState = {
@@ -266,25 +228,8 @@ router.get('/tracker.js', async (req, res) => {
     return id;
   }
 
-  // ─── FBC / FBP (Parameter Builder oficial + fallback) ───────────────────
-  function refreshMetaParamBuilder() {
-    try {
-      var pb = window.clientParamBuilder;
-      if (pb && typeof pb.processAndCollectParams === 'function') {
-        pb.processAndCollectParams(location.href);
-      }
-    } catch(_e) {}
-  }
-
+  // ─── FBC / FBP ───────────────────────────────────────────────────────────
   function getFbc() {
-    refreshMetaParamBuilder();
-    try {
-      var pbLib = window.clientParamBuilder;
-      if (pbLib && typeof pbLib.getFbc === 'function') {
-        var fromLib = pbLib.getFbc();
-        if (fromLib) return fromLib;
-      }
-    } catch(_e) {}
     try {
       var url     = new URL(location.href);
       var fbclid  = url.searchParams.get('fbclid');
@@ -309,14 +254,6 @@ router.get('/tracker.js', async (req, res) => {
   }
 
   function getFbp() {
-    refreshMetaParamBuilder();
-    try {
-      var pbLib2 = window.clientParamBuilder;
-      if (pbLib2 && typeof pbLib2.getFbp === 'function') {
-        var fromLibFbp = pbLib2.getFbp();
-        if (fromLibFbp) return fromLibFbp;
-      }
-    } catch(_e) {}
     // 1. Prioridade: cookie oficial do Meta Pixel (_fbp)
     var fbp = getCookie('_fbp');
     if (fbp) return fbp;
@@ -331,101 +268,6 @@ router.get('/tracker.js', async (req, res) => {
       return generated;
     } catch(_e) {}
     return undefined;
-  }
-
-  /** IP para processAndCollectAllParams (getIpFn); mesma origem que ingest quando apiUrl é a API. */
-  function fetchClientIpForMetaPb() {
-    return new Promise(function(resolve) {
-      try {
-        var cfg = window.TRACKING_CONFIG;
-        if (!cfg || !cfg.apiUrl) return resolve('');
-        var base = String(cfg.apiUrl).replace(/\/+$/, '');
-        var u = base + '/sdk/client-ip.json';
-        if (typeof fetch === 'undefined') return resolve('');
-        fetch(u, { method: 'GET', credentials: 'omit', cache: 'no-store' })
-          .then(function(r) { return r.json(); })
-          .then(function(j) {
-            resolve(j && j.ip ? String(j.ip) : '');
-          })
-          .catch(function() { resolve(''); });
-      } catch(_e) {
-        resolve('');
-      }
-    });
-  }
-
-  function runMetaParamBuilderFullOnce() {
-    try {
-      var pb = window.clientParamBuilder;
-      if (!pb || typeof pb.processAndCollectAllParams !== 'function') return;
-      if (_metaPbFullRunning) {
-        _metaPbFullPending = true;
-        return;
-      }
-      _metaPbFullRunning = true;
-      Promise.resolve(pb.processAndCollectAllParams(location.href, fetchClientIpForMetaPb))
-        .catch(function() {})
-        .then(function() {
-          _metaPbFullRunning = false;
-          if (_metaPbFullPending) {
-            _metaPbFullPending = false;
-            runMetaParamBuilderFullOnce();
-          }
-        });
-    } catch(_e) {
-      _metaPbFullRunning = false;
-    }
-  }
-
-  /** EBP + _fbi (IP em cookie); debounced para não spammar em SPA. */
-  function scheduleMetaParamBuilderFull() {
-    try {
-      var pb = window.clientParamBuilder;
-      if (!pb || typeof pb.processAndCollectAllParams !== 'function') return;
-      if (_metaPbFullTimer) clearTimeout(_metaPbFullTimer);
-      _metaPbFullTimer = setTimeout(function() {
-        _metaPbFullTimer = null;
-        runMetaParamBuilderFullOnce();
-      }, 400);
-    } catch(_e) {}
-  }
-
-  function getClientIpFromMetaPb() {
-    try {
-      var pb = window.clientParamBuilder;
-      if (pb && typeof pb.getClientIpAddress === 'function') {
-        var ip = pb.getClientIpAddress();
-        if (ip) return ip;
-      }
-    } catch(_e) {}
-    return undefined;
-  }
-
-  // Parameter Builder: script externo /sdk/param-builder.js (evita bundle gigante no tracker).
-  function loadParamBuilderScript() {
-    try {
-      if (window.clientParamBuilder) {
-        refreshMetaParamBuilder();
-        scheduleMetaParamBuilderFull();
-        return;
-      }
-      if (window.__TA_PB_SCRIPT_REQUESTED) return;
-      var cfg = window.TRACKING_CONFIG;
-      if (!cfg || !cfg.apiUrl) return;
-      window.__TA_PB_SCRIPT_REQUESTED = true;
-      var base = String(cfg.apiUrl).replace(/\/+$/, '');
-      var s = document.createElement('script');
-      s.async = true;
-      s.src = base + '/sdk/param-builder.js';
-      s.onload = function() {
-        try {
-          refreshMetaParamBuilder();
-          scheduleMetaParamBuilderFull();
-        } catch(_e) {}
-      };
-      s.onerror = function() {};
-      (document.head || document.documentElement).appendChild(s);
-    } catch(_e) {}
   }
 
   // ─── Device Fingerprint (para deduplicação no servidor) ───────────────────
@@ -948,10 +790,8 @@ router.get('/tracker.js', async (req, res) => {
   function buildUserData() {
     var metaUser  = getMetaUserDataFromCookies();
     var externalId = getOrCreateExternalId();
-    var metaIp = getClientIpFromMetaPb();
     return {
       client_user_agent: navigator.userAgent,
-      client_ip_address: metaIp || undefined,
       fbp:        getFbp(),
       fbc:        getFbc(),
       external_id: externalId,
@@ -1358,15 +1198,11 @@ router.get('/tracker.js', async (req, res) => {
       totalClicks = 0;
       ctaClicks = 0;
       _pushState.apply(history, arguments);
-      setTimeout(function() { scheduleMetaParamBuilderFull(); pageView(); checkUrlRules(); }, 0);
+      setTimeout(function() { pageView(); checkUrlRules(); }, 0);
     };
     history.replaceState = function() {
       _replaceState.apply(history, arguments);
-      setTimeout(function() {
-        refreshMetaParamBuilder();
-        scheduleMetaParamBuilderFull();
-        checkUrlRules();
-      }, 0);
+      setTimeout(checkUrlRules, 0);
     };
     window.addEventListener('popstate', function() {
       pageEngagementEventId = null;
@@ -1375,7 +1211,7 @@ router.get('/tracker.js', async (req, res) => {
       maxScroll = 0;
       totalClicks = 0;
       ctaClicks = 0;
-      setTimeout(function() { scheduleMetaParamBuilderFull(); pageView(); checkUrlRules(); }, 0);
+      setTimeout(function() { pageView(); checkUrlRules(); }, 0);
     });
   } catch(_e) {}
 
@@ -1591,8 +1427,6 @@ router.get('/tracker.js', async (req, res) => {
 
   // ─── Init ─────────────────────────────────────────────────────────────────
   function initTracker() {
-    loadParamBuilderScript();
-    scheduleMetaParamBuilderFull();
     pageView();
     checkUrlRules();
     decorateCheckoutLinks();
