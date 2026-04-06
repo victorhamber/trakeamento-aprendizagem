@@ -667,14 +667,17 @@ router.get('/best-times', requireAuth, async (req, res) => {
         `;
       }
 
-      const params = isPurchase
-        ? [auth.accountId, siteId, start, end, reportTz]
-        : [auth.accountId, siteId, start, end, eventNames, reportTz];
+      // Cada query usa um conjunto diferente de placeholders; não reutilizar o mesmo array (PG rejeita parâmetros a mais).
+      const paramsBase = [auth.accountId, siteId, start, end] as const;
+      const peakParams = isPurchase
+        ? [...paramsBase, reportTz]
+        : [...paramsBase, eventNames, reportTz];
+      const auxParams = isPurchase ? [...paramsBase] : [...paramsBase, eventNames];
 
       const [peakResult, sourceResult, locationResult] = await Promise.all([
-        pool.query(query, params),
-        pool.query(topSourcesQuery, params),
-        pool.query(topLocationsQuery, params)
+        pool.query(query, peakParams),
+        pool.query(topSourcesQuery, auxParams),
+        pool.query(topLocationsQuery, auxParams),
       ]);
 
       // Resolve IPs em Localizações em memória (rápido com geoip-lite)
