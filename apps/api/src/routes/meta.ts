@@ -156,48 +156,6 @@ router.get('/campaigns/metrics', requireAuth, async (req, res) => {
       req.query.force === 'yes';
 
     // ── Build query with parameterized parentId (no SQL injection) ──────────
-    const resolveObjectiveMetric = (row: Record<string, any>) => {
-      const objective = String(row.objective || '').toLowerCase();
-      const leads = Number(row.leads || 0);
-      const purchases = Number(row.purchases || 0);
-      const initiatesCheckout = Number(row.initiates_checkout || 0);
-      const contacts = Number(row.contacts || 0);
-      const uniqueLinkClicks = Number(row.unique_link_clicks || 0);
-      const clicks = Number(row.clicks || 0);
-      const reach = Number(row.reach || 0);
-      const results = Number(row.results || 0);
-      const customEventCount = Number(row.custom_event_count || 0);
-      const customEventName = row.custom_event_name ? String(row.custom_event_name) : '';
-
-      if (customEventCount > 0 && (objective.includes('custom') || objective.includes('conversion') || results === 0)) {
-        return {
-          value: results > 0 ? results : customEventCount,
-          label: customEventName ? `Evento ${customEventName}` : 'Evento personalizado',
-        };
-      }
-      if (objective.includes('lead')) return { value: leads, label: 'Leads' };
-      if (objective.includes('purchase') || objective.includes('sale')) return { value: purchases, label: 'Compras' };
-      if (objective.includes('checkout') || objective.includes('initiate')) {
-        return { value: initiatesCheckout, label: 'Finalizações' };
-      }
-      if (objective.includes('message') || objective.includes('messaging') || objective.includes('contact')) {
-        return { value: contacts, label: 'Contatos' };
-      }
-      if (objective.includes('traffic') || objective.includes('link_click')) {
-        const val = uniqueLinkClicks > 0 ? uniqueLinkClicks : clicks;
-        return { value: val, label: 'Cliques no link' };
-      }
-      if (objective.includes('engagement')) return { value: clicks, label: 'Engajamentos' };
-      if (objective.includes('awareness') || objective.includes('reach') || objective.includes('brand')) {
-        return { value: reach, label: 'Alcance' };
-      }
-      if (results > 0) return { value: results, label: 'Resultados' };
-      if (purchases > 0) return { value: purchases, label: 'Compras' };
-      if (leads > 0) return { value: leads, label: 'Leads' };
-      if (contacts > 0) return { value: contacts, label: 'Contatos' };
-      if (initiatesCheckout > 0) return { value: initiatesCheckout, label: 'Finalizações' };
-      return { value: 0, label: 'Objetivo' };
-    };
 
     const queryMetrics = async () => {
       let groupBy: string;
@@ -406,6 +364,53 @@ function linkBaseFromRow(row: Record<string, unknown>) {
   return link > 0 ? link : ulink > 0 ? ulink : clicks;
 }
 
+function resolveObjectiveMetric(row: Record<string, any>) {
+  const objective = String(row.objective || '').toLowerCase();
+  const leads = Number(row.leads || 0);
+  const purchases = Number(row.purchases || 0);
+  const initiatesCheckout = Number(row.initiates_checkout || 0);
+  const contacts = Number(row.contacts || 0);
+  const uniqueLinkClicks = Number(row.unique_link_clicks || 0);
+  const clicks = Number(row.clicks || 0);
+  const reach = Number(row.reach || 0);
+  const results = Number(row.results || 0);
+  const customEventCount = Number(row.custom_event_count || 0);
+  const customEventName = row.custom_event_name ? String(row.custom_event_name) : '';
+
+  if (
+    customEventCount > 0 &&
+    (objective.includes('custom') || objective.includes('conversion') || results === 0)
+  ) {
+    return {
+      value: results > 0 ? results : customEventCount,
+      label: customEventName ? `Evento ${customEventName}` : 'Evento personalizado',
+    };
+  }
+  if (objective.includes('lead')) return { value: leads, label: 'Leads' };
+  if (objective.includes('purchase') || objective.includes('sale'))
+    return { value: purchases, label: 'Compras' };
+  if (objective.includes('checkout') || objective.includes('initiate')) {
+    return { value: initiatesCheckout, label: 'Finalizações' };
+  }
+  if (objective.includes('message') || objective.includes('messaging') || objective.includes('contact')) {
+    return { value: contacts, label: 'Contatos' };
+  }
+  if (objective.includes('traffic') || objective.includes('link_click')) {
+    const val = uniqueLinkClicks > 0 ? uniqueLinkClicks : clicks;
+    return { value: val, label: 'Cliques no link' };
+  }
+  if (objective.includes('engagement')) return { value: clicks, label: 'Engajamentos' };
+  if (objective.includes('awareness') || objective.includes('reach') || objective.includes('brand')) {
+    return { value: reach, label: 'Alcance' };
+  }
+  if (results > 0) return { value: results, label: 'Resultados' };
+  if (purchases > 0) return { value: purchases, label: 'Compras' };
+  if (leads > 0) return { value: leads, label: 'Leads' };
+  if (contacts > 0) return { value: contacts, label: 'Contatos' };
+  if (initiatesCheckout > 0) return { value: initiatesCheckout, label: 'Finalizações' };
+  return { value: 0, label: 'Objetivo' };
+}
+
 /**
  * Funil usado no gargalo: clique → página → checkout → compra.
  * Não usamos “carrinho” da Meta aqui — muitas contas têm 0 nesse campo mesmo com checkout cheio,
@@ -562,9 +567,11 @@ function mapRawRowToFunnelResponse(r: Record<string, unknown>) {
   const lp = Number(r.landing_page_views || 0);
   const checkout = Number(r.initiates_checkout || 0);
   const purchases = Number(r.purchases || 0);
+  const resolvedObjective = resolveObjectiveMetric(r as any);
   const funnel = {
     link_clicks: link,
     landing_page_views: lp,
+    objective_metric: Number(resolvedObjective.value || 0),
     adds_to_cart: Number(r.adds_to_cart || 0),
     initiates_checkout: checkout,
     purchases,
@@ -577,6 +584,8 @@ function mapRawRowToFunnelResponse(r: Record<string, unknown>) {
   return {
     id: r.id,
     name: r.name || '—',
+    objective_metric: Number(resolvedObjective.value || 0),
+    objective_metric_label: String(resolvedObjective.label || 'Objetivo'),
     spend: o.spend,
     funnel,
     funnel_rates: {
@@ -726,6 +735,8 @@ router.get('/campaigns/funnel-breakdown', requireAuth, async (req, res) => {
       SELECT
         ${idField},
         ${nameField},
+        MAX(objective) AS objective,
+        COALESCE(SUM(results), 0)::bigint AS results,
         COALESCE(SUM(spend), 0)::numeric AS spend,
         COALESCE(SUM(impressions), 0)::bigint AS impressions,
         COALESCE(SUM(clicks), 0)::bigint AS clicks,
@@ -733,9 +744,12 @@ router.get('/campaigns/funnel-breakdown', requireAuth, async (req, res) => {
         COALESCE(SUM(unique_link_clicks), 0)::bigint AS unique_link_clicks,
         COALESCE(SUM(landing_page_views), 0)::bigint AS landing_page_views,
         COALESCE(SUM(leads), 0)::bigint AS leads,
+        COALESCE(SUM(contacts), 0)::bigint AS contacts,
         COALESCE(SUM(adds_to_cart), 0)::bigint AS adds_to_cart,
         COALESCE(SUM(initiates_checkout), 0)::bigint AS initiates_checkout,
-        COALESCE(SUM(purchases), 0)::bigint AS purchases
+        COALESCE(SUM(purchases), 0)::bigint AS purchases,
+        COALESCE(SUM(custom_event_count), 0)::bigint AS custom_event_count,
+        MAX(custom_event_name) AS custom_event_name
         ${extraAdFields}
       FROM meta_insights_daily
       WHERE site_id = $1

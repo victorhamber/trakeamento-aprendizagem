@@ -6,10 +6,13 @@ export type FunnelCampaignOption = { id: string; name: string; is_active?: boole
 type FunnelRow = {
   id: string;
   name: string;
+  objective_metric?: number;
+  objective_metric_label?: string;
   spend: number;
   funnel: {
     link_clicks: number;
     landing_page_views: number;
+    objective_metric?: number;
     adds_to_cart: number;
     initiates_checkout: number;
     purchases: number;
@@ -118,6 +121,7 @@ function buildFunnelSummary(args: {
     '',
     `Cliques no link: ${formatNumber(f.link_clicks)}`,
     `Ver página (LP): ${formatNumber(f.landing_page_views)}`,
+    `${primary.objective_metric_label || 'Objetivo'}: ${formatNumber(primary.objective_metric || (f as any).objective_metric || 0)}`,
     `Checkout: ${formatNumber(f.initiates_checkout)}`,
     `Compras (Meta): ${formatNumber(f.purchases)}`,
     '',
@@ -170,11 +174,12 @@ function futureBadgeClass(f: FunnelRow['future']) {
   }
 }
 
-function FunnelBars({ f }: { f: FunnelRow['funnel'] }) {
-  const max = Math.max(f.link_clicks, f.landing_page_views, f.initiates_checkout, f.purchases, 1);
+function FunnelBars({ f, objectiveLabel }: { f: FunnelRow['funnel']; objectiveLabel?: string }) {
+  const max = Math.max(f.link_clicks, f.landing_page_views, f.objective_metric || 0, f.initiates_checkout, f.purchases, 1);
   const items = [
     { label: 'Cliques no link', v: f.link_clicks, color: 'bg-violet-500' },
     { label: 'Ver página (LP)', v: f.landing_page_views, color: 'bg-indigo-500' },
+    { label: objectiveLabel || 'Objetivo', v: Number(f.objective_metric || 0), color: 'bg-sky-500' },
     { label: 'Checkout', v: f.initiates_checkout, color: 'bg-amber-500' },
     { label: 'Compras', v: f.purchases, color: 'bg-emerald-500' },
   ];
@@ -535,7 +540,7 @@ export function CampaignFunnelPanel({
           <>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <div>
-                <FunnelBars f={primary.funnel} />
+                <FunnelBars f={primary.funnel} objectiveLabel={primary.objective_metric_label} />
                 {compareEnabled && compareLabel ? (
                   <p className="text-[10px] text-zinc-500 mt-2">
                     Comparativo: <strong>{compareLabel}</strong>
@@ -695,7 +700,7 @@ export function CampaignFunnelPanel({
                         </div>
                       </div>
                     ) : null}
-                    <FunnelBars f={r.funnel} />
+                    <FunnelBars f={r.funnel} objectiveLabel={r.objective_metric_label} />
                   </div>
                 <div className="text-xs space-y-2">
                   {r.bottleneck_plain ? (
