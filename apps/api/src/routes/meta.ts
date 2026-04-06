@@ -198,6 +198,7 @@ router.get('/campaigns/metrics', requireAuth, async (req, res) => {
           ${idField},
           ${nameField},
           MAX(objective)                                  AS objective,
+          MAX(optimization_goal)                          AS optimization_goal,
           COALESCE(SUM(results), 0)::bigint               AS results,
           COALESCE(SUM(spend), 0)::numeric              AS spend,
           COALESCE(SUM(impressions), 0)::bigint          AS impressions,
@@ -366,6 +367,7 @@ function linkBaseFromRow(row: Record<string, unknown>) {
 
 function resolveObjectiveMetric(row: Record<string, any>) {
   const objective = String(row.objective || '').toLowerCase();
+  const optimizationGoal = String(row.optimization_goal || '').toLowerCase();
   const leads = Number(row.leads || 0);
   const purchases = Number(row.purchases || 0);
   const initiatesCheckout = Number(row.initiates_checkout || 0);
@@ -377,10 +379,15 @@ function resolveObjectiveMetric(row: Record<string, any>) {
   const customEventCount = Number(row.custom_event_count || 0);
   const customEventName = row.custom_event_name ? String(row.custom_event_name) : '';
 
-  if (
-    customEventCount > 0 &&
-    (objective.includes('custom') || objective.includes('conversion') || results === 0)
-  ) {
+  // Preferir o "optimization goal" real quando for conversão/personalizado,
+  // mesmo que o objective da campanha seja "purchase/sales".
+  const optHintsCustom =
+    optimizationGoal.includes('custom') ||
+    optimizationGoal.includes('offsite') ||
+    optimizationGoal.includes('conversion') ||
+    optimizationGoal.includes('conversions');
+
+  if ((customEventName && optHintsCustom) || (customEventCount > 0 && optHintsCustom)) {
     return {
       value: results > 0 ? results : customEventCount,
       label: customEventName ? `Evento ${customEventName}` : 'Evento personalizado',
@@ -736,6 +743,7 @@ router.get('/campaigns/funnel-breakdown', requireAuth, async (req, res) => {
         ${idField},
         ${nameField},
         MAX(objective) AS objective,
+        MAX(optimization_goal) AS optimization_goal,
         COALESCE(SUM(results), 0)::bigint AS results,
         COALESCE(SUM(spend), 0)::numeric AS spend,
         COALESCE(SUM(impressions), 0)::bigint AS impressions,

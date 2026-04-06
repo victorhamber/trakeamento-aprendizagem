@@ -261,6 +261,7 @@ export class MetaMarketingService {
     'date_start',
     'date_stop',
     'objective',
+    'optimization_goal',
     'results',
     'result_rate',
   ] as const;
@@ -506,23 +507,27 @@ export class MetaMarketingService {
         [siteId, range.since, range.until]
       );
 
-      // ── Create Map of AdSet -> Objective/CustomEvent ──────────────────────
-      const adSetMap = new Map<string, { objective: string | null; customName: string | null }>();
+      // ── Create Map of AdSet -> Objective/OptimizationGoal/CustomEvent ─────
+      const adSetMap = new Map<
+        string,
+        { objective: string | null; optimizationGoal: string | null; customName: string | null }
+      >();
 
       for (const row of adSetInsights) {
         const adsetId = MetaMarketingService.asString(row.adset_id);
         if (adsetId) {
           const vals = this.getInsightValues(siteId, row);
-          // vals[23] = objective, vals[29] = custom_event_name
+          // vals[23] = objective, vals[24] = optimization_goal, vals[30] = custom_event_name
           // (Check getInsightValues return array order)
           // Column order in getInsightValues:
           // ... leads(16), contacts(17), purchases(18), addsToCart(19), initiatesCheckout(20),
-          // costPerLead(21), costPerPurchase(22), objective(23), results(24), resultRate(25),
-          // dateStart(26), dateStop(27), rawPayload(28), customEventName(29), customEventCount(30)
+          // costPerLead(21), costPerPurchase(22), objective(23), optimizationGoal(24), results(25), resultRate(26),
+          // dateStart(27), dateStop(28), rawPayload(29), customEventName(30), customEventCount(31)
 
           adSetMap.set(adsetId, {
             objective: vals[23] as string | null,
-            customName: vals[29] as string | null
+            optimizationGoal: vals[24] as string | null,
+            customName: vals[30] as string | null,
           });
         }
       }
@@ -658,7 +663,7 @@ export class MetaMarketingService {
 
   /**
    * Extract all common metric values from a Meta insights row.
-   * Returns exactly 31 values matching the column order in persistAdInsight /
+   * Returns exactly 32 values matching the column order in persistAdInsight /
    * persistAdSetInsight / persistCampaignInsight (after their respective prefixes).
    *
    * Column order:
@@ -667,7 +672,9 @@ export class MetaMarketingService {
    *   reach, frequency, cpc, ctr, unique_ctr, cpm,
    *   leads, contacts, purchases, adds_to_cart, initiates_checkout,
    *   cost_per_lead, cost_per_purchase,
-   *   date_start, date_stop, raw_payload
+   *   objective, optimization_goal, results, result_rate,
+   *   date_start, date_stop, raw_payload,
+   *   custom_event_name, custom_event_count
    */
   private getInsightValues(siteId: number, row: Record<string, unknown>): unknown[] {
     const actions = row.actions;
@@ -730,6 +737,7 @@ export class MetaMarketingService {
     const costPerLead = this.getCostPerAction(costs, 'lead');
     const costPerPurchase = this.getCostPerAction(costs, 'purchase');
     const objective = MetaMarketingService.asString(row.objective);
+    const optimizationGoal = MetaMarketingService.asString((row as any).optimization_goal);
     const results = this.normalizeResults(row.results);
     const resultRate = this.asNumber(row.result_rate);
     const customEvent = this.getCustomEvent(actions);
@@ -759,6 +767,7 @@ export class MetaMarketingService {
       costPerLead,
       costPerPurchase,
       objective,
+      optimizationGoal,
       results,
       resultRate,
       MetaMarketingService.asString(row.date_start),
@@ -769,7 +778,7 @@ export class MetaMarketingService {
     ];
   }
 
-  private async persistAdInsight(siteId: number, row: Record<string, unknown>, adSetMap?: Map<string, { objective: string | null; customName: string | null }>) {
+  private async persistAdInsight(siteId: number, row: Record<string, unknown>, adSetMap?: Map<string, { objective: string | null; optimizationGoal: string | null; customName: string | null }>) {
     // syncDailyInsights deletes rows for this site+range before calling persist*,
     // so a plain INSERT is safe and avoids fragile partial-index ON CONFLICT logic.
 
@@ -780,15 +789,20 @@ export class MetaMarketingService {
     // Override objective and custom_event_name/count if missing/mismatched but present in parent
     if (parent) {
       // values[23] = objective
-      // values[29] = custom_event_name
-      // values[30] = custom_event_count
+      // values[24] = optimization_goal
+      // values[30] = custom_event_name
+      // values[31] = custom_event_count
 
       if (!values[23] || (values[23] as string).includes('OUTCOME') || (values[23] as string).includes('CONVERSION')) {
         if (parent.objective) values[23] = parent.objective;
       }
 
-      if (!values[29] && parent.customName) {
-        values[29] = parent.customName;
+      if (!values[24] && parent.optimizationGoal) {
+        values[24] = parent.optimizationGoal;
+      }
+
+      if (!values[30] && parent.customName) {
+        values[30] = parent.customName;
         // Se temos o nome do custom event do pai, tentamos buscar nas actions do filho por esse nome específico
         const actions = row.actions;
         if (actions) {
@@ -803,7 +817,7 @@ export class MetaMarketingService {
             if (type.endsWith(parent.customName)) {
               const val = this.asInt(MetaMarketingService.getValueField(item));
               if (val !== null) {
-                values[30] = val; // Atualiza count
+                values[31] = val; // Atualiza count
                 break;
               }
             }
@@ -818,15 +832,15 @@ export class MetaMarketingService {
         spend, impressions, clicks, unique_clicks, link_clicks, unique_link_clicks, inline_link_clicks, outbound_clicks, video_3s_views, landing_page_views,
         reach, frequency, cpc, ctr, unique_ctr, cpm,
         leads, contacts, purchases, adds_to_cart, initiates_checkout, cost_per_lead, cost_per_purchase,
-        objective, results, result_rate,
+        objective, optimization_goal, results, result_rate,
         date_start, date_stop, raw_payload, custom_event_name, custom_event_count
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7,
         $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
         $18, $19, $20, $21, $22, $23,
         $24, $25, $26, $27, $28, $29, $30,
-        $31, $32, $33,
-        $34, $35, $36, $37, $38
+        $31, $32, $33, $34,
+        $35, $36, $37, $38, $39
       )`,
       [
         siteId,
@@ -848,15 +862,15 @@ export class MetaMarketingService {
         spend, impressions, clicks, unique_clicks, link_clicks, unique_link_clicks, inline_link_clicks, outbound_clicks, video_3s_views, landing_page_views,
         reach, frequency, cpc, ctr, unique_ctr, cpm,
         leads, contacts, purchases, adds_to_cart, initiates_checkout, cost_per_lead, cost_per_purchase,
-        objective, results, result_rate,
+        objective, optimization_goal, results, result_rate,
         date_start, date_stop, raw_payload, custom_event_name, custom_event_count
       ) VALUES (
         $1, $2, $3, $4, $5,
         $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
         $16, $17, $18, $19, $20, $21,
         $22, $23, $24, $25, $26, $27, $28,
-        $29, $30, $31,
-        $32, $33, $34, $35, $36
+        $29, $30, $31, $32,
+        $33, $34, $35, $36, $37
       )`,
       [
         siteId,
@@ -876,15 +890,15 @@ export class MetaMarketingService {
         spend, impressions, clicks, unique_clicks, link_clicks, unique_link_clicks, inline_link_clicks, outbound_clicks, video_3s_views, landing_page_views,
         reach, frequency, cpc, ctr, unique_ctr, cpm,
         leads, contacts, purchases, adds_to_cart, initiates_checkout, cost_per_lead, cost_per_purchase,
-        objective, results, result_rate,
+        objective, optimization_goal, results, result_rate,
         date_start, date_stop, raw_payload, custom_event_name, custom_event_count
       ) VALUES (
         $1, $2, $3,
         $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
         $14, $15, $16, $17, $18, $19,
         $20, $21, $22, $23, $24, $25, $26,
-        $27, $28, $29,
-        $30, $31, $32, $33, $34
+        $27, $28, $29, $30,
+        $31, $32, $33, $34, $35
       )`,
       [
         siteId,
