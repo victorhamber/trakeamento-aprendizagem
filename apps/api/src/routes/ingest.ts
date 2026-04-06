@@ -10,6 +10,7 @@ import cors from 'cors'; // Added import for cors
 import { DDI_LIST } from '../lib/ddi';
 import { getClientIp } from '../lib/ip';
 import { preserveMetaClickIds } from '../lib/meta-attribution';
+import { runMetaParamBuilder } from '../lib/capi-param-builder-bridge';
 
 const LRUCache = require('lru-cache').LRUCache || require('lru-cache');
 
@@ -498,11 +499,9 @@ function buildCapiUserData(
   req: Request,
   userData: NonNullable<IngestEvent['user_data']>,
   siteKey: string,
-  customData: Record<string, unknown>
+  customData: Record<string, unknown>,
+  eventSourceUrl?: string
 ) {
-  const clientIp = resolveClientIp(req, userData);
-  const clientUserAgent = resolveClientUserAgentForCapi(req, userData);
-  const geo = resolveGeo(clientIp);
   const pickCustom = (field: string) => {
     const val = customData[field];
     if (typeof val === 'string') return val;
@@ -521,6 +520,16 @@ function buildCapiUserData(
     return fromCustom ? fromCustom : undefined;
   };
 
+  const pb = runMetaParamBuilder(req, userData as Record<string, unknown>, eventSourceUrl);
+
+  let clientIp = resolveClientIp(req, userData);
+  if (!clientIp && pb.clientIpAddress) {
+    const fromPb = pb.clientIpAddress.replace(/^::ffff:/i, '').trim();
+    if (fromPb) clientIp = fromPb;
+  }
+  const clientUserAgent = resolveClientUserAgentForCapi(req, userData);
+  const geo = resolveGeo(clientIp);
+
   // Monta campos com prioridade: payload hasheado > payload raw > geo
   const pick = (field: string) =>
     normalizeAndHash(field, pickRaw(field), { ip: clientIp, country: pickCustom('country') });
@@ -528,8 +537,17 @@ function buildCapiUserData(
   const ct = pick('ct') ?? (geo.city ? hashPii(normalizers.ct(geo.city)) : undefined);
   const st = pick('st') ?? (geo.region ? hashPii(normalizers.st(geo.region)) : undefined);
   const country = pick('country') ?? (geo.country ? hashPii(normalizers.country(geo.country)) : undefined);
-  const fbp = preserveMetaClickIds(userData.fbp || pickCustom('fbp'));
-  const fbc = preserveMetaClickIds(userData.fbc || pickCustom('fbc'));
+  /** fbp: prioriza valor do browser (pixel); ParamBuilder só se não veio no corpo (evita fbp aleatório do servidor). */
+  const fbp =
+    preserveMetaClickIds(
+      (typeof userData.fbp === 'string' ? userData.fbp : undefined) || pickCustom('fbp')
+    ) ?? preserveMetaClickIds(pb.fbp);
+  /** fbc: ParamBuilder primeiro (formato + appendix da lib Meta), senão payload. */
+  const fbc =
+    preserveMetaClickIds(pb.fbc) ??
+    preserveMetaClickIds(
+      (typeof userData.fbc === 'string' ? userData.fbc : undefined) || pickCustom('fbc')
+    );
   const externalIdRaw = userData.external_id || pickCustom('external_id');
   const zp = pick('zp');
   const db = pick('db');
@@ -656,7 +674,7 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
     // Build enriched user data BEFORE persisting to DB
     // This ensures the server-side IP is saved in web_events for later recovery by Enrichment
     const rawUserData = event.user_data ?? {};
-    const capiUser = buildCapiUserData(req, rawUserData, siteKey, event.custom_data ?? {});
+    const capiUser = buildCapiUserData(req, rawUserData, siteKey, event.custom_data ?? {}, eventSourceUrl);
     const enrichedUserData = { ...rawUserData, ...capiUser };
 
     let result;
@@ -1020,7 +1038,13 @@ router.post('/batch', cors(), ingestLimiter, async (req, res) => {
 
       // Visitor UPSERTs + CAPI + GA4 — all fire-and-forget per event
       for (const p of inserted) {
-        const capiUser = buildCapiUserData(req, p.event.user_data || {}, siteKey, p.event.custom_data ?? {});
+        const capiUser = buildCapiUserData(
+          req,
+          p.event.user_data || {},
+          siteKey,
+          p.event.custom_data ?? {},
+          p.eventSourceUrl
+        );
         const rawExtB = capiUser.external_id;
         const extId =
           rawExtB != null && String(rawExtB).trim() !== ''
