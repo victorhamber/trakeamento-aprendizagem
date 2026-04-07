@@ -656,6 +656,8 @@ function mapRawRowToFunnelResponse(r: Record<string, unknown>) {
   const lp_rate_pct = link > 0 ? Math.round((lp / link) * 1000) / 10 : 0;
   const checkout_rate_pct = lp > 0 ? Math.round((checkout / lp) * 1000) / 10 : 0;
   const purchase_rate_pct = checkout > 0 ? Math.round((purchases / checkout) * 1000) / 10 : 0;
+  const meta_revenue = Number((r as any).meta_revenue || 0);
+  const meta_roas = o.spend > 0 ? Math.round((meta_revenue / o.spend) * 1000) / 1000 : 0;
 
   return {
     id: r.id,
@@ -663,6 +665,8 @@ function mapRawRowToFunnelResponse(r: Record<string, unknown>) {
     objective_metric: Number(resolvedObjective.value || 0),
     objective_metric_label: String(resolvedObjective.label || 'Objetivo'),
     spend: o.spend,
+    meta_revenue,
+    meta_roas,
     funnel,
     funnel_rates: {
       lp_from_clicks_pct: lp_rate_pct,
@@ -840,6 +844,11 @@ router.get('/campaigns/funnel-breakdown', requireAuth, async (req, res) => {
         COALESCE(MAX(a.optimized_event_name), MAX(m.optimized_event_name)) AS optimized_event_name,
         COALESCE(SUM(m.results), 0)::bigint AS results,
         COALESCE(SUM(m.spend), 0)::numeric AS spend,
+        COALESCE(SUM((
+          SELECT COALESCE(SUM((av->>'value')::numeric), 0)
+          FROM jsonb_array_elements(COALESCE(m.raw_payload->'action_values', '[]'::jsonb)) av
+          WHERE av->>'action_type' = 'purchase'
+        )), 0)::numeric AS meta_revenue,
         COALESCE(SUM(m.impressions), 0)::bigint AS impressions,
         COALESCE(SUM(m.clicks), 0)::bigint AS clicks,
         COALESCE(SUM(m.link_clicks), 0)::bigint AS link_clicks,
@@ -870,6 +879,11 @@ router.get('/campaigns/funnel-breakdown', requireAuth, async (req, res) => {
         MAX(optimized_event_name) AS optimized_event_name,
         COALESCE(SUM(results), 0)::bigint AS results,
         COALESCE(SUM(spend), 0)::numeric AS spend,
+        COALESCE(SUM((
+          SELECT COALESCE(SUM((av->>'value')::numeric), 0)
+          FROM jsonb_array_elements(COALESCE(raw_payload->'action_values', '[]'::jsonb)) av
+          WHERE av->>'action_type' = 'purchase'
+        )), 0)::numeric AS meta_revenue,
         COALESCE(SUM(impressions), 0)::bigint AS impressions,
         COALESCE(SUM(clicks), 0)::bigint AS clicks,
         COALESCE(SUM(link_clicks), 0)::bigint AS link_clicks,

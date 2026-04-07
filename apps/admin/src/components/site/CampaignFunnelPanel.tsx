@@ -9,6 +9,8 @@ type FunnelRow = {
   objective_metric?: number;
   objective_metric_label?: string;
   spend: number;
+  meta_revenue?: number;
+  meta_roas?: number;
   funnel: {
     link_clicks: number;
     landing_page_views: number;
@@ -83,18 +85,6 @@ function periodPresetLabel(preset: string, since: string, until: string): string
     default:
       return preset;
   }
-}
-
-function PctDelta({ cur, prev }: { cur: number; prev: number | undefined }) {
-  if (prev === undefined) return null;
-  const d = Math.round((cur - prev) * 10) / 10;
-  if (Math.abs(d) < 0.05) {
-    return <span className="text-zinc-500 tabular-nums">(=)</span>;
-  }
-  if (d > 0) {
-    return <span className="text-emerald-600 dark:text-emerald-400 tabular-nums">(↑{d}%)</span>;
-  }
-  return <span className="text-rose-600 dark:text-rose-400 tabular-nums">(↓{Math.abs(d)}%)</span>;
 }
 
 function SpendDelta({ cur, prev }: { cur: number; prev: number | undefined }) {
@@ -259,6 +249,53 @@ function leigoHeadline(primary: FunnelRow) {
   };
 }
 
+function FunnelInfoCards({ row }: { row: FunnelRow }) {
+  const lp = Number(row.funnel.landing_page_views || 0);
+  const ic = Number(row.funnel.initiates_checkout || 0);
+  const p = Number(row.funnel.purchases || 0);
+  const visitToPurchase = lp > 0 ? p / lp : 0;
+  const pillV2IC = benchPill(benchLevel(lp > 0 ? ic / lp : 0, 0.03, 0.06, 0.12));
+  const pillIC2P = benchPill(benchLevel(ic > 0 ? p / ic : 0, 0.15, 0.25, 0.40));
+  const pillV2P = benchPill(benchLevel(visitToPurchase, 0.01, 0.02, 0.04));
+  return (
+    <>
+      <div className="mt-4 grid grid-cols-3 gap-2 text-[10px] text-zinc-500">
+        <div className="rounded-lg bg-zinc-100 dark:bg-zinc-800/50 p-2 border border-zinc-200 dark:border-zinc-700/50">
+          <div className="text-zinc-600 dark:text-zinc-400">Clique → página</div>
+          <div className="text-zinc-900 dark:text-zinc-200 font-semibold tabular-nums">{row.funnel_rates.lp_from_clicks_pct}%</div>
+        </div>
+        <div className="rounded-lg bg-zinc-100 dark:bg-zinc-800/50 p-2 border border-zinc-200 dark:border-zinc-700/50">
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-zinc-600 dark:text-zinc-400">Página → checkout</div>
+            <span className={pillV2IC.cls} title="Benchmark global DR (2025–2026)">
+              {pillV2IC.label}
+            </span>
+          </div>
+          <div className="text-zinc-900 dark:text-zinc-200 font-semibold tabular-nums">{row.funnel_rates.checkout_from_lp_pct}%</div>
+        </div>
+        <div className="rounded-lg bg-zinc-100 dark:bg-zinc-800/50 p-2 border border-zinc-200 dark:border-zinc-700/50">
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-zinc-600 dark:text-zinc-400">Checkout → compra</div>
+            <span className={pillIC2P.cls} title="Benchmark global DR (2025–2026)">
+              {pillIC2P.label}
+            </span>
+          </div>
+          <div className="text-zinc-900 dark:text-zinc-200 font-semibold tabular-nums">{row.funnel_rates.purchase_from_checkout_pct}%</div>
+        </div>
+      </div>
+      <div className="mt-2">
+        <div className="text-[11px] text-zinc-600 dark:text-zinc-400 flex items-center gap-2">
+          <span className="font-medium">Visita → compra:</span>
+          <span className={pillV2P.cls} title="Benchmark global DR (2025–2026)">
+            {pillV2P.label}
+          </span>
+          <span className="tabular-nums">{toPct(visitToPurchase)}%</span>
+        </div>
+      </div>
+    </>
+  );
+}
+
 function severityBorder(sev: string | undefined) {
   if (sev === 'high') return 'border-rose-400 dark:border-rose-500/50 bg-rose-500/10';
   if (sev === 'medium') return 'border-amber-400 dark:border-amber-500/45 bg-amber-500/10';
@@ -298,6 +335,7 @@ export function CampaignFunnelPanel({
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
   const [simpleMode, setSimpleMode] = useState(true);
+  const chatEndRef = React.useRef<HTMLDivElement | null>(null);
 
   const filteredCampaigns = useMemo(() => {
     if (campaignStatusFilter === 'all') return campaigns;
@@ -391,6 +429,10 @@ export function CampaignFunnelPanel({
       ];
     });
   }, [campaignId]);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [chatMessages.length, chatLoading]);
 
   const loadFunnel = useCallback(async (opts?: { force?: boolean }) => {
     if (!hasMetaConnection || !hasAdAccount) return;
@@ -698,68 +740,7 @@ export function CampaignFunnelPanel({
                     {!comparePrimary ? ' — sem dados salvos nesse intervalo.' : null}
                   </p>
                 ) : null}
-                <div className="mt-4 grid grid-cols-3 gap-2 text-[10px] text-zinc-500">
-                  <div className="rounded-lg bg-zinc-100 dark:bg-zinc-800/50 p-2 border border-zinc-200 dark:border-zinc-700/50">
-                    <div className="text-zinc-600 dark:text-zinc-400">Clique → página</div>
-                    <div className="text-zinc-900 dark:text-zinc-200 font-semibold tabular-nums flex flex-wrap items-center gap-1">
-                      {primary.funnel_rates.lp_from_clicks_pct}%
-                      <PctDelta cur={primary.funnel_rates.lp_from_clicks_pct} prev={comparePrimary?.funnel_rates.lp_from_clicks_pct} />
-                    </div>
-                  </div>
-                  <div className="rounded-lg bg-zinc-100 dark:bg-zinc-800/50 p-2 border border-zinc-200 dark:border-zinc-700/50">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="text-zinc-600 dark:text-zinc-400">Página → checkout</div>
-                      {(() => {
-                        const v = Number(primary.funnel.landing_page_views || 0);
-                        const ic = Number(primary.funnel.initiates_checkout || 0);
-                        const rate = v > 0 ? ic / v : 0;
-                        const pill = benchPill(benchLevel(rate, 0.03, 0.06, 0.12));
-                        return <span className={pill.cls} title="Benchmark global DR (2025–2026)">{pill.label}</span>;
-                      })()}
-                    </div>
-                    <div className="text-zinc-900 dark:text-zinc-200 font-semibold tabular-nums flex flex-wrap items-center gap-1">
-                      {primary.funnel_rates.checkout_from_lp_pct}%
-                      <PctDelta
-                        cur={primary.funnel_rates.checkout_from_lp_pct}
-                        prev={comparePrimary?.funnel_rates.checkout_from_lp_pct}
-                      />
-                    </div>
-                  </div>
-                  <div className="rounded-lg bg-zinc-100 dark:bg-zinc-800/50 p-2 border border-zinc-200 dark:border-zinc-700/50">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="text-zinc-600 dark:text-zinc-400">Checkout → compra</div>
-                      {(() => {
-                        const ic = Number(primary.funnel.initiates_checkout || 0);
-                        const p = Number(primary.funnel.purchases || 0);
-                        const rate = ic > 0 ? p / ic : 0;
-                        const pill = benchPill(benchLevel(rate, 0.15, 0.25, 0.40));
-                        return <span className={pill.cls} title="Benchmark global DR (2025–2026)">{pill.label}</span>;
-                      })()}
-                    </div>
-                    <div className="text-zinc-900 dark:text-zinc-200 font-semibold tabular-nums flex flex-wrap items-center gap-1">
-                      {primary.funnel_rates.purchase_from_checkout_pct}%
-                      <PctDelta
-                        cur={primary.funnel_rates.purchase_from_checkout_pct}
-                        prev={comparePrimary?.funnel_rates.purchase_from_checkout_pct}
-                      />
-                    </div>
-                  </div>
-                </div>
-                <div className="mt-2">
-                  {(() => {
-                    const v = Number(primary.funnel.landing_page_views || 0);
-                    const p = Number(primary.funnel.purchases || 0);
-                    const rate = v > 0 ? p / v : 0;
-                    const pill = benchPill(benchLevel(rate, 0.01, 0.02, 0.04));
-                    return (
-                      <div className="text-[11px] text-zinc-600 dark:text-zinc-400 flex items-center gap-2">
-                        <span className="font-medium">Visita → compra:</span>
-                        <span className={pill.cls} title="Benchmark global DR (2025–2026)">{pill.label}</span>
-                        <span className="tabular-nums">{toPct(rate)}%</span>
-                      </div>
-                    );
-                  })()}
-                </div>
+                <FunnelInfoCards row={primary} />
               </div>
               <div className="space-y-3">
                 {simpleMode && leigo ? (
@@ -839,6 +820,24 @@ export function CampaignFunnelPanel({
                     Investido:{' '}
                     <strong className="text-zinc-900 dark:text-zinc-200 tabular-nums">{formatMoney(primary.spend)}</strong>
                   </span>
+                  {Number(primary.meta_revenue || 0) > 0 ? (
+                    <>
+                      <span className="text-zinc-500">·</span>
+                      <span>
+                        Receita (Meta):{' '}
+                        <strong className="text-zinc-900 dark:text-zinc-200 tabular-nums">
+                          {formatMoney(Number(primary.meta_revenue || 0))}
+                        </strong>
+                      </span>
+                      <span className="text-zinc-500">·</span>
+                      <span>
+                        ROAS (Meta):{' '}
+                        <strong className="text-zinc-900 dark:text-zinc-200 tabular-nums">
+                          {(Number(primary.meta_roas || 0)).toFixed(2)}x
+                        </strong>
+                      </span>
+                    </>
+                  ) : null}
                   {comparePrimary ? (
                     <span className="text-zinc-500">
                       vs. anterior <strong className="tabular-nums">{formatMoney(comparePrimary.spend)}</strong>{' '}
@@ -898,6 +897,7 @@ export function CampaignFunnelPanel({
                       </div>
                     ) : null}
                     <FunnelBars f={r.funnel} objectiveLabel={r.objective_metric_label} />
+                    <FunnelInfoCards row={r} />
                   </div>
                 <div className="text-xs space-y-2">
                   {r.bottleneck_plain ? (
@@ -913,6 +913,11 @@ export function CampaignFunnelPanel({
                       {r.future === 'promising' ? 'Potencial' : r.future === 'limited' ? 'Cuidado' : 'Neutro'}
                     </span>
                     <span className="text-zinc-500 tabular-nums">{formatMoney(r.spend)}</span>
+                    {Number(r.meta_revenue || 0) > 0 ? (
+                      <span className="text-zinc-500 tabular-nums">
+                        · {formatMoney(Number(r.meta_revenue || 0))} · {(Number(r.meta_roas || 0)).toFixed(2)}x
+                      </span>
+                    ) : null}
                   </div>
                   <p className="text-zinc-500 leading-relaxed">{r.present_label}</p>
                 </div>
@@ -932,7 +937,7 @@ export function CampaignFunnelPanel({
             </div>
           </div>
 
-          <div className="max-h-[260px] overflow-auto rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/40 p-3 space-y-2">
+          <div className="max-h-[460px] min-h-[260px] overflow-auto rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/40 p-3 space-y-2">
             {chatMessages.map((m, idx) => (
               <div key={idx} className={m.role === 'user' ? 'text-right' : 'text-left'}>
                 <div
@@ -947,20 +952,24 @@ export function CampaignFunnelPanel({
                 </div>
               </div>
             ))}
+            <div ref={chatEndRef} />
           </div>
 
-          <div className="mt-3 flex flex-wrap gap-2">
-            {chatQuickActions.map((a) => (
-              <button
-                key={a.key}
-                type="button"
-                onClick={() => sendChatText(a.text).catch(() => {})}
-                disabled={chatLoading || !campaignId}
-                className="text-[11px] px-2.5 py-1.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-800 disabled:opacity-40"
-              >
-                {a.label}
-              </button>
-            ))}
+          <div className="mt-3">
+            <div className="text-[11px] text-zinc-500 dark:text-zinc-400 mb-1">Atalhos</div>
+            <div className="flex gap-2 overflow-x-auto custom-scrollbar pb-1">
+              {chatQuickActions.map((a) => (
+                <button
+                  key={a.key}
+                  type="button"
+                  onClick={() => sendChatText(a.text).catch(() => {})}
+                  disabled={chatLoading || !campaignId}
+                  className="shrink-0 text-[11px] px-2.5 py-1.5 rounded-full border border-zinc-300 dark:border-zinc-700 bg-white/60 dark:bg-zinc-900/60 text-zinc-700 dark:text-zinc-200 hover:bg-white dark:hover:bg-zinc-800 disabled:opacity-40"
+                >
+                  {a.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="mt-3 flex gap-2 items-center">
