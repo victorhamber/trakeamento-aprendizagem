@@ -230,6 +230,15 @@ export function CampaignFunnelPanel({
   const [compareRows, setCompareRows] = useState<FunnelRow[]>([]);
   const [compareLabel, setCompareLabel] = useState<string | null>(null);
   const [copyFeedback, setCopyFeedback] = useState(false);
+  const [chatMessages, setChatMessages] = useState<Array<{ role: 'assistant' | 'user'; content: string }>>([
+    {
+      role: 'assistant',
+      content:
+        'Me diga o que você quer melhorar (criativo, página, checkout, oferta) e eu vou te guiando com base nos dados do funil. Se quiser, pergunte qualquer coisa.',
+    },
+  ]);
+  const [chatInput, setChatInput] = useState('');
+  const [chatLoading, setChatLoading] = useState(false);
 
   const filteredCampaigns = useMemo(() => {
     if (campaignStatusFilter === 'all') return campaigns;
@@ -256,6 +265,41 @@ export function CampaignFunnelPanel({
     }
     return p;
   }, [siteId, metricsPreset, metricsSince, metricsUntil]);
+
+  const sendChat = useCallback(async () => {
+    if (!chatInput.trim() || !campaignId) return;
+    const userMsg = chatInput.trim();
+    setChatInput('');
+    setChatMessages((m) => [...m, { role: 'user', content: userMsg }]);
+    setChatLoading(true);
+    try {
+      const params: Record<string, string | number> = {
+        site_id: siteId,
+        campaign_id: campaignId,
+      };
+      if (metricsPreset === 'custom') {
+        params.since = metricsSince;
+        params.until = metricsUntil;
+      } else {
+        params.date_preset = metricsPreset;
+      }
+      const res = await api.post(
+        '/recommendations/chat',
+        { messages: [...chatMessages, { role: 'user', content: userMsg }].slice(-12) },
+        { params }
+      );
+      const answer = typeof res.data?.answer === 'string' ? res.data.answer : 'Não consegui responder agora. Tente novamente.';
+      setChatMessages((m) => [...m, { role: 'assistant', content: answer }]);
+    } catch (e) {
+      console.error(e);
+      setChatMessages((m) => [
+        ...m,
+        { role: 'assistant', content: 'Falha ao falar com a IA agora. Verifique a configuração da OpenAI em Inteligência IA.' },
+      ]);
+    } finally {
+      setChatLoading(false);
+    }
+  }, [chatInput, campaignId, siteId, metricsPreset, metricsSince, metricsUntil, chatMessages]);
 
   const loadFunnel = useCallback(async (opts?: { force?: boolean }) => {
     if (!hasMetaConnection || !hasAdAccount) return;
@@ -728,6 +772,58 @@ export function CampaignFunnelPanel({
             </div>
           </div>
         )}
+
+        <div className="mt-2 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-900/40 p-4">
+          <div className="flex items-start justify-between gap-3 mb-3">
+            <div className="space-y-0.5 min-w-0">
+              <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Diagnóstico IA (chat)</div>
+              <div className="text-[11px] text-zinc-600 dark:text-zinc-400">
+                Baseado no funil e benchmarks. Campanha: <span className="font-medium">{selectedCampaignName || '—'}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="max-h-[260px] overflow-auto rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/40 p-3 space-y-2">
+            {chatMessages.map((m, idx) => (
+              <div key={idx} className={m.role === 'user' ? 'text-right' : 'text-left'}>
+                <div
+                  className={
+                    'inline-block max-w-[92%] whitespace-pre-wrap rounded-xl px-3 py-2 text-sm ' +
+                    (m.role === 'user'
+                      ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
+                      : 'bg-white text-zinc-900 border border-zinc-200 dark:bg-zinc-900/60 dark:text-zinc-100 dark:border-zinc-800')
+                  }
+                >
+                  {m.content}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-3 flex gap-2 items-center">
+            <input
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  sendChat().catch(() => {});
+                }
+              }}
+              placeholder="Faça uma pergunta (ex.: por que ninguém inicia checkout?)"
+              className="flex-1 text-sm rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 outline-none"
+              disabled={chatLoading}
+            />
+            <button
+              type="button"
+              onClick={() => sendChat().catch(() => {})}
+              disabled={chatLoading || !chatInput.trim()}
+              className="text-sm px-3 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 text-zinc-800 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-40"
+            >
+              {chatLoading ? 'Enviando…' : 'Enviar'}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

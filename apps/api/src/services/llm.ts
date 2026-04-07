@@ -155,6 +155,26 @@ export class LlmService {
     }
   }
 
+  /**
+   * Chat simples (1 resposta) para fluxos conversacionais.
+   * O caller monta o systemPrompt e passa o histórico de mensagens como texto/JSON em userContent.
+   */
+  public async chatOnce(
+    siteKey: string,
+    systemPrompt: string,
+    userContent: string,
+    maxTokens: number = DEFAULT_MAX_TOKENS
+  ): Promise<string> {
+    const cfg = await this.getKeyForSite(siteKey);
+    const apiKey = cfg?.apiKey || process.env.OPENAI_API_KEY || '';
+    const model = cfg?.model || DEFAULT_MODEL;
+    if (!apiKey) {
+      this.log('warn', 'No OpenAI key — returning fallback chat');
+      return 'Configure a chave da OpenAI em **Inteligência IA** para habilitar o chat.';
+    }
+    return await this.callOpenAI(apiKey, model, systemPrompt, userContent, 1, maxTokens);
+  }
+
   private readonly REQUIRED_SECTIONS = [
     '## Diagnostico Executivo',
     '## Analise do Funil',
