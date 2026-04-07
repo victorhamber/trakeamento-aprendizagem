@@ -203,6 +203,62 @@ function FunnelBars({ f, objectiveLabel }: { f: FunnelRow['funnel']; objectiveLa
   );
 }
 
+type BenchLevel = 'bad' | 'ok' | 'good' | 'strong';
+
+function benchLevel(rate01: number, badLt: number, okLt: number, goodLt: number): BenchLevel {
+  if (!Number.isFinite(rate01) || rate01 < 0) return 'bad';
+  if (rate01 < badLt) return 'bad';
+  if (rate01 < okLt) return 'ok';
+  if (rate01 < goodLt) return 'good';
+  return 'strong';
+}
+
+function benchPill(level: BenchLevel) {
+  const base = 'inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-[10px] font-semibold';
+  if (level === 'strong') return { cls: base + ' bg-emerald-500/15 text-emerald-800 dark:text-emerald-200 border-emerald-500/30', label: 'Muito forte' };
+  if (level === 'good') return { cls: base + ' bg-sky-500/15 text-sky-800 dark:text-sky-200 border-sky-500/30', label: 'Bom' };
+  if (level === 'ok') return { cls: base + ' bg-amber-500/15 text-amber-900 dark:text-amber-200 border-amber-500/30', label: 'Aceitável' };
+  return { cls: base + ' bg-rose-500/15 text-rose-800 dark:text-rose-200 border-rose-500/30', label: 'Ruim' };
+}
+
+function toPct(rate01: number): number {
+  if (!Number.isFinite(rate01) || rate01 <= 0) return 0;
+  return Math.round(rate01 * 1000) / 10;
+}
+
+function leigoHeadline(primary: FunnelRow) {
+  const v = Number(primary.funnel.landing_page_views || 0);
+  const ic = Number(primary.funnel.initiates_checkout || 0);
+  const p = Number(primary.funnel.purchases || 0);
+  const visitToIc = v > 0 ? ic / v : 0;
+  const icToPurchase = ic > 0 ? p / ic : 0;
+  const l1 = benchLevel(visitToIc, 0.03, 0.06, 0.12);
+  const l2 = benchLevel(icToPurchase, 0.15, 0.25, 0.40);
+
+  if (ic >= 1 && p === 0) {
+    return {
+      oneLiner: 'Você está perdendo gente no checkout: começam, mas não concluem.',
+      oneAction: 'Ação agora: revise pagamento (Pix/cartão), garantia e o “preço final” (frete/juros) no checkout.',
+    };
+  }
+  if (l1 === 'bad') {
+    return {
+      oneLiner: 'O gargalo está na página: muita gente entra, pouca inicia checkout.',
+      oneAction: 'Ação agora: ajuste a headline para bater com o anúncio e coloque prova social acima do botão.',
+    };
+  }
+  if (l2 === 'bad') {
+    return {
+      oneLiner: 'O gargalo está no checkout/oferta: iniciam checkout, mas poucos compram.',
+      oneAction: 'Ação agora: simplifique o checkout e deixe garantia/benefícios e formas de pagamento muito claros.',
+    };
+  }
+  return {
+    oneLiner: 'Seu funil está no caminho: agora é melhorar criativo e repetir o que está funcionando.',
+    oneAction: 'Ação agora: duplique o melhor anúncio e teste 1 variação de ângulo (mesma oferta, nova promessa).',
+  };
+}
+
 function severityBorder(sev: string | undefined) {
   if (sev === 'high') return 'border-rose-400 dark:border-rose-500/50 bg-rose-500/10';
   if (sev === 'medium') return 'border-amber-400 dark:border-amber-500/45 bg-amber-500/10';
@@ -241,6 +297,7 @@ export function CampaignFunnelPanel({
   ]);
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
+  const [simpleMode, setSimpleMode] = useState(true);
 
   const filteredCampaigns = useMemo(() => {
     if (campaignStatusFilter === 'all') return campaigns;
@@ -489,6 +546,7 @@ export function CampaignFunnelPanel({
 
   const primary = rows[0];
   const comparePrimary = compareRows[0];
+  const leigo = primary ? leigoHeadline(primary) : null;
 
   return (
     <div className="rounded-2xl border border-zinc-200 dark:border-zinc-700/60 bg-gradient-to-b from-white to-zinc-50 dark:from-zinc-900/80 dark:to-zinc-950/90 overflow-hidden shadow-sm dark:shadow-lg">
@@ -557,6 +615,17 @@ export function CampaignFunnelPanel({
             ))}
           </select>
         )}
+        {level === 'campaign' ? (
+          <label className="flex items-center gap-2 text-[11px] text-zinc-600 dark:text-zinc-400 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={simpleMode}
+              onChange={(e) => setSimpleMode(e.target.checked)}
+              className="rounded border-zinc-400"
+            />
+            Modo simples
+          </label>
+        ) : null}
         {level === 'campaign' && metricsPreset !== 'maximum' ? (
           <label className="flex items-center gap-2 text-[11px] text-zinc-600 dark:text-zinc-400 cursor-pointer select-none">
             <input
@@ -606,7 +675,16 @@ export function CampaignFunnelPanel({
                     </div>
                   </div>
                   <div className="rounded-lg bg-zinc-100 dark:bg-zinc-800/50 p-2 border border-zinc-200 dark:border-zinc-700/50">
-                    <div className="text-zinc-600 dark:text-zinc-400">Página → checkout</div>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-zinc-600 dark:text-zinc-400">Página → checkout</div>
+                      {(() => {
+                        const v = Number(primary.funnel.landing_page_views || 0);
+                        const ic = Number(primary.funnel.initiates_checkout || 0);
+                        const rate = v > 0 ? ic / v : 0;
+                        const pill = benchPill(benchLevel(rate, 0.03, 0.06, 0.12));
+                        return <span className={pill.cls} title="Benchmark global DR (2025–2026)">{pill.label}</span>;
+                      })()}
+                    </div>
                     <div className="text-zinc-900 dark:text-zinc-200 font-semibold tabular-nums flex flex-wrap items-center gap-1">
                       {primary.funnel_rates.checkout_from_lp_pct}%
                       <PctDelta
@@ -616,7 +694,16 @@ export function CampaignFunnelPanel({
                     </div>
                   </div>
                   <div className="rounded-lg bg-zinc-100 dark:bg-zinc-800/50 p-2 border border-zinc-200 dark:border-zinc-700/50">
-                    <div className="text-zinc-600 dark:text-zinc-400">Checkout → compra</div>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-zinc-600 dark:text-zinc-400">Checkout → compra</div>
+                      {(() => {
+                        const ic = Number(primary.funnel.initiates_checkout || 0);
+                        const p = Number(primary.funnel.purchases || 0);
+                        const rate = ic > 0 ? p / ic : 0;
+                        const pill = benchPill(benchLevel(rate, 0.15, 0.25, 0.40));
+                        return <span className={pill.cls} title="Benchmark global DR (2025–2026)">{pill.label}</span>;
+                      })()}
+                    </div>
                     <div className="text-zinc-900 dark:text-zinc-200 font-semibold tabular-nums flex flex-wrap items-center gap-1">
                       {primary.funnel_rates.purchase_from_checkout_pct}%
                       <PctDelta
@@ -626,8 +713,36 @@ export function CampaignFunnelPanel({
                     </div>
                   </div>
                 </div>
+                <div className="mt-2">
+                  {(() => {
+                    const v = Number(primary.funnel.landing_page_views || 0);
+                    const p = Number(primary.funnel.purchases || 0);
+                    const rate = v > 0 ? p / v : 0;
+                    const pill = benchPill(benchLevel(rate, 0.01, 0.02, 0.04));
+                    return (
+                      <div className="text-[11px] text-zinc-600 dark:text-zinc-400 flex items-center gap-2">
+                        <span className="font-medium">Visita → compra:</span>
+                        <span className={pill.cls} title="Benchmark global DR (2025–2026)">{pill.label}</span>
+                        <span className="tabular-nums">{toPct(rate)}%</span>
+                      </div>
+                    );
+                  })()}
+                </div>
               </div>
               <div className="space-y-3">
+                {simpleMode && leigo ? (
+                  <div className="rounded-xl border border-zinc-200 dark:border-zinc-700/60 bg-white/70 dark:bg-zinc-900/40 px-4 py-3">
+                    <div className="text-[10px] font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-2">
+                      Diagnóstico rápido
+                    </div>
+                    <div className="text-sm text-zinc-900 dark:text-zinc-100 leading-relaxed font-semibold">
+                      {leigo.oneLiner}
+                    </div>
+                    <div className="text-sm text-zinc-700 dark:text-zinc-300 leading-relaxed mt-2">
+                      {leigo.oneAction}
+                    </div>
+                  </div>
+                ) : null}
                 {primary.bottleneck_plain ? (
                   <div className={`rounded-xl border px-4 py-3 ${severityBorder(primary.bottleneck?.severity)}`}>
                     <div className="text-[10px] font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-2">
