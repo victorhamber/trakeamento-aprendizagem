@@ -334,8 +334,7 @@ export function CampaignFunnelPanel({
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
   const [simpleMode, setSimpleMode] = useState(true);
-  const chatBoxRef = React.useRef<HTMLDivElement | null>(null);
-  const chatAutoScrollRef = React.useRef(true);
+  const chatEndRef = React.useRef<HTMLDivElement | null>(null);
 
   const filteredCampaigns = useMemo(() => {
     if (campaignStatusFilter === 'all') return campaigns;
@@ -430,20 +429,8 @@ export function CampaignFunnelPanel({
     });
   }, [campaignId]);
 
-  const onChatScroll = useCallback(() => {
-    const el = chatBoxRef.current;
-    if (!el) return;
-    const distanceToBottom = el.scrollHeight - (el.scrollTop + el.clientHeight);
-    chatAutoScrollRef.current = distanceToBottom < 80;
-  }, []);
-
   useEffect(() => {
-    const el = chatBoxRef.current;
-    if (!el) return;
-    if (!chatAutoScrollRef.current) return;
-    requestAnimationFrame(() => {
-      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
-    });
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [chatMessages.length, chatLoading]);
 
   const loadFunnel = useCallback(async (opts?: { force?: boolean }) => {
@@ -949,25 +936,22 @@ export function CampaignFunnelPanel({
             </div>
           </div>
 
-          <div
-            ref={chatBoxRef}
-            onScroll={onChatScroll}
-            className="max-h-[520px] min-h-[320px] overflow-auto rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/40 p-4 space-y-3"
-          >
+          <div className="max-h-[460px] min-h-[260px] overflow-auto rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/40 p-3 space-y-2">
             {chatMessages.map((m, idx) => (
-              <div key={idx} className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
+              <div key={idx} className={m.role === 'user' ? 'text-right' : 'text-left'}>
                 <div
                   className={
-                    'max-w-[92%] whitespace-pre-wrap rounded-2xl px-4 py-3 text-[13px] leading-relaxed ' +
+                    'inline-block max-w-[92%] whitespace-pre-wrap rounded-xl px-3 py-2 text-sm ' +
                     (m.role === 'user'
-                      ? 'bg-zinc-900/90 text-white dark:bg-zinc-100/95 dark:text-zinc-900 shadow-sm'
-                      : 'bg-white/90 text-zinc-900 dark:bg-zinc-900/55 dark:text-zinc-100 border border-zinc-200/70 dark:border-zinc-800/80')
+                      ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
+                      : 'bg-white text-zinc-900 border border-zinc-200 dark:bg-zinc-900/60 dark:text-zinc-100 dark:border-zinc-800')
                   }
                 >
                   {m.content}
                 </div>
               </div>
             ))}
+            <div ref={chatEndRef} />
           </div>
 
           <div className="mt-3">
@@ -979,7 +963,7 @@ export function CampaignFunnelPanel({
                   type="button"
                   onClick={() => sendChatText(a.text).catch(() => {})}
                   disabled={chatLoading || !campaignId}
-                  className="shrink-0 text-[11px] px-3 py-1.5 rounded-full border border-zinc-200/80 dark:border-zinc-800 bg-white/40 dark:bg-zinc-900/35 text-zinc-700 dark:text-zinc-200 hover:bg-white/70 dark:hover:bg-zinc-900/60 disabled:opacity-40"
+                  className="shrink-0 text-[11px] px-2.5 py-1.5 rounded-full border border-zinc-300 dark:border-zinc-700 bg-white/60 dark:bg-zinc-900/60 text-zinc-700 dark:text-zinc-200 hover:bg-white dark:hover:bg-zinc-800 disabled:opacity-40"
                 >
                   {a.label}
                 </button>
