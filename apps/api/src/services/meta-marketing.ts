@@ -1,9 +1,19 @@
 import axios from 'axios';
+import type { PoolClient } from 'pg';
 import { pool } from '../db/pool';
 import { decryptString } from '../lib/crypto';
 import { addDaysToYmd, getMetaReportTimeZone, getYmdInReportTz } from '../lib/meta-report-timezone';
 
 export class MetaMarketingService {
+  private dedupeInsightRows(
+    rows: Record<string, unknown>[],
+    keyOf: (row: Record<string, unknown>) => string
+  ): Record<string, unknown>[] {
+    const map = new Map<string, Record<string, unknown>>();
+    for (const r of rows) map.set(keyOf(r), r);
+    return Array.from(map.values());
+  }
+
   private async fetchAdSetMetaMap(
     token: string,
     adsetIds: string[]
@@ -557,16 +567,10 @@ export class MetaMarketingService {
         `campaigns=${campaignInsights.length} adsets=${adSetInsights.length} ads=${adInsights.length}`
       );
 
-      // ── DELETE existing rows for this site+range before re-inserting ──────
-      // This guarantees idempotency regardless of whether the DB has the
-      // partial unique indexes. Without this, repeated syncs double-count.
-      await pool.query(
-        `DELETE FROM meta_insights_daily
-         WHERE site_id = $1
-           AND date_start >= $2
-           AND date_start <= $3`,
-        [siteId, range.since, range.until]
-      );
+      // Dedupe defensivo (Meta pode devolver páginas com interseção em casos raros)
+      adInsights = this.dedupeInsightRows(adInsights, (r) => `${String((r as any).ad_id || '')}|${String((r as any).date_start || '')}`);
+      adSetInsights = this.dedupeInsightRows(adSetInsights, (r) => `${String((r as any).adset_id || '')}|${String((r as any).date_start || '')}`);
+      campaignInsights = this.dedupeInsightRows(campaignInsights, (r) => `${String((r as any).campaign_id || '')}|${String((r as any).date_start || '')}`);
 
       // ── Fetch AdSet metadata (optimization goal + promoted_object) ────────
       const adsetIds = adSetInsights
@@ -601,10 +605,34 @@ export class MetaMarketingService {
         });
       }
 
-      // ── Insert fresh rows ─────────────────────────────────────────────────
-      for (const row of campaignInsights) await this.persistCampaignInsight(siteId, row);
-      for (const row of adSetInsights) await this.persistAdSetInsight(siteId, row, adsetMetaMap);
-      for (const row of adInsights) await this.persistAdInsight(siteId, row, adSetMap);
+      // ── Idempotência + concorrência: lock por site durante o sync ─────────
+      // Evita duas requisições simultâneas inserirem o mesmo (site_id, *, date_start).
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query('SELECT pg_advisory_xact_lock($1, $2)', [siteId, 9701]);
+
+        // ── DELETE existing rows for this site+range before re-inserting ────
+        await client.query(
+          `DELETE FROM meta_insights_daily
+           WHERE site_id = $1
+             AND date_start >= $2
+             AND date_start <= $3`,
+          [siteId, range.since, range.until]
+        );
+
+        // ── Insert fresh rows ───────────────────────────────────────────────
+        for (const row of campaignInsights) await this.persistCampaignInsight(siteId, row, client);
+        for (const row of adSetInsights) await this.persistAdSetInsight(siteId, row, adsetMetaMap, client);
+        for (const row of adInsights) await this.persistAdInsight(siteId, row, adSetMap, client);
+
+        await client.query('COMMIT');
+      } catch (txErr) {
+        try { await client.query('ROLLBACK'); } catch { /* ignore */ }
+        throw txErr;
+      } finally {
+        client.release();
+      }
 
       return {
         count: adInsights.length + adSetInsights.length + campaignInsights.length,
@@ -857,6 +885,8 @@ export class MetaMarketingService {
         customName: string | null;
       }
     >
+    ,
+    client?: PoolClient
   ) {
     // syncDailyInsights deletes rows for this site+range before calling persist*,
     // so a plain INSERT is safe and avoids fragile partial-index ON CONFLICT logic.
@@ -900,7 +930,8 @@ export class MetaMarketingService {
       }
     }
 
-    await pool.query(
+    const q = client ?? pool;
+    await q.query(
       `INSERT INTO meta_insights_daily (
         site_id, ad_id, ad_name, adset_id, adset_name, campaign_id, campaign_name,
         spend, impressions, clicks, unique_clicks, link_clicks, unique_link_clicks, inline_link_clicks, outbound_clicks, video_3s_views, landing_page_views,
@@ -936,11 +967,13 @@ export class MetaMarketingService {
   private async persistAdSetInsight(
     siteId: number,
     row: Record<string, unknown>,
-    adsetMetaMap: Map<string, { optimizationGoal: string | null; optimizedEventName: string | null }>
+    adsetMetaMap: Map<string, { optimizationGoal: string | null; optimizedEventName: string | null }>,
+    client?: PoolClient
   ) {
     const adsetId = MetaMarketingService.asString((row as any).adset_id);
     const meta = (adsetId ? adsetMetaMap.get(adsetId) : null) || null;
-    await pool.query(
+    const q = client ?? pool;
+    await q.query(
       `INSERT INTO meta_insights_daily (
         site_id, adset_id, adset_name, campaign_id, campaign_name,
         spend, impressions, clicks, unique_clicks, link_clicks, unique_link_clicks, inline_link_clicks, outbound_clicks, video_3s_views, landing_page_views,
@@ -971,8 +1004,9 @@ export class MetaMarketingService {
     );
   }
 
-  private async persistCampaignInsight(siteId: number, row: Record<string, unknown>) {
-    await pool.query(
+  private async persistCampaignInsight(siteId: number, row: Record<string, unknown>, client?: PoolClient) {
+    const q = client ?? pool;
+    await q.query(
       `INSERT INTO meta_insights_daily (
         site_id, campaign_id, campaign_name,
         spend, impressions, clicks, unique_clicks, link_clicks, unique_link_clicks, inline_link_clicks, outbound_clicks, video_3s_views, landing_page_views,

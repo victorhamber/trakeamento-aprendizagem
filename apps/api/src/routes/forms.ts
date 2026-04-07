@@ -129,6 +129,15 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
       if (phone) userData.ph = CapiService.hash(phone.replace(/\D/g, ''));
       if (fn) userData.fn = CapiService.hash(fn);
       if (ln) userData.ln = CapiService.hash(ln);
+      // Maximizar correspondência: external_id estável (hash) quando houver email/phone.
+      // (CapiService.externalIdForCapiPayload não re-hasheia se já for 64-hex.)
+      userData.external_id =
+        (typeof body.external_id === 'string' && body.external_id.trim())
+          ? body.external_id.trim()
+          : (email ? CapiService.hash(email) : phone ? CapiService.hash(phone.replace(/\D/g, '')) : undefined);
+      // Se o frontend mandar cookies/ids, aproveita no fallback server-side.
+      if (typeof body.fbp === 'string') userData.fbp = body.fbp;
+      if (typeof body.fbc === 'string') userData.fbc = body.fbc;
 
       // Determine Event Name from Config
       let eventName = 'Lead';

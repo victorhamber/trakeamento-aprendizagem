@@ -585,12 +585,15 @@ function buildCapiUserData(
 
   // Helper to wrap in array (Meta CAPI requires arrays for PII fields, except for external_id/fbc/fbp)
   const wrap = (val: string | undefined): string[] | undefined => (val ? [val] : undefined);
+  const em1 = pick('em');
+  const ph1 = pick('ph');
+  const derivedExternalId = externalIdRaw ? String(externalIdRaw).trim() : (em1 || ph1);
 
   return {
     client_ip_address: clientIp,
     client_user_agent: clientUserAgent,
-    em: wrap(pick('em')),
-    ph: wrap(pick('ph')),
+    em: wrap(em1),
+    ph: wrap(ph1),
     fn: wrap(pick('fn')),
     ln: wrap(pick('ln')),
     ct: wrap(ct),
@@ -600,7 +603,9 @@ function buildCapiUserData(
     db: wrap(db),
     fbp,
     fbc,
-    external_id: externalIdRaw ? String(externalIdRaw).trim() : undefined,
+    // Se o frontend não mandar external_id, derivamos a partir de em/ph (já hasheados).
+    // Isso aumenta a correspondência no CAPI sem exigir login.
+    external_id: derivedExternalId || undefined,
   };
 }
 
