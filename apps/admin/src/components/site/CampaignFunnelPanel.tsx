@@ -325,40 +325,72 @@ export function CampaignFunnelPanel({
     return p;
   }, [siteId, metricsPreset, metricsSince, metricsUntil]);
 
-  const sendChat = useCallback(async () => {
-    if (!chatInput.trim() || !campaignId) return;
-    const userMsg = chatInput.trim();
-    setChatInput('');
-    setChatMessages((m) => [...m, { role: 'user', content: userMsg }]);
-    setChatLoading(true);
-    try {
-      const params: Record<string, string | number> = {
-        site_id: siteId,
-        campaign_id: campaignId,
-      };
-      if (metricsPreset === 'custom') {
-        params.since = metricsSince;
-        params.until = metricsUntil;
-      } else {
-        params.date_preset = metricsPreset;
+  const sendChatText = useCallback(
+    async (userMsgRaw: string) => {
+      const userMsg = (userMsgRaw || '').trim();
+      if (!userMsg || !campaignId) return;
+      setChatInput('');
+      setChatMessages((m) => [...m, { role: 'user', content: userMsg }]);
+      setChatLoading(true);
+      try {
+        const params: Record<string, string | number> = {
+          site_id: siteId,
+          campaign_id: campaignId,
+        };
+        if (metricsPreset === 'custom') {
+          params.since = metricsSince;
+          params.until = metricsUntil;
+        } else {
+          params.date_preset = metricsPreset;
+        }
+        const res = await api.post(
+          '/recommendations/chat',
+          { messages: [...chatMessages, { role: 'user', content: userMsg }].slice(-12) },
+          { params }
+        );
+        const answer = typeof res.data?.answer === 'string' ? res.data.answer : 'Não consegui responder agora. Tente novamente.';
+        setChatMessages((m) => [...m, { role: 'assistant', content: answer }]);
+      } catch (e) {
+        console.error(e);
+        setChatMessages((m) => [
+          ...m,
+          { role: 'assistant', content: 'Falha ao falar com a IA agora. Verifique a configuração da OpenAI em Inteligência IA.' },
+        ]);
+      } finally {
+        setChatLoading(false);
       }
-      const res = await api.post(
-        '/recommendations/chat',
-        { messages: [...chatMessages, { role: 'user', content: userMsg }].slice(-12) },
-        { params }
-      );
-      const answer = typeof res.data?.answer === 'string' ? res.data.answer : 'Não consegui responder agora. Tente novamente.';
-      setChatMessages((m) => [...m, { role: 'assistant', content: answer }]);
-    } catch (e) {
-      console.error(e);
-      setChatMessages((m) => [
+    },
+    [campaignId, siteId, metricsPreset, metricsSince, metricsUntil, chatMessages]
+  );
+
+  const sendChat = useCallback(() => sendChatText(chatInput), [sendChatText, chatInput]);
+
+  const chatQuickActions = useMemo(
+    () => [
+      { key: 'page', label: 'Quero melhorar a página', text: 'Quero melhorar a página. O que eu faço primeiro olhando esse funil?' },
+      { key: 'checkout', label: 'Quero melhorar o checkout', text: 'Quero melhorar o checkout. O que eu faço primeiro olhando esse funil?' },
+      { key: 'creative', label: 'Quero melhorar o criativo', text: 'Quero melhorar o criativo. Me diga o que testar (ângulos/copy) com base nos números.' },
+      { key: 'offer', label: 'Quero melhorar a oferta', text: 'Quero melhorar a oferta. O que mexer (preço/garantia/bônus) com base no funil?' },
+      { key: 'scale', label: 'Quero escalar', text: 'Quero escalar. Qual é o maior risco hoje e o que eu devo arrumar antes de aumentar orçamento?' },
+    ],
+    []
+  );
+
+  useEffect(() => {
+    if (!campaignId) return;
+    setChatMessages((m) => {
+      const already = m.some((x) => x.role === 'assistant' && x.content.includes('Escolha um dos botões'));
+      if (already) return m;
+      return [
         ...m,
-        { role: 'assistant', content: 'Falha ao falar com a IA agora. Verifique a configuração da OpenAI em Inteligência IA.' },
-      ]);
-    } finally {
-      setChatLoading(false);
-    }
-  }, [chatInput, campaignId, siteId, metricsPreset, metricsSince, metricsUntil, chatMessages]);
+        {
+          role: 'assistant',
+          content:
+            'Escolha um dos botões abaixo para eu te guiar passo a passo (ou escreva sua pergunta).',
+        },
+      ];
+    });
+  }, [campaignId]);
 
   const loadFunnel = useCallback(async (opts?: { force?: boolean }) => {
     if (!hasMetaConnection || !hasAdAccount) return;
@@ -917,6 +949,20 @@ export function CampaignFunnelPanel({
             ))}
           </div>
 
+          <div className="mt-3 flex flex-wrap gap-2">
+            {chatQuickActions.map((a) => (
+              <button
+                key={a.key}
+                type="button"
+                onClick={() => sendChatText(a.text).catch(() => {})}
+                disabled={chatLoading || !campaignId}
+                className="text-[11px] px-2.5 py-1.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-800 disabled:opacity-40"
+              >
+                {a.label}
+              </button>
+            ))}
+          </div>
+
           <div className="mt-3 flex gap-2 items-center">
             <input
               value={chatInput}
@@ -927,14 +973,14 @@ export function CampaignFunnelPanel({
                   sendChat().catch(() => {});
                 }
               }}
-              placeholder="Faça uma pergunta (ex.: por que ninguém inicia checkout?)"
+              placeholder={campaignId ? 'Faça uma pergunta (ex.: por que ninguém inicia checkout?)' : 'Selecione uma campanha para começar'}
               className="flex-1 text-sm rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 outline-none"
-              disabled={chatLoading}
+              disabled={chatLoading || !campaignId}
             />
             <button
               type="button"
               onClick={() => sendChat().catch(() => {})}
-              disabled={chatLoading || !chatInput.trim()}
+              disabled={chatLoading || !chatInput.trim() || !campaignId}
               className="text-sm px-3 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 text-zinc-800 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-40"
             >
               {chatLoading ? 'Enviando…' : 'Enviar'}
