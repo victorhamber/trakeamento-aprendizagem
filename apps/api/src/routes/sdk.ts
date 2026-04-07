@@ -1192,24 +1192,22 @@ router.get('/tracker.js', async (req, res) => {
   }
 
   // ─── Button rule engine ──────────────────────────────────────────────────
-  // Normaliza texto para matching resiliente:
-  // - lower case
-  // - remove acentos/diacríticos (NFD)
-  // - remove pontuação comum (ex.: ¡ ¿)
-  // - colapsa espaços
-  function normRuleText(s) {
+  // Texto "exato" (preserva acentos e caracteres especiais),
+  // mas normaliza o que costuma variar sem o usuário ver:
+  // - Unicode NFC (ex.: formas compostas/decompostas)
+  // - espaços (colapsa e trim)
+  // - remove caracteres invisíveis comuns (zero-width)
+  function exactButtonText(s) {
     try {
       if (s == null) return '';
-      var t = String(s).trim().toLowerCase();
-      if (!t) return '';
+      var t = String(s);
+      // Remove zero-width chars (podem aparecer em alguns builders/templating)
+      t = t.replace(/[\u200B-\u200D\uFEFF]/g, '');
       if (t.normalize) {
-        // Remove diacríticos (ex.: á → a, ñ → n)
-        t = t.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        t = t.normalize('NFC');
       }
-      // Remove pontuação que costuma variar (mantém letras/números/espaços)
-      t = t.replace(/[¡¿]/g, ' ');
-      t = t.replace(/[^\p{L}\p{N}\s]/gu, ' ');
       t = t.replace(/\s+/g, ' ').trim();
+      if (!t) return '';
       return t;
     } catch (_e) {
       return '';
@@ -1241,19 +1239,20 @@ router.get('/tracker.js', async (req, res) => {
       }
       
       if (!clickedText) return;
-      var clickedNorm = normRuleText(clickedText);
-      if (!clickedNorm) return;
+      var clickedExact = exactButtonText(clickedText);
+      if (!clickedExact) return;
 
       for (var i = 0; i < cfg.eventRules.length; i++) {
         var rule = cfg.eventRules[i];
         if (rule.rule_type === 'button_click') {
           var ruleUrl = (rule.match_value || '').toLowerCase().trim();
-          var ruleText = normRuleText(rule.match_text || '');
+          var ruleText = exactButtonText(rule.match_text || '');
 
           // Verifica se está na URL correta (ou global '/')
           if (ruleUrl === '/' || ruleUrl === '' || currentPath.indexOf(ruleUrl) >= 0 || fullUrl.indexOf(ruleUrl) >= 0) {
             // Verifica se o texto bate
-            if (ruleText && clickedNorm.indexOf(ruleText) >= 0) {
+            // "Exato": igualdade após normalização NFC + espaços (case-sensitive e com acentos)
+            if (ruleText && clickedExact === ruleText) {
               var customData = rule.parameters || {};
               track(rule.event_name, customData);
             }
