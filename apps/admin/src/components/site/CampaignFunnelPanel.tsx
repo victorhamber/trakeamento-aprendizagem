@@ -276,7 +276,11 @@ export function CampaignFunnelPanel({
       }
       if (opts?.force) params.force = '1';
       const res = await api.get('/meta/campaigns/funnel-breakdown', { params });
-      const list = (res.data?.rows || []) as FunnelRow[];
+      let list = (res.data?.rows || []) as FunnelRow[];
+      // Permite isolar um conjunto na visão "Por conjunto" sem precisar mudar o endpoint.
+      if (level === 'adset' && adsetFilter) {
+        list = list.filter((r) => String(r.id) === String(adsetFilter));
+      }
       setRows(list.map((r) => ({ ...r, bottleneck_plain: r.bottleneck_plain ?? '' })));
       setGeneratedAt(typeof res.data?.generated_at === 'string' ? res.data.generated_at : null);
       if (level === 'campaign' && compareEnabled) {
@@ -324,7 +328,7 @@ export function CampaignFunnelPanel({
   useEffect(() => {
     if (!hasMetaConnection || !hasAdAccount || !campaignId) return;
     if (metricsPreset === 'custom' && (!metricsSince || !metricsUntil)) return;
-    if (level !== 'ad') {
+    if (level === 'campaign') {
       setAdsetOptions([]);
       return;
     }
@@ -353,7 +357,7 @@ export function CampaignFunnelPanel({
   }, [loadFunnel]);
 
   useEffect(() => {
-    if (level !== 'ad') setAdsetFilter('');
+    if (level === 'campaign') setAdsetFilter('');
   }, [level]);
 
   const copySummary = useCallback(async () => {
@@ -492,14 +496,16 @@ export function CampaignFunnelPanel({
           <option value="adset">Por conjunto</option>
           <option value="ad">Por anúncio</option>
         </select>
-        {level === 'ad' && (
+        {(level === 'ad' || level === 'adset') && (
           <select
             aria-label="Filtrar por conjunto de anúncios"
             value={adsetFilter}
             onChange={(e) => setAdsetFilter(e.target.value)}
             className={selectClsCompact + ' max-w-[220px]'}
           >
-            <option value="">Todos os anúncios da campanha</option>
+            <option value="">
+              {level === 'ad' ? 'Todos os anúncios da campanha' : 'Todos os conjuntos da campanha'}
+            </option>
             {adsetOptions.map((a) => (
               <option key={a.id} value={a.id}>
                 {a.name}
