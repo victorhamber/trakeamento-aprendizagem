@@ -1685,7 +1685,7 @@ router.get('/tracker.js', async (req, res) => {
         'box-shadow:0 10px 30px rgba(0,0,0,0.25);pointer-events:auto;';
       tip.innerHTML =
         '<div style="font-weight:700;margin-bottom:4px">Seleção Trajettu</div>' +
-        '<div style="opacity:.9">Clique no botão/CTA que você quer rastrear. Aperte <b>Esc</b> para sair.</div>';
+        '<div style="opacity:.9">Clique no botão/CTA. Os dados voltam ao painel e esta janela pode fechar. <b>Esc</b> cancela.</div>';
 
       var hl = document.createElement('div');
       hl.style.cssText =

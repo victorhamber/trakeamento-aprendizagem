@@ -259,6 +259,7 @@ export const SitePage = () => {
   const [urlRuleEventCurrency, setUrlRuleEventCurrency] = useState('BRL');
 
   const [buttonRuleUrl, setButtonRuleUrl] = useState('');
+  const [buttonSelectorPageUrl, setButtonSelectorPageUrl] = useState('');
   const [buttonRuleText, setButtonRuleText] = useState('');
   const [buttonRuleHrefContains, setButtonRuleHrefContains] = useState('');
   const [buttonRuleClassContains, setButtonRuleClassContains] = useState('');
@@ -310,8 +311,22 @@ export const SitePage = () => {
   const [selectedRuleId, setSelectedRuleId] = useState<number | null>(null);
 
   const pickerWinRef = useRef<Window | null>(null);
+  const TA_AUX_WINDOW_FEATURES = 'width=1280,height=900,scrollbars=yes,resizable=yes';
 
   const pickerOpenUrl = useMemo(() => {
+    const dashOrigin = window.location.origin;
+    const explicit = buttonSelectorPageUrl.trim();
+    if (explicit) {
+      try {
+        const raw = /^https?:\/\//i.test(explicit) ? explicit : `https://${explicit}`;
+        const url = new URL(raw);
+        url.searchParams.set('ta_pick', '1');
+        url.searchParams.set('ta_origin', dashOrigin);
+        return url.toString();
+      } catch {
+        return null;
+      }
+    }
     if (!utmBaseUrl) return null;
     const base = utmBaseUrl.replace(/\/+$/, '');
     const path = (buttonRuleUrl || '/').trim() || '/';
@@ -322,22 +337,15 @@ export const SitePage = () => {
     try {
       const url = new URL(full);
       url.searchParams.set('ta_pick', '1');
-      url.searchParams.set('ta_origin', window.location.origin);
+      url.searchParams.set('ta_origin', dashOrigin);
       return url.toString();
     } catch {
       return null;
     }
-  }, [utmBaseUrl, buttonRuleUrl]);
+  }, [buttonSelectorPageUrl, utmBaseUrl, buttonRuleUrl]);
 
   const testOpenUrl = useMemo(() => {
-    if (!utmBaseUrl) return null;
-    const base = utmBaseUrl.replace(/\/+$/, '');
-    const path = (buttonRuleUrl || '/').trim() || '/';
-    const full =
-      path.startsWith('http://') || path.startsWith('https://')
-        ? path
-        : `${base}${path.startsWith('/') ? '' : '/'}${path}`;
-
+    const dashOrigin = window.location.origin;
     const rule = {
       match_text: buttonRuleText?.trim() || '',
       match_href_contains: buttonRuleHrefContains?.trim() || '',
@@ -347,16 +355,45 @@ export const SitePage = () => {
     const json = JSON.stringify(rule);
     const b64 = btoa(unescape(encodeURIComponent(json)));
 
+    const explicit = buttonSelectorPageUrl.trim();
+    if (explicit) {
+      try {
+        const raw = /^https?:\/\//i.test(explicit) ? explicit : `https://${explicit}`;
+        const url = new URL(raw);
+        url.searchParams.set('ta_test', '1');
+        url.searchParams.set('ta_origin', dashOrigin);
+        url.searchParams.set('ta_rule', b64);
+        return url.toString();
+      } catch {
+        return null;
+      }
+    }
+    if (!utmBaseUrl) return null;
+    const base = utmBaseUrl.replace(/\/+$/, '');
+    const path = (buttonRuleUrl || '/').trim() || '/';
+    const full =
+      path.startsWith('http://') || path.startsWith('https://')
+        ? path
+        : `${base}${path.startsWith('/') ? '' : '/'}${path}`;
+
     try {
       const url = new URL(full);
       url.searchParams.set('ta_test', '1');
-      url.searchParams.set('ta_origin', window.location.origin);
+      url.searchParams.set('ta_origin', dashOrigin);
       url.searchParams.set('ta_rule', b64);
       return url.toString();
     } catch {
       return null;
     }
-  }, [utmBaseUrl, buttonRuleUrl, buttonRuleText, buttonRuleHrefContains, buttonRuleClassContains, buttonRuleCss]);
+  }, [
+    buttonSelectorPageUrl,
+    utmBaseUrl,
+    buttonRuleUrl,
+    buttonRuleText,
+    buttonRuleHrefContains,
+    buttonRuleClassContains,
+    buttonRuleCss,
+  ]);
 
   useEffect(() => {
     const onMessage = (ev: MessageEvent) => {
@@ -376,7 +413,17 @@ export const SitePage = () => {
         if (typeof sug.match_class_contains === 'string') setButtonRuleClassContains(sug.match_class_contains);
         if (typeof sug.match_css === 'string') setButtonRuleCss(sug.match_css);
 
-        showFlash('Botão selecionado. Agora escolha o evento e salve a regra.');
+        showFlash(
+          'Botão capturado. A aba do seletor será fechada; escolha o evento e clique em Adicionar aqui no painel.',
+          'success'
+        );
+        try {
+          const w = pickerWinRef.current;
+          if (w && !w.closed) w.close();
+        } catch {
+          /* ignore */
+        }
+        pickerWinRef.current = null;
       } catch {
         // ignore
       }
@@ -839,6 +886,7 @@ export const SitePage = () => {
       }
 
       setButtonRuleUrl('');
+      setButtonSelectorPageUrl('');
       setButtonRuleText('');
       setButtonRuleHrefContains('');
       setButtonRuleClassContains('');
@@ -891,6 +939,7 @@ export const SitePage = () => {
     setUrlRuleEventValue('');
     setUrlRuleEventCurrency('BRL');
     setButtonRuleUrl('');
+    setButtonSelectorPageUrl('');
     setButtonRuleText('');
     setButtonRuleHrefContains('');
     setButtonRuleClassContains('');
@@ -2984,14 +3033,35 @@ ${scriptContent}
                       <code className="text-xs">btn-cta</code>, seletor CSS). Percentuais dinâmicos no texto (ex.: 75% vs 0%) são
                       tratados como equivalentes no match por texto.
                     </p>
+                    <div className="mt-4 space-y-2">
+                      <label htmlFor="site-btn-selector-page-url" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                        URL da página para abrir o seletor / teste (recomendado)
+                      </label>
+                      <input
+                        id="site-btn-selector-page-url"
+                        value={buttonSelectorPageUrl}
+                        onChange={(e) => setButtonSelectorPageUrl(e.target.value)}
+                        placeholder="https://readlyme.com/higado-vital/"
+                        className={inputCls}
+                      />
+                      <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                        Cole a URL completa da landing. Se ficar vazio, usamos o <strong>domínio do site</strong> + o campo{' '}
+                        <strong>Se a URL contém</strong> abaixo. Permita pop-ups para o painel.
+                      </p>
+                    </div>
                     <div className="mt-3 flex flex-wrap items-center gap-2">
                       <button
                         type="button"
                         disabled={!pickerOpenUrl}
                         onClick={() => {
                           if (!pickerOpenUrl) return;
-                          pickerWinRef.current = window.open(pickerOpenUrl, '_blank', 'noopener,noreferrer');
-                          showFlash('Na aba que abriu, clique no botão desejado.', 'success');
+                          const w = window.open(pickerOpenUrl, 'ta_trk_pick', TA_AUX_WINDOW_FEATURES);
+                          if (!w) {
+                            showFlash('Pop-up bloqueado. Permita pop-ups para este painel e tente de novo.', 'error');
+                            return;
+                          }
+                          pickerWinRef.current = w;
+                          showFlash('Na janela que abriu, clique no botão. Depois volte aqui e clique em Adicionar.', 'success');
                         }}
                         className={
                           'px-3 py-2 rounded-lg text-xs font-medium border transition-colors ' +
@@ -3007,8 +3077,12 @@ ${scriptContent}
                         disabled={!testOpenUrl}
                         onClick={() => {
                           if (!testOpenUrl) return;
-                          window.open(testOpenUrl, '_blank', 'noopener,noreferrer');
-                          showFlash('Na aba que abriu, clique no CTA para ver PASSOU/NÃO PASSOU.', 'success');
+                          const w = window.open(testOpenUrl, 'ta_trk_test', TA_AUX_WINDOW_FEATURES);
+                          if (!w) {
+                            showFlash('Pop-up bloqueado. Permita pop-ups para este painel e tente de novo.', 'error');
+                            return;
+                          }
+                          showFlash('Na janela que abriu, clique no CTA para ver PASSOU/NÃO PASSOU.', 'success');
                         }}
                         className={
                           'px-3 py-2 rounded-lg text-xs font-medium border transition-colors ' +
@@ -3019,9 +3093,9 @@ ${scriptContent}
                       >
                         Testar regra na página
                       </button>
-                      {!utmBaseUrl && (
+                      {!pickerOpenUrl && (
                         <span className="text-xs text-zinc-500">
-                          Defina o domínio do site para usar o seletor.
+                          Preencha a URL da página acima ou defina o domínio do site + “Se a URL contém”.
                         </span>
                       )}
                     </div>
@@ -3036,7 +3110,7 @@ ${scriptContent}
                         id="site-btn-rule-url"
                         value={buttonRuleUrl}
                         onChange={(e) => setButtonRuleUrl(e.target.value)}
-                        placeholder="Ex: / ou /obrigado"
+                        placeholder="Ex: /higado-vital/ (trecho do caminho, não a URL inteira)"
                         className={inputCls}
                       />
                     </div>
