@@ -38,13 +38,52 @@ const sanitizeMapping = (input: unknown) => {
 };
 
 /** Meta Purchase exige currency + value (Pixel / CAPI). */
+const BUTTON_RULE_HREF_MAX = 500;
+const BUTTON_RULE_CLASS_MAX = 200;
+const BUTTON_RULE_CSS_MAX = 400;
+
+function sanitizeButtonMatchParameters(raw: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...raw };
+  const clip = (s: string, max: number) => (s.length > max ? s.slice(0, max) : s);
+  if (typeof out.match_href_contains === 'string') {
+    const t = out.match_href_contains.trim();
+    out.match_href_contains = t ? clip(t, BUTTON_RULE_HREF_MAX) : undefined;
+  }
+  if (typeof out.match_class_contains === 'string') {
+    const t = out.match_class_contains.trim();
+    out.match_class_contains = t ? clip(t, BUTTON_RULE_CLASS_MAX) : undefined;
+  }
+  if (typeof out.match_css === 'string') {
+    const t = out.match_css.trim();
+    out.match_css = t ? clip(t, BUTTON_RULE_CSS_MAX) : undefined;
+  }
+  if (out.match_href_contains === undefined) delete out.match_href_contains;
+  if (out.match_class_contains === undefined) delete out.match_class_contains;
+  if (out.match_css === undefined) delete out.match_css;
+  return out;
+}
+
+function buttonRuleHasMatch(match_text: unknown, parameters: unknown): boolean {
+  const textOk = typeof match_text === 'string' && match_text.trim().length > 0;
+  const p =
+    parameters && typeof parameters === 'object' && !Array.isArray(parameters)
+      ? (parameters as Record<string, unknown>)
+      : {};
+  const hrefOk =
+    typeof p.match_href_contains === 'string' && p.match_href_contains.trim().length > 0;
+  const classOk =
+    typeof p.match_class_contains === 'string' && p.match_class_contains.trim().length > 0;
+  const cssOk = typeof p.match_css === 'string' && p.match_css.trim().length > 0;
+  return textOk || hrefOk || classOk || cssOk;
+}
+
 function normalizeEventRuleParameters(
   eventName: string,
   parameters: unknown
 ): { ok: true; parameters: Record<string, unknown> } | { ok: false; error: string } {
   const base =
     parameters && typeof parameters === 'object' && !Array.isArray(parameters)
-      ? { ...(parameters as Record<string, unknown>) }
+      ? sanitizeButtonMatchParameters({ ...(parameters as Record<string, unknown>) })
       : {};
 
   if (eventName !== 'Purchase') {
@@ -625,7 +664,12 @@ router.post('/:siteId/event-rules', requireAuth, async (req, res) => {
 
   const { rule_type, match_value, match_text, event_name, event_type, parameters } = req.body;
   if (!match_value || !event_name) return res.status(400).json({ error: 'Missing fields' });
-  if (rule_type === 'button_click' && !match_text) return res.status(400).json({ error: 'Missing button text' });
+  if (rule_type === 'button_click' && !buttonRuleHasMatch(match_text, parameters)) {
+    return res.status(400).json({
+      error:
+        'Regra de botão: informe texto do botão OU destino (href contém) OU classe OU seletor CSS (estilo Meta).',
+    });
+  }
 
   const paramNorm = normalizeEventRuleParameters(event_name, parameters);
   if (!paramNorm.ok) return res.status(400).json({ error: paramNorm.error });
@@ -658,7 +702,12 @@ router.put('/:siteId/event-rules/:id', requireAuth, async (req, res) => {
 
   const { rule_type, match_value, match_text, event_name, event_type, parameters } = req.body;
   if (!match_value || !event_name) return res.status(400).json({ error: 'Missing fields' });
-  if (rule_type === 'button_click' && !match_text) return res.status(400).json({ error: 'Missing button text' });
+  if (rule_type === 'button_click' && !buttonRuleHasMatch(match_text, parameters)) {
+    return res.status(400).json({
+      error:
+        'Regra de botão: informe texto do botão OU destino (href contém) OU classe OU seletor CSS (estilo Meta).',
+    });
+  }
 
   const paramNorm = normalizeEventRuleParameters(event_name, parameters);
   if (!paramNorm.ok) return res.status(400).json({ error: paramNorm.error });

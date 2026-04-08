@@ -46,7 +46,10 @@ router.get('/tracker.js', async (req, res) => {
         const metaPixelId = metaRow && metaRow.enabled === false ? null : typeof metaRow?.pixel_id === 'string' ? metaRow.pixel_id.trim() : null;
         const gaMeasurementId = gaRow && gaRow.enabled === false ? null : typeof gaRow?.measurement_id === 'string' ? gaRow.measurement_id.trim() : null;
 
-        const rules = await pool.query('SELECT rule_type, match_value, match_text, event_name, event_type, parameters FROM site_url_rules WHERE site_id = $1', [siteId]);
+        const rules = await pool.query(
+          'SELECT id, rule_type, match_value, match_text, event_name, event_type, parameters FROM site_url_rules WHERE site_id = $1 ORDER BY id ASC',
+          [siteId]
+        );
         const eventRules = rules.rows;
 
         const apiUrl =
@@ -139,8 +142,8 @@ router.get('/tracker.js', async (req, res) => {
   var lastPath     = '';
   var metaLoaded   = false;
   var gaLoaded     = false;
-  var _lastRuleFire = {};  // dedup guard: { eventName: timestamp }
-  var RULE_DEDUP_MS = 5000; // 5s cooldown for same event name
+  var _lastRuleFire = {};  // dedup: chave eventName ou eventName:rule:id — evita bloquear 2 botões com o mesmo evento
+  var RULE_DEDUP_MS = 5000; // 5s cooldown por chave
   /** UTMs em links de checkout (ids fbc/fbp/fbclid não truncamos — quebraria atribuição). */
   var CHECKOUT_UTM_MAX   = 120;
   var CHECKOUT_ID_MAX    = 120;
@@ -1066,22 +1069,29 @@ router.get('/tracker.js', async (req, res) => {
       var cfg = window.TRACKING_CONFIG;
       if (!cfg || !cfg.apiUrl || !cfg.siteKey) return;
 
-      // Dedup guard: prevent same event name from firing twice within RULE_DEDUP_MS
-      // This prevents button_click + url_contains rules from duplicating the same conversion
+      var rawCd = customData || {};
+      var ruleDedupId = rawCd._taRuleId;
+      var cleanCustom = Object.assign({}, rawCd);
+      delete cleanCustom._taRuleId;
+      delete cleanCustom.match_href_contains;
+      delete cleanCustom.match_class_contains;
+      delete cleanCustom.match_css;
+
+      // Dedup por evento; regras (URL/botão) usam chave por id da regra para não matar outro CTA com o mesmo event_name
       var evKey = eventName;
+      if (ruleDedupId != null && ruleDedupId !== '') {
+        evKey = eventName + ':rule:' + ruleDedupId;
+      }
       var nowMs = Date.now();
       if (_lastRuleFire[evKey] && (nowMs - _lastRuleFire[evKey]) < RULE_DEDUP_MS) {
-        console.log('[TRK] Dedup skip: ' + eventName + ' fired ' + (nowMs - _lastRuleFire[evKey]) + 'ms ago');
+        console.log('[TRK] Dedup skip: ' + evKey + ' fired ' + (nowMs - _lastRuleFire[evKey]) + 'ms ago');
         return;
       }
-
-      // Manual PageView rules are now subject to the same memory debounce as native PageView.
-      // Refreshes will trigger the rule again, as expected.
 
       _lastRuleFire[evKey] = nowMs;
 
       var eventTime = Math.floor(Date.now() / 1000);
-      var eventId   = (customData && customData.event_id) ? customData.event_id : genEventId();
+      var eventId   = (cleanCustom && cleanCustom.event_id) ? cleanCustom.event_id : genEventId();
       var attrs     = getAttributionParams();
       var userData  = buildUserData();
       var baseCustom = {
@@ -1100,7 +1110,7 @@ router.get('/tracker.js', async (req, res) => {
         event_source_url: location.href,
         action_source:    'website',
         user_data:        userData,
-        custom_data:      Object.assign({}, baseCustom, attrs, customData || {}),
+        custom_data:      Object.assign({}, baseCustom, attrs, cleanCustom),
         telemetry:        telemetry
       };
 
@@ -1148,7 +1158,7 @@ router.get('/tracker.js', async (req, res) => {
 
       if (cfg.gaMeasurementId) {
         loadGa(cfg.gaMeasurementId);
-        trackGa(eventName, customData);
+        trackGa(eventName, cleanCustom);
       }
     } catch(_e) {}
   }
@@ -1184,7 +1194,7 @@ router.get('/tracker.js', async (req, res) => {
         }
 
         if (isMatch) {
-          var customData = rule.parameters || {}; // Pega value/currency daqui
+          var customData = Object.assign({}, rule.parameters || {}, { _taRuleId: rule.id });
           track(rule.event_name, customData);
         }
       }
@@ -1216,51 +1226,117 @@ router.get('/tracker.js', async (req, res) => {
     }
   }
 
+  // Igual ao normRuleText, mas trata percentuais dinâmicos (A/B: 75% vs 0%) como equivalentes
+  function normButtonMatchText(s) {
+    var t = normRuleText(s);
+    if (!t) return '';
+    try {
+      t = t.replace(/\b\d+\s*%/g, '%');
+      t = t.replace(/\s+/g, ' ').trim();
+    } catch (_e2) {}
+    return t;
+  }
+
+  function findClickableRoot(fromEl) {
+    var el = fromEl;
+    while (el && el.nodeType === 1) {
+      var tag = (el.tagName || '').toUpperCase();
+      if (tag === 'A' && el.getAttribute && el.getAttribute('href')) return el;
+      if (tag === 'BUTTON') return el;
+      if (tag === 'INPUT') {
+        var it = ((el.type || '') + '').toLowerCase();
+        if (it === 'submit' || it === 'button' || it === 'image') return el;
+      }
+      var role = el.getAttribute && el.getAttribute('role');
+      if (role === 'button') return el;
+      if (tag === 'BODY' || tag === 'HTML') break;
+      el = el.parentElement;
+    }
+    return null;
+  }
+
   function checkButtonRules(target) {
     try {
       var cfg = window.TRACKING_CONFIG;
       if (!cfg || !cfg.eventRules || !cfg.eventRules.length) return;
       if (!target) return;
-      
+
       var currentPath = (location.pathname + location.search).toLowerCase();
       var fullUrl = location.href.toLowerCase();
 
-      var el = target;
-      // Sobe até encontrar A, BUTTON ou INPUT[type=submit/button]
-      while (el && el.tagName !== 'A' && el.tagName !== 'BUTTON' && el.tagName !== 'INPUT' && el.parentElement) {
-        if (el.tagName === 'BODY' || el.tagName === 'HTML') break;
-        el = el.parentElement;
-      }
-      if (!el || (el.tagName !== 'A' && el.tagName !== 'BUTTON' && el.tagName !== 'INPUT')) return;
+      var el = findClickableRoot(target);
+      if (!el) return;
 
       var clickedText = (el.innerText || el.textContent || el.value || '').toString().trim();
       if (!clickedText && el.getAttribute) clickedText = (el.getAttribute('title') || el.getAttribute('aria-label') || '').toString().trim();
       if (!clickedText) {
-        var img = el.querySelector('img');
+        var img = el.querySelector && el.querySelector('img');
         if (img) clickedText = (img.getAttribute('alt') || img.getAttribute('title') || img.getAttribute('src') || '').toString().trim();
       }
-      
-      if (!clickedText) return;
-      var clickedNorm = normRuleText(clickedText);
-      if (!clickedNorm) return;
+
+      var clickedNorm = clickedText ? normButtonMatchText(clickedText) : '';
+
+      var hrefNorm = '';
+      if (el.tagName && el.tagName.toUpperCase() === 'A' && el.href) {
+        try {
+          hrefNorm = new URL(el.href, location.href).href.toLowerCase();
+        } catch (_u) {
+          hrefNorm = String(el.href).toLowerCase();
+        }
+      }
+
+      var clsNorm = ((el.className && el.className.toString) ? el.className.toString() : String(el.className || '')).toLowerCase();
 
       for (var i = 0; i < cfg.eventRules.length; i++) {
         var rule = cfg.eventRules[i];
-        if (rule.rule_type === 'button_click') {
-          var ruleUrl = (rule.match_value || '').toLowerCase().trim();
-          var ruleText = normRuleText(rule.match_text || '');
+        if (rule.rule_type !== 'button_click') continue;
 
-          // Verifica se está na URL correta (ou global '/')
-          if (ruleUrl === '/' || ruleUrl === '' || currentPath.indexOf(ruleUrl) >= 0 || fullUrl.indexOf(ruleUrl) >= 0) {
-            // Verifica se o texto bate
-            if (ruleText && clickedNorm.indexOf(ruleText) >= 0) {
-              var customData = rule.parameters || {};
-              track(rule.event_name, customData);
-            }
+        var ruleUrl = (rule.match_value || '').toLowerCase().trim();
+        if (!(ruleUrl === '/' || ruleUrl === '' || currentPath.indexOf(ruleUrl) >= 0 || fullUrl.indexOf(ruleUrl) >= 0)) {
+          continue;
+        }
+
+        var params = (rule.parameters && typeof rule.parameters === 'object') ? rule.parameters : {};
+        var hrefNeed = (params.match_href_contains != null ? String(params.match_href_contains) : '').trim().toLowerCase();
+        var classNeed = (params.match_class_contains != null ? String(params.match_class_contains) : '').trim().toLowerCase();
+        var cssSel = (params.match_css != null ? String(params.match_css) : '').trim();
+
+        var rawRuleText = (rule.match_text != null ? String(rule.match_text) : '').trim();
+        var textActive = rawRuleText.length > 0;
+        var ruleTextNorm = textActive ? normButtonMatchText(rawRuleText) : '';
+
+        var textMatch = !!(textActive && clickedNorm && ruleTextNorm && clickedNorm.indexOf(ruleTextNorm) >= 0);
+        var hrefMatch = !!(hrefNeed && hrefNorm && hrefNorm.indexOf(hrefNeed) >= 0);
+        var classMatch = !!(classNeed && clsNorm && clsNorm.indexOf(classNeed) >= 0);
+        var cssMatch = false;
+        if (cssSel && target && target.closest) {
+          try {
+            cssMatch = !!target.closest(cssSel);
+          } catch (_c) {
+            cssMatch = false;
           }
         }
+
+        var altActive = !!(hrefNeed || classNeed || cssSel);
+        if (!textActive && !altActive) continue;
+
+        var matched = false;
+        if (textActive && altActive) {
+          matched = textMatch || hrefMatch || classMatch || cssMatch;
+        } else if (textActive) {
+          matched = textMatch;
+        } else {
+          matched = hrefMatch || classMatch || cssMatch;
+        }
+
+        if (matched) {
+          var customData = Object.assign({}, params, { _taRuleId: rule.id });
+          track(rule.event_name, customData);
+        }
       }
-    } catch(_e) { console.error('[TRK] BtnRules error', _e); }
+    } catch (_e) {
+      console.error('[TRK] BtnRules error', _e);
+    }
   }
 
   // ─── History patch (SPA) ──────────────────────────────────────────────────
@@ -1504,7 +1580,364 @@ router.get('/tracker.js', async (req, res) => {
   }
 
   // ─── Init ─────────────────────────────────────────────────────────────────
+  function getPickerConfig() {
+    try {
+      var qs = new URLSearchParams(location.search || '');
+      if (qs.get('ta_pick') !== '1') return null;
+      var origin = qs.get('ta_origin') || '';
+      origin = origin.trim();
+      if (!origin) return null;
+      // Basic sanity: require http(s)
+      if (origin.indexOf('http://') !== 0 && origin.indexOf('https://') !== 0) return null;
+      return { origin: origin };
+    } catch (_e) {
+      return null;
+    }
+  }
+
+  function getTestConfig() {
+    try {
+      var qs = new URLSearchParams(location.search || '');
+      if (qs.get('ta_test') !== '1') return null;
+      var origin = qs.get('ta_origin') || '';
+      origin = origin.trim();
+      if (!origin) return null;
+      if (origin.indexOf('http://') !== 0 && origin.indexOf('https://') !== 0) return null;
+      var ruleB64 = qs.get('ta_rule') || '';
+      ruleB64 = ruleB64.trim();
+      if (!ruleB64) return null;
+
+      // Decode base64 utf-8
+      var jsonStr = '';
+      try {
+        jsonStr = decodeURIComponent(escape(atob(ruleB64)));
+      } catch (_e1) {
+        try { jsonStr = atob(ruleB64); } catch (_e2) { jsonStr = ''; }
+      }
+      if (!jsonStr) return null;
+      var obj = null;
+      try { obj = JSON.parse(jsonStr); } catch (_e3) { obj = null; }
+      if (!obj || typeof obj !== 'object') return null;
+
+      return { origin: origin, rule: obj };
+    } catch (_e) {
+      return null;
+    }
+  }
+
+  function cssEscapeSimple(s) {
+    try {
+      // Minimal escaping for common ID/class chars
+      return String(s).replace(/[^a-zA-Z0-9_-]/g, '\\\\$&');
+    } catch (_e) {
+      return '';
+    }
+  }
+
+  function buildCssSelector(el) {
+    try {
+      if (!el || !el.tagName) return '';
+      // Prefer stable IDs
+      var id = el.getAttribute && el.getAttribute('id');
+      if (id && String(id).trim()) return '#' + cssEscapeSimple(String(id).trim());
+
+      var tag = String(el.tagName).toLowerCase();
+      var cls = ((el.className && el.className.toString) ? el.className.toString() : String(el.className || '')).trim();
+      if (cls) {
+        var parts = cls.split(/\s+/).filter(Boolean).slice(0, 3);
+        if (parts.length) return tag + '.' + parts.map(cssEscapeSimple).join('.');
+      }
+
+      // Fallback: tag + nth-of-type chain up to 3 levels
+      var path = [];
+      var cur = el;
+      for (var depth = 0; depth < 3 && cur && cur.tagName && cur.parentElement; depth++) {
+        var t = String(cur.tagName).toLowerCase();
+        var idx = 1;
+        var sib = cur;
+        while (sib && (sib = sib.previousElementSibling)) {
+          if (sib.tagName === cur.tagName) idx++;
+        }
+        path.unshift(t + ':nth-of-type(' + idx + ')');
+        cur = cur.parentElement;
+        if (cur && (String(cur.tagName).toUpperCase() === 'BODY' || String(cur.tagName).toUpperCase() === 'HTML')) break;
+      }
+      return path.join(' > ');
+    } catch (_e) {
+      return '';
+    }
+  }
+
+  function initPicker(cfg) {
+    try {
+      // Lightweight overlay UI
+      var overlay = document.createElement('div');
+      overlay.id = '__ta_picker_overlay';
+      overlay.style.cssText =
+        'position:fixed;inset:0;z-index:2147483647;pointer-events:none;' +
+        'background:rgba(0,0,0,0.03);';
+
+      var tip = document.createElement('div');
+      tip.style.cssText =
+        'position:fixed;left:12px;bottom:12px;z-index:2147483647;' +
+        'max-width:520px;padding:10px 12px;border-radius:10px;' +
+        'background:rgba(24,24,27,0.94);color:#fff;font:12px/1.4 system-ui,Segoe UI,Arial;' +
+        'box-shadow:0 10px 30px rgba(0,0,0,0.25);pointer-events:auto;';
+      tip.innerHTML =
+        '<div style="font-weight:700;margin-bottom:4px">Seleção Trajettu</div>' +
+        '<div style="opacity:.9">Clique no botão/CTA que você quer rastrear. Aperte <b>Esc</b> para sair.</div>';
+
+      var hl = document.createElement('div');
+      hl.style.cssText =
+        'position:fixed;z-index:2147483647;border:2px solid #22c55e;border-radius:10px;' +
+        'box-shadow:0 0 0 2px rgba(34,197,94,0.25);pointer-events:none;display:none;';
+
+      document.documentElement.appendChild(overlay);
+      document.documentElement.appendChild(hl);
+      document.documentElement.appendChild(tip);
+
+      function cleanup() {
+        try { overlay.remove(); } catch (_e1) {}
+        try { hl.remove(); } catch (_e2) {}
+        try { tip.remove(); } catch (_e3) {}
+        try { document.removeEventListener('mousemove', onMove, true); } catch (_e4) {}
+        try { document.removeEventListener('click', onPick, true); } catch (_e5) {}
+        try { document.removeEventListener('keydown', onKey, true); } catch (_e6) {}
+      }
+
+      function onKey(e) {
+        if (!e) return;
+        if (e.key === 'Escape') {
+          cleanup();
+        }
+      }
+
+      function onMove(e) {
+        try {
+          var t = e && e.target ? findClickableRoot(e.target) : null;
+          if (!t || !t.getBoundingClientRect) { hl.style.display = 'none'; return; }
+          var r = t.getBoundingClientRect();
+          hl.style.display = 'block';
+          hl.style.left = Math.max(0, r.left - 2) + 'px';
+          hl.style.top = Math.max(0, r.top - 2) + 'px';
+          hl.style.width = Math.max(0, r.width + 4) + 'px';
+          hl.style.height = Math.max(0, r.height + 4) + 'px';
+        } catch (_e) {
+          hl.style.display = 'none';
+        }
+      }
+
+      function onPick(e) {
+        try {
+          if (!e) return;
+          e.preventDefault();
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+
+          var root = findClickableRoot(e.target);
+          if (!root) return;
+
+          var text = (root.innerText || root.textContent || root.value || '').toString().trim();
+          if (!text && root.getAttribute) text = (root.getAttribute('title') || root.getAttribute('aria-label') || '').toString().trim();
+
+          var hrefNorm = '';
+          if (root.tagName && root.tagName.toUpperCase() === 'A' && root.href) {
+            try { hrefNorm = new URL(root.href, location.href).href; } catch (_u) { hrefNorm = String(root.href); }
+          }
+          var cls = ((root.className && root.className.toString) ? root.className.toString() : String(root.className || '')).trim();
+          var firstClass = '';
+          if (cls) firstClass = cls.split(/\s+/).filter(Boolean)[0] || '';
+
+          var payload = {
+            page_path: location.pathname + (location.search || ''),
+            text: text,
+            href: hrefNorm,
+            class_list: cls,
+            suggested: {
+              match_text: text ? text.slice(0, 200) : '',
+              match_href_contains: (function(){
+                if (!hrefNorm) return '';
+                try { return (new URL(hrefNorm, location.href)).hostname || ''; } catch(_eH) { return ''; }
+              })(),
+              match_class_contains: firstClass,
+              match_css: buildCssSelector(root),
+            }
+          };
+
+          try {
+            if (window.opener && window.opener.postMessage) {
+              window.opener.postMessage({ type: 'TA_BUTTON_PICK', payload: payload }, cfg.origin);
+            }
+          } catch (_pm) {}
+
+          cleanup();
+        } catch (_e) {}
+      }
+
+      document.addEventListener('mousemove', onMove, true);
+      document.addEventListener('click', onPick, true);
+      document.addEventListener('keydown', onKey, true);
+    } catch (_e) {}
+  }
+
+  function initTestMode(cfg) {
+    try {
+      var rule = cfg.rule || {};
+      var ruleText = (rule.match_text != null ? String(rule.match_text) : '').trim();
+      var hrefNeed = (rule.match_href_contains != null ? String(rule.match_href_contains) : '').trim().toLowerCase();
+      var classNeed = (rule.match_class_contains != null ? String(rule.match_class_contains) : '').trim().toLowerCase();
+      var cssSel = (rule.match_css != null ? String(rule.match_css) : '').trim();
+
+      var textActive = !!ruleText;
+      var altActive = !!(hrefNeed || classNeed || cssSel);
+      if (!textActive && !altActive) {
+        console.warn('[TRK] Test mode: no match criteria provided.');
+      }
+
+      var overlay = document.createElement('div');
+      overlay.id = '__ta_test_overlay';
+      overlay.style.cssText =
+        'position:fixed;inset:0;z-index:2147483647;pointer-events:none;' +
+        'background:rgba(0,0,0,0.03);';
+
+      var tip = document.createElement('div');
+      tip.style.cssText =
+        'position:fixed;left:12px;bottom:12px;z-index:2147483647;' +
+        'max-width:560px;padding:10px 12px;border-radius:10px;' +
+        'background:rgba(24,24,27,0.94);color:#fff;font:12px/1.4 system-ui,Segoe UI,Arial;' +
+        'box-shadow:0 10px 30px rgba(0,0,0,0.25);pointer-events:auto;';
+      tip.innerHTML =
+        '<div style="font-weight:700;margin-bottom:4px">Teste de Regra Trajettu</div>' +
+        '<div style="opacity:.9">Clique no botão/CTA para validar a regra. Aperte <b>Esc</b> para sair.</div>';
+
+      var resultBox = document.createElement('div');
+      resultBox.style.cssText =
+        'position:fixed;right:12px;bottom:12px;z-index:2147483647;' +
+        'max-width:560px;padding:10px 12px;border-radius:10px;' +
+        'background:rgba(24,24,27,0.94);color:#fff;font:12px/1.45 system-ui,Segoe UI,Arial;' +
+        'box-shadow:0 10px 30px rgba(0,0,0,0.25);pointer-events:auto;display:none;';
+
+      var hl = document.createElement('div');
+      hl.style.cssText =
+        'position:fixed;z-index:2147483647;border:2px solid #3b82f6;border-radius:10px;' +
+        'box-shadow:0 0 0 2px rgba(59,130,246,0.25);pointer-events:none;display:none;';
+
+      document.documentElement.appendChild(overlay);
+      document.documentElement.appendChild(hl);
+      document.documentElement.appendChild(tip);
+      document.documentElement.appendChild(resultBox);
+
+      function cleanup() {
+        try { overlay.remove(); } catch (_e1) {}
+        try { hl.remove(); } catch (_e2) {}
+        try { tip.remove(); } catch (_e3) {}
+        try { resultBox.remove(); } catch (_e4) {}
+        try { document.removeEventListener('mousemove', onMove, true); } catch (_e5) {}
+        try { document.removeEventListener('click', onClick, true); } catch (_e6) {}
+        try { document.removeEventListener('keydown', onKey, true); } catch (_e7) {}
+      }
+
+      function onKey(e) {
+        if (!e) return;
+        if (e.key === 'Escape') cleanup();
+      }
+
+      function onMove(e) {
+        try {
+          var t = e && e.target ? findClickableRoot(e.target) : null;
+          if (!t || !t.getBoundingClientRect) { hl.style.display = 'none'; return; }
+          var r = t.getBoundingClientRect();
+          hl.style.display = 'block';
+          hl.style.left = Math.max(0, r.left - 2) + 'px';
+          hl.style.top = Math.max(0, r.top - 2) + 'px';
+          hl.style.width = Math.max(0, r.width + 4) + 'px';
+          hl.style.height = Math.max(0, r.height + 4) + 'px';
+        } catch (_e) {
+          hl.style.display = 'none';
+        }
+      }
+
+      function safeNormText(s) {
+        try { return normButtonMatchText(s); } catch (_e) { return ''; }
+      }
+
+      function onClick(e) {
+        try {
+          if (!e) return;
+          e.preventDefault();
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+
+          var root = findClickableRoot(e.target);
+          if (!root) return;
+
+          var clickedText = (root.innerText || root.textContent || root.value || '').toString().trim();
+          if (!clickedText && root.getAttribute) clickedText = (root.getAttribute('title') || root.getAttribute('aria-label') || '').toString().trim();
+          var clickedNorm = clickedText ? safeNormText(clickedText) : '';
+          var ruleNorm = ruleText ? safeNormText(ruleText) : '';
+
+          var hrefNorm = '';
+          if (root.tagName && root.tagName.toUpperCase() === 'A' && root.href) {
+            try { hrefNorm = new URL(root.href, location.href).href.toLowerCase(); } catch (_u) { hrefNorm = String(root.href).toLowerCase(); }
+          }
+          var clsNorm = ((root.className && root.className.toString) ? root.className.toString() : String(root.className || '')).toLowerCase();
+
+          var textMatch = !!(textActive && clickedNorm && ruleNorm && clickedNorm.indexOf(ruleNorm) >= 0);
+          var hrefMatch = !!(hrefNeed && hrefNorm && hrefNorm.indexOf(hrefNeed) >= 0);
+          var classMatch = !!(classNeed && clsNorm && clsNorm.indexOf(classNeed) >= 0);
+          var cssMatch = false;
+          if (cssSel && e.target && e.target.closest) {
+            try { cssMatch = !!e.target.closest(cssSel); } catch (_c) { cssMatch = false; }
+          }
+
+          var matched = false;
+          if (textActive && altActive) matched = textMatch || hrefMatch || classMatch || cssMatch;
+          else if (textActive) matched = textMatch;
+          else matched = hrefMatch || classMatch || cssMatch;
+
+          var lines = [];
+          lines.push('<div style="font-weight:700;margin-bottom:6px">' + (matched ? 'PASSOU ✅' : 'NÃO PASSOU ❌') + '</div>');
+          lines.push('<div style="opacity:.9;margin-bottom:8px">Clique avaliado:</div>');
+          lines.push('<div style="font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size:11px; opacity:.95">texto: ' + (clickedText ? clickedText.replace(/</g,'&lt;') : '—') + '</div>');
+          lines.push('<div style="font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size:11px; opacity:.95">href: ' + (hrefNorm ? hrefNorm.replace(/</g,'&lt;') : '—') + '</div>');
+          lines.push('<div style="font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size:11px; opacity:.95">classe: ' + (clsNorm ? clsNorm.replace(/</g,'&lt;') : '—') + '</div>');
+          lines.push('<hr style="border:none;border-top:1px solid rgba(255,255,255,0.12);margin:10px 0">');
+          lines.push('<div style="opacity:.9;margin-bottom:6px">Resultado por critério:</div>');
+          if (textActive) lines.push('<div>texto: <b style="color:' + (textMatch ? '#22c55e' : '#f87171') + '">' + (textMatch ? 'ok' : 'falhou') + '</b></div>');
+          if (hrefNeed) lines.push('<div>href contém "' + hrefNeed.replace(/</g,'&lt;') + '": <b style="color:' + (hrefMatch ? '#22c55e' : '#f87171') + '">' + (hrefMatch ? 'ok' : 'falhou') + '</b></div>');
+          if (classNeed) lines.push('<div>classe contém "' + classNeed.replace(/</g,'&lt;') + '": <b style="color:' + (classMatch ? '#22c55e' : '#f87171') + '">' + (classMatch ? 'ok' : 'falhou') + '</b></div>');
+          if (cssSel) lines.push('<div>css "' + cssSel.replace(/</g,'&lt;') + '": <b style="color:' + (cssMatch ? '#22c55e' : '#f87171') + '">' + (cssMatch ? 'ok' : 'falhou') + '</b></div>');
+          if (!textActive && !hrefNeed && !classNeed && !cssSel) lines.push('<div style="color:#fbbf24">Nenhum critério configurado.</div>');
+
+          resultBox.style.display = 'block';
+          resultBox.innerHTML = lines.join('');
+
+          // Also notify opener (optional)
+          try {
+            if (window.opener && window.opener.postMessage) {
+              window.opener.postMessage({ type: 'TA_RULE_TEST_RESULT', payload: { matched: matched, details: { textMatch: textMatch, hrefMatch: hrefMatch, classMatch: classMatch, cssMatch: cssMatch } } }, cfg.origin);
+            }
+          } catch (_pm) {}
+        } catch (_e) {}
+      }
+
+      document.addEventListener('mousemove', onMove, true);
+      document.addEventListener('click', onClick, true);
+      document.addEventListener('keydown', onKey, true);
+    } catch (_e) {}
+  }
+
   function initTracker() {
+    var pick = getPickerConfig();
+    if (pick) {
+      initPicker(pick);
+      return;
+    }
+    var test = getTestConfig();
+    if (test) {
+      initTestMode(test);
+      return;
+    }
     pageView();
     checkUrlRules();
     decorateCheckoutLinks();

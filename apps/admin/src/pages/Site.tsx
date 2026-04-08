@@ -260,6 +260,9 @@ export const SitePage = () => {
 
   const [buttonRuleUrl, setButtonRuleUrl] = useState('');
   const [buttonRuleText, setButtonRuleText] = useState('');
+  const [buttonRuleHrefContains, setButtonRuleHrefContains] = useState('');
+  const [buttonRuleClassContains, setButtonRuleClassContains] = useState('');
+  const [buttonRuleCss, setButtonRuleCss] = useState('');
   const [buttonRuleEventType, setButtonRuleEventType] = useState('Purchase');
   const [buttonRuleCustomName, setButtonRuleCustomName] = useState('');
   const [buttonRuleEventValue, setButtonRuleEventValue] = useState('');
@@ -305,6 +308,82 @@ export const SitePage = () => {
 
 
   const [selectedRuleId, setSelectedRuleId] = useState<number | null>(null);
+
+  const pickerWinRef = useRef<Window | null>(null);
+
+  const pickerOpenUrl = useMemo(() => {
+    if (!utmBaseUrl) return null;
+    const base = utmBaseUrl.replace(/\/+$/, '');
+    const path = (buttonRuleUrl || '/').trim() || '/';
+    const full =
+      path.startsWith('http://') || path.startsWith('https://')
+        ? path
+        : `${base}${path.startsWith('/') ? '' : '/'}${path}`;
+    try {
+      const url = new URL(full);
+      url.searchParams.set('ta_pick', '1');
+      url.searchParams.set('ta_origin', window.location.origin);
+      return url.toString();
+    } catch {
+      return null;
+    }
+  }, [utmBaseUrl, buttonRuleUrl]);
+
+  const testOpenUrl = useMemo(() => {
+    if (!utmBaseUrl) return null;
+    const base = utmBaseUrl.replace(/\/+$/, '');
+    const path = (buttonRuleUrl || '/').trim() || '/';
+    const full =
+      path.startsWith('http://') || path.startsWith('https://')
+        ? path
+        : `${base}${path.startsWith('/') ? '' : '/'}${path}`;
+
+    const rule = {
+      match_text: buttonRuleText?.trim() || '',
+      match_href_contains: buttonRuleHrefContains?.trim() || '',
+      match_class_contains: buttonRuleClassContains?.trim() || '',
+      match_css: buttonRuleCss?.trim() || '',
+    };
+    const json = JSON.stringify(rule);
+    const b64 = btoa(unescape(encodeURIComponent(json)));
+
+    try {
+      const url = new URL(full);
+      url.searchParams.set('ta_test', '1');
+      url.searchParams.set('ta_origin', window.location.origin);
+      url.searchParams.set('ta_rule', b64);
+      return url.toString();
+    } catch {
+      return null;
+    }
+  }, [utmBaseUrl, buttonRuleUrl, buttonRuleText, buttonRuleHrefContains, buttonRuleClassContains, buttonRuleCss]);
+
+  useEffect(() => {
+    const onMessage = (ev: MessageEvent) => {
+      try {
+        const data = (ev as any)?.data;
+        if (!data || typeof data !== 'object') return;
+        if (pickerWinRef.current && ev.source !== pickerWinRef.current) return;
+        if (data.type !== 'TA_BUTTON_PICK') return;
+        const payload = data.payload || {};
+
+        if (typeof payload.page_path === 'string' && payload.page_path.trim()) {
+          setButtonRuleUrl(payload.page_path);
+        }
+        const sug = payload.suggested || {};
+        if (typeof sug.match_text === 'string') setButtonRuleText(sug.match_text);
+        if (typeof sug.match_href_contains === 'string') setButtonRuleHrefContains(sug.match_href_contains);
+        if (typeof sug.match_class_contains === 'string') setButtonRuleClassContains(sug.match_class_contains);
+        if (typeof sug.match_css === 'string') setButtonRuleCss(sug.match_css);
+
+        showFlash('Botão selecionado. Agora escolha o evento e salve a regra.');
+      } catch {
+        // ignore
+      }
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, []);
 
   const loadSavedForms = useCallback(async () => {
     try {
@@ -698,8 +777,15 @@ export const SitePage = () => {
   };
 
   const handleAddButtonRule = async () => {
-    if (!buttonRuleUrl || !buttonRuleText) {
-      showFlash('Preencha a URL da página e o texto do botão', 'error');
+    const hasText = !!buttonRuleText.trim();
+    const hasHref = !!buttonRuleHrefContains.trim();
+    const hasClass = !!buttonRuleClassContains.trim();
+    const hasCss = !!buttonRuleCss.trim();
+    if (!buttonRuleUrl || (!hasText && !hasHref && !hasClass && !hasCss)) {
+      showFlash(
+        'Preencha a URL da página e pelo menos um critério: texto do botão, destino (href), classe ou seletor CSS.',
+        'error'
+      );
       return;
     }
     const evtName = buttonRuleEventType === 'Custom' ? buttonRuleCustomName : buttonRuleEventType;
@@ -725,11 +811,14 @@ export const SitePage = () => {
       const payload: any = {
         rule_type: 'button_click',
         match_value: buttonRuleUrl,
-        match_text: buttonRuleText,
+        match_text: hasText ? buttonRuleText.trim() : '',
         event_name: evtName,
         event_type: buttonRuleEventType === 'Custom' ? 'custom' : 'standard',
-        parameters: {}
+        parameters: {} as Record<string, string | number>
       };
+      if (hasHref) payload.parameters.match_href_contains = buttonRuleHrefContains.trim();
+      if (hasClass) payload.parameters.match_class_contains = buttonRuleClassContains.trim();
+      if (hasCss) payload.parameters.match_css = buttonRuleCss.trim();
 
       if (evtName === 'Purchase') {
         payload.parameters.value = parseFloat(String(buttonRuleEventValue).trim());
@@ -751,6 +840,9 @@ export const SitePage = () => {
 
       setButtonRuleUrl('');
       setButtonRuleText('');
+      setButtonRuleHrefContains('');
+      setButtonRuleClassContains('');
+      setButtonRuleCss('');
       setButtonRuleCustomName('');
       setButtonRuleEventValue('');
       setButtonRuleEventCurrency('BRL');
@@ -779,6 +871,9 @@ export const SitePage = () => {
     } else if (rule.rule_type === 'button_click') {
       setButtonRuleUrl(rule.match_value);
       setButtonRuleText(rule.match_text || '');
+      setButtonRuleHrefContains(rule.parameters?.match_href_contains || '');
+      setButtonRuleClassContains(rule.parameters?.match_class_contains || '');
+      setButtonRuleCss(rule.parameters?.match_css || '');
       const isCustom = rule.event_type === 'custom';
       setButtonRuleEventType(isCustom ? 'Custom' : rule.event_name);
       setButtonRuleCustomName(isCustom ? rule.event_name : '');
@@ -797,6 +892,9 @@ export const SitePage = () => {
     setUrlRuleEventCurrency('BRL');
     setButtonRuleUrl('');
     setButtonRuleText('');
+    setButtonRuleHrefContains('');
+    setButtonRuleClassContains('');
+    setButtonRuleCss('');
     setButtonRuleCustomName('');
     setButtonRuleEventValue('');
     setButtonRuleEventCurrency('BRL');
@@ -2882,8 +2980,51 @@ ${scriptContent}
                   <div>
                     <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Configuração de Eventos por Botão</h3>
                     <p className="text-sm text-zinc-600 dark:text-zinc-500">
-                      Dispare eventos automaticamente quando um botão contendo um texto específico for clicado.
+                      Dispare eventos ao clicar em CTAs. Use texto estável, ou critérios estilo Meta (destino do link, classe{' '}
+                      <code className="text-xs">btn-cta</code>, seletor CSS). Percentuais dinâmicos no texto (ex.: 75% vs 0%) são
+                      tratados como equivalentes no match por texto.
                     </p>
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={!pickerOpenUrl}
+                        onClick={() => {
+                          if (!pickerOpenUrl) return;
+                          pickerWinRef.current = window.open(pickerOpenUrl, '_blank', 'noopener,noreferrer');
+                          showFlash('Na aba que abriu, clique no botão desejado.', 'success');
+                        }}
+                        className={
+                          'px-3 py-2 rounded-lg text-xs font-medium border transition-colors ' +
+                          (pickerOpenUrl
+                            ? 'bg-zinc-900 text-white border-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:border-zinc-100'
+                            : 'bg-zinc-200 text-zinc-500 border-zinc-200 dark:bg-zinc-900/40 dark:text-zinc-500 dark:border-zinc-800')
+                        }
+                      >
+                        Abrir seletor na página (estilo Meta)
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!testOpenUrl}
+                        onClick={() => {
+                          if (!testOpenUrl) return;
+                          window.open(testOpenUrl, '_blank', 'noopener,noreferrer');
+                          showFlash('Na aba que abriu, clique no CTA para ver PASSOU/NÃO PASSOU.', 'success');
+                        }}
+                        className={
+                          'px-3 py-2 rounded-lg text-xs font-medium border transition-colors ' +
+                          (testOpenUrl
+                            ? 'bg-white text-zinc-900 border-zinc-200 hover:bg-zinc-50 dark:bg-zinc-950/30 dark:text-zinc-100 dark:border-zinc-800'
+                            : 'bg-zinc-200 text-zinc-500 border-zinc-200 dark:bg-zinc-900/40 dark:text-zinc-500 dark:border-zinc-800')
+                        }
+                      >
+                        Testar regra na página
+                      </button>
+                      {!utmBaseUrl && (
+                        <span className="text-xs text-zinc-500">
+                          Defina o domínio do site para usar o seletor.
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end bg-zinc-50 dark:bg-zinc-900/30 p-5 rounded-xl border border-zinc-200 dark:border-zinc-800">
@@ -2901,13 +3042,13 @@ ${scriptContent}
                     </div>
                     <div className="md:col-span-3">
                       <label htmlFor="site-btn-rule-text" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
-                        Texto do Botão contém:
+                        Texto do botão contém (opcional):
                       </label>
                       <input
                         id="site-btn-rule-text"
                         value={buttonRuleText}
                         onChange={(e) => setButtonRuleText(e.target.value)}
-                        placeholder="Ex: Comprar Agora"
+                        placeholder="Ex: Quiero mis Recetas"
                         className={inputCls}
                       />
                     </div>
@@ -2989,6 +3130,50 @@ ${scriptContent}
                         </div>
                       </div>
                     )}
+                    <div className="md:col-span-12 border-t border-zinc-200 dark:border-zinc-800 pt-4 mt-1">
+                      <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-3">
+                        Critérios extras (opcionais, estilo Gerenciador de Eventos da Meta). Se preencher mais de um junto com o
+                        texto, basta <strong>um</strong> deles coincidir.
+                      </p>
+                      <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
+                        <div className="md:col-span-4">
+                          <label htmlFor="site-btn-rule-href" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
+                            Link destino contém (href):
+                          </label>
+                          <input
+                            id="site-btn-rule-href"
+                            value={buttonRuleHrefContains}
+                            onChange={(e) => setButtonRuleHrefContains(e.target.value)}
+                            placeholder="Ex: pay.hotmart.com"
+                            className={inputCls}
+                          />
+                        </div>
+                        <div className="md:col-span-4">
+                          <label htmlFor="site-btn-rule-class" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
+                            Classe CSS contém:
+                          </label>
+                          <input
+                            id="site-btn-rule-class"
+                            value={buttonRuleClassContains}
+                            onChange={(e) => setButtonRuleClassContains(e.target.value)}
+                            placeholder="Ex: btn-cta"
+                            className={inputCls}
+                          />
+                        </div>
+                        <div className="md:col-span-4">
+                          <label htmlFor="site-btn-rule-css" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
+                            Seletor CSS (closest):
+                          </label>
+                          <input
+                            id="site-btn-rule-css"
+                            value={buttonRuleCss}
+                            onChange={(e) => setButtonRuleCss(e.target.value)}
+                            placeholder="Ex: a.btn-cta"
+                            className={inputCls}
+                          />
+                        </div>
+                      </div>
+                    </div>
                     <div className="md:col-span-3 md:col-start-1 flex gap-2">
                       <button
                         onClick={handleAddButtonRule}
@@ -3015,7 +3200,7 @@ ${scriptContent}
                         <thead className="bg-zinc-50 dark:bg-zinc-900/60 text-xs uppercase font-medium text-zinc-600 dark:text-zinc-500 dark:text-zinc-400">
                           <tr>
                             <th className="px-4 py-3">Página (URL)</th>
-                            <th className="px-4 py-3">Texto do Botão</th>
+                            <th className="px-4 py-3">Critérios</th>
                             <th className="px-4 py-3">Evento Disparado</th>
                             <th className="px-4 py-3 text-right">Ações</th>
                           </tr>
@@ -3024,7 +3209,20 @@ ${scriptContent}
                           {eventRules.filter(r => r.rule_type === 'button_click').map((rule) => (
                             <tr key={rule.id} className="hover:bg-zinc-50 dark:bg-zinc-900/20">
                               <td className="px-4 py-3 font-mono text-zinc-700 dark:text-zinc-300">{rule.match_value}</td>
-                              <td className="px-4 py-3 text-zinc-700 dark:text-zinc-300">{rule.match_text}</td>
+                              <td className="px-4 py-3 text-zinc-700 dark:text-zinc-300 text-xs">
+                                {[
+                                  rule.match_text ? `texto: ${rule.match_text}` : null,
+                                  rule.parameters?.match_href_contains
+                                    ? `href: ${rule.parameters.match_href_contains}`
+                                    : null,
+                                  rule.parameters?.match_class_contains
+                                    ? `classe: ${rule.parameters.match_class_contains}`
+                                    : null,
+                                  rule.parameters?.match_css ? `css: ${rule.parameters.match_css}` : null,
+                                ]
+                                  .filter(Boolean)
+                                  .join(' · ') || '—'}
+                              </td>
                               <td className="px-4 py-3">
                                 <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-500/10 text-blue-300 border border-blue-500/20">
                                   {rule.event_name}
