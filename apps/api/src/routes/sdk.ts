@@ -557,7 +557,9 @@ router.get('/tracker.js', async (req, res) => {
   }
 
   function genEventId() {
-    return 'evt_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+    // Meta dedup exige que o ID do browser (eid) seja idêntico ao do server (event_id).
+    // Mantemos um formato curto e URL-safe.
+    return Math.random().toString(36).slice(2) + Date.now().toString(36);
   }
 
   // ─── Page visibility (dwell real) ────────────────────────────────────────
