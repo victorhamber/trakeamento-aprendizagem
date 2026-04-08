@@ -1309,9 +1309,10 @@ router.get('/tracker.js', async (req, res) => {
         var hrefMatch = !!(hrefNeed && hrefNorm && hrefNorm.indexOf(hrefNeed) >= 0);
         var classMatch = !!(classNeed && clsNorm && clsNorm.indexOf(classNeed) >= 0);
         var cssMatch = false;
-        if (cssSel && target && target.closest) {
+        if (cssSel) {
           try {
-            cssMatch = !!target.closest(cssSel);
+            if (target && target.closest) cssMatch = !!target.closest(cssSel);
+            if (!cssMatch && el && el.closest) cssMatch = !!el.closest(cssSel);
           } catch (_c) {
             cssMatch = false;
           }
@@ -1320,14 +1321,17 @@ router.get('/tracker.js', async (req, res) => {
         var altActive = !!(hrefNeed || classNeed || cssSel);
         if (!textActive && !altActive) continue;
 
-        var matched = false;
-        if (textActive && altActive) {
-          matched = textMatch || hrefMatch || classMatch || cssMatch;
-        } else if (textActive) {
-          matched = textMatch;
-        } else {
-          matched = hrefMatch || classMatch || cssMatch;
+        // Critérios preenchidos no painel são combinados com E — evita falso positivo
+        // (ex.: texto + href só com hostname, que batia em todos os links do domínio).
+        // Em <button> / input não há href: não exigimos href se houver texto/classe/CSS (só href vira obrigatório em <a>).
+        var matched = true;
+        if (textActive) matched = matched && textMatch;
+        if (hrefNeed) {
+          if (hrefNorm) matched = matched && hrefMatch;
+          else if (!(textActive || classNeed || cssSel)) matched = false;
         }
+        if (classNeed) matched = matched && classMatch;
+        if (cssSel) matched = matched && cssMatch;
 
         if (matched) {
           var customData = Object.assign({}, params, { _taRuleId: rule.id });
@@ -1668,6 +1672,23 @@ router.get('/tracker.js', async (req, res) => {
     }
   }
 
+  /** Path (+ query útil) para regra "URL contém": sem parâmetros internos do Trajettu. */
+  function pagePathForButtonRule() {
+    try {
+      var path = location.pathname || '';
+      var q = location.search || '';
+      if (!q) return path;
+      var raw = q.charAt(0) === '?' ? q.slice(1) : q;
+      var u = new URLSearchParams(raw);
+      var strip = ['ta_pick', 'ta_origin', 'ta_test', 'ta_rule'];
+      for (var si = 0; si < strip.length; si++) u.delete(strip[si]);
+      var s = u.toString();
+      return s ? path + '?' + s : path;
+    } catch (_e) {
+      return location.pathname || '';
+    }
+  }
+
   function initPicker(cfg) {
     try {
       // Lightweight overlay UI
@@ -1749,7 +1770,7 @@ router.get('/tracker.js', async (req, res) => {
           if (cls) firstClass = cls.split(/\s+/).filter(Boolean)[0] || '';
 
           var payload = {
-            page_path: location.pathname + (location.search || ''),
+            page_path: pagePathForButtonRule(),
             text: text,
             href: hrefNorm,
             class_list: cls,
@@ -1757,7 +1778,12 @@ router.get('/tracker.js', async (req, res) => {
               match_text: text ? text.slice(0, 200) : '',
               match_href_contains: (function(){
                 if (!hrefNorm) return '';
-                try { return (new URL(hrefNorm, location.href)).hostname || ''; } catch(_eH) { return ''; }
+                try {
+                  var u = new URL(hrefNorm, location.href);
+                  var pathQ = (u.pathname + u.search).toLowerCase();
+                  if (pathQ && pathQ !== '/') return pathQ.length > 240 ? pathQ.slice(0, 240) : pathQ;
+                  return (u.hostname || '').toLowerCase();
+                } catch(_eH) { return ''; }
               })(),
               match_class_contains: firstClass,
               match_css: buildCssSelector(root),
@@ -1808,7 +1834,11 @@ router.get('/tracker.js', async (req, res) => {
         'box-shadow:0 10px 30px rgba(0,0,0,0.25);pointer-events:auto;';
       tip.innerHTML =
         '<div style="font-weight:700;margin-bottom:4px">Teste de Regra Trajettu</div>' +
-        '<div style="opacity:.9">Clique no botão/CTA para validar a regra. Aperte <b>Esc</b> para sair.</div>';
+        '<div style="opacity:.9">' +
+        (!textActive && !altActive
+          ? 'Nenhum critério foi enviado do painel — ao clicar, mostramos só <b>sugestões</b> para você copiar. Defina texto/classe/href/CSS no Trajettu e teste de novo.'
+          : 'Clique no botão/CTA para validar a regra. Aperte <b>Esc</b> para sair.') +
+        '</div>';
 
       var resultBox = document.createElement('div');
       resultBox.style.cssText =
@@ -1886,28 +1916,60 @@ router.get('/tracker.js', async (req, res) => {
           var hrefMatch = !!(hrefNeed && hrefNorm && hrefNorm.indexOf(hrefNeed) >= 0);
           var classMatch = !!(classNeed && clsNorm && clsNorm.indexOf(classNeed) >= 0);
           var cssMatch = false;
-          if (cssSel && e.target && e.target.closest) {
-            try { cssMatch = !!e.target.closest(cssSel); } catch (_c) { cssMatch = false; }
+          if (cssSel) {
+            try {
+              if (e.target && e.target.closest) cssMatch = !!e.target.closest(cssSel);
+              if (!cssMatch && root && root.closest) cssMatch = !!root.closest(cssSel);
+            } catch (_c) {
+              cssMatch = false;
+            }
           }
 
-          var matched = false;
-          if (textActive && altActive) matched = textMatch || hrefMatch || classMatch || cssMatch;
-          else if (textActive) matched = textMatch;
-          else matched = hrefMatch || classMatch || cssMatch;
+          var matched = true;
+          if (textActive) matched = matched && textMatch;
+          if (hrefNeed) {
+            if (hrefNorm) matched = matched && hrefMatch;
+            else if (!(textActive || classNeed || cssSel)) matched = false;
+          }
+          if (classNeed) matched = matched && classMatch;
+          if (cssSel) matched = matched && cssMatch;
+
+          var noCriteria = !textActive && !hrefNeed && !classNeed && !cssSel;
+          var firstClass = '';
+          if (clsNorm) {
+            var cparts = clsNorm.split(/\s+/).filter(Boolean);
+            firstClass = cparts.length ? cparts[0] : '';
+          }
+          var sugCss = buildCssSelector(root);
+          var sugText = clickedText ? clickedText.slice(0, 200) : '';
 
           var lines = [];
-          lines.push('<div style="font-weight:700;margin-bottom:6px">' + (matched ? 'PASSOU ✅' : 'NÃO PASSOU ❌') + '</div>');
-          lines.push('<div style="opacity:.9;margin-bottom:8px">Clique avaliado:</div>');
-          lines.push('<div style="font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size:11px; opacity:.95">texto: ' + (clickedText ? clickedText.replace(/</g,'&lt;') : '—') + '</div>');
-          lines.push('<div style="font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size:11px; opacity:.95">href: ' + (hrefNorm ? hrefNorm.replace(/</g,'&lt;') : '—') + '</div>');
-          lines.push('<div style="font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size:11px; opacity:.95">classe: ' + (clsNorm ? clsNorm.replace(/</g,'&lt;') : '—') + '</div>');
-          lines.push('<hr style="border:none;border-top:1px solid rgba(255,255,255,0.12);margin:10px 0">');
-          lines.push('<div style="opacity:.9;margin-bottom:6px">Resultado por critério:</div>');
-          if (textActive) lines.push('<div>texto: <b style="color:' + (textMatch ? '#22c55e' : '#f87171') + '">' + (textMatch ? 'ok' : 'falhou') + '</b></div>');
-          if (hrefNeed) lines.push('<div>href contém "' + hrefNeed.replace(/</g,'&lt;') + '": <b style="color:' + (hrefMatch ? '#22c55e' : '#f87171') + '">' + (hrefMatch ? 'ok' : 'falhou') + '</b></div>');
-          if (classNeed) lines.push('<div>classe contém "' + classNeed.replace(/</g,'&lt;') + '": <b style="color:' + (classMatch ? '#22c55e' : '#f87171') + '">' + (classMatch ? 'ok' : 'falhou') + '</b></div>');
-          if (cssSel) lines.push('<div>css "' + cssSel.replace(/</g,'&lt;') + '": <b style="color:' + (cssMatch ? '#22c55e' : '#f87171') + '">' + (cssMatch ? 'ok' : 'falhou') + '</b></div>');
-          if (!textActive && !hrefNeed && !classNeed && !cssSel) lines.push('<div style="color:#fbbf24">Nenhum critério configurado.</div>');
+          if (noCriteria) {
+            lines.push('<div style="font-weight:700;margin-bottom:6px;color:#fbbf24">Diagnóstico (sem critérios no painel)</div>');
+            lines.push('<div style="opacity:.88;margin-bottom:8px">O teste <b>não falhou</b> por causa do botão: você ainda não enviou texto/href/classe/CSS do Trajettu. Copie as sugestões abaixo e clique em <b>Testar regra</b> de novo.</div>');
+            lines.push('<div style="opacity:.85;margin-bottom:6px">Clique capturado:</div>');
+            lines.push('<div style="font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size:11px; opacity:.95">texto: ' + (clickedText ? clickedText.replace(/</g,'&lt;') : '—') + '</div>');
+            lines.push('<div style="font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size:11px; opacity:.95">href: ' + (hrefNorm ? hrefNorm.replace(/</g,'&lt;') : '— (normal em &lt;button&gt;, não é link)') + '</div>');
+            lines.push('<div style="font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size:11px; opacity:.95">classe: ' + (clsNorm ? clsNorm.replace(/</g,'&lt;') : '—') + '</div>');
+            lines.push('<hr style="border:none;border-top:1px solid rgba(255,255,255,0.12);margin:10px 0">');
+            lines.push('<div style="opacity:.9;margin-bottom:6px">Sugestões para colar no Trajettu:</div>');
+            lines.push('<div style="font-size:11px;margin-bottom:4px"><b>Classe CSS contém:</b> ' + (firstClass ? firstClass.replace(/</g,'&lt;') : '—') + '</div>');
+            lines.push('<div style="font-size:11px;margin-bottom:4px"><b>Seletor CSS:</b> ' + (sugCss ? sugCss.replace(/</g,'&lt;') : '—') + '</div>');
+            lines.push('<div style="font-size:11px;margin-bottom:4px"><b>Texto contém (trecho):</b> ' + (sugText ? sugText.replace(/</g,'&lt;') : '—') + '</div>');
+            matched = false;
+          } else {
+            lines.push('<div style="font-weight:700;margin-bottom:6px">' + (matched ? 'PASSOU ✅' : 'NÃO PASSOU ❌') + '</div>');
+            lines.push('<div style="opacity:.9;margin-bottom:8px">Clique avaliado:</div>');
+            lines.push('<div style="font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size:11px; opacity:.95">texto: ' + (clickedText ? clickedText.replace(/</g,'&lt;') : '—') + '</div>');
+            lines.push('<div style="font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size:11px; opacity:.95">href: ' + (hrefNorm ? hrefNorm.replace(/</g,'&lt;') : '—') + '</div>');
+            lines.push('<div style="font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size:11px; opacity:.95">classe: ' + (clsNorm ? clsNorm.replace(/</g,'&lt;') : '—') + '</div>');
+            lines.push('<hr style="border:none;border-top:1px solid rgba(255,255,255,0.12);margin:10px 0">');
+            lines.push('<div style="opacity:.9;margin-bottom:6px">Resultado por critério:</div>');
+            if (textActive) lines.push('<div>texto: <b style="color:' + (textMatch ? '#22c55e' : '#f87171') + '">' + (textMatch ? 'ok' : 'falhou') + '</b></div>');
+            if (hrefNeed) lines.push('<div>href contém "' + hrefNeed.replace(/</g,'&lt;') + '": <b style="color:' + (hrefMatch ? '#22c55e' : '#f87171') + '">' + (hrefMatch ? 'ok' : 'falhou') + '</b></div>');
+            if (classNeed) lines.push('<div>classe contém "' + classNeed.replace(/</g,'&lt;') + '": <b style="color:' + (classMatch ? '#22c55e' : '#f87171') + '">' + (classMatch ? 'ok' : 'falhou') + '</b></div>');
+            if (cssSel) lines.push('<div>css "' + cssSel.replace(/</g,'&lt;') + '": <b style="color:' + (cssMatch ? '#22c55e' : '#f87171') + '">' + (cssMatch ? 'ok' : 'falhou') + '</b></div>');
+          }
 
           resultBox.style.display = 'block';
           resultBox.innerHTML = lines.join('');
@@ -1915,7 +1977,17 @@ router.get('/tracker.js', async (req, res) => {
           // Also notify opener (optional)
           try {
             if (window.opener && window.opener.postMessage) {
-              window.opener.postMessage({ type: 'TA_RULE_TEST_RESULT', payload: { matched: matched, details: { textMatch: textMatch, hrefMatch: hrefMatch, classMatch: classMatch, cssMatch: cssMatch } } }, cfg.origin);
+              window.opener.postMessage({
+                type: 'TA_RULE_TEST_RESULT',
+                payload: {
+                  matched: noCriteria ? null : matched,
+                  diagnosticsOnly: noCriteria,
+                  suggested: noCriteria
+                    ? { match_class_contains: firstClass || undefined, match_css: sugCss || undefined, match_text: sugText || undefined }
+                    : undefined,
+                  details: { textMatch: textMatch, hrefMatch: hrefMatch, classMatch: classMatch, cssMatch: cssMatch },
+                }
+              }, cfg.origin);
             }
           } catch (_pm) {}
         } catch (_e) {}

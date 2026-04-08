@@ -3263,8 +3263,9 @@ ${scriptContent}
                     )}
                     <div className="md:col-span-12 border-t border-zinc-200 dark:border-zinc-800 pt-4 mt-1">
                       <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-3">
-                        Critérios extras (opcionais, estilo Gerenciador de Eventos da Meta). Se preencher mais de um junto com o
-                        texto, basta <strong>um</strong> deles coincidir.
+                        Critérios extras (opcionais). Cada campo que você preencher precisa coincidir com o clique (combinação por{' '}
+                        <strong>E</strong>). Deixe em branco o que não quiser usar — evita disparar em todos os botões por critério
+                        genérico (ex.: só o hostname do site).
                       </p>
                       <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
                         <div className="md:col-span-4">
