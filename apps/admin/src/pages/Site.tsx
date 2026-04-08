@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { api } from '../lib/api';
 import { formatDateTimeBrt } from '../lib/utils';
+import { stripTrajettuAuxFromMatchPath } from '../lib/trajettuAuxPath';
 import { DDI_LIST } from '../lib/ddi';
 import { Layout } from '../components/Layout';
 import WebhooksTab from '../components/site/WebhooksTab';
@@ -405,7 +406,7 @@ export const SitePage = () => {
         const payload = data.payload || {};
 
         if (typeof payload.page_path === 'string' && payload.page_path.trim()) {
-          setButtonRuleUrl(payload.page_path);
+          setButtonRuleUrl(stripTrajettuAuxFromMatchPath(payload.page_path));
         }
         const sug = payload.suggested || {};
         if (typeof sug.match_text === 'string') setButtonRuleText(sug.match_text);

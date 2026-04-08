@@ -1689,8 +1689,19 @@ router.get('/tracker.js', async (req, res) => {
     }
   }
 
+  /** Atualiza a barra de endereços para a URL "limpa" (sem ta_pick / ta_origin etc.), sem recarregar. */
+  function replaceBarUrlRemovingTrajettuAux() {
+    try {
+      if (!history || !history.replaceState) return;
+      var clean = pagePathForButtonRule();
+      var hash = location.hash || '';
+      history.replaceState(null, '', clean + hash);
+    } catch (_e) {}
+  }
+
   function initPicker(cfg) {
     try {
+      replaceBarUrlRemovingTrajettuAux();
       // Lightweight overlay UI
       var overlay = document.createElement('div');
       overlay.id = '__ta_picker_overlay';
@@ -1808,6 +1819,7 @@ router.get('/tracker.js', async (req, res) => {
 
   function initTestMode(cfg) {
     try {
+      replaceBarUrlRemovingTrajettuAux();
       var rule = cfg.rule || {};
       var ruleText = (rule.match_text != null ? String(rule.match_text) : '').trim();
       var hrefNeed = (rule.match_href_contains != null ? String(rule.match_href_contains) : '').trim().toLowerCase();
