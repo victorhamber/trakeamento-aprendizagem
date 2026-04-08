@@ -886,12 +886,7 @@ export const SitePage = () => {
         showFlash('Regra de botão adicionada!');
       }
 
-      setButtonRuleUrl('');
-      setButtonSelectorPageUrl('');
-      setButtonRuleText('');
-      setButtonRuleHrefContains('');
-      setButtonRuleClassContains('');
-      setButtonRuleCss('');
+      // Mantém URL + critérios para permitir testar imediatamente após salvar.
       setButtonRuleCustomName('');
       setButtonRuleEventValue('');
       setButtonRuleEventCurrency('BRL');
