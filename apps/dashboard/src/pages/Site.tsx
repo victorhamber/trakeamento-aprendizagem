@@ -292,8 +292,6 @@ export const SitePage = () => {
   const [injectPosition, setInjectPosition] = useState<'head' | 'body'>('head');
   const [injectEnabled, setInjectEnabled] = useState(true);
   const [injectHtml, setInjectHtml] = useState('');
-  const [injectHeadDraft, setInjectHeadDraft] = useState('');
-  const [injectBodyDraft, setInjectBodyDraft] = useState('');
   const [savingInject, setSavingInject] = useState(false);
   const [meta, setMeta] = useState<MetaConfig | null>(null);
   const [adAccounts, setAdAccounts] = useState<
@@ -836,11 +834,7 @@ export const SitePage = () => {
     }
   }, [site, utmBaseUrl]);
 
-  useEffect(() => {
-    if (!site) return;
-    setInjectHeadDraft(site.inject_head_html ?? '');
-    setInjectBodyDraft(site.inject_body_html ?? '');
-  }, [site]);
+  // (Bloco legado removido do painel)
 
   const loadEventRules = useCallback(async () => {
     try {
@@ -1378,25 +1372,7 @@ ${scriptContent}
     loadInjectedSnippets().catch(() => {});
   }, [tab, installSubTab, loadInjectedSnippets]);
 
-  const saveInjectSnippets = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!Number.isFinite(id)) return;
-    setSavingInject(true);
-    try {
-      await api.put(`/sites/${id}`, {
-        inject_head_html: injectHeadDraft,
-        inject_body_html: injectBodyDraft,
-      });
-      await loadSite();
-      showFlash('Códigos salvos. Visitantes recebem a versão nova do tracker em até ~1 minuto (cache).');
-    } catch (err: unknown) {
-      const ax = err as { response?: { data?: { error?: string } } };
-      const msg = ax.response?.data?.error;
-      showFlash(typeof msg === 'string' && msg ? msg : 'Não foi possível salvar.', 'error');
-    } finally {
-      setSavingInject(false);
-    }
-  };
+  // (Bloco legado removido do painel)
 
   const loadMeta = useCallback(async () => {
     const res = await api.get(`/integrations/sites/${id}/meta`);
@@ -2535,54 +2511,6 @@ ${scriptContent}
                     </div>
                   </form>
 
-                  <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/80 dark:bg-zinc-900/40 p-4 space-y-3">
-                    <div>
-                      <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Legado (bloco único)</h3>
-                      <p className="text-xs text-zinc-600 dark:text-zinc-400 mt-1 leading-relaxed">
-                        Compatibilidade com versões antigas: você pode manter um bloco único para head/body. Recomendado migrar para a lista acima.
-                      </p>
-                    </div>
-                    <form onSubmit={saveInjectSnippets} className="space-y-3">
-                      <div className="space-y-1.5">
-                        <label htmlFor="inject-head" className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                          &lt;head&gt; (antes do fechamento)
-                        </label>
-                        <textarea
-                          id="inject-head"
-                          value={injectHeadDraft}
-                          onChange={(e) => setInjectHeadDraft(e.target.value)}
-                          rows={4}
-                          spellCheck={false}
-                          className="w-full text-xs font-mono rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-800 dark:text-zinc-200 px-3 py-2 outline-none focus:border-emerald-500/50"
-                          placeholder="Cole aqui scripts/meta recomendados para o head (ex.: Clarity, GTM)"
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <label htmlFor="inject-body" className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                          &lt;body&gt; (fim da página)
-                        </label>
-                        <textarea
-                          id="inject-body"
-                          value={injectBodyDraft}
-                          onChange={(e) => setInjectBodyDraft(e.target.value)}
-                          rows={4}
-                          spellCheck={false}
-                          className="w-full text-xs font-mono rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-800 dark:text-zinc-200 px-3 py-2 outline-none focus:border-emerald-500/50"
-                          placeholder="Ex.: noscript ou segundo bloco do GTM"
-                        />
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <button
-                          type="submit"
-                          disabled={savingInject}
-                          className="text-sm font-medium rounded-lg bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-white px-4 py-2"
-                        >
-                          {savingInject ? 'Salvando…' : 'Salvar legado'}
-                        </button>
-                        <span className="text-[11px] text-zinc-500">Limite ~200 mil caracteres por campo.</span>
-                      </div>
-                    </form>
-                  </div>
                 </div>
               )}
 
