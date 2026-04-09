@@ -61,6 +61,38 @@ type DiagnosisReport = {
   context?: Record<string, unknown>;
 } & Record<string, unknown>;
 
+const chatMarkdownComponents = {
+  p: ({ children }: { children?: React.ReactNode }) => (
+    <p className="text-[13px] leading-relaxed text-zinc-800 dark:text-zinc-100 whitespace-pre-wrap">{children}</p>
+  ),
+  strong: ({ children }: { children?: React.ReactNode }) => (
+    <strong className="font-semibold text-zinc-900 dark:text-zinc-50">{children}</strong>
+  ),
+  em: ({ children }: { children?: React.ReactNode }) => <em className="italic">{children}</em>,
+  ul: ({ children }: { children?: React.ReactNode }) => (
+    <ul className="list-disc pl-5 space-y-1 my-2 text-[13px] leading-relaxed">{children}</ul>
+  ),
+  ol: ({ children }: { children?: React.ReactNode }) => (
+    <ol className="list-decimal pl-5 space-y-1 my-2 text-[13px] leading-relaxed">{children}</ol>
+  ),
+  li: ({ children }: { children?: React.ReactNode }) => <li className="text-[13px] leading-relaxed">{children}</li>,
+  code: ({ children }: { children?: React.ReactNode }) => (
+    <code className="text-[12px] px-1 py-0.5 rounded bg-zinc-200/70 dark:bg-zinc-800/70 text-zinc-900 dark:text-zinc-100">
+      {children}
+    </code>
+  ),
+  a: ({ children, href }: { children?: React.ReactNode; href?: string }) => (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="text-blue-600 dark:text-blue-400 underline underline-offset-2 hover:text-blue-500"
+    >
+      {children}
+    </a>
+  ),
+};
+
 function splitMarkdownH2Sections(text: string): Array<{ title: string; body: string }> {
   const trimmed = text.trim();
   if (!trimmed) return [];
@@ -339,7 +371,9 @@ function FunnelInfoCards({ row }: { row: FunnelRow }) {
   const p = Number(row.funnel.purchases || 0);
   const clicks = Number(row.funnel.link_clicks || 0);
   const visitToPurchase = lp > 0 ? p / lp : 0;
-  const pillC2LP = benchPill(benchLevel(clicks > 0 ? lp / clicks : 0, 0.15, 0.25, 0.35));
+  // Clique → página (connect rate) costuma precisar ser bem mais alto para ser "bom".
+  // Ex.: <55% geralmente indica problema de carregamento/redirect/tracking/qualidade do tráfego.
+  const pillC2LP = benchPill(benchLevel(clicks > 0 ? lp / clicks : 0, 0.55, 0.65, 0.75));
   const pillV2IC = benchPill(benchLevel(lp > 0 ? ic / lp : 0, 0.03, 0.06, 0.12));
   const pillIC2P = benchPill(benchLevel(ic > 0 ? p / ic : 0, 0.15, 0.25, 0.40));
   const pillV2P = benchPill(benchLevel(visitToPurchase, 0.01, 0.02, 0.04));
@@ -439,6 +473,7 @@ export function CampaignFunnelPanel({
   >([]);
   const chatBoxRef = React.useRef<HTMLDivElement | null>(null);
   const chatAutoScrollRef = React.useRef(true);
+  const chatInputRef = React.useRef<HTMLTextAreaElement | null>(null);
 
   const filteredCampaigns = useMemo(() => {
     if (campaignStatusFilter === 'all') return campaigns;
@@ -712,6 +747,16 @@ export function CampaignFunnelPanel({
       el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
     });
   }, [chatMessages.length, chatLoading]);
+
+  useEffect(() => {
+    const el = chatInputRef.current;
+    if (!el) return;
+    // Autosize: cresce até um limite; depois vira scroll.
+    el.style.height = '0px';
+    const maxPx = 160; // ~8-9 linhas
+    const next = Math.min(maxPx, el.scrollHeight);
+    el.style.height = `${next}px`;
+  }, [chatInput]);
 
   const loadFunnel = useCallback(async (opts?: { force?: boolean }) => {
     if (!hasMetaConnection || !hasAdAccount) return;
@@ -1190,13 +1235,19 @@ export function CampaignFunnelPanel({
                         <div key={idx} className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
                           <div
                             className={
-                              'max-w-[92%] whitespace-pre-wrap px-4 py-3 text-[13px] leading-relaxed shadow-sm ' +
+                              'max-w-[92%] px-4 py-3 shadow-sm ' +
                               (m.role === 'user'
                                 ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 rounded-2xl rounded-br-md'
                                 : 'bg-white/95 text-zinc-900 dark:bg-zinc-900/60 dark:text-zinc-100 border border-zinc-200/70 dark:border-zinc-800/80 rounded-2xl rounded-bl-md')
                             }
                           >
-                            {m.content}
+                            {m.role === 'assistant' ? (
+                              <ReactMarkdown remarkPlugins={[remarkGfm]} components={chatMarkdownComponents}>
+                                {m.content}
+                              </ReactMarkdown>
+                            ) : (
+                              <div className="text-[13px] leading-relaxed whitespace-pre-wrap">{m.content}</div>
+                            )}
                           </div>
                         </div>
                       ))}
@@ -1225,8 +1276,9 @@ export function CampaignFunnelPanel({
                         ))}
                       </div>
 
-                      <div className="flex gap-2 items-center">
-                        <input
+                      <div className="flex gap-2 items-end">
+                        <textarea
+                          ref={chatInputRef}
                           value={chatInput}
                           onChange={(e) => setChatInput(e.target.value)}
                           onKeyDown={(e) => {
@@ -1235,15 +1287,16 @@ export function CampaignFunnelPanel({
                               sendChat().catch(() => {});
                             }
                           }}
-                          placeholder={campaignId ? 'Faça uma pergunta (ex.: por que ninguém inicia checkout?)' : 'Selecione uma campanha para começar'}
-                          className="flex-1 text-sm rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 outline-none focus:border-blue-500/50"
+                          placeholder={campaignId ? 'Escreva sua mensagem… (Shift+Enter para quebrar linha)' : 'Selecione uma campanha para começar'}
+                          className="flex-1 text-sm rounded-2xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-4 py-3 outline-none focus:border-blue-500/50 resize-none overflow-y-auto min-h-[52px] max-h-[160px] leading-relaxed"
                           disabled={chatLoading || !campaignId}
+                          rows={1}
                         />
                         <button
                           type="button"
                           onClick={() => sendChat().catch(() => {})}
                           disabled={chatLoading || !chatInput.trim() || !campaignId}
-                          className="text-sm px-3 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 text-zinc-800 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-40"
+                          className="text-sm px-4 py-3 rounded-2xl border border-zinc-300 dark:border-zinc-700 text-zinc-800 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-40"
                         >
                           {chatLoading ? 'Enviando…' : 'Enviar'}
                         </button>
