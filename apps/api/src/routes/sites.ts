@@ -1152,6 +1152,28 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
   const siteKey = String(siteRes.rows[0].site_key);
 
   try {
+    const parseTrafficSource = (raw: unknown): Record<string, string> | null => {
+      if (typeof raw !== 'string') return null;
+      const s = raw.trim();
+      if (!s) return null;
+      try {
+        const params = new URLSearchParams(s.startsWith('?') ? s.slice(1) : s);
+        const pick = (k: string) => (params.get(k) || '').trim();
+        const utm_source = pick('utm_source');
+        const utm_medium = pick('utm_medium');
+        const utm_campaign = pick('utm_campaign');
+        const utm_content = pick('utm_content');
+        const utm_term = pick('utm_term');
+        const click_id = pick('click_id');
+        if (utm_source || utm_campaign || utm_content || click_id) {
+          return { utm_source, utm_medium, utm_campaign, utm_content, utm_term, click_id };
+        }
+        return null;
+      } catch {
+        return null;
+      }
+    };
+
     const visitorRes = await pool.query(
       `SELECT site_key, external_id, email_hash, fbp, fbc, last_seen_at, last_traffic_source
        FROM site_visitors
@@ -1201,6 +1223,7 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
     const pvBefore: Record<string, number> = {};
     let pvCountBefore = 0;
     let lastTouchUtm: Record<string, string> | null = null;
+    let lastPageviewBeforePurchase: { url: string; at: string } | null = null;
     if (lastPurchaseAt) {
       for (const e of eventsRes.rows) {
         const t = new Date(e.event_time);
@@ -1208,6 +1231,9 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
         if (e.event_name === 'PageView' && typeof e.event_source_url === 'string' && e.event_source_url) {
           pvCountBefore += 1;
           pvBefore[e.event_source_url] = (pvBefore[e.event_source_url] || 0) + 1;
+          if (!lastPageviewBeforePurchase) {
+            lastPageviewBeforePurchase = { url: e.event_source_url, at: String(e.event_time) };
+          }
           if (!lastTouchUtm && e.custom_data && typeof e.custom_data === 'object') {
             const cd = e.custom_data as any;
             const pick = (k: string) => (typeof cd[k] === 'string' ? cd[k] : '');
@@ -1225,6 +1251,11 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
       }
     }
 
+    // Fallback: se não encontramos UTMs em PageView, tenta o last_traffic_source do visitante.
+    if (!lastTouchUtm) {
+      lastTouchUtm = parseTrafficSource(v.last_traffic_source);
+    }
+
     const topPages = Object.entries(pvBefore)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 25)
@@ -1232,7 +1263,8 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
 
     // Melhor esforço de atribuição (quando utm_content = ad_id e utm_campaign = campaign_name).
     let attribution: any = null;
-    if (lastTouchUtm && lastTouchUtm.utm_content && /^\d+$/.test(lastTouchUtm.utm_content)) {
+    let attributionSource: string | null = null;
+    if (lastTouchUtm?.utm_content && /^\d+$/.test(lastTouchUtm.utm_content)) {
       try {
         const metaRes = await pool.query(
           `SELECT campaign_id, campaign_name, adset_id, adset_name, ad_id, ad_name
@@ -1243,7 +1275,40 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
            LIMIT 1`,
           [siteId, lastTouchUtm.utm_content]
         );
-        if (metaRes.rowCount) attribution = metaRes.rows[0];
+        if (metaRes.rowCount) {
+          attribution = metaRes.rows[0];
+          attributionSource = 'utm_content(ad_id)';
+        }
+      } catch {
+        attribution = null;
+      }
+    }
+
+    // Fallback: tenta casar por nome de campanha (utm_campaign) e, se tiver, por nome/id do anúncio (utm_content).
+    if (!attribution && lastTouchUtm?.utm_campaign) {
+      try {
+        const utmCampaign = String(lastTouchUtm.utm_campaign || '').trim();
+        const utmContent = String(lastTouchUtm.utm_content || '').trim();
+        const params: any[] = [siteId, `%${utmCampaign}%`];
+        let extra = '';
+        if (utmContent) {
+          params.push(`%${utmContent}%`);
+          extra = `AND (ad_name ILIKE $3 OR ad_id = $3)`;
+        }
+        const metaRes = await pool.query(
+          `SELECT campaign_id, campaign_name, adset_id, adset_name, ad_id, ad_name
+           FROM meta_insights_daily
+           WHERE site_id = $1
+             AND campaign_name ILIKE $2
+             ${extra}
+           ORDER BY date_start DESC
+           LIMIT 1`,
+          params
+        );
+        if (metaRes.rowCount) {
+          attribution = metaRes.rows[0];
+          attributionSource = 'utm_campaign(name)';
+        }
       } catch {
         attribution = null;
       }
@@ -1263,8 +1328,10 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
         lookback_days: lookbackDays,
         pageviews_before_last_purchase: pvCountBefore,
         top_pages_before_last_purchase: topPages,
+        last_pageview_before_last_purchase: lastPageviewBeforePurchase,
         last_touch: lastTouchUtm,
         meta_attribution: attribution,
+        meta_attribution_source: attributionSource,
       },
       events: eventsRes.rows,
     });

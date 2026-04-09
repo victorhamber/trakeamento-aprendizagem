@@ -31,6 +31,7 @@ type BuyerDetail = {
     lookback_days: number;
     pageviews_before_last_purchase: number;
     top_pages_before_last_purchase: Array<{ url: string; count: number }>;
+    last_pageview_before_last_purchase?: null | { url: string; at: string };
     last_touch: null | Record<string, string>;
     meta_attribution: null | {
       campaign_id?: string | null;
@@ -40,6 +41,7 @@ type BuyerDetail = {
       ad_id?: string | null;
       ad_name?: string | null;
     };
+    meta_attribution_source?: string | null;
   };
 };
 
@@ -205,6 +207,14 @@ export function BuyersTab({ siteId }: { siteId: number }) {
                 <div className="text-sm text-zinc-900 dark:text-zinc-100">
                   Pageviews: <span className="font-semibold tabular-nums">{detail.behavior.pageviews_before_last_purchase}</span>
                 </div>
+                {detail.behavior.last_pageview_before_last_purchase ? (
+                  <div className="mt-2 text-[11px] text-zinc-600 dark:text-zinc-400">
+                    Última página antes da compra: <span className="font-medium">{dt(detail.behavior.last_pageview_before_last_purchase.at)}</span>
+                    <div className="mt-1 truncate" title={detail.behavior.last_pageview_before_last_purchase.url}>
+                      {detail.behavior.last_pageview_before_last_purchase.url}
+                    </div>
+                  </div>
+                ) : null}
                 <div className="mt-3 text-xs text-zinc-600 dark:text-zinc-400">Top páginas</div>
                 <div className="mt-2 space-y-1">
                   {detail.behavior.top_pages_before_last_purchase.slice(0, 10).map((p) => (
@@ -232,6 +242,11 @@ export function BuyersTab({ siteId }: { siteId: number }) {
                       <span className="font-medium text-zinc-800 dark:text-zinc-200">Anúncio:</span>{' '}
                       {detail.behavior.meta_attribution.ad_name || detail.behavior.meta_attribution.ad_id || '—'}
                     </div>
+                    {detail.behavior.meta_attribution_source ? (
+                      <div className="text-[10px] text-zinc-500 dark:text-zinc-500">
+                        Fonte: {detail.behavior.meta_attribution_source}
+                      </div>
+                    ) : null}
                   </div>
                 ) : (
                   <div className="text-sm text-zinc-600 dark:text-zinc-400">
