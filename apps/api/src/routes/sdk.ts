@@ -553,7 +553,14 @@ router.get('/tracker.js', async (req, res) => {
       }
       if (fbp && !url.searchParams.has('fbp')) url.searchParams.set('fbp', fbp);
       if (fbc && !url.searchParams.has('fbc')) url.searchParams.set('fbc', fbc);
-      if (eid && !url.searchParams.has('external_id')) url.searchParams.set('external_id', eid);
+      // external_id canônico (eid_) deve sempre estar no checkout.
+      // Se já houver external_id mas não for eid_, sobrescrevemos para manter consistência.
+      if (eid) {
+        var existingEid = url.searchParams.get('external_id');
+        if (!existingEid || existingEid.indexOf('eid_') !== 0) {
+          url.searchParams.set('external_id', eid);
+        }
+      }
       var ts = getTrafficSource();
       if (ts && !url.searchParams.has('ta_ts')) {
         url.searchParams.set('ta_ts', truncateCheckoutParam(ts, CHECKOUT_TA_TS_MAX));

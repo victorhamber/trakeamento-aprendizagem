@@ -19,6 +19,13 @@ interface EnrichedData {
 }
 
 export class EnrichmentService {
+  private static canonicalEid(val: unknown): string | null {
+    if (val == null) return null;
+    const s = String(val).trim();
+    if (!s) return null;
+    return s.startsWith('eid_') ? s : null;
+  }
+
   static async findVisitorData(siteKey: string, email?: string, phone?: string, externalId?: string, options?: { ip?: string, country?: string }): Promise<EnrichedData | null> {
     if (!email && !phone && !externalId && !options?.ip) return null;
 
@@ -60,6 +67,7 @@ export class EnrichmentService {
           ($5::text IS NOT NULL AND last_ip = $5::text)
         )
       ORDER BY 
+        CASE WHEN external_id LIKE 'eid\\_%' THEN 0 ELSE 1 END ASC,
         CASE 
           WHEN email_hash = $2::text THEN 1
           WHEN phone_hash = $3::text THEN 2
@@ -92,6 +100,7 @@ export class EnrichmentService {
           ($5::text IS NOT NULL AND sv.last_ip = $5::text)
         )
       ORDER BY 
+        CASE WHEN sv.external_id LIKE 'eid\\_%' THEN 0 ELSE 1 END ASC,
         CASE 
           WHEN sv.email_hash = $2::text THEN 1
           WHEN sv.phone_hash = $3::text THEN 2
@@ -137,7 +146,7 @@ export class EnrichmentService {
         visitorData = {
           fbp: row.fbp,
           fbc: row.fbc,
-          externalId: row.external_id,
+          externalId: this.canonicalEid(row.external_id) || undefined,
           clientIp: row.last_ip,
           clientUa: row.last_user_agent,
           ...utms
