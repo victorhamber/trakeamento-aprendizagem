@@ -7,6 +7,8 @@ import { decryptString } from '../lib/crypto';
 export class DiagnosisService {
   // ── Helpers ────────────────────────────────────────────────────────────────
 
+  private fxCache: { atMs: number; base: string; rates: Record<string, number> } | null = null;
+
   private async fetchLandingPageContent(url: string): Promise<string | null> {
     try {
       if (!url || !url.startsWith('http')) return null;
@@ -30,6 +32,80 @@ export class DiagnosisService {
         .replace(/\s+/g, ' ')
         .trim()
         .slice(0, 12_000);
+    } catch {
+      return null;
+    }
+  }
+
+  private detectLandingSocialProofSignals(text: string): { has: boolean; signals: string[] } {
+    const t = (text || '').toLowerCase();
+    const signals: string[] = [];
+    const pushIf = (cond: boolean, label: string) => {
+      if (cond) signals.push(label);
+    };
+    pushIf(/\bdepoiment/.test(t), 'depoimentos');
+    pushIf(/\b(avalia|avaliacoes|review|reviews|nota)\b/.test(t), 'avaliacoes/reviews');
+    pushIf(/[★⭐]{2,}/.test(text), 'estrelas');
+    pushIf(/\b(case|resultado|antes e depois)\b/.test(t), 'cases/resultados');
+    pushIf(/\b(clientes?|alunos?|membros?)\b/.test(t), 'referencias a clientes/alunos');
+    return { has: signals.length > 0, signals: Array.from(new Set(signals)) };
+  }
+
+  private extractPriceCandidates(text: string): Array<{ amount: number; currency: string; raw: string }> {
+    const out: Array<{ amount: number; currency: string; raw: string }> = [];
+    if (!text) return out;
+
+    const normalized = text
+      .replace(/\u00A0/g, ' ')
+      .replace(/\s+/g, ' ');
+
+    // Heurística simples por prefixo/sufixo.
+    const patterns: Array<{ re: RegExp; currency: string }> = [
+      { re: /\bR\$\s*([0-9]{1,3}(?:\.[0-9]{3})*(?:,[0-9]{2})?|[0-9]+(?:,[0-9]{2})?)/g, currency: 'BRL' },
+      { re: /\bMX\$\s*([0-9]{1,3}(?:\.[0-9]{3})*(?:,[0-9]{2})?|[0-9]+(?:,[0-9]{2})?)/g, currency: 'MXN' },
+      { re: /\bMXN\s*([0-9]{1,3}(?:\.[0-9]{3})*(?:,[0-9]{2})?|[0-9]+(?:,[0-9]{2})?)/gi, currency: 'MXN' },
+      { re: /\bUSD\s*([0-9]{1,3}(?:\.[0-9]{3})*(?:,[0-9]{2})?|[0-9]+(?:,[0-9]{2})?)/gi, currency: 'USD' },
+      { re: /\bUS\$\s*([0-9]{1,3}(?:\.[0-9]{3})*(?:,[0-9]{2})?|[0-9]+(?:,[0-9]{2})?)/g, currency: 'USD' },
+      { re: /\b€\s*([0-9]{1,3}(?:\.[0-9]{3})*(?:,[0-9]{2})?|[0-9]+(?:,[0-9]{2})?)/g, currency: 'EUR' },
+    ];
+
+    const parseAmount = (s: string): number | null => {
+      const v = s.trim();
+      if (!v) return null;
+      // "1.234,56" -> "1234.56"
+      const br = v.includes(',') ? v.replace(/\./g, '').replace(',', '.') : v;
+      const n = Number(br);
+      return Number.isFinite(n) ? n : null;
+    };
+
+    for (const p of patterns) {
+      let m: RegExpExecArray | null;
+      while ((m = p.re.exec(normalized))) {
+        const n = parseAmount(m[1] || '');
+        if (n == null) continue;
+        out.push({ amount: n, currency: p.currency, raw: m[0] });
+        if (out.length >= 12) return out;
+      }
+    }
+    return out;
+  }
+
+  private async getFxRateToBRL(fromCurrency: string): Promise<{ rate: number; source: string } | null> {
+    const from = (fromCurrency || '').toUpperCase().trim();
+    if (!from || from === 'BRL') return { rate: 1, source: 'identity' };
+    const now = Date.now();
+    if (this.fxCache && now - this.fxCache.atMs < 6 * 60 * 60 * 1000 && this.fxCache.base === 'BRL') {
+      const r = this.fxCache.rates[from];
+      if (typeof r === 'number' && r > 0) return { rate: 1 / r, source: 'open.er-api.com (cached base=BRL)' };
+    }
+    try {
+      const res = await axios.get('https://open.er-api.com/v6/latest/BRL', { timeout: 8000 });
+      const rates = res.data?.rates;
+      if (!rates || typeof rates !== 'object') return null;
+      this.fxCache = { atMs: now, base: 'BRL', rates: rates as Record<string, number> };
+      const r = this.fxCache.rates[from];
+      if (typeof r === 'number' && r > 0) return { rate: 1 / r, source: 'open.er-api.com (base=BRL)' };
+      return null;
     } catch {
       return null;
     }
@@ -1010,6 +1086,14 @@ export class DiagnosisService {
     // ── Landing page + segments ────────────────────────────────────────────────
     let landingPageUrl: string | null = null;
     let landingPageContent: string | null = null;
+    let landingPagePriceBest: {
+      amount: number;
+      currency: string;
+      raw: string;
+      amount_brl: number | null;
+      fx_rate_to_brl: number | null;
+      fx_source: string | null;
+    } | null = null;
     const hourlyDistribution: Record<string, number> = {};
     const dayOfWeekDistribution: Record<string, number> = {};
 
@@ -1037,6 +1121,39 @@ export class DiagnosisService {
 
       if (landingPageUrl) {
         landingPageContent = await this.fetchLandingPageContent(landingPageUrl);
+      }
+
+      // Detect price + convert currency (for "nivel do produto" and related analysis)
+      if (typeof landingPageContent === 'string' && landingPageContent.length > 0) {
+        const candidates = this.extractPriceCandidates(landingPageContent);
+        // Prefer explicit BRL if present; otherwise choose the highest amount (heuristic for "preco cheio")
+        const brl = candidates.find(c => c.currency === 'BRL');
+        const pick = brl || candidates.sort((a, b) => b.amount - a.amount)[0];
+        if (pick) {
+          let amountBRL: number | null = null;
+          let fxRate: number | null = null;
+          let fxSource: string | null = null;
+          if (pick.currency === 'BRL') {
+            amountBRL = pick.amount;
+            fxRate = 1;
+            fxSource = 'identity';
+          } else {
+            const fx = await this.getFxRateToBRL(pick.currency);
+            if (fx) {
+              fxRate = fx.rate;
+              fxSource = fx.source;
+              amountBRL = Math.round(pick.amount * fx.rate * 100) / 100;
+            }
+          }
+          landingPagePriceBest = {
+            amount: pick.amount,
+            currency: pick.currency,
+            raw: pick.raw,
+            amount_brl: amountBRL,
+            fx_rate_to_brl: fxRate,
+            fx_source: fxSource,
+          };
+        }
       }
 
       const [hourlyRes, dowRes] = await Promise.all([
@@ -1281,6 +1398,9 @@ export class DiagnosisService {
       landing_page: (() => {
         const lpUrl = options?.userContext?.landing_page_url || landingPageUrl;
         const contentOk = typeof landingPageContent === 'string' && landingPageContent.length > 0;
+        const contentText = contentOk ? String(landingPageContent) : '';
+        const social = contentOk ? this.detectLandingSocialProofSignals(contentText) : { has: false, signals: [] as string[] };
+        const priceCandidates = contentOk ? this.extractPriceCandidates(contentText) : [];
         return {
           url: lpUrl,
           content: landingPageContent,
@@ -1290,6 +1410,10 @@ export class DiagnosisService {
             : lpUrl
               ? 'Fetch da URL falhou ou retornou vazio (rede, bloqueio, bot, SPA sem conteudo no HTML inicial). Nao invente copy da pagina.'
               : 'Nenhuma URL de landing definida para este diagnostico.',
+          social_proof_detected: social.has,
+          social_proof_signals: social.signals,
+          price_candidates: priceCandidates.slice(0, 6),
+          price_best: landingPagePriceBest,
         };
       })(),
       message_match: this.buildMessageMatch(finalCreatives, landingPageContent),

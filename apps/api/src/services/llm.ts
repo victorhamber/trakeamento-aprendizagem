@@ -792,9 +792,13 @@ Regras de interpretacao:
 - **"Fadiga"**: so use se houver **evidencia** (ex.: frequencia alta + piora de CTR/CPA no tempo). Se nao houver tendencia por anuncio no JSON, prefira **"Otimizar"** ou **"Sem sinal / pouco dado"**.
 - Use no maximo **5 anuncios** (top por gasto). Para o resto, agregue em 1 linha de observacao.
 
-| Anuncio | Resultados | Custo | CPA | CTR | Hook Rate | Diagnostico |
-|:---|---:|---:|---:|---:|---:|:---|
-| [nome] | X | R$X | R$X ou — | X% | X% ou N/A(img) | [Vencedor/Otimizar/Sem sinal] |
+Inclua tambem as metricas de funil por anuncio quando existirem no JSON:
+- **LP Views** e **Clique → Pagina (Connect Rate)**.
+- **Checkout** (initiates_checkout) e **Compras** quando existirem.
+
+| Anuncio | Resultados | Custo | CPA | CTR | Hook Rate | LP Views | Clique → Pagina | Checkout | Compras | Diagnostico |
+|:---|---:|---:|---:|---:|---:|---:|---:|---:|---:|:---|
+| [nome] | X | R$X | R$X ou — | X% | X% ou N/A(img) | X | X% | X | X | [Vencedor/Otimizar/Sem sinal] |
 
 *Hook Rate: so para VIDEO (video_3s_views > 0). N/A para imagem.*`);
     }
@@ -810,10 +814,17 @@ Para no maximo **3 criativos**:
 **Estrutura & Hook**: [avaliacao do gancho e CTA]
 **Nota de Potencial**: [X/10] — [justificativa]
 
-> **🔥 Sugestao Pronta de Copy (Reescrita)**:
-> - **Hook**: [nova frase de impacto]
-> - **Corpo**: [reescrita persuasiva]
-> - **CTA**: [chamada urgente]
+Sempre entregue **exemplos** (nao apenas conceitos). Regras:
+- Se houver **contexto suficiente** (oferta + publico/ICP + promessa/beneficio + pelo menos 1 objeção), gere **1 reescrita completa** (hook + corpo + CTA) e **2 variações de hook**.
+- Se faltar contexto, ainda assim gere **3 ganchos curtos (1 linha)** + **2 CTAs** + **1 estrutura de anuncio** em bullet points com **placeholders** (ex.: [beneficio], [mecanismo], [prova real]) e um **criterio de decisao** (qual metrica deve subir).
+
+> **🔥 Sugestoes de Copy (com exemplos)**:
+> - **Hooks (3 opcoes)**: [3 frases]
+> - **CTA (2 opcoes)**: [2 frases]
+> - **Versao completa (se houver contexto)**:
+>   - **Hook**: [...]
+>   - **Corpo**: [...]
+>   - **CTA**: [...]
 
 ### 🏆 Veredito dos Criativos
 [Qual tem melhor estrutura e deve receber mais verba]`);
@@ -864,11 +875,14 @@ Sem recomendacao por horario/dia: **amostra pequena** para afirmar padroes. Pref
 Estrutura obrigatoria (use subtitulos ## ou ###):
 1. **Fonte dos dados** — como o texto foi obtido; limitacoes (JS, truncamento).
 2. **Nivel do produto** — faixa de preco e decisao de compra esperada.
+   - Se o JSON trouxer "landing_page.price_best" e "amount_brl" nao for nulo, use **BRL convertido** (mencione a moeda original e que e conversao).
+   - Se "amount_brl" for nulo mas houver moeda nao-BRL, diga: "preco em [moeda], conversao indisponivel no momento" (nao chute).
 3. **Auditoria por dobra** — checklist do nivel (Presente/Fraco/Ausente + 1 frase por dobra).
 4. **Gaps criticos** — top 5.
 5. **Congruencia anuncio-pagina** — se houver criativos/message_match no JSON.
 6. **Comportamento vs pagina** — dwell, scroll, load (dados do JSON).
 7. **Otimizacao** — headline, subhead, **e** blocos adicionais (prova, oferta, CTA, garantia, FAQ, urgencia) em formato acionavel.
+   - Se o JSON trouxer "landing_page.social_proof_detected" = true, **nao diga** "falta prova social". Em vez disso, avalie **robustez** (quantidade, especificidade, prova verificavel, diversidade) e proponha como fortalecer (ex.: provas numericas reais, estudos de caso, prints verificaveis, selos reais, audit trail), sem inventar nada.
 
 Nao limite a analise a apenas headline/subheadline.`);
     } else if (hasLPAnyText) {
