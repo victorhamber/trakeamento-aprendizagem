@@ -1345,8 +1345,18 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
       }
     };
 
-    // 1) Sempre puxa compras pelo identificador recebido (muitas vezes é external_id do checkout)
-    //    e também por chaves clássicas de dedupe (email_hash/fbp/fbc).
+    // 0) Se existir visitor para esse external_id, usamos as chaves dele (email_hash/fbp/fbc)
+    // para encontrar compras do checkout — mesmo quando purchases.external_id não bate.
+    const visitorByExternalRes = await pool.query(
+      `SELECT site_key, external_id, email_hash, fbp, fbc, last_seen_at, last_traffic_source
+       FROM site_visitors
+       WHERE site_key = $1 AND external_id = $2
+       LIMIT 1`,
+      [siteKey, externalId]
+    );
+    const v0 = visitorByExternalRes.rows[0] || null;
+
+    // 1) Puxa compras pelo identificador recebido (external_id do checkout / order_id) e também pelas chaves do visitor.
     const purchasesRes = await pool.query(
       `SELECT
         id, order_id, platform, amount, currency, status,
@@ -1359,13 +1369,13 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
          AND (
            external_id::text = $2
            OR order_id = $2
-           OR buyer_email_hash = $2
-           OR fbp = $2
-           OR fbc = $2
+           OR ($3::text IS NOT NULL AND buyer_email_hash = $3)
+           OR ($4::text IS NOT NULL AND fbp = $4)
+           OR ($5::text IS NOT NULL AND fbc = $5)
          )
        ORDER BY COALESCE(platform_date, created_at) DESC
        LIMIT 50`,
-      [siteKey, externalId]
+      [siteKey, externalId, v0?.email_hash || null, v0?.fbp || null, v0?.fbc || null]
     );
 
     // 2) Best-effort: achar o visitor "real" (o external_id que aparece nos web_events),
@@ -1394,7 +1404,7 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
 
     // Se não achou visitor, ainda assim devolve o "checkout profile" (compras),
     // só não teremos jornada (web_events) nem last_traffic_source.
-    const v = visitorRes.rows[0] || null;
+    const v = visitorRes.rows[0] || v0 || null;
     const eventsExternalId = v?.external_id ? String(v.external_id) : null;
 
     const lookbackDays = Math.min(60, Math.max(1, Number(req.query.lookback_days || 30)));
