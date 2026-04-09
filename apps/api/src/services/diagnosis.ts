@@ -359,6 +359,9 @@ export class DiagnosisService {
         id: row.entity_id,
         name: row.entity_name,
         objective,
+        optimized_event_name: row.optimized_event_name != null ? String(row.optimized_event_name) : null,
+        custom_event_name: row.custom_event_name != null ? String(row.custom_event_name) : null,
+        optimization_goal: row.optimization_goal != null ? String(row.optimization_goal) : null,
         results,
         spend,
         impressions,
@@ -487,6 +490,9 @@ export class DiagnosisService {
         AVG(cost_per_lead)::numeric                  AS cost_per_lead_avg,
         AVG(cost_per_purchase)::numeric              AS cost_per_purchase_avg,
         MAX(objective)                               AS objective,
+        MAX(optimized_event_name)                    AS optimized_event_name,
+        MAX(custom_event_name)                       AS custom_event_name,
+        MAX(optimization_goal)                       AS optimization_goal,
         COALESCE(SUM(results), 0)::bigint            AS results
       FROM meta_insights_daily
       WHERE site_id = $1
@@ -585,6 +591,9 @@ export class DiagnosisService {
           ${fields.id}                                                          AS entity_id,
           ${fields.name}                                                        AS entity_name,
           MAX(objective)                                                        AS objective,
+          MAX(optimized_event_name)                                             AS optimized_event_name,
+          MAX(custom_event_name)                                                AS custom_event_name,
+          MAX(optimization_goal)                                                AS optimization_goal,
           SUM(results)::bigint                                                  AS results,
           COALESCE(SUM(spend), 0)::numeric                                      AS spend,
           COALESCE(SUM(impressions), 0)::bigint                                 AS impressions,
@@ -1129,6 +1138,9 @@ export class DiagnosisService {
 
       meta: {
         objective,
+        optimized_event_name: m.optimized_event_name != null ? String(m.optimized_event_name) : null,
+        custom_event_name: m.custom_event_name != null ? String(m.custom_event_name) : null,
+        optimization_goal: m.optimization_goal != null ? String(m.optimization_goal) : null,
         // results = the optimization event count (e.g. CADASTRO_GRUPO, LEAD, PURCHASE).
         // THIS is the primary success metric — not meta.objective.
         // A campaign with objective=OUTCOME_SALES can be optimized for CADASTRO_GRUPO.

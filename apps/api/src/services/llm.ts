@@ -400,7 +400,10 @@ export class LlmService {
 
     lines.push(`## Metricas Meta Ads`);
     lines.push(`- Investimento: ${this.fmtMoney(meta.spend)}`);
-    lines.push(`- Resultados (evento otimizado): ${this.fmtInt(meta.results)} | CPA: ${this.fmtMoney(meta.cost_per_result)}`);
+    const evName = (meta.optimized_event_name || meta.custom_event_name || meta.optimization_goal) as string | undefined;
+    lines.push(
+      `- Resultados (evento otimizado${evName ? `: ${evName}` : ''}): ${this.fmtInt(meta.results)} | CPA: ${this.fmtMoney(meta.cost_per_result)}`
+    );
     lines.push(`- Impressoes: ${this.fmtInt(meta.impressions)} | Alcance: ${this.fmtInt(meta.reach)} (contas da Central de Contas) | Frequencia: ${this.fmt(meta.frequency_avg)}`);
     lines.push(`- Cliques: ${this.fmtInt(meta.clicks)} | Link Clicks Unicos: ${this.fmtInt(meta.unique_link_clicks)}`);
     lines.push(`- CTR: ${this.fmtPct(derived.ctr_calc_pct)} | CPC: ${this.fmtMoney(derived.cpc_calc)} | CPM: ${this.fmtMoney(derived.cpm_calc)}`);
