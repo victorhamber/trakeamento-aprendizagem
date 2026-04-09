@@ -1175,6 +1175,9 @@ router.get('/:siteId/buyers/by-key/:buyerKey', requireAuth, async (req, res) => 
   const siteKey = String(siteRes.rows[0].site_key);
 
   try {
+    const purchasesLimit = Math.min(100, Math.max(5, Number(req.query.purchases_limit || 10)));
+    const purchasesOffset = Math.max(0, Number(req.query.purchases_offset || 0));
+
     const purchasesRes = await pool.query(
       `SELECT
         id, order_id, platform, amount, currency, status,
@@ -1183,7 +1186,8 @@ router.get('/:siteId/buyers/by-key/:buyerKey', requireAuth, async (req, res) => 
         fbp,
         fbc,
         buyer_email_hash,
-        COALESCE(platform_date, created_at) AS purchased_at
+        COALESCE(platform_date, created_at) AS purchased_at,
+        COUNT(*) OVER()::int AS total_count
        FROM purchases
        WHERE site_key = $1
          AND status IN ${APPROVED_PURCHASE_STATUSES}
@@ -1191,8 +1195,8 @@ router.get('/:siteId/buyers/by-key/:buyerKey', requireAuth, async (req, res) => 
            COALESCE(buyer_email_hash, fbp, fbc, order_id, ('purchase:' || id::text)) = $2
          )
        ORDER BY COALESCE(platform_date, created_at) DESC
-       LIMIT 50`,
-      [siteKey, buyerKey]
+       LIMIT $3 OFFSET $4`,
+      [siteKey, buyerKey, purchasesLimit, purchasesOffset]
     );
 
     const purchaseExternalId = purchasesRes.rows[0]?.external_id ? String(purchasesRes.rows[0].external_id) : null;
@@ -1292,6 +1296,7 @@ router.get('/:siteId/buyers/by-key/:buyerKey', requireAuth, async (req, res) => 
         last_traffic_source: v?.last_traffic_source || null,
       },
       purchases: purchasesRes.rows,
+      purchases_total: purchasesRes.rows[0]?.total_count ?? 0,
       behavior: {
         lookback_days: lookbackDays,
         pageviews_before_last_purchase: pvCountBefore,
@@ -1323,6 +1328,9 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
   const siteKey = String(siteRes.rows[0].site_key);
 
   try {
+    const purchasesLimit = Math.min(100, Math.max(5, Number(req.query.purchases_limit || 10)));
+    const purchasesOffset = Math.max(0, Number(req.query.purchases_offset || 0));
+
     const parseTrafficSource = (raw: unknown): Record<string, string> | null => {
       if (typeof raw !== 'string') return null;
       const s = raw.trim();
@@ -1362,7 +1370,8 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
         id, order_id, platform, amount, currency, status,
         customer_name, customer_email, customer_phone,
         external_id, fbp, fbc, buyer_email_hash,
-        COALESCE(platform_date, created_at) AS purchased_at
+        COALESCE(platform_date, created_at) AS purchased_at,
+        COUNT(*) OVER()::int AS total_count
        FROM purchases
        WHERE site_key = $1
          AND status IN ${APPROVED_PURCHASE_STATUSES}
@@ -1374,8 +1383,8 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
            OR ($5::text IS NOT NULL AND fbc = $5)
          )
        ORDER BY COALESCE(platform_date, created_at) DESC
-       LIMIT 50`,
-      [siteKey, externalId, v0?.email_hash || null, v0?.fbp || null, v0?.fbc || null]
+       LIMIT $6 OFFSET $7`,
+      [siteKey, externalId, v0?.email_hash || null, v0?.fbp || null, v0?.fbc || null, purchasesLimit, purchasesOffset]
     );
 
     // 2) Best-effort: achar o visitor "real" (o external_id que aparece nos web_events),
@@ -1550,6 +1559,7 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
         last_traffic_source: v?.last_traffic_source || null,
       },
       purchases: purchasesRes.rows,
+      purchases_total: purchasesRes.rows[0]?.total_count ?? 0,
       behavior: {
         lookback_days: lookbackDays,
         pageviews_before_last_purchase: pvCountBefore,

@@ -39,6 +39,7 @@ type BuyerDetail = {
     customer_email?: string | null;
     customer_phone?: string | null;
   }>;
+  purchases_total?: number;
   behavior: {
     lookback_days: number;
     pageviews_before_last_purchase: number;
@@ -81,6 +82,8 @@ export function BuyersTab({ siteId }: { siteId: number }) {
   const [detail, setDetail] = useState<BuyerDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [purchasesPage, setPurchasesPage] = useState(1);
+  const purchasesPerPage = 10;
 
   const canOpen = useMemo(() => !!selected, [selected]);
 
@@ -128,13 +131,18 @@ export function BuyersTab({ siteId }: { siteId: number }) {
       setDetail(null);
       return;
     }
+    setPurchasesPage(1);
     setDetailLoading(true);
     setDetailError(null);
     (async () => {
       try {
         const res = selected.externalId
-          ? await api.get(`/sites/${siteId}/buyers/${encodeURIComponent(selected.externalId)}`, { params: { lookback_days: 30 } })
-          : await api.get(`/sites/${siteId}/buyers/by-key/${encodeURIComponent(selected.buyerKey)}`, { params: { lookback_days: 30 } });
+          ? await api.get(`/sites/${siteId}/buyers/${encodeURIComponent(selected.externalId)}`, {
+              params: { lookback_days: 30, purchases_limit: purchasesPerPage, purchases_offset: 0 },
+            })
+          : await api.get(`/sites/${siteId}/buyers/by-key/${encodeURIComponent(selected.buyerKey)}`, {
+              params: { lookback_days: 30, purchases_limit: purchasesPerPage, purchases_offset: 0 },
+            });
         setDetail(res.data as BuyerDetail);
       } catch (e: any) {
         setDetail(null);
@@ -144,6 +152,31 @@ export function BuyersTab({ siteId }: { siteId: number }) {
       }
     })();
   }, [siteId, selected]);
+
+  useEffect(() => {
+    if (!selected) return;
+    if (purchasesPage === 1) return; // já carregado no primeiro request
+    setDetailLoading(true);
+    setDetailError(null);
+    (async () => {
+      try {
+        const offset = (purchasesPage - 1) * purchasesPerPage;
+        const res = selected.externalId
+          ? await api.get(`/sites/${siteId}/buyers/${encodeURIComponent(selected.externalId)}`, {
+              params: { lookback_days: 30, purchases_limit: purchasesPerPage, purchases_offset: offset },
+            })
+          : await api.get(`/sites/${siteId}/buyers/by-key/${encodeURIComponent(selected.buyerKey)}`, {
+              params: { lookback_days: 30, purchases_limit: purchasesPerPage, purchases_offset: offset },
+            });
+        setDetail(res.data as BuyerDetail);
+      } catch (e: any) {
+        setDetail(null);
+        setDetailError(e?.response?.data?.error || 'Erro ao carregar detalhes do comprador.');
+      } finally {
+        setDetailLoading(false);
+      }
+    })();
+  }, [siteId, selected, purchasesPage]);
 
   return (
     <div className="space-y-4">
@@ -310,6 +343,103 @@ export function BuyersTab({ siteId }: { siteId: number }) {
                           <div className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">Sem atribuição.</div>
                         )}
                       </div>
+                    </div>
+
+                    <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-950/25 p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-xs font-semibold text-zinc-600 dark:text-zinc-400">Compras (todas)</div>
+                        <div className="text-[11px] text-zinc-500 dark:text-zinc-500">
+                          Total: <span className="font-semibold tabular-nums">{detail.purchases_total ?? 0}</span>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 overflow-auto">
+                        <table className="w-full text-[11px]">
+                          <thead className="text-zinc-500 dark:text-zinc-500">
+                            <tr>
+                              <th className="text-left py-2 pr-3">Data</th>
+                              <th className="text-left py-2 pr-3">Pedido</th>
+                              <th className="text-right py-2 pr-3">Valor</th>
+                              <th className="text-left py-2">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {detail.purchases.map((p) => (
+                              <tr key={p.id} className="border-t border-zinc-200 dark:border-zinc-800">
+                                <td className="py-2 pr-3 text-zinc-600 dark:text-zinc-400 whitespace-nowrap">{dt(p.purchased_at)}</td>
+                                <td className="py-2 pr-3 text-zinc-800 dark:text-zinc-200 truncate max-w-[360px]" title={p.order_id}>
+                                  {p.order_id || '—'}
+                                </td>
+                                <td className="py-2 pr-3 text-right tabular-nums text-zinc-800 dark:text-zinc-200 whitespace-nowrap">
+                                  {p.amount != null ? money(Number(p.amount)) : '—'}
+                                </td>
+                                <td className="py-2 text-zinc-600 dark:text-zinc-400">{p.status || '—'}</td>
+                              </tr>
+                            ))}
+                            {detail.purchases.length === 0 ? (
+                              <tr>
+                                <td colSpan={4} className="py-4 text-center text-zinc-500 dark:text-zinc-500">
+                                  Nenhuma compra encontrada.
+                                </td>
+                              </tr>
+                            ) : null}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {(() => {
+                        const total = Number(detail.purchases_total ?? 0);
+                        const pages = Math.max(1, Math.ceil(total / purchasesPerPage));
+                        if (pages <= 1) return null;
+                        const current = purchasesPage;
+                        const start = Math.max(1, current - 3);
+                        const end = Math.min(pages, start + 6);
+                        const pageNums = [];
+                        for (let i = start; i <= end; i++) pageNums.push(i);
+                        return (
+                          <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => setPurchasesPage((p) => Math.max(1, p - 1))}
+                                disabled={current <= 1 || detailLoading}
+                                className="text-[11px] px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-950/25 text-zinc-700 dark:text-zinc-200 disabled:opacity-40"
+                              >
+                                Anterior
+                              </button>
+                              {pageNums.map((n) => (
+                                <button
+                                  key={n}
+                                  type="button"
+                                  onClick={() => setPurchasesPage(n)}
+                                  disabled={detailLoading}
+                                  className={
+                                    `text-[11px] px-2 py-1 rounded-lg border ${
+                                      n === current
+                                        ? 'border-indigo-500/60 bg-indigo-500/15 text-indigo-200'
+                                        : 'border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-950/25 text-zinc-700 dark:text-zinc-200'
+                                    } disabled:opacity-40`
+                                  }
+                                >
+                                  {n}
+                                </button>
+                              ))}
+                              <button
+                                type="button"
+                                onClick={() => setPurchasesPage((p) => Math.min(pages, p + 1))}
+                                disabled={current >= pages || detailLoading}
+                                className="text-[11px] px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-950/25 text-zinc-700 dark:text-zinc-200 disabled:opacity-40"
+                              >
+                                Próxima
+                              </button>
+                            </div>
+                            <div className="text-[11px] text-zinc-500 dark:text-zinc-500">
+                              Página <span className="font-semibold tabular-nums">{current}</span> de{' '}
+                              <span className="font-semibold tabular-nums">{pages}</span>
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
