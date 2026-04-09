@@ -871,64 +871,75 @@ export function CampaignFunnelPanel({
                 </div>
               </div>
 
-              <div
-                ref={chatBoxRef}
-                onScroll={onChatScroll}
-                className="max-h-[520px] min-h-[320px] overflow-auto rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/40 p-4 space-y-3"
-              >
-                {chatMessages.map((m, idx) => (
-                  <div key={idx} className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
-                    <div
-                      className={
-                        'max-w-[92%] whitespace-pre-wrap rounded-2xl px-4 py-3 text-[13px] leading-relaxed ' +
-                        (m.role === 'user'
-                          ? 'bg-zinc-900/90 text-white dark:bg-zinc-100/95 dark:text-zinc-900 shadow-sm'
-                          : 'bg-white/90 text-zinc-900 dark:bg-zinc-900/55 dark:text-zinc-100 border border-zinc-200/70 dark:border-zinc-800/80')
-                      }
-                    >
-                      {m.content}
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <div className="mt-3">
-                <div className="text-[11px] text-zinc-500 dark:text-zinc-400 mb-1">Suggested Actions</div>
-                <div className="flex gap-2 overflow-x-auto custom-scrollbar pb-1">
-                  {chatQuickActions.map((a) => (
-                    <button
-                      key={a.key}
-                      type="button"
-                      onClick={() => sendChatText(a.text).catch(() => {})}
-                      disabled={chatLoading || !campaignId}
-                      className="shrink-0 text-[11px] px-3 py-1.5 rounded-full border border-zinc-200/80 dark:border-zinc-800 bg-white/40 dark:bg-zinc-900/35 text-zinc-700 dark:text-zinc-200 hover:bg-white/70 dark:hover:bg-zinc-900/60 disabled:opacity-40"
-                    >
-                      {a.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="mt-3 flex gap-2 items-center">
-                <input
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      sendChat().catch(() => {});
-                    }
-                  }}
-                  placeholder={campaignId ? 'Faça uma pergunta (ex.: por que ninguém inicia checkout?)' : 'Selecione uma campanha para começar'}
-                  className="flex-1 text-sm rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 outline-none"
-                  disabled={chatLoading || !campaignId}
-                />
-                <button
-                  type="button"
-                  onClick={() => sendChat().catch(() => {})}
-                  disabled={chatLoading || !chatInput.trim() || !campaignId}
-                  className="text-sm px-3 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 text-zinc-800 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-40"
+              <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/35 overflow-hidden flex flex-col h-[620px] max-h-[72vh]">
+                <div
+                  ref={chatBoxRef}
+                  onScroll={onChatScroll}
+                  className="flex-1 overflow-auto p-4 space-y-3 custom-scrollbar"
                 >
-                  {chatLoading ? 'Enviando…' : 'Enviar'}
-                </button>
+                  {chatMessages.map((m, idx) => (
+                    <div key={idx} className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
+                      <div
+                        className={
+                          'max-w-[92%] whitespace-pre-wrap px-4 py-3 text-[13px] leading-relaxed shadow-sm ' +
+                          (m.role === 'user'
+                            ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 rounded-2xl rounded-br-md'
+                            : 'bg-white/95 text-zinc-900 dark:bg-zinc-900/60 dark:text-zinc-100 border border-zinc-200/70 dark:border-zinc-800/80 rounded-2xl rounded-bl-md')
+                        }
+                      >
+                        {m.content}
+                      </div>
+                    </div>
+                  ))}
+                  {chatLoading ? (
+                    <div className="flex justify-start">
+                      <div className="max-w-[92%] rounded-2xl rounded-bl-md px-4 py-3 text-[13px] leading-relaxed bg-white/95 dark:bg-zinc-900/60 border border-zinc-200/70 dark:border-zinc-800/80 text-zinc-600 dark:text-zinc-300">
+                        Digitando…
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="border-t border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-950/35 p-3 space-y-2">
+                  <div className="text-[11px] text-zinc-500 dark:text-zinc-400">Ações rápidas</div>
+                  <div className="flex gap-2 overflow-x-auto custom-scrollbar pb-1">
+                    {chatQuickActions.map((a) => (
+                      <button
+                        key={a.key}
+                        type="button"
+                        onClick={() => sendChatText(a.text).catch(() => {})}
+                        disabled={chatLoading || !campaignId}
+                        className="shrink-0 text-[11px] px-3 py-1.5 rounded-full border border-zinc-200/80 dark:border-zinc-800 bg-white/60 dark:bg-zinc-900/40 text-zinc-700 dark:text-zinc-200 hover:bg-white dark:hover:bg-zinc-900/70 disabled:opacity-40"
+                      >
+                        {a.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="flex gap-2 items-center">
+                    <input
+                      value={chatInput}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          sendChat().catch(() => {});
+                        }
+                      }}
+                      placeholder={campaignId ? 'Faça uma pergunta (ex.: por que ninguém inicia checkout?)' : 'Selecione uma campanha para começar'}
+                      className="flex-1 text-sm rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 outline-none focus:border-blue-500/50"
+                      disabled={chatLoading || !campaignId}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => sendChat().catch(() => {})}
+                      disabled={chatLoading || !chatInput.trim() || !campaignId}
+                      className="text-sm px-3 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 text-zinc-800 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-40"
+                    >
+                      {chatLoading ? 'Enviando…' : 'Enviar'}
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </>
