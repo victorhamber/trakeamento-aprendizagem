@@ -191,6 +191,75 @@ function FunnelBars({ f, objectiveLabel }: { f: FunnelRow['funnel']; objectiveLa
   );
 }
 
+function FunnelStack({ primary }: { primary: FunnelRow }) {
+  const f = primary.funnel;
+  const stages = [
+    { key: 'clicks', label: 'Cliques no link', v: f.link_clicks, tone: 'from-violet-500/35 to-violet-500/10', stroke: 'border-violet-500/30' },
+    { key: 'lp', label: 'Ver página (LP)', v: f.landing_page_views, tone: 'from-indigo-500/35 to-indigo-500/10', stroke: 'border-indigo-500/30' },
+    {
+      key: 'obj',
+      label: primary.objective_metric_label || 'Objetivo',
+      v: Number(primary.objective_metric || (f as any).objective_metric || 0),
+      tone: 'from-sky-500/35 to-sky-500/10',
+      stroke: 'border-sky-500/30',
+    },
+    { key: 'ic', label: 'Iniciar checkout', v: f.initiates_checkout, tone: 'from-amber-500/35 to-amber-500/10', stroke: 'border-amber-500/30' },
+    { key: 'p', label: 'Compra', v: f.purchases, tone: 'from-emerald-500/35 to-emerald-500/10', stroke: 'border-emerald-500/30' },
+  ];
+
+  const max = Math.max(...stages.map((s) => s.v), 1);
+  const pct = (cur: number, prev: number) => (prev > 0 ? Math.round((cur / prev) * 1000) / 10 : 0);
+
+  return (
+    <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white/50 dark:bg-zinc-900/35 p-5">
+      <div className="flex items-center justify-between gap-2 mb-4">
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 truncate">Funil</div>
+          <div className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-relaxed">
+            {primary.name}
+          </div>
+        </div>
+        <div className="text-[11px] text-zinc-500 tabular-nums">
+          Impressões: <span className="text-zinc-800 dark:text-zinc-200 font-medium">{formatNumber(f.impressions || 0)}</span>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        {stages.map((s, idx) => {
+          const wPct = Math.max(42, Math.min(100, (s.v / max) * 100));
+          const prev = idx === 0 ? 0 : stages[idx - 1].v;
+          const rate = idx === 0 ? null : pct(s.v, prev);
+          return (
+            <div key={s.key} className="relative">
+              <div className="flex items-center justify-between text-[11px] text-zinc-600 dark:text-zinc-400 mb-1">
+                <span className="truncate">{s.label}</span>
+                <span className="tabular-nums font-semibold text-zinc-900 dark:text-zinc-100">{formatNumber(s.v)}</span>
+              </div>
+              <div className="flex items-center justify-center">
+                <div
+                  className={`relative h-14 w-full max-w-[520px] rounded-[18px] border ${s.stroke} bg-gradient-to-b ${s.tone} backdrop-blur`}
+                  style={{
+                    clipPath: 'polygon(7% 0%, 93% 0%, 100% 100%, 0% 100%)',
+                    width: `${wPct}%`,
+                  }}
+                >
+                  {rate != null ? (
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <span className="text-[12px] font-bold text-zinc-900/90 dark:text-zinc-100/90 tabular-nums">
+                        {rate}%
+                      </span>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 type BenchLevel = 'bad' | 'ok' | 'good' | 'strong';
 
 function benchLevel(rate01: number, badLt: number, okLt: number, goodLt: number): BenchLevel {
@@ -742,40 +811,11 @@ export function CampaignFunnelPanel({
             buscar direto na Meta (demora alguns segundos na primeira vez).
           </p>
         ) : level === 'campaign' && primary ? (
-          <>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <div>
-                <FunnelBars f={primary.funnel} objectiveLabel={primary.objective_metric_label} />
-                {compareEnabled && compareLabel ? (
-                  <p className="text-[10px] text-zinc-500 mt-2">
-                    Comparativo: <strong>{compareLabel}</strong>
-                    {!comparePrimary ? ' — sem dados salvos nesse intervalo.' : null}
-                  </p>
-                ) : null}
-                <FunnelInfoCards row={primary} />
-              </div>
-              <div className="space-y-3">
-                {simpleMode && leigo ? (
-                  <div className="rounded-xl border border-zinc-200 dark:border-zinc-700/60 bg-white/70 dark:bg-zinc-900/40 px-4 py-3">
-                    <div className="text-[10px] font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-2">
-                      Diagnóstico rápido
-                    </div>
-                    <div className="text-sm text-zinc-900 dark:text-zinc-100 leading-relaxed font-semibold">
-                      {leigo.oneLiner}
-                    </div>
-                    <div className="text-sm text-zinc-700 dark:text-zinc-300 leading-relaxed mt-2">
-                      {leigo.oneAction}
-                    </div>
-                  </div>
-                ) : null}
-                {primary.bottleneck_plain ? (
-                  <div className={`rounded-xl border px-4 py-3 ${severityBorder(primary.bottleneck?.severity)}`}>
-                    <div className="text-[10px] font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-2">
-                      O que isso quer dizer
-                    </div>
-                    <p className="text-sm text-zinc-800 dark:text-zinc-100 leading-relaxed">{primary.bottleneck_plain}</p>
-                  </div>
-                ) : null}
+          <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
+            {/* Left: Funnel */}
+            <div className="xl:col-span-5">
+              <FunnelStack primary={primary} />
+              <div className="mt-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white/50 dark:bg-zinc-900/35 p-4">
                 <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
@@ -799,35 +839,7 @@ export function CampaignFunnelPanel({
                     E-mail
                   </button>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  <span
-                    className={`text-[11px] px-2.5 py-1 rounded-lg border font-medium ${presentBadgeClass(primary.present)}`}
-                  >
-                    Agora:{' '}
-                    {primary.present === 'strong'
-                      ? 'performando bem'
-                      : primary.present === 'ok'
-                        ? 'no caminho'
-                        : primary.present === 'weak'
-                          ? 'precisa atenção'
-                          : 'pouco dado'}
-                  </span>
-                  <span
-                    className={`text-[11px] px-2.5 py-1 rounded-lg border font-medium ${futureBadgeClass(primary.future)}`}
-                  >
-                    Futuro:{' '}
-                    {primary.future === 'promising'
-                      ? 'potencial'
-                      : primary.future === 'limited'
-                        ? 'arriscado escalar'
-                        : 'depende de testes'}
-                  </span>
-                </div>
-                <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">{primary.present_label}</p>
-                <p className="text-xs text-zinc-500 leading-relaxed border-t border-zinc-200 dark:border-zinc-800 pt-3">
-                  {primary.future_label}
-                </p>
-                <div className="text-xs text-zinc-500 pt-2 flex flex-wrap items-center gap-2">
+                <div className="mt-3 text-xs text-zinc-500 flex flex-wrap items-center gap-2">
                   <span>
                     Investido:{' '}
                     <strong className="text-zinc-900 dark:text-zinc-200 tabular-nums">{formatMoney(primary.spend)}</strong>
@@ -837,16 +849,12 @@ export function CampaignFunnelPanel({
                       <span className="text-zinc-500">·</span>
                       <span>
                         Receita (Meta):{' '}
-                        <strong className="text-zinc-900 dark:text-zinc-200 tabular-nums">
-                          {formatMoney(Number(primary.meta_revenue || 0))}
-                        </strong>
+                        <strong className="text-zinc-900 dark:text-zinc-200 tabular-nums">{formatMoney(Number(primary.meta_revenue || 0))}</strong>
                       </span>
                       <span className="text-zinc-500">·</span>
                       <span>
                         ROAS (Meta):{' '}
-                        <strong className="text-zinc-900 dark:text-zinc-200 tabular-nums">
-                          {(Number(primary.meta_roas || 0)).toFixed(2)}x
-                        </strong>
+                        <strong className="text-zinc-900 dark:text-zinc-200 tabular-nums">{(Number(primary.meta_roas || 0)).toFixed(2)}x</strong>
                       </span>
                     </>
                   ) : null}
@@ -860,11 +868,131 @@ export function CampaignFunnelPanel({
               </div>
             </div>
 
-            <p className="text-xs text-zinc-600 dark:text-zinc-400 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/30 px-3 py-2 leading-relaxed">
-              Para ver <strong>conjunto, anúncio, página no site, checkout e compras</strong> por criativo, escolha{' '}
-              <strong>Por anúncio</strong> acima. A lista ordena primeiro quem tem mais <strong>compras</strong> na Meta.
-            </p>
-          </>
+            {/* Middle: Insights / actions */}
+            <div className="xl:col-span-4 space-y-3">
+              {simpleMode && leigo ? (
+                <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white/50 dark:bg-zinc-900/35 p-4">
+                  <div className="text-[10px] font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-2">
+                    Diagnóstico rápido
+                  </div>
+                  <div className="text-sm text-zinc-900 dark:text-zinc-100 leading-relaxed font-semibold">{leigo.oneLiner}</div>
+                  <div className="text-sm text-zinc-700 dark:text-zinc-300 leading-relaxed mt-2">{leigo.oneAction}</div>
+                </div>
+              ) : null}
+
+              {primary.bottleneck_plain ? (
+                <div className={`rounded-2xl border p-4 ${severityBorder(primary.bottleneck?.severity)}`}>
+                  <div className="text-[10px] font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400 mb-2">
+                    O que isso quer dizer
+                  </div>
+                  <p className="text-sm text-zinc-800 dark:text-zinc-100 leading-relaxed">{primary.bottleneck_plain}</p>
+                </div>
+              ) : null}
+
+              <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white/50 dark:bg-zinc-900/35 p-4 space-y-2">
+                <div className="flex flex-wrap gap-2">
+                  <span className={`text-[11px] px-2.5 py-1 rounded-lg border font-medium ${presentBadgeClass(primary.present)}`}>
+                    Agora:{' '}
+                    {primary.present === 'strong'
+                      ? 'performando bem'
+                      : primary.present === 'ok'
+                        ? 'no caminho'
+                        : primary.present === 'weak'
+                          ? 'precisa atenção'
+                          : 'pouco dado'}
+                  </span>
+                  <span className={`text-[11px] px-2.5 py-1 rounded-lg border font-medium ${futureBadgeClass(primary.future)}`}>
+                    Futuro:{' '}
+                    {primary.future === 'promising'
+                      ? 'potencial'
+                      : primary.future === 'limited'
+                        ? 'arriscado escalar'
+                        : 'depende de testes'}
+                  </span>
+                </div>
+                <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">{primary.present_label}</p>
+                <p className="text-xs text-zinc-500 leading-relaxed border-t border-zinc-200 dark:border-zinc-800 pt-3">{primary.future_label}</p>
+              </div>
+
+              <p className="text-xs text-zinc-600 dark:text-zinc-400 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/30 px-4 py-3 leading-relaxed">
+                Para ver <strong>conjunto, anúncio, página no site, checkout e compras</strong> por criativo, escolha{' '}
+                <strong>Por anúncio</strong> acima. A lista ordena primeiro quem tem mais <strong>compras</strong> na Meta.
+              </p>
+            </div>
+
+            {/* Right: AI advisor */}
+            <div className="xl:col-span-3">
+              <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-900/40 p-4">
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <div className="space-y-0.5 min-w-0">
+                    <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">AI Analytics Advisor</div>
+                    <div className="text-[11px] text-zinc-600 dark:text-zinc-400">
+                      Campanha: <span className="font-medium">{selectedCampaignName || '—'}</span>
+                    </div>
+                  </div>
+                </div>
+                <div
+                  ref={chatBoxRef}
+                  onScroll={onChatScroll}
+                  className="max-h-[520px] min-h-[320px] overflow-auto rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/40 p-4 space-y-3"
+                >
+                  {chatMessages.map((m, idx) => (
+                    <div key={idx} className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
+                      <div
+                        className={
+                          'max-w-[92%] whitespace-pre-wrap rounded-2xl px-4 py-3 text-[13px] leading-relaxed ' +
+                          (m.role === 'user'
+                            ? 'bg-zinc-900/90 text-white dark:bg-zinc-100/95 dark:text-zinc-900 shadow-sm'
+                            : 'bg-white/90 text-zinc-900 dark:bg-zinc-900/55 dark:text-zinc-100 border border-zinc-200/70 dark:border-zinc-800/80')
+                        }
+                      >
+                        {m.content}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-3">
+                  <div className="text-[11px] text-zinc-500 dark:text-zinc-400 mb-1">Suggested Actions</div>
+                  <div className="flex gap-2 overflow-x-auto custom-scrollbar pb-1">
+                    {chatQuickActions.map((a) => (
+                      <button
+                        key={a.key}
+                        type="button"
+                        onClick={() => sendChatText(a.text).catch(() => {})}
+                        disabled={chatLoading || !campaignId}
+                        className="shrink-0 text-[11px] px-3 py-1.5 rounded-full border border-zinc-200/80 dark:border-zinc-800 bg-white/40 dark:bg-zinc-900/35 text-zinc-700 dark:text-zinc-200 hover:bg-white/70 dark:hover:bg-zinc-900/60 disabled:opacity-40"
+                      >
+                        {a.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="mt-3 flex gap-2 items-center">
+                  <input
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        sendChat().catch(() => {});
+                      }
+                    }}
+                    placeholder={campaignId ? 'Faça uma pergunta (ex.: por que ninguém inicia checkout?)' : 'Selecione uma campanha para começar'}
+                    className="flex-1 text-sm rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 outline-none"
+                    disabled={chatLoading || !campaignId}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => sendChat().catch(() => {})}
+                    disabled={chatLoading || !chatInput.trim() || !campaignId}
+                    className="text-sm px-3 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 text-zinc-800 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-40"
+                  >
+                    {chatLoading ? 'Enviando…' : 'Enviar'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         ) : (
           <div className="space-y-3">
             {level === 'ad' ? (
@@ -939,78 +1067,6 @@ export function CampaignFunnelPanel({
           </div>
         )}
 
-        <div className="mt-2 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-900/40 p-4">
-          <div className="flex items-start justify-between gap-3 mb-3">
-            <div className="space-y-0.5 min-w-0">
-              <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Diagnóstico IA (chat)</div>
-              <div className="text-[11px] text-zinc-600 dark:text-zinc-400">
-                Baseado no funil e benchmarks. Campanha: <span className="font-medium">{selectedCampaignName || '—'}</span>
-              </div>
-            </div>
-          </div>
-
-          <div
-            ref={chatBoxRef}
-            onScroll={onChatScroll}
-            className="max-h-[520px] min-h-[320px] overflow-auto rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/40 p-4 space-y-3"
-          >
-            {chatMessages.map((m, idx) => (
-              <div key={idx} className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
-                <div
-                  className={
-                    'max-w-[92%] whitespace-pre-wrap rounded-2xl px-4 py-3 text-[13px] leading-relaxed ' +
-                    (m.role === 'user'
-                      ? 'bg-zinc-900/90 text-white dark:bg-zinc-100/95 dark:text-zinc-900 shadow-sm'
-                      : 'bg-white/90 text-zinc-900 dark:bg-zinc-900/55 dark:text-zinc-100 border border-zinc-200/70 dark:border-zinc-800/80')
-                  }
-                >
-                  {m.content}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-3">
-            <div className="text-[11px] text-zinc-500 dark:text-zinc-400 mb-1">Atalhos</div>
-            <div className="flex gap-2 overflow-x-auto custom-scrollbar pb-1">
-              {chatQuickActions.map((a) => (
-                <button
-                  key={a.key}
-                  type="button"
-                  onClick={() => sendChatText(a.text).catch(() => {})}
-                  disabled={chatLoading || !campaignId}
-                  className="shrink-0 text-[11px] px-3 py-1.5 rounded-full border border-zinc-200/80 dark:border-zinc-800 bg-white/40 dark:bg-zinc-900/35 text-zinc-700 dark:text-zinc-200 hover:bg-white/70 dark:hover:bg-zinc-900/60 disabled:opacity-40"
-                >
-                  {a.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="mt-3 flex gap-2 items-center">
-            <input
-              value={chatInput}
-              onChange={(e) => setChatInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  sendChat().catch(() => {});
-                }
-              }}
-              placeholder={campaignId ? 'Faça uma pergunta (ex.: por que ninguém inicia checkout?)' : 'Selecione uma campanha para começar'}
-              className="flex-1 text-sm rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 outline-none"
-              disabled={chatLoading || !campaignId}
-            />
-            <button
-              type="button"
-              onClick={() => sendChat().catch(() => {})}
-              disabled={chatLoading || !chatInput.trim() || !campaignId}
-              className="text-sm px-3 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 text-zinc-800 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-40"
-            >
-              {chatLoading ? 'Enviando…' : 'Enviar'}
-            </button>
-          </div>
-        </div>
       </div>
     </div>
   );
