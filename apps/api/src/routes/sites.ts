@@ -1087,6 +1087,10 @@ router.get('/:siteId/buyers', requireAuth, async (req, res) => {
           p.buyer_email_hash,
           p.fbp,
           p.fbc,
+          p.external_id AS purchase_external_id,
+          p.customer_name,
+          p.customer_email,
+          p.customer_phone,
           COALESCE(p.buyer_email_hash, p.fbp, p.fbc, p.order_id, ('purchase:' || p.id::text)) AS buyer_key
         FROM purchases p
         WHERE p.site_key = $1
@@ -1097,7 +1101,11 @@ router.get('/:siteId/buyers', requireAuth, async (req, res) => {
           buyer_key,
           MAX(purchased_at) AS last_purchase_at,
           COUNT(*)::int AS purchases_count,
-          COALESCE(SUM(amount), 0)::numeric AS revenue
+          COALESCE(SUM(amount), 0)::numeric AS revenue,
+          (ARRAY_AGG(NULLIF(BTRIM(customer_name), '') ORDER BY purchased_at DESC))[1] AS last_customer_name,
+          (ARRAY_AGG(NULLIF(BTRIM(customer_email), '') ORDER BY purchased_at DESC))[1] AS last_customer_email,
+          (ARRAY_AGG(NULLIF(BTRIM(customer_phone), '') ORDER BY purchased_at DESC))[1] AS last_customer_phone,
+          (ARRAY_AGG(NULLIF(BTRIM(purchase_external_id::text), '') ORDER BY purchased_at DESC))[1] AS last_purchase_external_id
         FROM pf
         GROUP BY 1
       ),
@@ -1119,7 +1127,11 @@ router.get('/:siteId/buyers', requireAuth, async (req, res) => {
       )
       SELECT
         buyer_key,
-        external_id,
+        COALESCE(external_id, last_purchase_external_id) AS external_id,
+        COALESCE(NULLIF(BTRIM(last_customer_name), ''), NULLIF(BTRIM(last_customer_email), ''), COALESCE(external_id, last_purchase_external_id), buyer_key) AS display_name,
+        last_customer_name,
+        last_customer_email,
+        last_customer_phone,
         purchases_count,
         revenue,
         last_purchase_at
@@ -1157,6 +1169,7 @@ router.get('/:siteId/buyers/by-key/:buyerKey', requireAuth, async (req, res) => 
     const purchasesRes = await pool.query(
       `SELECT
         id, order_id, platform, amount, currency, status,
+        customer_name, customer_email, customer_phone,
         COALESCE(platform_date, created_at) AS purchased_at
        FROM purchases
        WHERE site_key = $1
@@ -1210,6 +1223,7 @@ router.get('/:siteId/buyers/by-key/:buyerKey', requireAuth, async (req, res) => 
     const pvBefore: Record<string, number> = {};
     let pvCountBefore = 0;
     let lastPageviewBeforePurchase: { url: string; at: string } | null = null;
+    const pageviewTimeline: Array<{ at: string; url: string; utm?: Record<string, string> | null }> = [];
     if (lastPurchaseAt) {
       for (const e of eventsRes.rows) {
         const t = new Date(e.event_time);
@@ -1220,6 +1234,19 @@ router.get('/:siteId/buyers/by-key/:buyerKey', requireAuth, async (req, res) => 
           if (!lastPageviewBeforePurchase) {
             lastPageviewBeforePurchase = { url: e.event_source_url, at: String(e.event_time) };
           }
+          let utm: Record<string, string> | null = null;
+          if (e.custom_data && typeof e.custom_data === 'object') {
+            const cd = e.custom_data as any;
+            const pick = (k: string) => (typeof cd[k] === 'string' ? cd[k] : '');
+            const utm_source = pick('utm_source');
+            const utm_medium = pick('utm_medium');
+            const utm_campaign = pick('utm_campaign');
+            const utm_content = pick('utm_content');
+            const utm_term = pick('utm_term');
+            const click_id = pick('click_id');
+            if (utm_source || utm_campaign || utm_content || click_id) utm = { utm_source, utm_medium, utm_campaign, utm_content, utm_term, click_id };
+          }
+          pageviewTimeline.push({ at: String(e.event_time), url: e.event_source_url, utm });
         }
       }
     }
@@ -1233,6 +1260,9 @@ router.get('/:siteId/buyers/by-key/:buyerKey', requireAuth, async (req, res) => 
       buyer: {
         buyer_key: buyerKey,
         external_id: externalId,
+        customer_name: purchasesRes.rows[0]?.customer_name || null,
+        customer_email: purchasesRes.rows[0]?.customer_email || null,
+        customer_phone: purchasesRes.rows[0]?.customer_phone || null,
         email_hash: v?.email_hash || null,
         fbp: v?.fbp || null,
         fbc: v?.fbc || null,
@@ -1245,6 +1275,7 @@ router.get('/:siteId/buyers/by-key/:buyerKey', requireAuth, async (req, res) => 
         pageviews_before_last_purchase: pvCountBefore,
         top_pages_before_last_purchase: topPages,
         last_pageview_before_last_purchase: lastPageviewBeforePurchase,
+        pageviews_timeline_before_last_purchase: pageviewTimeline.slice(0, 500),
       },
       events: eventsRes.rows,
     });
@@ -1305,6 +1336,7 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
     const purchasesRes = await pool.query(
       `SELECT
         id, order_id, platform, amount, currency, status,
+        customer_name, customer_email, customer_phone,
         COALESCE(platform_date, created_at) AS purchased_at
        FROM purchases
        WHERE site_key = $1
@@ -1342,6 +1374,7 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
     let pvCountBefore = 0;
     let lastTouchUtm: Record<string, string> | null = null;
     let lastPageviewBeforePurchase: { url: string; at: string } | null = null;
+    const pageviewTimeline: Array<{ at: string; url: string; utm?: Record<string, string> | null }> = [];
     if (lastPurchaseAt) {
       for (const e of eventsRes.rows) {
         const t = new Date(e.event_time);
@@ -1352,6 +1385,7 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
           if (!lastPageviewBeforePurchase) {
             lastPageviewBeforePurchase = { url: e.event_source_url, at: String(e.event_time) };
           }
+          let utm: Record<string, string> | null = null;
           if (!lastTouchUtm && e.custom_data && typeof e.custom_data === 'object') {
             const cd = e.custom_data as any;
             const pick = (k: string) => (typeof cd[k] === 'string' ? cd[k] : '');
@@ -1365,6 +1399,18 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
               lastTouchUtm = { utm_source, utm_medium, utm_campaign, utm_content, utm_term, click_id };
             }
           }
+          if (e.custom_data && typeof e.custom_data === 'object') {
+            const cd = e.custom_data as any;
+            const pick = (k: string) => (typeof cd[k] === 'string' ? cd[k] : '');
+            const utm_source = pick('utm_source');
+            const utm_medium = pick('utm_medium');
+            const utm_campaign = pick('utm_campaign');
+            const utm_content = pick('utm_content');
+            const utm_term = pick('utm_term');
+            const click_id = pick('click_id');
+            if (utm_source || utm_campaign || utm_content || click_id) utm = { utm_source, utm_medium, utm_campaign, utm_content, utm_term, click_id };
+          }
+          pageviewTimeline.push({ at: String(e.event_time), url: e.event_source_url, utm });
         }
       }
     }
@@ -1438,6 +1484,9 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
         email_hash: v.email_hash,
         fbp: v.fbp,
         fbc: v.fbc,
+        customer_name: purchasesRes.rows[0]?.customer_name || null,
+        customer_email: purchasesRes.rows[0]?.customer_email || null,
+        customer_phone: purchasesRes.rows[0]?.customer_phone || null,
         last_seen_at: v.last_seen_at,
         last_traffic_source: v.last_traffic_source,
       },
@@ -1447,6 +1496,7 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
         pageviews_before_last_purchase: pvCountBefore,
         top_pages_before_last_purchase: topPages,
         last_pageview_before_last_purchase: lastPageviewBeforePurchase,
+        pageviews_timeline_before_last_purchase: pageviewTimeline.slice(0, 500),
         last_touch: lastTouchUtm,
         meta_attribution: attribution,
         meta_attribution_source: attributionSource,

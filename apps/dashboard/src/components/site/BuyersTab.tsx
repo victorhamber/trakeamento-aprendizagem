@@ -4,6 +4,10 @@ import { api } from '../../lib/api';
 type BuyerRow = {
   buyer_key: string;
   external_id: string | null;
+  display_name?: string | null;
+  last_customer_name?: string | null;
+  last_customer_email?: string | null;
+  last_customer_phone?: string | null;
   purchases_count: number;
   revenue: number;
   last_purchase_at: string | null;
@@ -13,6 +17,9 @@ type BuyerDetail = {
   buyer: {
     buyer_key?: string;
     external_id: string | null;
+    customer_name?: string | null;
+    customer_email?: string | null;
+    customer_phone?: string | null;
     email_hash: string | null;
     fbp: string | null;
     fbc: string | null;
@@ -27,12 +34,16 @@ type BuyerDetail = {
     currency: string | null;
     status: string;
     purchased_at: string;
+    customer_name?: string | null;
+    customer_email?: string | null;
+    customer_phone?: string | null;
   }>;
   behavior: {
     lookback_days: number;
     pageviews_before_last_purchase: number;
     top_pages_before_last_purchase: Array<{ url: string; count: number }>;
     last_pageview_before_last_purchase?: null | { url: string; at: string };
+    pageviews_timeline_before_last_purchase?: Array<{ at: string; url: string; utm?: Record<string, string> | null }>;
     last_touch: null | Record<string, string>;
     meta_attribution: null | {
       campaign_id?: string | null;
@@ -159,10 +170,12 @@ export function BuyersTab({ siteId }: { siteId: number }) {
                   onClick={() => setSelected({ externalId: r.external_id, buyerKey: r.buyer_key })}
                 >
                   <td className="px-4 py-3">
-                    <div className="text-zinc-900 dark:text-zinc-100 font-medium truncate max-w-[380px]">
-                      {r.external_id || r.buyer_key}
+                    <div className="text-zinc-900 dark:text-zinc-100 font-semibold truncate max-w-[420px]">
+                      {r.display_name || r.last_customer_name || r.external_id || r.buyer_key}
                     </div>
-                    <div className="text-[11px] text-zinc-600 dark:text-zinc-500 truncate max-w-[380px]">{r.buyer_key}</div>
+                    <div className="text-[11px] text-zinc-600 dark:text-zinc-500 truncate max-w-[420px]">
+                      ID: {r.external_id || r.buyer_key}
+                    </div>
                     {!r.external_id ? (
                       <div className="text-[11px] text-amber-600 dark:text-amber-400">Sem external_id (abrindo por buyer_key)</div>
                     ) : null}
@@ -178,91 +191,148 @@ export function BuyersTab({ siteId }: { siteId: number }) {
       </div>
 
       {canOpen ? (
-        <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-900/40 p-4">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Detalhes do comprador</div>
-              <div className="text-xs text-zinc-600 dark:text-zinc-400">{selected?.externalId || selected?.buyerKey}</div>
-            </div>
-            <button
-              type="button"
-              onClick={() => setSelected(null)}
-              className="text-xs px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white/60 dark:bg-zinc-950/25 text-zinc-700 dark:text-zinc-200 hover:bg-white dark:hover:bg-zinc-950/40"
-            >
-              Fechar
-            </button>
-          </div>
+        <div className="fixed inset-0 z-50">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/60"
+            onClick={() => setSelected(null)}
+            aria-label="Fechar"
+          />
 
-          {detailLoading ? (
-            <div className="mt-4 text-sm text-zinc-600 dark:text-zinc-400">Carregando…</div>
-          ) : detailError ? (
-            <div className="mt-4 rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
-              {detailError}
-            </div>
-          ) : detail ? (
-            <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-950/25 p-4">
-                <div className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-2">Antes da última compra</div>
-                <div className="text-sm text-zinc-900 dark:text-zinc-100">
-                  Pageviews: <span className="font-semibold tabular-nums">{detail.behavior.pageviews_before_last_purchase}</span>
-                </div>
-                {detail.behavior.last_pageview_before_last_purchase ? (
-                  <div className="mt-2 text-[11px] text-zinc-600 dark:text-zinc-400">
-                    Última página antes da compra: <span className="font-medium">{dt(detail.behavior.last_pageview_before_last_purchase.at)}</span>
-                    <div className="mt-1 truncate" title={detail.behavior.last_pageview_before_last_purchase.url}>
-                      {detail.behavior.last_pageview_before_last_purchase.url}
-                    </div>
+          <div className="absolute inset-x-0 top-6 mx-auto w-[min(980px,calc(100vw-24px))]">
+            <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 shadow-xl overflow-hidden">
+              <div className="flex items-start justify-between gap-3 px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/60 dark:bg-zinc-950/40">
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 truncate">
+                    {detail?.buyer?.customer_name || detail?.buyer?.customer_email || selected?.externalId || selected?.buyerKey}
                   </div>
-                ) : null}
-                <div className="mt-3 text-xs text-zinc-600 dark:text-zinc-400">Top páginas</div>
-                <div className="mt-2 space-y-1">
-                  {detail.behavior.top_pages_before_last_purchase.slice(0, 10).map((p) => (
-                    <div key={p.url} className="flex items-center justify-between gap-3 text-[11px] text-zinc-600 dark:text-zinc-400">
-                      <span className="truncate">{p.url}</span>
-                      <span className="tabular-nums text-zinc-700 dark:text-zinc-200">{p.count}</span>
-                    </div>
-                  ))}
+                  <div className="text-[11px] text-zinc-600 dark:text-zinc-400 truncate">
+                    {selected?.externalId ? `external_id: ${selected.externalId}` : `buyer_key: ${selected?.buyerKey}`}
+                  </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setSelected(null)}
+                  className="text-xs px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white/80 dark:bg-zinc-950/25 text-zinc-700 dark:text-zinc-200 hover:bg-white dark:hover:bg-zinc-950/40"
+                >
+                  Fechar
+                </button>
               </div>
 
-              <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-950/25 p-4">
-                <div className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-2">Atribuição (melhor esforço)</div>
-                {detail.behavior.meta_attribution ? (
-                  <div className="space-y-1 text-[11px] text-zinc-600 dark:text-zinc-400">
-                    <div>
-                      <span className="font-medium text-zinc-800 dark:text-zinc-200">Campanha:</span>{' '}
-                      {detail.behavior.meta_attribution.campaign_name || detail.behavior.meta_attribution.campaign_id || '—'}
-                    </div>
-                    <div>
-                      <span className="font-medium text-zinc-800 dark:text-zinc-200">Conjunto:</span>{' '}
-                      {detail.behavior.meta_attribution.adset_name || detail.behavior.meta_attribution.adset_id || '—'}
-                    </div>
-                    <div>
-                      <span className="font-medium text-zinc-800 dark:text-zinc-200">Anúncio:</span>{' '}
-                      {detail.behavior.meta_attribution.ad_name || detail.behavior.meta_attribution.ad_id || '—'}
-                    </div>
-                    {detail.behavior.meta_attribution_source ? (
-                      <div className="text-[10px] text-zinc-500 dark:text-zinc-500">
-                        Fonte: {detail.behavior.meta_attribution_source}
+              <div className="p-4 max-h-[calc(100vh-120px)] overflow-auto">
+                {detailLoading ? (
+                  <div className="text-sm text-zinc-600 dark:text-zinc-400">Carregando…</div>
+                ) : detailError ? (
+                  <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+                    {detailError}
+                  </div>
+                ) : detail ? (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+                      <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-950/25 p-3">
+                        <div className="text-[11px] font-semibold text-zinc-600 dark:text-zinc-400">Compra (última)</div>
+                        <div className="mt-1 text-xs text-zinc-800 dark:text-zinc-200">
+                          {detail.purchases?.[0]?.amount != null ? money(Number(detail.purchases[0].amount)) : '—'} · {dt(detail.purchases?.[0]?.purchased_at)}
+                        </div>
+                        <div className="mt-1 text-[11px] text-zinc-600 dark:text-zinc-400 truncate">
+                          Pedido: {detail.purchases?.[0]?.order_id || '—'}
+                        </div>
                       </div>
-                    ) : null}
+                      <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-950/25 p-3">
+                        <div className="text-[11px] font-semibold text-zinc-600 dark:text-zinc-400">Contato (webhook)</div>
+                        <div className="mt-1 text-xs text-zinc-800 dark:text-zinc-200 truncate">
+                          {detail.buyer.customer_name || '—'}
+                        </div>
+                        <div className="mt-1 text-[11px] text-zinc-600 dark:text-zinc-400 truncate">
+                          {detail.buyer.customer_email || '—'}
+                        </div>
+                        <div className="mt-1 text-[11px] text-zinc-600 dark:text-zinc-400 truncate">
+                          {detail.buyer.customer_phone || '—'}
+                        </div>
+                      </div>
+                      <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-950/25 p-3">
+                        <div className="text-[11px] font-semibold text-zinc-600 dark:text-zinc-400">Atribuição (melhor esforço)</div>
+                        {detail.behavior.meta_attribution ? (
+                          <div className="mt-1 space-y-1 text-[11px] text-zinc-600 dark:text-zinc-400">
+                            <div>
+                              <span className="font-medium text-zinc-800 dark:text-zinc-200">Campanha:</span>{' '}
+                              {detail.behavior.meta_attribution.campaign_name || detail.behavior.meta_attribution.campaign_id || '—'}
+                            </div>
+                            <div>
+                              <span className="font-medium text-zinc-800 dark:text-zinc-200">Conjunto:</span>{' '}
+                              {detail.behavior.meta_attribution.adset_name || detail.behavior.meta_attribution.adset_id || '—'}
+                            </div>
+                            <div>
+                              <span className="font-medium text-zinc-800 dark:text-zinc-200">Anúncio:</span>{' '}
+                              {detail.behavior.meta_attribution.ad_name || detail.behavior.meta_attribution.ad_id || '—'}
+                            </div>
+                            {detail.behavior.meta_attribution_source ? (
+                              <div className="text-[10px] text-zinc-500 dark:text-zinc-500">Fonte: {detail.behavior.meta_attribution_source}</div>
+                            ) : null}
+                          </div>
+                        ) : (
+                          <div className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">Sem atribuição.</div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                      <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-950/25 p-4">
+                        <div className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-2">Jornada (PageViews antes da compra)</div>
+                        <div className="text-[11px] text-zinc-600 dark:text-zinc-400">
+                          Total: <span className="font-semibold tabular-nums text-zinc-800 dark:text-zinc-200">{detail.behavior.pageviews_before_last_purchase}</span>
+                        </div>
+                        <div className="mt-3 space-y-2">
+                          {(detail.behavior.pageviews_timeline_before_last_purchase || []).slice(0, 120).map((pv, idx) => (
+                            <div key={`${pv.at}-${idx}`} className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white/60 dark:bg-zinc-950/20 px-3 py-2">
+                              <div className="flex items-center justify-between gap-3 text-[11px] text-zinc-600 dark:text-zinc-400">
+                                <span className="font-medium text-zinc-800 dark:text-zinc-200">{dt(pv.at)}</span>
+                                {pv.utm?.utm_campaign || pv.utm?.utm_content ? (
+                                  <span className="truncate max-w-[50%]">
+                                    {pv.utm.utm_campaign || '—'}{pv.utm.utm_content ? ` · ${pv.utm.utm_content}` : ''}
+                                  </span>
+                                ) : (
+                                  <span className="text-zinc-500 dark:text-zinc-500">sem utm</span>
+                                )}
+                              </div>
+                              <div className="mt-1 text-[11px] text-zinc-600 dark:text-zinc-400 truncate" title={pv.url}>
+                                {pv.url}
+                              </div>
+                            </div>
+                          ))}
+                          {(detail.behavior.pageviews_timeline_before_last_purchase || []).length > 120 ? (
+                            <div className="text-[11px] text-zinc-500 dark:text-zinc-500">
+                              Mostrando 120 de {(detail.behavior.pageviews_timeline_before_last_purchase || []).length}.
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-950/25 p-4">
+                        <div className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-2">Top páginas (pré-compra)</div>
+                        <div className="space-y-1">
+                          {detail.behavior.top_pages_before_last_purchase.slice(0, 15).map((p) => (
+                            <div key={p.url} className="flex items-center justify-between gap-3 text-[11px] text-zinc-600 dark:text-zinc-400">
+                              <span className="truncate" title={p.url}>{p.url}</span>
+                              <span className="tabular-nums text-zinc-700 dark:text-zinc-200">{p.count}</span>
+                            </div>
+                          ))}
+                        </div>
+                        {detail.behavior.last_touch ? (
+                          <>
+                            <div className="mt-4 text-xs font-semibold text-zinc-600 dark:text-zinc-400">Último toque (UTMs)</div>
+                            <pre className="mt-2 text-[11px] whitespace-pre-wrap rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/35 p-3 text-zinc-700 dark:text-zinc-200">
+                              {JSON.stringify(detail.behavior.last_touch, null, 2)}
+                            </pre>
+                          </>
+                        ) : null}
+                      </div>
+                    </div>
                   </div>
-                ) : (
-                  <div className="text-sm text-zinc-600 dark:text-zinc-400">
-                    Sem atribuição (faltando UTMs/ad_id).
-                  </div>
-                )}
-                {detail.behavior.last_touch ? (
-                  <>
-                    <div className="mt-4 text-xs font-semibold text-zinc-600 dark:text-zinc-400">Último toque (UTMs)</div>
-                    <pre className="mt-2 text-[11px] whitespace-pre-wrap rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/35 p-3 text-zinc-700 dark:text-zinc-200">
-                      {JSON.stringify(detail.behavior.last_touch, null, 2)}
-                    </pre>
-                  </>
                 ) : null}
               </div>
             </div>
-          ) : null}
+          </div>
         </div>
       ) : null}
     </div>
