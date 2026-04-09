@@ -542,6 +542,15 @@ async function processPurchaseWebhook({
       ? String(trkData.externalId).trim()
       : null) || externalId;
 
+  const canonicalEid = (val: unknown): string | null => {
+    if (val == null) return null;
+    const s = String(val).trim();
+    if (!s) return null;
+    // External ID canônico do Trajettu sempre começa com eid_
+    if (s.startsWith('eid_')) return s;
+    return null;
+  };
+
 
   // 2. Enrichment: Missing attribution data or geolocation
   let enriched = null;
@@ -558,7 +567,9 @@ async function processPurchaseWebhook({
   const mergedFbpSafe = preserveMetaClickIds(mergedFbp);
   const mergedIp = clientIp || enriched?.clientIp;
   const mergedUa = clientUa || enriched?.clientUa;
-  const mergedExternalId = finalExternalId || enriched?.externalId || (email ? CapiService.hash(email) : undefined);
+  // Regra forte: não "trocar" external_id por hash de email.
+  // Só aceitamos external_id canônico (eid_) vindo do tracker (query/trk_) ou recuperado do perfil.
+  const mergedExternalId = canonicalEid(finalExternalId) || canonicalEid(enriched?.externalId) || undefined;
 
 
   // Location recovery: Priority Webhook > Enriched (history) > GeoIP (current IP)
@@ -669,7 +680,7 @@ async function processPurchaseWebhook({
 
   // 3. Database Persistence
   const dbEmailHash = email ? CapiService.hash(email.toLowerCase()) : null;
-  const visitorExtId = mergedExternalId || dbEmailHash || `buyer_${orderId}`;
+  const visitorExtId = mergedExternalId || `anon_purchase_${orderId}`;
 
   let rawPayloadForDb: Record<string, unknown> = {};
   try {
@@ -682,7 +693,7 @@ async function processPurchaseWebhook({
   }
   rawPayloadForDb._capi_debug = capiPayload;
 
-  if (dbEmailHash || mergedFbpSafe || mergedExternalId) {
+  if (mergedExternalId || dbEmailHash || mergedFbpSafe || mergedFbcSafe) {
     pool.query(`
       INSERT INTO site_visitors (
         site_key, external_id, fbc, fbp, email_hash, phone_hash,
