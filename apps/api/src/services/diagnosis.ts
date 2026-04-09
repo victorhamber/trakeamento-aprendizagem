@@ -418,6 +418,52 @@ export class DiagnosisService {
     const range = this.resolveDateRange({ ...options, days });
     const { since, until, days: daysNum } = range;
 
+    // ── Campaign age / active days (to calibrate learning) ────────────────────
+    let campaignFirstSpendDate: string | null = null;
+    let campaignActiveDaysLifetime: number | null = null;
+    let campaignActiveDaysInPeriod: number | null = null;
+    if (siteId && campaignId) {
+      try {
+        const firstRes = await pool.query(
+          `SELECT MIN(date_start) AS first_spend_date
+           FROM meta_insights_daily
+           WHERE site_id = $1
+             AND campaign_id = $2
+             AND COALESCE(spend, 0) > 0`,
+          [siteId, campaignId]
+        );
+        const first = firstRes.rows[0]?.first_spend_date as string | null;
+        campaignFirstSpendDate = first || null;
+
+        if (campaignFirstSpendDate) {
+          const daysRes = await pool.query(
+            `SELECT COUNT(DISTINCT date_start)::int AS active_days
+             FROM meta_insights_daily
+             WHERE site_id = $1
+               AND campaign_id = $2
+               AND date_start >= $3
+               AND COALESCE(spend, 0) > 0`,
+            [siteId, campaignId, campaignFirstSpendDate]
+          );
+          campaignActiveDaysLifetime = Number(daysRes.rows[0]?.active_days || 0) || null;
+        }
+
+        const inPeriodRes = await pool.query(
+          `SELECT COUNT(DISTINCT date_start)::int AS active_days
+           FROM meta_insights_daily
+           WHERE site_id = $1
+             AND campaign_id = $2
+             AND date_start >= $3
+             AND date_start < $4
+             AND COALESCE(spend, 0) > 0`,
+          [siteId, campaignId, since, until]
+        );
+        campaignActiveDaysInPeriod = Number(inPeriodRes.rows[0]?.active_days || 0) || null;
+      } catch (err) {
+        console.warn('[DiagnosisService] Failed to compute campaign age/active days:', err);
+      }
+    }
+
     // ── Cache check: return recent report if available (TTL 1h) ───────────
     const cacheKey = options?.datePreset || `custom_${daysNum}d`;
     if (!options?.force) {
@@ -1141,6 +1187,9 @@ export class DiagnosisService {
         optimized_event_name: m.optimized_event_name != null ? String(m.optimized_event_name) : null,
         custom_event_name: m.custom_event_name != null ? String(m.custom_event_name) : null,
         optimization_goal: m.optimization_goal != null ? String(m.optimization_goal) : null,
+        campaign_first_spend_date: campaignFirstSpendDate,
+        campaign_active_days_lifetime: campaignActiveDaysLifetime,
+        campaign_active_days_in_period: campaignActiveDaysInPeriod,
         // results = the optimization event count (e.g. CADASTRO_GRUPO, LEAD, PURCHASE).
         // THIS is the primary success metric — not meta.objective.
         // A campaign with objective=OUTCOME_SALES can be optimized for CADASTRO_GRUPO.

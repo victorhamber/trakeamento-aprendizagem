@@ -404,6 +404,11 @@ export class LlmService {
     lines.push(
       `- Resultados (evento otimizado${evName ? `: ${evName}` : ''}): ${this.fmtInt(meta.results)} | CPA: ${this.fmtMoney(meta.cost_per_result)}`
     );
+    if (meta.campaign_active_days_lifetime != null || meta.campaign_active_days_in_period != null) {
+      const life = meta.campaign_active_days_lifetime != null ? `${this.fmtInt(meta.campaign_active_days_lifetime)}d` : '—';
+      const inPeriod = meta.campaign_active_days_in_period != null ? `${this.fmtInt(meta.campaign_active_days_in_period)}d` : '—';
+      lines.push(`- Tempo ativo (dias com gasto): ${life} (vida) | ${inPeriod} (no período)`);
+    }
     lines.push(`- Impressoes: ${this.fmtInt(meta.impressions)} | Alcance: ${this.fmtInt(meta.reach)} (contas da Central de Contas) | Frequencia: ${this.fmt(meta.frequency_avg)}`);
     lines.push(`- Cliques: ${this.fmtInt(meta.clicks)} | Link Clicks Unicos: ${this.fmtInt(meta.unique_link_clicks)}`);
     lines.push(`- CTR: ${this.fmtPct(derived.ctr_calc_pct)} | CPC: ${this.fmtMoney(derived.cpc_calc)} | CPM: ${this.fmtMoney(derived.cpm_calc)}`);
@@ -561,6 +566,35 @@ Se meta.purchases != sales.purchases → sinalize DISCREPANCIA com possiveis cau
 - Se utm_filters_skipped != null, trate comportamento no site/CAPI como **trafego geral do site**, nao da campanha. Use isso apenas como contexto e deixe isso explicito.
 - Nunca diga "fadiga" sem evidencia. Para usar "fadiga", exija: frequencia alta + queda de CTR/Results/CPA no tempo. Se nao houver tendencia por anuncio, use "Otimizar" ou "Sem sinal".
 - Nunca diga que a landing "tem X secoes" se landing_page.content_source nao for 'http_html_text'. Nesse caso, faca apenas recomendacoes genericas baseadas em metricas (load/dwell/scroll) + checklist.
+
+=== TEMPO ATIVO / APRENDIZADO (LEARNING) ===
+
+- Use meta.campaign_active_days_lifetime (dias com gasto na vida) para calibrar o tom.
+- Regras praticas:
+  - **0–2 dias ativos**: trate como "inicio/learning". Nao conclua que "nao vende" = "campanha ruim" sem volume.
+  - **3–5 dias ativos**: comeca a dar para julgar sinais (CTR/connect rate/evento). Ainda pode oscilar.
+  - **6+ dias ativos**: se ainda nao entrega resultados no evento otimizado com volume/gasto suficiente, trate como problema real (criativo/oferta/tracking).
+
+=== QUANDO MANTER vs QUANDO MEXER (campanha/conjunto/anuncio) ===
+
+Voce deve dar um parecer claro para cada nivel (Campanha/Conjunto/Anuncio) usando estas regras:
+
+1) **Esperar (nao mexer)** quando:
+   - campanha tem **<= 2 dias ativos**, OU
+   - gasto e volume ainda sao baixos para aprender (ex.: poucas impressoes/cliques), OU
+   - ha sinais bons (CTR ok, connect rate ok) mas ainda poucos eventos.
+
+2) **Ajustar (mexer leve)** quando:
+   - CTR esta baixo (criativo/publico), OU
+   - connect rate baixo (ponte/site), OU
+   - evento otimizado = 0 com trafego suficiente (problema de conversao/tracking/oferta).
+
+3) **Cortar / pausar** quando:
+   - CTR muito baixo por tempo suficiente, OU
+   - connect rate muito baixo (perda grande clique→LP), OU
+   - ja passou da fase inicial (>= 6 dias ativos) e continua sem resultado com gasto relevante.
+
+Sempre explicite: "qual sinal mandou esperar" vs "qual sinal mandou mexer", e qual e o **proximo teste**.
 `);
 
     // ── Conditional: Creatives HSO (limitado para evitar verbosidade) ──
