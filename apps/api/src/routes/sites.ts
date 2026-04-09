@@ -1105,7 +1105,8 @@ router.get('/:siteId/buyers', requireAuth, async (req, res) => {
           (ARRAY_AGG(NULLIF(BTRIM(customer_name), '') ORDER BY purchased_at DESC))[1] AS last_customer_name,
           (ARRAY_AGG(NULLIF(BTRIM(customer_email), '') ORDER BY purchased_at DESC))[1] AS last_customer_email,
           (ARRAY_AGG(NULLIF(BTRIM(customer_phone), '') ORDER BY purchased_at DESC))[1] AS last_customer_phone,
-          (ARRAY_AGG(NULLIF(BTRIM(purchase_external_id::text), '') ORDER BY purchased_at DESC))[1] AS last_purchase_external_id
+          (ARRAY_AGG(NULLIF(BTRIM(purchase_external_id::text), '') ORDER BY purchased_at DESC))[1] AS last_purchase_external_id,
+          (ARRAY_AGG(NULLIF(BTRIM(order_id), '') ORDER BY purchased_at DESC))[1] AS last_order_id
         FROM pf
         GROUP BY 1
       ),
@@ -1128,10 +1129,18 @@ router.get('/:siteId/buyers', requireAuth, async (req, res) => {
       SELECT
         buyer_key,
         COALESCE(external_id, last_purchase_external_id) AS external_id,
-        COALESCE(NULLIF(BTRIM(last_customer_name), ''), NULLIF(BTRIM(last_customer_email), ''), COALESCE(external_id, last_purchase_external_id), buyer_key) AS display_name,
+        COALESCE(
+          NULLIF(BTRIM(last_customer_name), ''),
+          NULLIF(BTRIM(last_customer_email), ''),
+          NULLIF(BTRIM(last_customer_phone), ''),
+          NULLIF(BTRIM(last_order_id), ''),
+          COALESCE(external_id, last_purchase_external_id),
+          buyer_key
+        ) AS display_name,
         last_customer_name,
         last_customer_email,
         last_customer_phone,
+        last_order_id,
         purchases_count,
         revenue,
         last_purchase_at
@@ -1170,6 +1179,10 @@ router.get('/:siteId/buyers/by-key/:buyerKey', requireAuth, async (req, res) => 
       `SELECT
         id, order_id, platform, amount, currency, status,
         customer_name, customer_email, customer_phone,
+        external_id,
+        fbp,
+        fbc,
+        buyer_email_hash,
         COALESCE(platform_date, created_at) AS purchased_at
        FROM purchases
        WHERE site_key = $1
@@ -1182,6 +1195,11 @@ router.get('/:siteId/buyers/by-key/:buyerKey', requireAuth, async (req, res) => 
       [siteKey, buyerKey]
     );
 
+    const purchaseExternalId = purchasesRes.rows[0]?.external_id ? String(purchasesRes.rows[0].external_id) : null;
+    const purchaseFbp = purchasesRes.rows[0]?.fbp ? String(purchasesRes.rows[0].fbp) : null;
+    const purchaseFbc = purchasesRes.rows[0]?.fbc ? String(purchasesRes.rows[0].fbc) : null;
+    const purchaseEmailHash = purchasesRes.rows[0]?.buyer_email_hash ? String(purchasesRes.rows[0].buyer_email_hash) : null;
+
     // best-effort: encontrar um visitor que corresponda ao buyer_key (só faz sentido para email_hash/fbp/fbc)
     const visitorRes = await pool.query(
       `SELECT site_key, external_id, email_hash, fbp, fbc, last_seen_at, last_traffic_source
@@ -1191,14 +1209,18 @@ router.get('/:siteId/buyers/by-key/:buyerKey', requireAuth, async (req, res) => 
            (email_hash IS NOT NULL AND email_hash = $2)
            OR (fbp IS NOT NULL AND fbp = $2)
            OR (fbc IS NOT NULL AND fbc = $2)
+           OR ($3::text IS NOT NULL AND external_id = $3)
+           OR ($4::text IS NOT NULL AND fbp = $4)
+           OR ($5::text IS NOT NULL AND fbc = $5)
+           OR ($6::text IS NOT NULL AND email_hash = $6)
          )
        ORDER BY last_seen_at DESC NULLS LAST
        LIMIT 1`,
-      [siteKey, buyerKey]
+      [siteKey, buyerKey, purchaseExternalId, purchaseFbp, purchaseFbc, purchaseEmailHash]
     );
 
     const v = visitorRes.rows[0] || null;
-    const externalId = v?.external_id ? String(v.external_id) : null;
+    const externalId = (v?.external_id ? String(v.external_id) : null) || purchaseExternalId;
 
     const lookbackDays = Math.min(60, Math.max(1, Number(req.query.lookback_days || 30)));
     const eventsRes = externalId

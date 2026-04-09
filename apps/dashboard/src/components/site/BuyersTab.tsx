@@ -8,6 +8,7 @@ type BuyerRow = {
   last_customer_name?: string | null;
   last_customer_email?: string | null;
   last_customer_phone?: string | null;
+  last_order_id?: string | null;
   purchases_count: number;
   revenue: number;
   last_purchase_at: string | null;
@@ -74,7 +75,7 @@ export function BuyersTab({ siteId }: { siteId: number }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [selected, setSelected] = useState<null | { externalId: string | null; buyerKey: string }>(null);
+  const [selected, setSelected] = useState<null | { externalId: string | null; buyerKey: string; title?: string | null }>(null);
   const [detail, setDetail] = useState<BuyerDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
@@ -167,7 +168,7 @@ export function BuyersTab({ siteId }: { siteId: number }) {
                 <tr
                   key={r.buyer_key}
                   className="border-t border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50/70 dark:hover:bg-zinc-950/25 cursor-pointer"
-                  onClick={() => setSelected({ externalId: r.external_id, buyerKey: r.buyer_key })}
+                  onClick={() => setSelected({ externalId: r.external_id, buyerKey: r.buyer_key, title: r.display_name || r.last_order_id || r.external_id || r.buyer_key })}
                 >
                   <td className="px-4 py-3">
                     <div className="text-zinc-900 dark:text-zinc-100 font-semibold truncate max-w-[420px]">
@@ -191,7 +192,7 @@ export function BuyersTab({ siteId }: { siteId: number }) {
       </div>
 
       {canOpen ? (
-        <div className="fixed inset-0 z-50">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <button
             type="button"
             className="absolute inset-0 bg-black/60"
@@ -199,12 +200,12 @@ export function BuyersTab({ siteId }: { siteId: number }) {
             aria-label="Fechar"
           />
 
-          <div className="absolute inset-x-0 top-6 mx-auto w-[min(980px,calc(100vw-24px))]">
-            <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 shadow-xl overflow-hidden">
+          <div className="relative w-full max-w-5xl">
+            <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 shadow-xl overflow-hidden max-h-[calc(100vh-64px)] flex flex-col">
               <div className="flex items-start justify-between gap-3 px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/60 dark:bg-zinc-950/40">
                 <div className="min-w-0">
                   <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 truncate">
-                    {detail?.buyer?.customer_name || detail?.buyer?.customer_email || selected?.externalId || selected?.buyerKey}
+                    {detail?.buyer?.customer_name || detail?.buyer?.customer_email || selected?.title || selected?.externalId || selected?.buyerKey}
                   </div>
                   <div className="text-[11px] text-zinc-600 dark:text-zinc-400 truncate">
                     {selected?.externalId ? `external_id: ${selected.externalId}` : `buyer_key: ${selected?.buyerKey}`}
@@ -219,7 +220,7 @@ export function BuyersTab({ siteId }: { siteId: number }) {
                 </button>
               </div>
 
-              <div className="p-4 max-h-[calc(100vh-120px)] overflow-auto">
+              <div className="p-4 overflow-auto flex-1">
                 {detailLoading ? (
                   <div className="text-sm text-zinc-600 dark:text-zinc-400">Carregando…</div>
                 ) : detailError ? (
@@ -282,6 +283,11 @@ export function BuyersTab({ siteId }: { siteId: number }) {
                         <div className="text-[11px] text-zinc-600 dark:text-zinc-400">
                           Total: <span className="font-semibold tabular-nums text-zinc-800 dark:text-zinc-200">{detail.behavior.pageviews_before_last_purchase}</span>
                         </div>
+                        {(detail.behavior.pageviews_timeline_before_last_purchase || []).length === 0 ? (
+                          <div className="mt-3 text-[11px] text-zinc-500 dark:text-zinc-500">
+                            Sem dados de navegação para esse comprador. Isso acontece quando não conseguimos ligar a compra a um `external_id` usado nos eventos do site.
+                          </div>
+                        ) : null}
                         <div className="mt-3 space-y-2">
                           {(detail.behavior.pageviews_timeline_before_last_purchase || []).slice(0, 120).map((pv, idx) => (
                             <div key={`${pv.at}-${idx}`} className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white/60 dark:bg-zinc-950/20 px-3 py-2">
