@@ -553,25 +553,22 @@ Alinhamento com a estrutura OBRIGATORIA deste relatorio:
 
 Se meta.purchases != sales.purchases → sinalize DISCREPANCIA com possiveis causas.`);
 
-    // ── 3-layer diagnostic rules ──
+    // ── Guardrails de diagnostico (evitar conclusoes sem dados) ──
     sections.push(`
-=== DIAGNOSTICO EM 3 CAMADAS (parte MAIS VALIOSA) ===
+=== GUARDRAILS (ANTI-ALUCINACAO / DIAGNOSTICO CONSERVADOR) ===
 
-Camada 1 — ORIGEM: CTR, Hook Rate, Frequencia, CPM
-Camada 2 — PONTE: connect_rate (LP Views / Link Clicks), discrepancia clique-LP, UTMs
-Camada 3 — DESTINO: Load Time, Dwell, Scroll, Bounce
+- Se um dado essencial estiver ausente no JSON (null/0 sem base), diga **"sem dados"** ou **"pouco dado"**. Nao force conclusao.
+- Se utm_filters_skipped != null, trate comportamento no site/CAPI como **trafego geral do site**, nao da campanha. Use isso apenas como contexto e deixe isso explicito.
+- Nunca diga "fadiga" sem evidencia. Para usar "fadiga", exija: frequencia alta + queda de CTR/Results/CPA no tempo. Se nao houver tendencia por anuncio, use "Otimizar" ou "Sem sinal".
+- Nunca diga que a landing "tem X secoes" se landing_page.content_source nao for 'http_html_text'. Nesse caso, faca apenas recomendacoes genericas baseadas em metricas (load/dwell/scroll) + checklist.
+`);
 
-CRUZAMENTO OBRIGATORIO:
-- CTR alto + Dwell baixo = Message Mismatch (promessa do ad ≠ pagina)
-- CTR alto + Dwell alto + 0 conversao = Oferta/CTA fraco
-- CTR baixo + Dwell alto = Criativo fraco, pagina boa → foco no anuncio`);
-
-    // ── Conditional: Creatives HSO ──
+    // ── Conditional: Creatives HSO (limitado para evitar verbosidade) ──
     if (hasCreatives) {
       sections.push(`
 === ANALISE DE CRIATIVOS (HSO — Russell Brunson) ===
 
-Para CADA criativo em user_context.creatives, analise:
+Para no maximo **3 criativos** (priorize os que parecem mais relevantes no contexto; se houver tabela por anuncio, use os top por gasto/resultado), analise:
 - HOOK: O gancho para o scroll? Gera curiosidade imediata?
 - STORY: Constroi narrativa, empatia, prova social?
 - OFFER: CTA clara e irresistivel? Vende o CLIQUE (nao o produto)?
@@ -622,23 +619,13 @@ METODOLOGIA:
 Tambem integre: Schwartz (consciencia) e PAS onde couber, sem substituir o checklist de dobras.`);
     }
 
-    // ── Conditional: Pareto ──
-    if (ads.length > 1) {
-      sections.push(`
-=== PARETO 80/20 (Perry Marshall) ===
-
-Identifique quais 20% dos anuncios/adsets geram 80% dos resultados.
-Identifique quais sao os "sanguessugas" gastando sem converter.
-Recomende: CORTAR os perdedores, REALOCAR para os vencedores. Com numeros concretos.`);
-    }
-
     // ── Conditional: Trend ──
     if (hasTrend) {
       sections.push(`
 === TENDENCIA ===
 
 Compare periodo atual vs anterior. Use setas: ↑ (melhora), ↓ (piora), → (estavel, < 5%).
-Destaque se CPA esta piorando, CTR caindo (fadiga), ou ROAS deteriorando.`);
+Destaque se CPA esta piorando, CTR caindo (possivel fadiga **apenas com evidencia**), ou ROAS deteriorando.`);
     }
 
     // ── Conditional: User context ──
@@ -711,6 +698,7 @@ Abra esta secao com 1-2 frases curtas de resumo executivo (o que aconteceu no pe
 Regras de interpretacao:
 - **CPA**: se **Resultados = 0**, CPA deve ser **"—"** (nao existe custo por resultado).
 - **"Fadiga"**: so use se houver **evidencia** (ex.: frequencia alta + piora de CTR/CPA no tempo). Se nao houver tendencia por anuncio no JSON, prefira **"Otimizar"** ou **"Sem sinal / pouco dado"**.
+- Use no maximo **5 anuncios** (top por gasto). Para o resto, agregue em 1 linha de observacao.
 
 | Anuncio | Resultados | Custo | CPA | CTR | Hook Rate | Diagnostico |
 |:---|---:|---:|---:|---:|---:|:---|
@@ -723,7 +711,7 @@ Regras de interpretacao:
       sections.push(`
 ### Avaliacao Qualitativa dos Criativos
 
-Para CADA criativo:
+Para no maximo **3 criativos**:
 
 #### 🏷️ [ad_name]
 **Copy Atual**: [analise critica]
@@ -787,22 +775,7 @@ Estrutura obrigatoria (use subtitulos ## ou ###):
 Nao limite a analise a apenas headline/subheadline.`);
     }
 
-    sections.push(`
----
-
-## Diagnostico de 3 Camadas
-
-### 🔵 Camada 1 — Origem (Meta Ads)
-[CTR, Hook Rate, Frequencia, CPM + diagnostico]
-
-### 🟡 Camada 2 — Ponte (Clique → Pagina)
-[Taxa LP View, Discrepancia, UTMs + diagnostico]
-
-### 🟢 Camada 3 — Destino (Comportamento)
-[Load, Dwell, Scroll, Bounce + diagnostico]
-
-### 🔗 Cruzamento das 3 Camadas
-[Analise cruzada: "CTR [X] + Dwell [X] + Conversao [X] = [diagnostico preciso]"]`);
+    // Removido: "Diagnostico de 3 Camadas" era redundante com "Analise do Funil" + "Auditoria Tecnica".
 
     if (hasMessageMatch) {
       sections.push(`
@@ -814,15 +787,7 @@ Nao limite a analise a apenas headline/subheadline.`);
 [Para cada criativo + analise de coerencia + solucoes se mismatch]`);
     }
 
-    if ((hasCreatives || hasLPContent) && ads.length > 1) {
-      sections.push(`
----
-
-## Analise Avancada: Copy, Frameworks e 80/20
-1. **Schwartz** (5 niveis de consciencia)
-2. **PAS** (Problem-Agitation-Solution)
-3. **Pareto 80/20** (20% que gera 80% + sanguessugas para cortar)`);
-    }
+    // Removido: "Analise Avancada" (frameworks) para reduzir redundancia e risco de truncamento.
 
     sections.push(`
 ---
