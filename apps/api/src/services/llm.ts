@@ -25,26 +25,31 @@ export class LlmService {
   }
 
   private fmt(n: unknown, digits = 2): string {
+    if (n === null || n === undefined || n === '') return '—';
     const v = Number(n);
     return Number.isFinite(v) ? v.toFixed(digits) : '—';
   }
 
   private fmtInt(n: unknown): string {
+    if (n === null || n === undefined || n === '') return '—';
     const v = Number(n);
     return Number.isFinite(v) ? Math.trunc(v).toLocaleString('pt-BR') : '—';
   }
 
   private fmtMoney(n: unknown): string {
+    if (n === null || n === undefined || n === '') return '—';
     const v = Number(n);
     return Number.isFinite(v) ? `R$ ${v.toFixed(2)}` : '—';
   }
 
   private fmtMs(n: unknown): string {
+    if (n === null || n === undefined || n === '') return '—';
     const v = Number(n);
     return Number.isFinite(v) && v > 0 ? `${Math.trunc(v)}ms` : '—';
   }
 
   private fmtPct(n: unknown): string {
+    if (n === null || n === undefined || n === '') return '—';
     const v = Number(n);
     return Number.isFinite(v) ? `${v.toFixed(2)}%` : '—';
   }
@@ -700,9 +705,13 @@ Abra esta secao com 1-2 frases curtas de resumo executivo (o que aconteceu no pe
 
 ### Performance por Anuncio (dados Meta)
 
+Regras de interpretacao:
+- **CPA**: se **Resultados = 0**, CPA deve ser **"—"** (nao existe custo por resultado).
+- **"Fadiga"**: so use se houver **evidencia** (ex.: frequencia alta + piora de CTR/CPA no tempo). Se nao houver tendencia por anuncio no JSON, prefira **"Otimizar"** ou **"Sem sinal / pouco dado"**.
+
 | Anuncio | Resultados | Custo | CPA | CTR | Hook Rate | Diagnostico |
 |:---|---:|---:|---:|---:|---:|:---|
-| [nome] | X | R$X | R$X | X% | X% ou N/A(img) | [Vencedor/Otimizar/Fadiga] |
+| [nome] | X | R$X | R$X ou — | X% | X% ou N/A(img) | [Vencedor/Otimizar/Sem sinal] |
 
 *Hook Rate: so para VIDEO (video_3s_views > 0). N/A para imagem.*`);
     }
