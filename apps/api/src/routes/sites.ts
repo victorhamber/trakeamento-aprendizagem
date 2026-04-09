@@ -1052,4 +1052,226 @@ router.delete('/:siteId/custom-webhooks/:hookId', requireAuth, async (req, res) 
   return res.json({ ok: true });
 });
 
+// ─── Buyers (Compradores) ────────────────────────────────────────────────────
+
+const APPROVED_PURCHASE_STATUSES = `('approved', 'paid', 'completed', 'active')`;
+
+/**
+ * Lista compradores (best-effort) baseado em `purchases` + `site_visitors`.
+ * Observação: a identidade pode vir de email_hash, fbp/fbc ou external_id.
+ */
+router.get('/:siteId/buyers', requireAuth, async (req, res) => {
+  const auth = req.auth!;
+  const siteId = Number(req.params.siteId);
+  if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
+
+  const siteRes = await pool.query('SELECT site_key FROM sites WHERE id = $1 AND account_id = $2', [siteId, auth.accountId]);
+  if (!siteRes.rowCount) return res.status(404).json({ error: 'Site not found' });
+  const siteKey = String(siteRes.rows[0].site_key);
+
+  const limit = Math.min(200, Math.max(10, Number(req.query.limit || 50)));
+  const offset = Math.max(0, Number(req.query.offset || 0));
+
+  try {
+    const result = await pool.query(
+      `
+      WITH pf AS (
+        SELECT
+          p.id,
+          p.site_key,
+          COALESCE(p.platform_date, p.created_at) AS purchased_at,
+          p.amount,
+          p.currency,
+          p.order_id,
+          p.platform,
+          p.buyer_email_hash,
+          p.fbp,
+          p.fbc
+        FROM purchases p
+        WHERE p.site_key = $1
+          AND p.status IN ${APPROVED_PURCHASE_STATUSES}
+      ),
+      buyers AS (
+        SELECT
+          COALESCE(buyer_email_hash, fbp, fbc, order_id) AS buyer_key,
+          MAX(purchased_at) AS last_purchase_at,
+          COUNT(*)::int AS purchases_count,
+          COALESCE(SUM(amount), 0)::numeric AS revenue
+        FROM pf
+        GROUP BY 1
+      ),
+      enriched AS (
+        SELECT
+          b.*,
+          v.external_id,
+          v.email_hash,
+          v.fbp AS v_fbp,
+          v.fbc AS v_fbc
+        FROM buyers b
+        LEFT JOIN site_visitors v
+          ON v.site_key = $1
+          AND (
+            (v.email_hash IS NOT NULL AND v.email_hash = b.buyer_key)
+            OR (v.fbp IS NOT NULL AND v.fbp = b.buyer_key)
+            OR (v.fbc IS NOT NULL AND v.fbc = b.buyer_key)
+          )
+      )
+      SELECT
+        buyer_key,
+        external_id,
+        purchases_count,
+        revenue,
+        last_purchase_at
+      FROM enriched
+      ORDER BY last_purchase_at DESC NULLS LAST
+      LIMIT $2 OFFSET $3
+      `,
+      [siteKey, limit, offset]
+    );
+
+    return res.json({ buyers: result.rows });
+  } catch (err) {
+    console.error('Buyers list error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * Detalhe do comprador por external_id.
+ * Retorna compras e comportamento pré-compra (PageView) + melhor atribuição por UTMs (quando existirem).
+ */
+router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
+  const auth = req.auth!;
+  const siteId = Number(req.params.siteId);
+  const externalId = String(req.params.externalId || '').trim();
+  if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
+  if (!externalId) return res.status(400).json({ error: 'Invalid externalId' });
+
+  const siteRes = await pool.query('SELECT site_key FROM sites WHERE id = $1 AND account_id = $2', [siteId, auth.accountId]);
+  if (!siteRes.rowCount) return res.status(404).json({ error: 'Site not found' });
+  const siteKey = String(siteRes.rows[0].site_key);
+
+  try {
+    const visitorRes = await pool.query(
+      `SELECT site_key, external_id, email_hash, fbp, fbc, last_seen_at, last_traffic_source
+       FROM site_visitors
+       WHERE site_key = $1 AND external_id = $2
+       LIMIT 1`,
+      [siteKey, externalId]
+    );
+    if (!visitorRes.rowCount) return res.status(404).json({ error: 'Buyer not found' });
+    const v = visitorRes.rows[0];
+
+    const purchasesRes = await pool.query(
+      `SELECT
+        id, order_id, platform, amount, currency, status,
+        COALESCE(platform_date, created_at) AS purchased_at
+       FROM purchases
+       WHERE site_key = $1
+         AND status IN ${APPROVED_PURCHASE_STATUSES}
+         AND (
+           ($2::text IS NOT NULL AND buyer_email_hash = $2)
+           OR ($3::text IS NOT NULL AND fbp = $3)
+           OR ($4::text IS NOT NULL AND fbc = $4)
+         )
+       ORDER BY COALESCE(platform_date, created_at) DESC
+       LIMIT 50`,
+      [siteKey, v.email_hash || null, v.fbp || null, v.fbc || null]
+    );
+
+    const lookbackDays = Math.min(60, Math.max(1, Number(req.query.lookback_days || 30)));
+    const eventsRes = await pool.query(
+      `SELECT
+        event_name,
+        event_time,
+        event_source_url,
+        custom_data
+       FROM web_events
+       WHERE site_key = $1
+         AND user_data->>'external_id' = $2
+         AND event_time >= NOW() - ($3::int || ' days')::interval
+         AND event_name IN ('PageView', 'PageEngagement', 'Purchase', 'Lead', 'InitiateCheckout')
+       ORDER BY event_time DESC
+       LIMIT 2000`,
+      [siteKey, externalId, lookbackDays]
+    );
+
+    // Pré-compra: contar PageView antes da última compra e top páginas.
+    const lastPurchaseAt = purchasesRes.rows[0]?.purchased_at ? new Date(purchasesRes.rows[0].purchased_at) : null;
+    const pvBefore: Record<string, number> = {};
+    let pvCountBefore = 0;
+    let lastTouchUtm: Record<string, string> | null = null;
+    if (lastPurchaseAt) {
+      for (const e of eventsRes.rows) {
+        const t = new Date(e.event_time);
+        if (t.getTime() >= lastPurchaseAt.getTime()) continue;
+        if (e.event_name === 'PageView' && typeof e.event_source_url === 'string' && e.event_source_url) {
+          pvCountBefore += 1;
+          pvBefore[e.event_source_url] = (pvBefore[e.event_source_url] || 0) + 1;
+          if (!lastTouchUtm && e.custom_data && typeof e.custom_data === 'object') {
+            const cd = e.custom_data as any;
+            const pick = (k: string) => (typeof cd[k] === 'string' ? cd[k] : '');
+            const utm_source = pick('utm_source');
+            const utm_medium = pick('utm_medium');
+            const utm_campaign = pick('utm_campaign');
+            const utm_content = pick('utm_content');
+            const utm_term = pick('utm_term');
+            const click_id = pick('click_id');
+            if (utm_source || utm_campaign || utm_content || click_id) {
+              lastTouchUtm = { utm_source, utm_medium, utm_campaign, utm_content, utm_term, click_id };
+            }
+          }
+        }
+      }
+    }
+
+    const topPages = Object.entries(pvBefore)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 25)
+      .map(([url, count]) => ({ url, count }));
+
+    // Melhor esforço de atribuição (quando utm_content = ad_id e utm_campaign = campaign_name).
+    let attribution: any = null;
+    if (lastTouchUtm && lastTouchUtm.utm_content && /^\d+$/.test(lastTouchUtm.utm_content)) {
+      try {
+        const metaRes = await pool.query(
+          `SELECT campaign_id, campaign_name, adset_id, adset_name, ad_id, ad_name
+           FROM meta_insights_daily
+           WHERE site_id = $1
+             AND ad_id = $2
+           ORDER BY date_start DESC
+           LIMIT 1`,
+          [siteId, lastTouchUtm.utm_content]
+        );
+        if (metaRes.rowCount) attribution = metaRes.rows[0];
+      } catch {
+        attribution = null;
+      }
+    }
+
+    return res.json({
+      buyer: {
+        external_id: v.external_id,
+        email_hash: v.email_hash,
+        fbp: v.fbp,
+        fbc: v.fbc,
+        last_seen_at: v.last_seen_at,
+        last_traffic_source: v.last_traffic_source,
+      },
+      purchases: purchasesRes.rows,
+      behavior: {
+        lookback_days: lookbackDays,
+        pageviews_before_last_purchase: pvCountBefore,
+        top_pages_before_last_purchase: topPages,
+        last_touch: lastTouchUtm,
+        meta_attribution: attribution,
+      },
+      events: eventsRes.rows,
+    });
+  } catch (err) {
+    console.error('Buyer detail error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;

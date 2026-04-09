@@ -10,6 +10,7 @@ import { Layout } from '../components/Layout';
 import WebhooksTab from '../components/site/WebhooksTab';
 import { ReportWizard } from '../components/site/ReportWizard';
 import { CampaignFunnelPanel, type FunnelCampaignOption } from '../components/site/CampaignFunnelPanel';
+import { BuyersTab } from '../components/site/BuyersTab';
 type Site = {
   id: number;
   name: string;
@@ -19,7 +20,7 @@ type Site = {
   inject_body_html?: string | null;
 };
 
-type Tab = 'snippet' | 'meta' | 'utm' | 'campaigns' | 'ga' | 'matching' | 'webhooks' | 'reports';
+type Tab = 'snippet' | 'meta' | 'utm' | 'campaigns' | 'buyers' | 'ga' | 'matching' | 'webhooks' | 'reports';
 type InstallSubTab = 'snippet' | 'extras';
 
 type InjectedSnippet = {
@@ -1282,6 +1283,7 @@ ${scriptContent}
       { key: 'meta' as const, label: 'Meta Ads' },
       { key: 'utm' as const, label: 'URLs UTM' },
       { key: 'campaigns' as const, label: 'Campanhas' },
+      { key: 'buyers' as const, label: 'Compradores' },
       { key: 'ga' as const, label: 'Google Analytics' },
       { key: 'matching' as const, label: 'Eventos' },
       { key: 'webhooks' as const, label: 'Webhooks' },
@@ -4040,6 +4042,13 @@ ${scriptContent}
                   </div>
                 )}
               </div>
+            )
+          }
+
+          {/* ── Tab: Compradores ── */}
+          {
+            tab === 'buyers' && (
+              <BuyersTab siteId={id} />
             )
           }
 
