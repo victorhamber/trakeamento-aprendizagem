@@ -1568,4 +1568,76 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
   }
 });
 
+/**
+ * Backfill: tenta reconciliar compras antigas para usar external_id canônico (eid_...),
+ * ligando `purchases` a `site_visitors` por fbp/fbc/buyer_email_hash.
+ *
+ * - Só atualiza compras cuja external_id não seja eid_...
+ * - Só usa site_visitors.external_id que seja eid_...
+ */
+router.post('/:siteId/identity/backfill-purchases-eid', requireAuth, async (req, res) => {
+  const auth = req.auth!;
+  const siteId = Number(req.params.siteId);
+  if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
+
+  const siteRes = await pool.query('SELECT site_key FROM sites WHERE id = $1 AND account_id = $2', [siteId, auth.accountId]);
+  if (!siteRes.rowCount) return res.status(404).json({ error: 'Site not found' });
+  const siteKey = String(siteRes.rows[0].site_key);
+
+  const limit = Math.min(5000, Math.max(1, Number(req.query.limit || 1000)));
+  const dryRun = String(req.query.dry_run || '').toLowerCase() === 'true';
+
+  try {
+    const q = `
+      WITH targets AS (
+        SELECT p.id, p.fbp, p.fbc, p.buyer_email_hash
+        FROM purchases p
+        WHERE p.site_key = $1
+          AND p.status IN ${APPROVED_PURCHASE_STATUSES}
+          AND (p.external_id IS NULL OR p.external_id::text NOT LIKE 'eid\\_%')
+        ORDER BY COALESCE(p.platform_date, p.created_at) DESC
+        LIMIT $2
+      ),
+      match AS (
+        SELECT
+          t.id AS purchase_id,
+          sv.external_id AS eid
+        FROM targets t
+        JOIN LATERAL (
+          SELECT external_id
+          FROM site_visitors
+          WHERE site_key = $1
+            AND external_id LIKE 'eid\\_%'
+            AND (
+              (t.fbp IS NOT NULL AND fbp = t.fbp) OR
+              (t.fbc IS NOT NULL AND fbc = t.fbc) OR
+              (t.buyer_email_hash IS NOT NULL AND email_hash = t.buyer_email_hash)
+            )
+          ORDER BY last_seen_at DESC NULLS LAST
+          LIMIT 1
+        ) sv ON true
+      )
+      ${dryRun ? `
+      SELECT COUNT(*)::int AS would_update_count
+      FROM match;
+      ` : `
+      UPDATE purchases p
+      SET external_id = m.eid, updated_at = NOW()
+      FROM match m
+      WHERE p.id = m.purchase_id
+      RETURNING p.id, p.order_id, p.external_id;
+      `}
+    `;
+
+    const result = await pool.query(q, [siteKey, limit]);
+    if (dryRun) {
+      return res.json({ ok: true, dry_run: true, limit, would_update_count: Number(result.rows?.[0]?.would_update_count || 0) });
+    }
+    return res.json({ ok: true, dry_run: false, limit, updated: result.rows, updated_count: result.rowCount || 0 });
+  } catch (err) {
+    console.error('Backfill purchases eid error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;

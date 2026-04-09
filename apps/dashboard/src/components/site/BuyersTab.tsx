@@ -74,6 +74,8 @@ export function BuyersTab({ siteId }: { siteId: number }) {
   const [rows, setRows] = useState<BuyerRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [backfillLoading, setBackfillLoading] = useState(false);
+  const [backfillMsg, setBackfillMsg] = useState<string | null>(null);
 
   const [selected, setSelected] = useState<null | { externalId: string | null; buyerKey: string; title?: string | null }>(null);
   const [detail, setDetail] = useState<BuyerDetail | null>(null);
@@ -81,6 +83,27 @@ export function BuyersTab({ siteId }: { siteId: number }) {
   const [detailError, setDetailError] = useState<string | null>(null);
 
   const canOpen = useMemo(() => !!selected, [selected]);
+
+  const runBackfill = async () => {
+    setBackfillLoading(true);
+    setBackfillMsg(null);
+    try {
+      const dry = await api.post(`/sites/${siteId}/identity/backfill-purchases-eid`, null, { params: { dry_run: true, limit: 2000 } });
+      const would = Number(dry.data?.would_update_count || 0);
+      const confirm = window.confirm(
+        `Reconciliar compras antigas para external_id canônico (eid_)?\n\nCompras que seriam atualizadas: ${would}\n\nIsso ajuda a ligar checkout ↔ jornada do site.`
+      );
+      if (!confirm) return;
+      const res = await api.post(`/sites/${siteId}/identity/backfill-purchases-eid`, null, { params: { limit: 5000 } });
+      const n = Number(res.data?.updated_count || 0);
+      setBackfillMsg(`Backfill concluído. Compras atualizadas: ${n}.`);
+      await load();
+    } catch (e: any) {
+      setBackfillMsg(e?.response?.data?.error || 'Erro ao executar backfill.');
+    } finally {
+      setBackfillLoading(false);
+    }
+  };
 
   const load = async () => {
     setLoading(true);
@@ -130,15 +153,27 @@ export function BuyersTab({ siteId }: { siteId: number }) {
           <p className="mt-0.5 text-xs text-zinc-600 dark:text-zinc-500 leading-relaxed">
             Lista de compradores do site/pixel com páginas acessadas e melhor atribuição possível (via UTMs/Meta quando existirem).
           </p>
+          {backfillMsg ? <div className="mt-2 text-[11px] text-zinc-600 dark:text-zinc-400">{backfillMsg}</div> : null}
         </div>
-        <button
-          type="button"
-          onClick={() => load()}
-          disabled={loading}
-          className="text-xs px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white/60 dark:bg-zinc-950/25 text-zinc-700 dark:text-zinc-200 hover:bg-white dark:hover:bg-zinc-950/40 disabled:opacity-40"
-        >
-          {loading ? 'Atualizando…' : 'Atualizar'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => runBackfill()}
+            disabled={backfillLoading}
+            className="text-xs px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white/60 dark:bg-zinc-950/25 text-zinc-700 dark:text-zinc-200 hover:bg-white dark:hover:bg-zinc-950/40 disabled:opacity-40"
+            title="Tenta ligar compras antigas ao external_id canônico (eid_) usando fbp/fbc/email_hash"
+          >
+            {backfillLoading ? 'Reconciliando…' : 'Reconciliar compras antigas'}
+          </button>
+          <button
+            type="button"
+            onClick={() => load()}
+            disabled={loading}
+            className="text-xs px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white/60 dark:bg-zinc-950/25 text-zinc-700 dark:text-zinc-200 hover:bg-white dark:hover:bg-zinc-950/40 disabled:opacity-40"
+          >
+            {loading ? 'Atualizando…' : 'Atualizar'}
+          </button>
+        </div>
       </div>
 
       {error ? (
