@@ -11,7 +11,8 @@ type BuyerRow = {
 
 type BuyerDetail = {
   buyer: {
-    external_id: string;
+    buyer_key?: string;
+    external_id: string | null;
     email_hash: string | null;
     fbp: string | null;
     fbc: string | null;
@@ -62,12 +63,12 @@ export function BuyersTab({ siteId }: { siteId: number }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [selectedExternalId, setSelectedExternalId] = useState<string | null>(null);
+  const [selected, setSelected] = useState<null | { externalId: string | null; buyerKey: string }>(null);
   const [detail, setDetail] = useState<BuyerDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
 
-  const canOpen = useMemo(() => !!selectedExternalId, [selectedExternalId]);
+  const canOpen = useMemo(() => !!selected, [selected]);
 
   const load = async () => {
     setLoading(true);
@@ -88,7 +89,7 @@ export function BuyersTab({ siteId }: { siteId: number }) {
   }, [siteId]);
 
   useEffect(() => {
-    if (!selectedExternalId) {
+    if (!selected) {
       setDetail(null);
       return;
     }
@@ -96,9 +97,9 @@ export function BuyersTab({ siteId }: { siteId: number }) {
     setDetailError(null);
     (async () => {
       try {
-        const res = await api.get(`/sites/${siteId}/buyers/${encodeURIComponent(selectedExternalId)}`, {
-          params: { lookback_days: 30 },
-        });
+        const res = selected.externalId
+          ? await api.get(`/sites/${siteId}/buyers/${encodeURIComponent(selected.externalId)}`, { params: { lookback_days: 30 } })
+          : await api.get(`/sites/${siteId}/buyers/by-key/${encodeURIComponent(selected.buyerKey)}`, { params: { lookback_days: 30 } });
         setDetail(res.data as BuyerDetail);
       } catch (e: any) {
         setDetail(null);
@@ -107,7 +108,7 @@ export function BuyersTab({ siteId }: { siteId: number }) {
         setDetailLoading(false);
       }
     })();
-  }, [siteId, selectedExternalId]);
+  }, [siteId, selected]);
 
   return (
     <div className="space-y-4">
@@ -155,7 +156,7 @@ export function BuyersTab({ siteId }: { siteId: number }) {
                 <tr
                   key={r.buyer_key}
                   className="border-t border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50/70 dark:hover:bg-zinc-950/25 cursor-pointer"
-                  onClick={() => setSelectedExternalId(r.external_id)}
+                  onClick={() => setSelected({ externalId: r.external_id, buyerKey: r.buyer_key })}
                 >
                   <td className="px-4 py-3">
                     <div className="text-zinc-900 dark:text-zinc-100 font-medium truncate max-w-[380px]">
@@ -163,9 +164,7 @@ export function BuyersTab({ siteId }: { siteId: number }) {
                     </div>
                     <div className="text-[11px] text-zinc-600 dark:text-zinc-500 truncate max-w-[380px]">{r.buyer_key}</div>
                     {!r.external_id ? (
-                      <div className="text-[11px] text-amber-600 dark:text-amber-400">
-                        Sem external_id (atribuição limitada)
-                      </div>
+                      <div className="text-[11px] text-amber-600 dark:text-amber-400">Sem external_id (abrindo por buyer_key)</div>
                     ) : null}
                   </td>
                   <td className="px-4 py-3 text-right tabular-nums text-zinc-700 dark:text-zinc-200">{r.purchases_count}</td>
@@ -183,11 +182,11 @@ export function BuyersTab({ siteId }: { siteId: number }) {
           <div className="flex items-start justify-between gap-3">
             <div>
               <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Detalhes do comprador</div>
-              <div className="text-xs text-zinc-600 dark:text-zinc-400">{selectedExternalId}</div>
+              <div className="text-xs text-zinc-600 dark:text-zinc-400">{selected?.externalId || selected?.buyerKey}</div>
             </div>
             <button
               type="button"
-              onClick={() => setSelectedExternalId(null)}
+              onClick={() => setSelected(null)}
               className="text-xs px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white/60 dark:bg-zinc-950/25 text-zinc-700 dark:text-zinc-200 hover:bg-white dark:hover:bg-zinc-950/40"
             >
               Fechar

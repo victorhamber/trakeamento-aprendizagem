@@ -1086,14 +1086,15 @@ router.get('/:siteId/buyers', requireAuth, async (req, res) => {
           p.platform,
           p.buyer_email_hash,
           p.fbp,
-          p.fbc
+          p.fbc,
+          COALESCE(p.buyer_email_hash, p.fbp, p.fbc, p.order_id, ('purchase:' || p.id::text)) AS buyer_key
         FROM purchases p
         WHERE p.site_key = $1
           AND p.status IN ${APPROVED_PURCHASE_STATUSES}
       ),
       buyers AS (
         SELECT
-          COALESCE(buyer_email_hash, fbp, fbc, order_id) AS buyer_key,
+          buyer_key,
           MAX(purchased_at) AS last_purchase_at,
           COUNT(*)::int AS purchases_count,
           COALESCE(SUM(amount), 0)::numeric AS revenue
@@ -1132,6 +1133,123 @@ router.get('/:siteId/buyers', requireAuth, async (req, res) => {
     return res.json({ buyers: result.rows });
   } catch (err) {
     console.error('Buyers list error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * Detalhe do comprador por buyer_key (fallback quando não há external_id).
+ * - Retorna compras desse buyer_key
+ * - Se esse buyer_key também existir em `site_visitors` (email_hash/fbp/fbc), inclui comportamento (PageView) via external_id.
+ */
+router.get('/:siteId/buyers/by-key/:buyerKey', requireAuth, async (req, res) => {
+  const auth = req.auth!;
+  const siteId = Number(req.params.siteId);
+  const buyerKey = String(req.params.buyerKey || '').trim();
+  if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
+  if (!buyerKey) return res.status(400).json({ error: 'Invalid buyerKey' });
+
+  const siteRes = await pool.query('SELECT site_key FROM sites WHERE id = $1 AND account_id = $2', [siteId, auth.accountId]);
+  if (!siteRes.rowCount) return res.status(404).json({ error: 'Site not found' });
+  const siteKey = String(siteRes.rows[0].site_key);
+
+  try {
+    const purchasesRes = await pool.query(
+      `SELECT
+        id, order_id, platform, amount, currency, status,
+        COALESCE(platform_date, created_at) AS purchased_at
+       FROM purchases
+       WHERE site_key = $1
+         AND status IN ${APPROVED_PURCHASE_STATUSES}
+         AND (
+           COALESCE(buyer_email_hash, fbp, fbc, order_id, ('purchase:' || id::text)) = $2
+         )
+       ORDER BY COALESCE(platform_date, created_at) DESC
+       LIMIT 50`,
+      [siteKey, buyerKey]
+    );
+
+    // best-effort: encontrar um visitor que corresponda ao buyer_key (só faz sentido para email_hash/fbp/fbc)
+    const visitorRes = await pool.query(
+      `SELECT site_key, external_id, email_hash, fbp, fbc, last_seen_at, last_traffic_source
+       FROM site_visitors
+       WHERE site_key = $1
+         AND (
+           (email_hash IS NOT NULL AND email_hash = $2)
+           OR (fbp IS NOT NULL AND fbp = $2)
+           OR (fbc IS NOT NULL AND fbc = $2)
+         )
+       ORDER BY last_seen_at DESC NULLS LAST
+       LIMIT 1`,
+      [siteKey, buyerKey]
+    );
+
+    const v = visitorRes.rows[0] || null;
+    const externalId = v?.external_id ? String(v.external_id) : null;
+
+    const lookbackDays = Math.min(60, Math.max(1, Number(req.query.lookback_days || 30)));
+    const eventsRes = externalId
+      ? await pool.query(
+          `SELECT
+            event_name,
+            event_time,
+            event_source_url,
+            custom_data
+           FROM web_events
+           WHERE site_key = $1
+             AND user_data->>'external_id' = $2
+             AND event_time >= NOW() - ($3::int || ' days')::interval
+             AND event_name IN ('PageView', 'PageEngagement', 'Purchase', 'Lead', 'InitiateCheckout')
+           ORDER BY event_time DESC
+           LIMIT 2000`,
+          [siteKey, externalId, lookbackDays]
+        )
+      : { rows: [] as any[] };
+
+    const lastPurchaseAt = purchasesRes.rows[0]?.purchased_at ? new Date(purchasesRes.rows[0].purchased_at) : null;
+    const pvBefore: Record<string, number> = {};
+    let pvCountBefore = 0;
+    let lastPageviewBeforePurchase: { url: string; at: string } | null = null;
+    if (lastPurchaseAt) {
+      for (const e of eventsRes.rows) {
+        const t = new Date(e.event_time);
+        if (t.getTime() >= lastPurchaseAt.getTime()) continue;
+        if (e.event_name === 'PageView' && typeof e.event_source_url === 'string' && e.event_source_url) {
+          pvCountBefore += 1;
+          pvBefore[e.event_source_url] = (pvBefore[e.event_source_url] || 0) + 1;
+          if (!lastPageviewBeforePurchase) {
+            lastPageviewBeforePurchase = { url: e.event_source_url, at: String(e.event_time) };
+          }
+        }
+      }
+    }
+
+    const topPages = Object.entries(pvBefore)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 25)
+      .map(([url, count]) => ({ url, count }));
+
+    return res.json({
+      buyer: {
+        buyer_key: buyerKey,
+        external_id: externalId,
+        email_hash: v?.email_hash || null,
+        fbp: v?.fbp || null,
+        fbc: v?.fbc || null,
+        last_seen_at: v?.last_seen_at || null,
+        last_traffic_source: v?.last_traffic_source || null,
+      },
+      purchases: purchasesRes.rows,
+      behavior: {
+        lookback_days: lookbackDays,
+        pageviews_before_last_purchase: pvCountBefore,
+        top_pages_before_last_purchase: topPages,
+        last_pageview_before_last_purchase: lastPageviewBeforePurchase,
+      },
+      events: eventsRes.rows,
+    });
+  } catch (err) {
+    console.error('Buyer detail (by-key) error:', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
