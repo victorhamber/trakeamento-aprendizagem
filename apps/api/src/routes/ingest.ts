@@ -151,6 +151,18 @@ function normalizeAndHash(field: string, value: string | string[] | undefined, o
   return hashPii(norm);
 }
 
+/**
+ * buildCapiUserData devolve em/ph/fn/ln como string[] (formato Meta CAPI).
+ * site_visitors.*_hash são VARCHAR(64): passar array ao node-pg gera literal tipo `{abc...}`
+ * e estoura o limite (erro 22001).
+ */
+function visitorPiiHashScalar(val: string[] | undefined): string | undefined {
+  if (!val || !val.length) return undefined;
+  const s = typeof val[0] === 'string' ? val[0].trim() : '';
+  if (!s) return undefined;
+  return s.length > 64 ? s.slice(0, 64) : s;
+}
+
 // ─── Engagement scoring ───────────────────────────────────────────────────────
 
 function toNumber(value: unknown): number {
@@ -793,7 +805,18 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
             total_events = site_visitors.total_events + 1,
             last_seen_at = NOW()
         `, [
-          siteKey, extId, fbc, fbp, em, ph, fn, ln, trafficSourceValue, eventName, capiUser.client_ip_address, capiUser.client_user_agent
+          siteKey,
+          extId,
+          fbc,
+          fbp,
+          visitorPiiHashScalar(em),
+          visitorPiiHashScalar(ph),
+          visitorPiiHashScalar(fn),
+          visitorPiiHashScalar(ln),
+          trafficSourceValue,
+          eventName,
+          capiUser.client_ip_address,
+          capiUser.client_user_agent,
         ]).catch(err => console.error('[Ingest] User Profile UPSERT error:', err)),
 
         pool.query(
@@ -1111,9 +1134,18 @@ router.post('/batch', cors(), ingestLimiter, async (req, res) => {
             total_events = site_visitors.total_events + 1,
             last_seen_at = NOW()
         `, [
-          siteKey, extId, capiUser.fbc, capiUser.fbp, capiUser.em, capiUser.ph,
-          capiUser.fn, capiUser.ln, trafficSourceValue, p.eventName,
-          capiUser.client_ip_address, capiUser.client_user_agent,
+          siteKey,
+          extId,
+          capiUser.fbc,
+          capiUser.fbp,
+          visitorPiiHashScalar(capiUser.em),
+          visitorPiiHashScalar(capiUser.ph),
+          visitorPiiHashScalar(capiUser.fn),
+          visitorPiiHashScalar(capiUser.ln),
+          trafficSourceValue,
+          p.eventName,
+          capiUser.client_ip_address,
+          capiUser.client_user_agent,
         ]).catch(err => console.error('[Ingest/Batch] User Profile UPSERT error:', err));
 
         // CAPI payload (espelha POST /events: custom_data + referrer_url + action_source)
