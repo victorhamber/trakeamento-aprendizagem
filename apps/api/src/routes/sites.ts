@@ -155,13 +155,15 @@ router.get('/', requireAuth, async (req, res) => {
   return res.json({ sites: result.rows, max_sites: maxSites });
 });
 
+const MAX_INJECT_HTML_CHARS = 200_000;
+
 router.get('/:siteId', requireAuth, async (req, res) => {
   const auth = req.auth!;
   const siteId = Number(req.params.siteId);
   if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
 
   const result = await pool.query(
-    'SELECT id, name, domain, site_key, created_at FROM sites WHERE id = $1 AND account_id = $2',
+    'SELECT id, name, domain, site_key, created_at, inject_head_html, inject_body_html FROM sites WHERE id = $1 AND account_id = $2',
     [siteId, auth.accountId]
   );
   if (!(result.rowCount || 0)) return res.status(404).json({ error: 'Site not found' });
@@ -550,31 +552,53 @@ router.put('/:siteId', requireAuth, async (req, res) => {
   const siteId = Number(req.params.siteId);
   if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
 
-  const { name, domain } = req.body || {};
+  const body = req.body || {};
+  const { name, domain } = body;
   const cleanedName = typeof name === 'string' ? name.trim() : null;
   const cleanedDomain = typeof domain === 'string' ? domain.trim() : null;
+  const hasInjectHead = Object.prototype.hasOwnProperty.call(body, 'inject_head_html');
+  const hasInjectBody = Object.prototype.hasOwnProperty.call(body, 'inject_body_html');
 
-  if (!cleanedName && !cleanedDomain) {
+  if (!cleanedName && !cleanedDomain && !hasInjectHead && !hasInjectBody) {
     return res.status(400).json({ error: 'No fields to update' });
   }
 
   const existing = await pool.query(
-    'SELECT id, name, domain, site_key, created_at FROM sites WHERE id = $1 AND account_id = $2',
+    'SELECT id, name, domain, site_key, created_at, inject_head_html, inject_body_html FROM sites WHERE id = $1 AND account_id = $2',
     [siteId, auth.accountId]
   );
   if (!existing.rowCount) return res.status(404).json({ error: 'Site not found' });
 
+  const row = existing.rows[0] as {
+    name: string;
+    domain: string | null;
+    inject_head_html: string | null;
+    inject_body_html: string | null;
+  };
+
+  const nextHead = hasInjectHead ? String(body.inject_head_html ?? '') : row.inject_head_html ?? '';
+  const nextBody = hasInjectBody ? String(body.inject_body_html ?? '') : row.inject_body_html ?? '';
+
+  if (hasInjectHead && nextHead.length > MAX_INJECT_HTML_CHARS) {
+    return res.status(400).json({ error: `inject_head_html excede ${MAX_INJECT_HTML_CHARS} caracteres` });
+  }
+  if (hasInjectBody && nextBody.length > MAX_INJECT_HTML_CHARS) {
+    return res.status(400).json({ error: `inject_body_html excede ${MAX_INJECT_HTML_CHARS} caracteres` });
+  }
+
   const next = {
-    name: cleanedName ?? existing.rows[0].name,
-    domain: cleanedDomain !== null ? cleanedDomain : existing.rows[0].domain,
+    name: cleanedName ?? row.name,
+    domain: cleanedDomain !== null ? cleanedDomain : row.domain,
+    inject_head_html: hasInjectHead ? nextHead : row.inject_head_html,
+    inject_body_html: hasInjectBody ? nextBody : row.inject_body_html,
   };
 
   const result = await pool.query(
     `UPDATE sites
-     SET name = $1, domain = $2
-     WHERE id = $3 AND account_id = $4
-     RETURNING id, name, domain, site_key, created_at`,
-    [next.name, next.domain || null, siteId, auth.accountId]
+     SET name = $1, domain = $2, inject_head_html = $3, inject_body_html = $4
+     WHERE id = $5 AND account_id = $6
+     RETURNING id, name, domain, site_key, created_at, inject_head_html, inject_body_html`,
+    [next.name, next.domain || null, next.inject_head_html, next.inject_body_html, siteId, auth.accountId]
   );
 
   return res.json({ site: result.rows[0] });
@@ -627,14 +651,20 @@ router.get('/:siteId/snippet', requireAuth, async (req, res) => {
     process.env.PUBLIC_API_BASE_URL ||
     `${req.headers['x-forwarded-proto'] || req.protocol}://${req.headers['x-forwarded-host'] || req.get('host')}`;
   const sdkUrl = process.env.PUBLIC_SDK_URL || `${apiBaseUrl}/sdk/tracker.js`;
+  const loaderUrl = `${apiBaseUrl}/sdk/loader.js`;
   const siteKey = site.rows[0].site_key as string;
 
-  const snippet = `<script defer src="${sdkUrl}?key=${siteKey}"></script>`;
+  const snippetPerformance = `<script defer src="${loaderUrl}?key=${encodeURIComponent(siteKey)}"></script>`;
+  const snippetImmediate = `<script defer src="${sdkUrl}?key=${encodeURIComponent(siteKey)}"></script>`;
 
   return res.json({
-    snippet,
+    // snippet = performance (compatível com clientes que só leem `snippet`)
+    snippet: snippetPerformance,
+    snippet_performance: snippetPerformance,
+    snippet_immediate: snippetImmediate,
     api_base_url: apiBaseUrl,
     sdk_url: sdkUrl,
+    loader_url: loaderUrl,
     site_key: siteKey
   });
 });

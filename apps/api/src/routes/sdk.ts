@@ -27,15 +27,84 @@ router.get('/meta-param-builder.js', (_req, res) => {
   return res.send(META_PARAM_BUILDER_BUNDLE);
 });
 
+/**
+ * Carrega tracker.js só após window "load" + primeira interação (performance; sem rastrear bounce passivo).
+ * Exceção: URLs com ta_pick ou ta_test (modo seletor / teste no painel) injetam o tracker logo após o load.
+ */
+router.get('/loader.js', (req, res) => {
+  const key = typeof req.query.key === 'string' ? req.query.key.trim() : '';
+  res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+
+  if (!key) {
+    return res.status(400).send("console.warn('[TRK] loader.js: parâmetro key ausente');");
+  }
+
+  const apiBase =
+    process.env.PUBLIC_API_BASE_URL ||
+    process.env.API_BASE_URL ||
+    `${req.headers['x-forwarded-proto'] || req.protocol}://${req.headers['x-forwarded-host'] || req.get('host')}`;
+  const trackerSrc = process.env.PUBLIC_SDK_URL || `${apiBase}/sdk/tracker.js`;
+  const trackerUrl = `${trackerSrc}?key=${encodeURIComponent(key)}`;
+
+  const js = `(function(){
+  var u=${JSON.stringify(trackerUrl)};
+  var done=false;
+  function inject(){
+    if(done)return;
+    done=true;
+    var s=document.createElement('script');
+    s.src=u;
+    s.async=true;
+    (document.head||document.documentElement).appendChild(s);
+  }
+  function needPickerOrTest(){
+    try{
+      var q=location.search||'';
+      if(!q)return false;
+      var raw=q.charAt(0)==='?'?q.slice(1):q;
+      var p=new URLSearchParams(raw);
+      return p.has('ta_pick')||p.has('ta_test');
+    }catch(_e){return false;}
+  }
+  function onFirst(){
+    window.removeEventListener('pointerdown',onFirst,true);
+    window.removeEventListener('keydown',onFirst,true);
+    window.removeEventListener('scroll',onFirst,true);
+    window.removeEventListener('touchstart',onFirst,true);
+    inject();
+  }
+  function afterLoad(){
+    if(needPickerOrTest()){inject();return;}
+    window.addEventListener('pointerdown',onFirst,true);
+    window.addEventListener('keydown',onFirst,true);
+    window.addEventListener('scroll',onFirst,{passive:true,capture:true});
+    window.addEventListener('touchstart',onFirst,{passive:true,capture:true});
+  }
+  if(document.readyState==='complete')afterLoad();
+  else window.addEventListener('load',afterLoad,{once:true});
+})();`;
+
+  return res.send(js);
+});
+
 router.get('/tracker.js', async (req, res) => {
   const siteKey = req.query.key as string;
   let configJs = '';
 
   if (siteKey) {
     try {
-      const siteRow = await pool.query('SELECT id FROM sites WHERE site_key = $1', [siteKey]);
+      const siteRow = await pool.query(
+        'SELECT id, inject_head_html, inject_body_html FROM sites WHERE site_key = $1',
+        [siteKey]
+      );
       if (siteRow && siteRow.rowCount && siteRow.rowCount > 0) {
         const siteId = siteRow.rows[0].id;
+        const injRow = siteRow.rows[0] as {
+          inject_head_html?: string | null;
+          inject_body_html?: string | null;
+        };
 
         const meta = await pool.query('SELECT enabled, pixel_id FROM integrations_meta WHERE site_id = $1', [siteId]);
         const ga = await pool.query('SELECT enabled, measurement_id FROM integrations_ga WHERE site_id = $1', [siteId]);
@@ -64,7 +133,7 @@ router.get('/tracker.js', async (req, res) => {
           hotmartSckMaxChars = Number.isFinite(n) && n > 0 ? n : null;
         }
 
-        const configObj = {
+        const configObj: Record<string, unknown> = {
           apiUrl,
           siteKey,
           metaPixelId,
@@ -73,6 +142,10 @@ router.get('/tracker.js', async (req, res) => {
           /** Limite aproximado do campo sck da Hotmart; acima disso usa trk_ só com eid e manda fbp/fbc na query. Aumente com HOTMART_SCK_MAX_CHARS na API se a Hotmart permitir mais. */
           hotmartSckMaxChars,
         };
+        const headSnip = typeof injRow.inject_head_html === 'string' ? injRow.inject_head_html.trim() : '';
+        const bodySnip = typeof injRow.inject_body_html === 'string' ? injRow.inject_body_html.trim() : '';
+        if (headSnip) configObj.injectHeadHtml = headSnip;
+        if (bodySnip) configObj.injectBodyHtml = bodySnip;
 
         // Base64 + atob: evita quebras de sintaxe no tracker quando regras/UTMs têm U+2028, aspas, */ , etc.
         const configB64 = Buffer.from(JSON.stringify(configObj), 'utf8').toString('base64');
@@ -2013,7 +2086,53 @@ router.get('/tracker.js', async (req, res) => {
     } catch (_e) {}
   }
 
+  /** Injeta HTML do painel (script externo/inline, noscript, etc.) com execução correta de scripts. */
+  function injectHtmlFragment(html, parent) {
+    try {
+      if (!html || !parent) return;
+      var str = String(html).trim();
+      if (!str) return;
+      var tpl = document.createElement('template');
+      tpl.innerHTML = str;
+      var scripts = tpl.content.querySelectorAll('script');
+      var k = 0;
+      for (k = 0; k < scripts.length; k++) {
+        var oldS = scripts[k];
+        var nu = document.createElement('script');
+        var attrs = oldS.attributes;
+        var ai = 0;
+        for (ai = 0; ai < attrs.length; ai++) {
+          nu.setAttribute(attrs[ai].name, attrs[ai].value);
+        }
+        nu.textContent = oldS.textContent;
+        oldS.parentNode.replaceChild(nu, oldS);
+      }
+      while (tpl.content.firstChild) parent.appendChild(tpl.content.firstChild);
+    } catch (_e) {}
+  }
+
+  function applyCustomSnippetsOnce() {
+    try {
+      if (window.__TA_CUSTOM_SNIPPETS_APPLIED) return;
+      var cfg = window.TRACKING_CONFIG;
+      if (!cfg) return;
+      var h = cfg.injectHeadHtml;
+      var b = cfg.injectBodyHtml;
+      if (!h && !b) {
+        window.__TA_CUSTOM_SNIPPETS_APPLIED = true;
+        return;
+      }
+      if (h && document.head) injectHtmlFragment(h, document.head);
+      if (b) {
+        var bp = document.body || document.documentElement;
+        injectHtmlFragment(b, bp);
+      }
+      window.__TA_CUSTOM_SNIPPETS_APPLIED = true;
+    } catch (_e2) {}
+  }
+
   function initTracker() {
+    applyCustomSnippetsOnce();
     var pick = getPickerConfig();
     if (pick) {
       initPicker(pick);

@@ -374,6 +374,8 @@ export const ensureSchema = async (pool: Pool) => {
     await pool.query('CREATE INDEX IF NOT EXISTS idx_password_resets_email ON password_resets(email)');
 
     await pool.query('ALTER TABLE sites ADD COLUMN IF NOT EXISTS tracking_domain VARCHAR(255)');
+    await pool.query('ALTER TABLE sites ADD COLUMN IF NOT EXISTS inject_head_html TEXT');
+    await pool.query('ALTER TABLE sites ADD COLUMN IF NOT EXISTS inject_body_html TEXT');
     await pool.query('ALTER TABLE custom_webhooks ADD COLUMN IF NOT EXISTS site_key VARCHAR(100)');
     await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS enabled BOOLEAN DEFAULT TRUE');
     await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS capi_test_event_code VARCHAR(100)');
