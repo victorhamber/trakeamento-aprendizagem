@@ -439,6 +439,7 @@ export function CampaignFunnelPanel({
   periodSelector,
   selectClsCompact,
 }: Props) {
+  const MAX_REPORT_HISTORY = 5;
   const [campaignId, setCampaignId] = useState('');
   const [campaignStatusFilter, setCampaignStatusFilter] = useState<'active' | 'all'>('active');
   const [level, setLevel] = useState<'campaign' | 'adset' | 'ad'>('campaign');
@@ -514,11 +515,25 @@ export function CampaignFunnelPanel({
       const raw = localStorage.getItem(historyStorageKey);
       if (!raw) return;
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) setReportHistory(parsed);
+      if (Array.isArray(parsed)) {
+        const normalized = parsed
+          .map((h: any) => ({
+            id: String(h?.id || ''),
+            storageKey: String(h?.storageKey || h?.id || ''),
+            createdAt: String(h?.createdAt || ''),
+            campaignId: String(h?.campaignId || ''),
+            campaignName: String(h?.campaignName || ''),
+            periodLabel: String(h?.periodLabel || ''),
+          }))
+          .filter((h: any) => h.id && h.storageKey && h.createdAt)
+          .slice(0, MAX_REPORT_HISTORY);
+        setReportHistory(normalized);
+        localStorage.setItem(historyStorageKey, JSON.stringify(normalized));
+      }
     } catch {
       /* ignore */
     }
-  }, [historyStorageKey]);
+  }, [historyStorageKey, MAX_REPORT_HISTORY]);
 
   useEffect(() => {
     if (!reportStorageKey) {
@@ -668,16 +683,21 @@ export function CampaignFunnelPanel({
           localStorage.setItem(itemId, JSON.stringify(next));
           const entry = { id: itemId, storageKey: itemId, createdAt: now, campaignId: String(campaignId), campaignName, periodLabel };
           setReportHistory((prev) => {
-            const updated = [entry, ...prev].slice(0, 25);
+            const updated = [entry, ...prev].slice(0, MAX_REPORT_HISTORY);
             localStorage.setItem(historyStorageKey, JSON.stringify(updated));
             return updated;
           });
         }
-      } catch (err) {
+      } catch (err: unknown) {
         console.error(err);
+        const apiError =
+          err && typeof err === 'object' && 'response' in err
+            ? (err as { response?: { data?: { error?: string; message?: string } } }).response?.data?.error ||
+              (err as { response?: { data?: { error?: string; message?: string } } }).response?.data?.message
+            : undefined;
         setReport(null);
         setActivePanel('chat');
-        setReportError('Erro ao gerar relatório. Tente novamente em instantes.');
+        setReportError(apiError || 'Erro ao gerar relatório. Tente novamente em instantes.');
       } finally {
         setReportLoading(false);
       }
@@ -731,6 +751,34 @@ export function CampaignFunnelPanel({
       /* ignore */
     }
   }, []);
+
+  const deleteHistoryItem = useCallback(
+    (storageKey: string) => {
+      try {
+        localStorage.removeItem(storageKey);
+      } catch {
+        /* ignore */
+      }
+      setReportHistory((prev) => {
+        const updated = prev.filter((h) => h.storageKey !== storageKey);
+        localStorage.setItem(historyStorageKey, JSON.stringify(updated));
+        return updated;
+      });
+    },
+    [historyStorageKey]
+  );
+
+  const clearHistory = useCallback(() => {
+    for (const h of reportHistory) {
+      try {
+        localStorage.removeItem(h.storageKey);
+      } catch {
+        /* ignore */
+      }
+    }
+    setReportHistory([]);
+    localStorage.setItem(historyStorageKey, JSON.stringify([]));
+  }, [historyStorageKey, reportHistory]);
 
   const onChatScroll = useCallback(() => {
     const el = chatBoxRef.current;
@@ -1212,7 +1260,17 @@ export function CampaignFunnelPanel({
                     className="text-[11px] px-3 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white border border-blue-600/40 disabled:opacity-40"
                     title="Gera um relatório completo (salva no histórico)"
                   >
-                    {wizardLoading || reportLoading ? 'Gerando…' : 'Gerar relatório'}
+                    {wizardLoading || reportLoading ? (
+                      <span className="inline-flex items-center gap-2">
+                        <svg className="animate-spin w-3.5 h-3.5" viewBox="0 0 24 24" fill="none">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                        </svg>
+                        Gerando relatório…
+                      </span>
+                    ) : (
+                      'Gerar relatório'
+                    )}
                   </button>
                 </div>
               </div>
@@ -1287,7 +1345,7 @@ export function CampaignFunnelPanel({
                               sendChat().catch(() => {});
                             }
                           }}
-                          placeholder={campaignId ? 'Escreva sua mensagem… (Shift+Enter para quebrar linha)' : 'Selecione uma campanha para começar'}
+                          placeholder={campaignId ? 'Escreva sua mensagem…' : 'Selecione uma campanha para começar'}
                           className="flex-1 text-sm rounded-2xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-4 py-3 outline-none focus:border-blue-500/50 resize-none overflow-y-auto min-h-[52px] max-h-[160px] leading-relaxed"
                           disabled={chatLoading || !campaignId}
                           rows={1}
@@ -1305,6 +1363,22 @@ export function CampaignFunnelPanel({
                   </>
                 ) : activePanel === 'report' ? (
                   <div className="flex-1 overflow-auto p-4 custom-scrollbar">
+                    {reportLoading ? (
+                      <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-950/25 p-4">
+                        <div className="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-200">
+                          <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                          </svg>
+                          Gerando relatório… isso pode levar alguns segundos.
+                        </div>
+                        <div className="mt-3 space-y-2">
+                          <div className="h-4 w-2/3 rounded bg-zinc-200 dark:bg-zinc-800/70 animate-pulse" />
+                          <div className="h-4 w-full rounded bg-zinc-200 dark:bg-zinc-800/70 animate-pulse" />
+                          <div className="h-4 w-5/6 rounded bg-zinc-200 dark:bg-zinc-800/70 animate-pulse" />
+                        </div>
+                      </div>
+                    ) : null}
                     {!report?.analysis_text ? (
                       <div className="rounded-xl border border-dashed border-zinc-200 dark:border-zinc-800 bg-white/60 dark:bg-zinc-950/30 px-6 py-10 text-center text-sm text-zinc-600 dark:text-zinc-400">
                         Nenhum relatório gerado ainda.
@@ -1362,6 +1436,18 @@ export function CampaignFunnelPanel({
                       </div>
                     ) : (
                       <div className="space-y-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/60 dark:bg-zinc-950/25 px-4 py-3">
+                          <div className="text-xs text-zinc-600 dark:text-zinc-400">
+                            Mantemos apenas os <strong>{MAX_REPORT_HISTORY}</strong> relatórios mais recentes neste navegador.
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => clearHistory()}
+                            className="text-[11px] px-2.5 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-800"
+                          >
+                            Limpar histórico
+                          </button>
+                        </div>
                         {reportHistory.map((h) => (
                           <button
                             key={h.id}
@@ -1378,7 +1464,21 @@ export function CampaignFunnelPanel({
                                   {h.periodLabel} · {new Date(h.createdAt).toLocaleString('pt-BR')}
                                 </div>
                               </div>
-                              <span className="text-[11px] text-blue-600 dark:text-blue-400">Abrir</span>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    deleteHistoryItem(h.storageKey);
+                                  }}
+                                  className="text-[11px] px-2.5 py-1.5 rounded-lg border border-rose-500/30 bg-rose-500/10 text-rose-300 hover:bg-rose-500/15"
+                                  title="Excluir este relatório do histórico"
+                                >
+                                  Excluir
+                                </button>
+                                <span className="text-[11px] text-blue-600 dark:text-blue-400">Abrir</span>
+                              </div>
                             </div>
                           </button>
                         ))}
