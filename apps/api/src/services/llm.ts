@@ -497,9 +497,20 @@ export class LlmService {
     const creatives = Array.isArray(uc.creatives) ? uc.creatives : [];
     const hasMessageMatch = !!snap.message_match;
     const hasTrend = !!snap.trend;
-    const hasLPContent = typeof lp.content === 'string' && lp.content.length > 0;
+    const lpContent = typeof lp.content === 'string' ? lp.content : '';
+    const lpSource = typeof lp.content_source === 'string' ? lp.content_source : '';
+    // Auditoria "por dobras" só faz sentido com texto suficiente e fonte confiável.
+    // HTML dinâmico (JS-heavy) costuma chegar incompleto; nesse caso não devemos inventar estrutura.
+    const hasLPDeepAudit = lpSource === 'http_html_text' && lpContent.length >= 1200;
+    const hasLPAnyText = lpContent.length > 0;
     const hasCreatives = creatives.length > 0;
-    const hasTemporalData = Object.keys(this.asRecord(segments.hourly)).length > 0 || Object.keys(this.asRecord(segments.day_of_week)).length > 0;
+    const hasTemporalData =
+      Object.keys(this.asRecord(segments.hourly)).length > 0 ||
+      Object.keys(this.asRecord(segments.day_of_week)).length > 0;
+    const temporalHasVolume =
+      Number(meta.purchases || 0) >= 10 ||
+      Number(meta.results || 0) >= 10 ||
+      Number(meta.unique_link_clicks || 0) >= 250;
     const hasMetaSpend = Number(meta.spend || 0) > 0;
 
     const sections: string[] = [];
@@ -530,6 +541,25 @@ Alinhamento com a estrutura OBRIGATORIA deste relatorio:
 - Em ## Diagnostico Executivo: comece com 1-2 frases de resumo executivo (equivalente ao "Resumo Executivo" da Meta), depois a tabela.
 - ## Analise do Funil e ## Diagnostico de 3 Camadas cobrem o papel de "Diagnostico de Performance" (explicacao tecnica do porque dos numeros).
 - Em ## Plano de Acao: use lista NUMERADA (1., 2., 3., ...) com passos praticos (lances, criativos, publico, pagina). Mantenha o titulo exato ## Plano de Acao.`);
+
+    // ── Copywriting / Persuasão (camada de qualidade, com ética e anti-genérico) ──
+    sections.push(`
+=== COPYWRITING AVANCADO (ETICO, ANTI-GENERICO) ===
+
+Voce tambem atua como um estrategista de copywriting de resposta direta e comunicacao persuasiva.
+Use os frameworks abaixo como **heuristicas**, nao como enfeite. Proibido inventar provas, numeros, cases, autoridade ou escassez.
+
+REGRAS DE OURO:
+- Persuasao etica: nao use medo/escassez/autoridade se nao forem reais no dado. Se nao houver prova, diga "sem prova no recorte".
+- Nao escreva copy completa generica. So gere copy completa quando houver insumos suficientes (oferta + publico + promessa/beneficio + objeções).
+- Se faltar contexto, gere apenas hipoteses de angulo + ganchos + criterio de decisao (o que medir).
+
+Frameworks (use quando fizer sentido):
+- Cialdini: reciprocidade, compromisso/coerencia, prova social, afeicao, autoridade, escassez (real), unidade.
+- Triade (Ethos/Pathos/Logos): especifique provas (Ethos), contraste dor→prazer (Pathos), argumentos "porque" + reversao de risco (Logos).
+- SPIN: situacao → problema → implicacao → necessidade de solucao (need-payoff) para tornar a dor concreta.
+- Empatia tatica: rotulagem emocional + espelhamento (dialogo), perguntas calibradas para dar ilusao de controle.
+`);
 
     // ── Pre-analysis checklist ──
     sections.push(`
@@ -565,7 +595,17 @@ Se meta.purchases != sales.purchases → sinalize DISCREPANCIA com possiveis cau
 - Se um dado essencial estiver ausente no JSON (null/0 sem base), diga **"sem dados"** ou **"pouco dado"**. Nao force conclusao.
 - Se utm_filters_skipped != null, trate comportamento no site/CAPI como **trafego geral do site**, nao da campanha. Use isso apenas como contexto e deixe isso explicito.
 - Nunca diga "fadiga" sem evidencia. Para usar "fadiga", exija: frequencia alta + queda de CTR/Results/CPA no tempo. Se nao houver tendencia por anuncio, use "Otimizar" ou "Sem sinal".
-- Nunca diga que a landing "tem X secoes" se landing_page.content_source nao for 'http_html_text'. Nesse caso, faca apenas recomendacoes genericas baseadas em metricas (load/dwell/scroll) + checklist.
+- LANDING (HTML dinamico): Nunca diga que a landing "tem X secoes/dobras" se landing_page.content_source nao for 'http_html_text' OU se landing_page.content for curto/pobre. Nesses casos:
+  - declare explicitamente: "HTML possivelmente dinamico / recorte insuficiente"
+  - NAO audite D1-D12 nem cite textos especificos
+  - entregue apenas um checklist generico + recomendacoes guiadas por load/dwell/scroll.
+- COPY/POSICIONAMENTO: Nunca gere "copy pronta" generica se faltarem insumos (oferta clara, publico/ICP, mecanismo/beneficio, e/ou headline real). Quando faltar contexto, entregue apenas:
+  - 2 a 3 hipoteses de angulo (por que a pessoa compraria)
+  - 3 ganchos curtos (1 linha)
+  - criterio de decisao (qual metrica melhora).
+- SIGNIFICANCIA (volume): Se o volume for baixo, trate como **amostra pequena**.
+  - Nao recomende "melhores horarios/dias" sem volume (ex.: >= 10 resultados OU >= 250 cliques unicos).
+  - Nao chame "MISMATCH" como definitivo sem ter headline/pagina confiavel no recorte.
 
 === TEMPO ATIVO / APRENDIZADO (LEARNING) ===
 
@@ -606,7 +646,14 @@ Para no maximo **3 criativos** (priorize os que parecem mais relevantes no conte
 - HOOK: O gancho para o scroll? Gera curiosidade imediata?
 - STORY: Constroi narrativa, empatia, prova social?
 - OFFER: CTA clara e irresistivel? Vende o CLIQUE (nao o produto)?
-De notas de 1-10 para cada. Forneca REESCRITA COMPLETA de copy para cada criativo.
+De notas de 1-10 para cada.
+
+Regras para sugestoes de copy (anti-generico):
+- Se houver contexto suficiente (beneficio claro + oferta/objecao + publico), voce pode sugerir **1 reescrita completa**.
+- Se faltar contexto de posicionamento/oferta, NUNCA escreva "copy completa". Em vez disso, entregue:
+  - 3 ganchos (1 linha)
+  - 2 provas/beneficios concretos (bullets)
+  - 1 CTA simples.
 A IA NAO assiste videos — analise baseada em copy/descricao/metricas.`);
     }
 
@@ -622,7 +669,7 @@ NUNCA sinalize mismatch sem dar a solucao concreta.`);
     }
 
     // ── Conditional: Landing Page — analista por dobras (direto do mercado BR) ──
-    if (hasLPContent) {
+    if (hasLPDeepAudit) {
       sections.push(`
 === ANALISTA DE LANDING PAGE (AUDITORIA PROFUNDA — OBRIGATORIO) ===
 
@@ -651,6 +698,17 @@ METODOLOGIA:
 - Cruze com metricas de comportamento (dwell, scroll, load) do JSON quando fizer sentido.
 
 Tambem integre: Schwartz (consciencia) e PAS onde couber, sem substituir o checklist de dobras.`);
+    } else if (hasLPAnyText) {
+      sections.push(`
+=== LANDING PAGE (RECORTE INSUFICIENTE / HTML DINAMICO) ===
+
+- O texto capturado nao e suficiente/confiavel para auditar "dobras".
+- Nao invente estrutura da pagina nem marque D1-D12.
+- Entregue apenas:
+  1) 5 checks rapidos (headline/oferta/CTA/prova/garantia)
+  2) 3 melhorias de conversao guiadas por metricas (load/dwell/scroll)
+  3) 1 proximo teste simples.
+`);
     }
 
     // ── Conditional: Trend ──
@@ -772,13 +830,19 @@ Para no maximo **3 criativos**:
 | Spend/Results/CPA/CTR/ROAS | — | — | — | ↑/↓/→ |`);
     }
 
-    if (hasTemporalData) {
+    if (hasTemporalData && temporalHasVolume) {
       sections.push(`
 ---
 
 ## Distribuicao Temporal
 - Melhores horarios (top 3) e melhores dias
 - Recomendacao de ajuste de orcamento por horario/dia`);
+    } else if (hasTemporalData && !temporalHasVolume) {
+      sections.push(`
+---
+
+## Distribuicao Temporal
+Sem recomendacao por horario/dia: **amostra pequena** para afirmar padroes. Prefira coletar mais volume antes de otimizar agenda.`);
     }
 
     sections.push(`
@@ -791,7 +855,7 @@ Para no maximo **3 criativos**:
 | Rastreamento | UTMs, Macros, Discrepancia, Funil de dados, Vendas Meta vs Banco | OK/Alert | [dados] |
 | Comportamento | Load Time, Scroll, Dwell | OK/Alert | [dados] |`);
 
-    if (hasLPContent) {
+    if (hasLPDeepAudit) {
       sections.push(`
 ---
 
@@ -807,6 +871,13 @@ Estrutura obrigatoria (use subtitulos ## ou ###):
 7. **Otimizacao** — headline, subhead, **e** blocos adicionais (prova, oferta, CTA, garantia, FAQ, urgencia) em formato acionavel.
 
 Nao limite a analise a apenas headline/subheadline.`);
+    } else if (hasLPAnyText) {
+      sections.push(`
+---
+
+## Analise da Landing Page
+O recorte de HTML/texto parece **insuficiente** para uma auditoria por dobras (possivel pagina dinamica).
+Faca uma analise **conservadora** baseada em checklist + metricas (load/dwell/scroll) sem citar secoes especificas.`);
     }
 
     // Removido: "Diagnostico de 3 Camadas" era redundante com "Analise do Funil" + "Auditoria Tecnica".
