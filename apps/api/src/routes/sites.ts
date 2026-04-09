@@ -1345,50 +1345,76 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
       }
     };
 
-    const visitorRes = await pool.query(
-      `SELECT site_key, external_id, email_hash, fbp, fbc, last_seen_at, last_traffic_source
-       FROM site_visitors
-       WHERE site_key = $1 AND external_id = $2
-       LIMIT 1`,
-      [siteKey, externalId]
-    );
-    if (!visitorRes.rowCount) return res.status(404).json({ error: 'Buyer not found' });
-    const v = visitorRes.rows[0];
-
+    // 1) Sempre puxa compras pelo identificador recebido (muitas vezes é external_id do checkout)
+    //    e também por chaves clássicas de dedupe (email_hash/fbp/fbc).
     const purchasesRes = await pool.query(
       `SELECT
         id, order_id, platform, amount, currency, status,
         customer_name, customer_email, customer_phone,
+        external_id, fbp, fbc, buyer_email_hash,
         COALESCE(platform_date, created_at) AS purchased_at
        FROM purchases
        WHERE site_key = $1
          AND status IN ${APPROVED_PURCHASE_STATUSES}
          AND (
-           ($2::text IS NOT NULL AND buyer_email_hash = $2)
-           OR ($3::text IS NOT NULL AND fbp = $3)
-           OR ($4::text IS NOT NULL AND fbc = $4)
+           external_id::text = $2
+           OR order_id = $2
+           OR buyer_email_hash = $2
+           OR fbp = $2
+           OR fbc = $2
          )
        ORDER BY COALESCE(platform_date, created_at) DESC
        LIMIT 50`,
-      [siteKey, v.email_hash || null, v.fbp || null, v.fbc || null]
+      [siteKey, externalId]
     );
 
-    const lookbackDays = Math.min(60, Math.max(1, Number(req.query.lookback_days || 30)));
-    const eventsRes = await pool.query(
-      `SELECT
-        event_name,
-        event_time,
-        event_source_url,
-        custom_data
-       FROM web_events
+    // 2) Best-effort: achar o visitor "real" (o external_id que aparece nos web_events),
+    //    usando dados da compra (fbp/fbc/email_hash/external_id).
+    const p0 = purchasesRes.rows[0] || null;
+    const pExternalId = p0?.external_id ? String(p0.external_id) : null;
+    const pFbp = p0?.fbp ? String(p0.fbp) : null;
+    const pFbc = p0?.fbc ? String(p0.fbc) : null;
+    const pEmailHash = p0?.buyer_email_hash ? String(p0.buyer_email_hash) : null;
+
+    const visitorRes = await pool.query(
+      `SELECT site_key, external_id, email_hash, fbp, fbc, last_seen_at, last_traffic_source
+       FROM site_visitors
        WHERE site_key = $1
-         AND user_data->>'external_id' = $2
-         AND event_time >= NOW() - ($3::int || ' days')::interval
-         AND event_name IN ('PageView', 'PageEngagement', 'Purchase', 'Lead', 'InitiateCheckout')
-       ORDER BY event_time DESC
-       LIMIT 2000`,
-      [siteKey, externalId, lookbackDays]
+         AND (
+           external_id = $2
+           OR ($3::text IS NOT NULL AND external_id = $3)
+           OR ($4::text IS NOT NULL AND fbp = $4)
+           OR ($5::text IS NOT NULL AND fbc = $5)
+           OR ($6::text IS NOT NULL AND email_hash = $6)
+         )
+       ORDER BY last_seen_at DESC NULLS LAST
+       LIMIT 1`,
+      [siteKey, externalId, pExternalId, pFbp, pFbc, pEmailHash]
     );
+
+    // Se não achou visitor, ainda assim devolve o "checkout profile" (compras),
+    // só não teremos jornada (web_events) nem last_traffic_source.
+    const v = visitorRes.rows[0] || null;
+    const eventsExternalId = v?.external_id ? String(v.external_id) : null;
+
+    const lookbackDays = Math.min(60, Math.max(1, Number(req.query.lookback_days || 30)));
+    const eventsRes = eventsExternalId
+      ? await pool.query(
+          `SELECT
+            event_name,
+            event_time,
+            event_source_url,
+            custom_data
+           FROM web_events
+           WHERE site_key = $1
+             AND user_data->>'external_id' = $2
+             AND event_time >= NOW() - ($3::int || ' days')::interval
+             AND event_name IN ('PageView', 'PageEngagement', 'Purchase', 'Lead', 'InitiateCheckout')
+           ORDER BY event_time DESC
+           LIMIT 2000`,
+          [siteKey, eventsExternalId, lookbackDays]
+        )
+      : { rows: [] as any[] };
 
     // Pré-compra: contar PageView antes da última compra e top páginas.
     const lastPurchaseAt = purchasesRes.rows[0]?.purchased_at ? new Date(purchasesRes.rows[0].purchased_at) : null;
@@ -1438,7 +1464,7 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
     }
 
     // Fallback: se não encontramos UTMs em PageView, tenta o last_traffic_source do visitante.
-    if (!lastTouchUtm) {
+    if (!lastTouchUtm && v?.last_traffic_source) {
       lastTouchUtm = parseTrafficSource(v.last_traffic_source);
     }
 
@@ -1502,15 +1528,16 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
 
     return res.json({
       buyer: {
-        external_id: v.external_id,
-        email_hash: v.email_hash,
-        fbp: v.fbp,
-        fbc: v.fbc,
+        // external_id do visitor (events) quando existir; senão mantém o que veio pelo checkout
+        external_id: eventsExternalId || pExternalId || externalId,
+        email_hash: v?.email_hash || pEmailHash,
+        fbp: v?.fbp || pFbp,
+        fbc: v?.fbc || pFbc,
         customer_name: purchasesRes.rows[0]?.customer_name || null,
         customer_email: purchasesRes.rows[0]?.customer_email || null,
         customer_phone: purchasesRes.rows[0]?.customer_phone || null,
-        last_seen_at: v.last_seen_at,
-        last_traffic_source: v.last_traffic_source,
+        last_seen_at: v?.last_seen_at || null,
+        last_traffic_source: v?.last_traffic_source || null,
       },
       purchases: purchasesRes.rows,
       behavior: {
