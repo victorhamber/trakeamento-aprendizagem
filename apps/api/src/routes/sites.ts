@@ -156,6 +156,8 @@ router.get('/', requireAuth, async (req, res) => {
 });
 
 const MAX_INJECT_HTML_CHARS = 200_000;
+const MAX_INJECT_NAME_CHARS = 140;
+const VALID_INJECT_POS = new Set(['head', 'body']);
 
 router.get('/:siteId', requireAuth, async (req, res) => {
   const auth = req.auth!;
@@ -168,6 +170,114 @@ router.get('/:siteId', requireAuth, async (req, res) => {
   );
   if (!(result.rowCount || 0)) return res.status(404).json({ error: 'Site not found' });
   return res.json({ site: result.rows[0] });
+});
+
+router.get('/:siteId/injected-snippets', requireAuth, async (req, res) => {
+  const auth = req.auth!;
+  const siteId = Number(req.params.siteId);
+  if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
+
+  const site = await pool.query('SELECT id FROM sites WHERE id = $1 AND account_id = $2', [siteId, auth.accountId]);
+  if (!site.rowCount) return res.status(404).json({ error: 'Site not found' });
+
+  const result = await pool.query(
+    `SELECT id, site_id, name, position, html, enabled, sort_order, created_at, updated_at
+     FROM site_injected_snippets
+     WHERE site_id = $1
+     ORDER BY sort_order ASC, id ASC`,
+    [siteId]
+  );
+  return res.json({ snippets: result.rows });
+});
+
+router.post('/:siteId/injected-snippets', requireAuth, async (req, res) => {
+  const auth = req.auth!;
+  const siteId = Number(req.params.siteId);
+  if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
+
+  const site = await pool.query('SELECT id FROM sites WHERE id = $1 AND account_id = $2', [siteId, auth.accountId]);
+  if (!site.rowCount) return res.status(404).json({ error: 'Site not found' });
+
+  const body = req.body || {};
+  const name = typeof body.name === 'string' ? body.name.trim() : '';
+  const position = typeof body.position === 'string' ? body.position.trim().toLowerCase() : '';
+  const html = typeof body.html === 'string' ? body.html : '';
+  const enabled = body.enabled === undefined ? true : !!body.enabled;
+  const sortOrderRaw = body.sort_order;
+  const sortOrder = Number.isFinite(Number(sortOrderRaw)) ? Number(sortOrderRaw) : 0;
+
+  if (!name) return res.status(400).json({ error: 'name é obrigatório' });
+  if (name.length > MAX_INJECT_NAME_CHARS) return res.status(400).json({ error: `name excede ${MAX_INJECT_NAME_CHARS} caracteres` });
+  if (!VALID_INJECT_POS.has(position)) return res.status(400).json({ error: "position deve ser 'head' ou 'body'" });
+  if (!html || !String(html).trim()) return res.status(400).json({ error: 'html é obrigatório' });
+  if (String(html).length > MAX_INJECT_HTML_CHARS) return res.status(400).json({ error: `html excede ${MAX_INJECT_HTML_CHARS} caracteres` });
+
+  const result = await pool.query(
+    `INSERT INTO site_injected_snippets (site_id, name, position, html, enabled, sort_order)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING id, site_id, name, position, html, enabled, sort_order, created_at, updated_at`,
+    [siteId, name, position, html, enabled, sortOrder]
+  );
+  return res.status(201).json({ snippet: result.rows[0] });
+});
+
+router.put('/:siteId/injected-snippets/:snippetId', requireAuth, async (req, res) => {
+  const auth = req.auth!;
+  const siteId = Number(req.params.siteId);
+  const snippetId = Number(req.params.snippetId);
+  if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
+  if (!Number.isFinite(snippetId)) return res.status(400).json({ error: 'Invalid snippetId' });
+
+  const site = await pool.query('SELECT id FROM sites WHERE id = $1 AND account_id = $2', [siteId, auth.accountId]);
+  if (!site.rowCount) return res.status(404).json({ error: 'Site not found' });
+
+  const current = await pool.query(
+    'SELECT id, site_id, name, position, html, enabled, sort_order FROM site_injected_snippets WHERE id = $1 AND site_id = $2',
+    [snippetId, siteId]
+  );
+  if (!current.rowCount) return res.status(404).json({ error: 'Snippet not found' });
+
+  const body = req.body || {};
+  const nextName = Object.prototype.hasOwnProperty.call(body, 'name') ? String(body.name ?? '').trim() : current.rows[0].name;
+  const nextPos = Object.prototype.hasOwnProperty.call(body, 'position') ? String(body.position ?? '').trim().toLowerCase() : current.rows[0].position;
+  const nextHtml = Object.prototype.hasOwnProperty.call(body, 'html') ? String(body.html ?? '') : current.rows[0].html;
+  const nextEnabled = Object.prototype.hasOwnProperty.call(body, 'enabled') ? !!body.enabled : current.rows[0].enabled;
+  const nextSort = Object.prototype.hasOwnProperty.call(body, 'sort_order')
+    ? (Number.isFinite(Number(body.sort_order)) ? Number(body.sort_order) : 0)
+    : current.rows[0].sort_order;
+
+  if (!nextName) return res.status(400).json({ error: 'name é obrigatório' });
+  if (nextName.length > MAX_INJECT_NAME_CHARS) return res.status(400).json({ error: `name excede ${MAX_INJECT_NAME_CHARS} caracteres` });
+  if (!VALID_INJECT_POS.has(nextPos)) return res.status(400).json({ error: "position deve ser 'head' ou 'body'" });
+  if (!nextHtml || !String(nextHtml).trim()) return res.status(400).json({ error: 'html é obrigatório' });
+  if (String(nextHtml).length > MAX_INJECT_HTML_CHARS) return res.status(400).json({ error: `html excede ${MAX_INJECT_HTML_CHARS} caracteres` });
+
+  const result = await pool.query(
+    `UPDATE site_injected_snippets
+     SET name = $1, position = $2, html = $3, enabled = $4, sort_order = $5, updated_at = NOW()
+     WHERE id = $6 AND site_id = $7
+     RETURNING id, site_id, name, position, html, enabled, sort_order, created_at, updated_at`,
+    [nextName, nextPos, nextHtml, nextEnabled, nextSort, snippetId, siteId]
+  );
+  return res.json({ snippet: result.rows[0] });
+});
+
+router.delete('/:siteId/injected-snippets/:snippetId', requireAuth, async (req, res) => {
+  const auth = req.auth!;
+  const siteId = Number(req.params.siteId);
+  const snippetId = Number(req.params.snippetId);
+  if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
+  if (!Number.isFinite(snippetId)) return res.status(400).json({ error: 'Invalid snippetId' });
+
+  const site = await pool.query('SELECT id FROM sites WHERE id = $1 AND account_id = $2', [siteId, auth.accountId]);
+  if (!site.rowCount) return res.status(404).json({ error: 'Site not found' });
+
+  const result = await pool.query(
+    'DELETE FROM site_injected_snippets WHERE id = $1 AND site_id = $2 RETURNING id',
+    [snippetId, siteId]
+  );
+  if (!result.rowCount) return res.status(404).json({ error: 'Snippet not found' });
+  return res.json({ ok: true });
 });
 
 router.get('/:siteId/secret', requireAuth, async (req, res) => {

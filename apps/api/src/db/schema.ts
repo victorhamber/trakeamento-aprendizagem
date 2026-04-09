@@ -109,6 +109,20 @@ const schemaSql = `
     created_at TIMESTAMP DEFAULT NOW()
   );
 
+  CREATE TABLE IF NOT EXISTS site_injected_snippets (
+    id SERIAL PRIMARY KEY,
+    site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+    name VARCHAR(140) NOT NULL,
+    position VARCHAR(10) NOT NULL, -- head | body
+    html TEXT NOT NULL,
+    enabled BOOLEAN DEFAULT TRUE,
+    sort_order INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_site_injected_snippets_site ON site_injected_snippets(site_id, sort_order, id);
+
   CREATE TABLE IF NOT EXISTS integrations_meta (
     id SERIAL PRIMARY KEY,
     site_id INTEGER NOT NULL UNIQUE REFERENCES sites(id) ON DELETE CASCADE,
@@ -376,6 +390,20 @@ export const ensureSchema = async (pool: Pool) => {
     await pool.query('ALTER TABLE sites ADD COLUMN IF NOT EXISTS tracking_domain VARCHAR(255)');
     await pool.query('ALTER TABLE sites ADD COLUMN IF NOT EXISTS inject_head_html TEXT');
     await pool.query('ALTER TABLE sites ADD COLUMN IF NOT EXISTS inject_body_html TEXT');
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS site_injected_snippets (
+        id SERIAL PRIMARY KEY,
+        site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+        name VARCHAR(140) NOT NULL,
+        position VARCHAR(10) NOT NULL,
+        html TEXT NOT NULL,
+        enabled BOOLEAN DEFAULT TRUE,
+        sort_order INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    await pool.query('CREATE INDEX IF NOT EXISTS idx_site_injected_snippets_site ON site_injected_snippets(site_id, sort_order, id)');
     await pool.query('ALTER TABLE custom_webhooks ADD COLUMN IF NOT EXISTS site_key VARCHAR(100)');
     await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS enabled BOOLEAN DEFAULT TRUE');
     await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS capi_test_event_code VARCHAR(100)');

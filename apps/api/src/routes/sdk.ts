@@ -147,6 +147,19 @@ router.get('/tracker.js', async (req, res) => {
         if (headSnip) configObj.injectHeadHtml = headSnip;
         if (bodySnip) configObj.injectBodyHtml = bodySnip;
 
+        try {
+          const sn = await pool.query(
+            `SELECT id, name, position, html, enabled, sort_order
+             FROM site_injected_snippets
+             WHERE site_id = $1 AND enabled IS TRUE
+             ORDER BY sort_order ASC, id ASC`,
+            [siteId]
+          );
+          if (sn.rowCount) configObj.injectSnippets = sn.rows;
+        } catch (_eSn) {
+          // optional feature; ignore if table not present yet
+        }
+
         // Base64 + atob: evita quebras de sintaxe no tracker quando regras/UTMs têm U+2028, aspas, */ , etc.
         const configB64 = Buffer.from(JSON.stringify(configObj), 'utf8').toString('base64');
         configJs = `window.TRACKING_CONFIG = JSON.parse(atob(${JSON.stringify(configB64)}));\n\n`;
@@ -2118,7 +2131,8 @@ router.get('/tracker.js', async (req, res) => {
       if (!cfg) return;
       var h = cfg.injectHeadHtml;
       var b = cfg.injectBodyHtml;
-      if (!h && !b) {
+      var list = cfg.injectSnippets;
+      if (!h && !b && (!list || !list.length)) {
         window.__TA_CUSTOM_SNIPPETS_APPLIED = true;
         return;
       }
@@ -2127,6 +2141,23 @@ router.get('/tracker.js', async (req, res) => {
         var bp = document.body || document.documentElement;
         injectHtmlFragment(b, bp);
       }
+      try {
+        if (list && list.length) {
+          for (var i = 0; i < list.length; i++) {
+            var it = list[i];
+            if (!it) continue;
+            var pos = (it.position || '').toLowerCase();
+            var html = it.html || '';
+            if (!html) continue;
+            if (pos === 'head') {
+              if (document.head) injectHtmlFragment(html, document.head);
+            } else {
+              var bp2 = document.body || document.documentElement;
+              injectHtmlFragment(html, bp2);
+            }
+          }
+        }
+      } catch (_eList) {}
       window.__TA_CUSTOM_SNIPPETS_APPLIED = true;
     } catch (_e2) {}
   }

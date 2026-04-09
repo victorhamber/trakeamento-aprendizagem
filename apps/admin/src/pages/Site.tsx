@@ -20,6 +20,19 @@ type Site = {
 };
 
 type Tab = 'snippet' | 'meta' | 'utm' | 'campaigns' | 'ga' | 'matching' | 'webhooks' | 'reports';
+type InstallSubTab = 'snippet' | 'extras';
+
+type InjectedSnippet = {
+  id: number;
+  site_id: number;
+  name: string;
+  position: 'head' | 'body';
+  html: string;
+  enabled: boolean;
+  sort_order: number;
+  created_at?: string;
+  updated_at?: string;
+};
 interface MetaConfig {
   pixel_id?: string | null;
   ad_account_id?: string | null;
@@ -195,6 +208,14 @@ export const SitePage = () => {
     performance: '',
     immediate: '',
   });
+  const [installSubTab, setInstallSubTab] = useState<InstallSubTab>('snippet');
+  const [injectedSnippets, setInjectedSnippets] = useState<InjectedSnippet[]>([]);
+  const [injectListLoading, setInjectListLoading] = useState(false);
+  const [injectEditId, setInjectEditId] = useState<number | null>(null);
+  const [injectName, setInjectName] = useState('');
+  const [injectPosition, setInjectPosition] = useState<'head' | 'body'>('head');
+  const [injectEnabled, setInjectEnabled] = useState(true);
+  const [injectHtml, setInjectHtml] = useState('');
   const [injectHeadDraft, setInjectHeadDraft] = useState('');
   const [injectBodyDraft, setInjectBodyDraft] = useState('');
   const [savingInject, setSavingInject] = useState(false);
@@ -1224,6 +1245,80 @@ ${scriptContent}
     });
   }, [id]);
 
+  const loadInjectedSnippets = useCallback(async () => {
+    if (!Number.isFinite(id)) return;
+    setInjectListLoading(true);
+    try {
+      const res = await api.get(`/sites/${id}/injected-snippets`);
+      setInjectedSnippets(res.data.snippets || []);
+    } catch (err) {
+      console.error('Failed to load injected snippets', err);
+      setInjectedSnippets([]);
+    } finally {
+      setInjectListLoading(false);
+    }
+  }, [id]);
+
+  const resetInjectForm = () => {
+    setInjectEditId(null);
+    setInjectName('');
+    setInjectPosition('head');
+    setInjectEnabled(true);
+    setInjectHtml('');
+  };
+
+  const beginEditInject = (sn: InjectedSnippet) => {
+    setInjectEditId(sn.id);
+    setInjectName(sn.name || '');
+    setInjectPosition(sn.position || 'head');
+    setInjectEnabled(!!sn.enabled);
+    setInjectHtml(sn.html || '');
+  };
+
+  const saveInjectedSnippet = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!Number.isFinite(id)) return;
+    setSavingInject(true);
+    try {
+      const payload = { name: injectName, position: injectPosition, enabled: injectEnabled, html: injectHtml, sort_order: 0 };
+      if (injectEditId) await api.put(`/sites/${id}/injected-snippets/${injectEditId}`, payload);
+      else await api.post(`/sites/${id}/injected-snippets`, payload);
+      await loadInjectedSnippets();
+      resetInjectForm();
+      showFlash('Código salvo.');
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: { error?: string } } };
+      const msg = ax.response?.data?.error;
+      showFlash(typeof msg === 'string' && msg ? msg : 'Não foi possível salvar.', 'error');
+    } finally {
+      setSavingInject(false);
+    }
+  };
+
+  const removeInjectedSnippet = async (snippetId: number) => {
+    if (!Number.isFinite(id)) return;
+    if (!window.confirm('Excluir este código extra?')) return;
+    setSavingInject(true);
+    try {
+      await api.delete(`/sites/${id}/injected-snippets/${snippetId}`);
+      await loadInjectedSnippets();
+      if (injectEditId === snippetId) resetInjectForm();
+      showFlash('Código excluído.');
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: { error?: string } } };
+      const msg = ax.response?.data?.error;
+      showFlash(typeof msg === 'string' && msg ? msg : 'Não foi possível excluir.', 'error');
+    } finally {
+      setSavingInject(false);
+    }
+  };
+
+  useEffect(() => {
+    if (tab !== 'snippet') return;
+    if (installSubTab !== 'extras') return;
+    loadInjectedSnippets().catch(() => {});
+  }, [tab, installSubTab, loadInjectedSnippets]);
+
   const saveInjectSnippets = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!Number.isFinite(id)) return;
@@ -2140,153 +2235,297 @@ ${scriptContent}
         <div className="p-6">
           {tab === 'snippet' && (
             <div className="max-w-3xl space-y-6">
-              <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                Escolha <strong className="text-zinc-700 dark:text-zinc-300 font-medium">uma</strong> das opções abaixo e cole no seu site, antes do fechamento da tag{' '}
-                <code className="text-zinc-700 dark:text-zinc-300 bg-zinc-200 dark:bg-zinc-800/60 px-1.5 py-0.5 rounded text-xs">&lt;/head&gt;</code>. O Trajettu não exibe
-                banner de cookies neste script.
-              </p>
-
-              <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 dark:bg-emerald-500/10 p-4 space-y-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Performance (recomendado)</h3>
-                  <span className="text-[10px] font-medium uppercase tracking-wide text-emerald-700 dark:text-emerald-400 bg-emerald-500/15 px-2 py-0.5 rounded">
-                    loader.js
-                  </span>
-                </div>
-                <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">
-                  Primeiro carrega só um script pequeno. Depois que a página termina de carregar, o tracker completo só é baixado na{' '}
-                  <strong className="text-zinc-700 dark:text-zinc-300">primeira interação</strong> (clique, toque, tecla ou scroll). Visitantes que só abrem e fecham não
-                  disparam rastreamento. O modo seletor de botão no painel (
-                  <code className="text-[11px] bg-zinc-200 dark:bg-zinc-800/60 px-1 rounded">ta_pick</code> /{' '}
-                  <code className="text-[11px] bg-zinc-200 dark:bg-zinc-800/60 px-1 rounded">ta_test</code>) carrega o tracker logo após o load, sem precisar clicar na página.
-                </p>
-                <div className="relative rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 overflow-hidden">
-                  <div className="flex items-center justify-end px-3 py-2 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/80">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        navigator.clipboard.writeText(installSnippets.performance);
-                        showFlash('Código copiado!');
-                      }}
-                      className="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-500 hover:text-zinc-700 dark:text-zinc-300 transition-colors"
-                    >
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        width="13"
-                        height="13"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                      </svg>
-                      Copiar
-                    </button>
-                  </div>
-                  <pre className="text-xs p-4 m-0">
-                    <code className="block break-all text-zinc-700 dark:text-zinc-300 leading-relaxed">{installSnippets.performance}</code>
-                  </pre>
-                </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setInstallSubTab('snippet')}
+                  className={`text-xs px-3 py-1.5 rounded-lg border ${
+                    installSubTab === 'snippet'
+                      ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
+                      : 'border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/40 text-zinc-600 dark:text-zinc-400'
+                  }`}
+                >
+                  Snippet
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setInstallSubTab('extras')}
+                  className={`text-xs px-3 py-1.5 rounded-lg border ${
+                    installSubTab === 'extras'
+                      ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
+                      : 'border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/40 text-zinc-600 dark:text-zinc-400'
+                  }`}
+                >
+                  Códigos extras
+                </button>
               </div>
 
-              <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/80 dark:bg-zinc-900/40 p-4 space-y-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Imediato</h3>
-                  <span className="text-[10px] font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-500 bg-zinc-200/80 dark:bg-zinc-800/80 px-2 py-0.5 rounded">
-                    tracker.js
-                  </span>
-                </div>
-                <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">
-                  O tracker completo é carregado assim que o navegador processa o script (com <code className="text-[11px]">defer</code>, em geral após o HTML da página). Útil se
-                  você precisa rastrear também quem não interage (ex.: bounce) ou quer comportamento clássico de pixel o mais cedo possível.
-                </p>
-                <div className="relative rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 overflow-hidden">
-                  <div className="flex items-center justify-end px-3 py-2 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/80">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        navigator.clipboard.writeText(installSnippets.immediate);
-                        showFlash('Código copiado!');
-                      }}
-                      className="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-500 hover:text-zinc-700 dark:text-zinc-300 transition-colors"
-                    >
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        width="13"
-                        height="13"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                      </svg>
-                      Copiar
-                    </button>
-                  </div>
-                  <pre className="text-xs p-4 m-0">
-                    <code className="block break-all text-zinc-700 dark:text-zinc-300 leading-relaxed">{installSnippets.immediate}</code>
-                  </pre>
-                </div>
-              </div>
-
-              <form onSubmit={saveInjectSnippets} className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/80 dark:bg-zinc-900/40 p-4 space-y-4">
-                <div>
-                  <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Códigos extras (head e body)</h3>
-                  <p className="text-xs text-zinc-600 dark:text-zinc-400 mt-1 leading-relaxed">
-                    Cole trechos que você colocaria no HTML do site (Microsoft Clarity, Google Tag Manager, outro script). Eles são injetados pelo{' '}
-                    <strong className="text-zinc-700 dark:text-zinc-300">mesmo momento</strong> em que o tracker Trajettu roda: com{' '}
-                    <code className="text-[11px] bg-zinc-200 dark:bg-zinc-800/60 px-1 rounded">loader.js</code>, só depois do load e da primeira interação (ou{' '}
-                    <code className="text-[11px] bg-zinc-200 dark:bg-zinc-800/60 px-1 rounded">ta_pick</code>/<code className="text-[11px] bg-zinc-200 dark:bg-zinc-800/60 px-1 rounded">ta_test</code>
-                    ). Apenas administradores do painel podem editar; conteúdo arbitrário no site — use com cuidado.
+              {installSubTab === 'snippet' && (
+                <>
+                  <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                    Escolha <strong className="text-zinc-700 dark:text-zinc-300 font-medium">uma</strong> das opções abaixo e cole no seu site, antes do fechamento da tag{' '}
+                    <code className="text-zinc-700 dark:text-zinc-300 bg-zinc-200 dark:bg-zinc-800/60 px-1.5 py-0.5 rounded text-xs">&lt;/head&gt;</code>. O Trajettu não exibe
+                    banner de cookies neste script.
                   </p>
+
+                  <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 dark:bg-emerald-500/10 p-4 space-y-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Performance (recomendado)</h3>
+                      <span className="text-[10px] font-medium uppercase tracking-wide text-emerald-700 dark:text-emerald-400 bg-emerald-500/15 px-2 py-0.5 rounded">
+                        loader.js
+                      </span>
+                    </div>
+                    <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                      Primeiro carrega só um script pequeno. Depois que a página termina de carregar, o tracker completo só é baixado na{' '}
+                      <strong className="text-zinc-700 dark:text-zinc-300">primeira interação</strong> (clique, toque, tecla ou scroll). Visitantes que só abrem e fecham não
+                      disparam rastreamento. O modo seletor de botão no painel (
+                      <code className="text-[11px] bg-zinc-200 dark:bg-zinc-800/60 px-1 rounded">ta_pick</code> /{' '}
+                      <code className="text-[11px] bg-zinc-200 dark:bg-zinc-800/60 px-1 rounded">ta_test</code>) carrega o tracker logo após o load, sem precisar clicar na página.
+                    </p>
+                    <div className="relative rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 overflow-hidden">
+                      <div className="flex items-center justify-end px-3 py-2 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/80">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(installSnippets.performance);
+                            showFlash('Código copiado!');
+                          }}
+                          className="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-500 hover:text-zinc-700 dark:text-zinc-300 transition-colors"
+                        >
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="13"
+                            height="13"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                          </svg>
+                          Copiar
+                        </button>
+                      </div>
+                      <pre className="text-xs p-4 m-0">
+                        <code className="block break-all text-zinc-700 dark:text-zinc-300 leading-relaxed">{installSnippets.performance}</code>
+                      </pre>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/80 dark:bg-zinc-900/40 p-4 space-y-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Imediato</h3>
+                      <span className="text-[10px] font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-500 bg-zinc-200/80 dark:bg-zinc-800/80 px-2 py-0.5 rounded">
+                        tracker.js
+                      </span>
+                    </div>
+                    <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                      O tracker completo é carregado assim que o navegador processa o script (com <code className="text-[11px]">defer</code>, em geral após o HTML da página). Útil se
+                      você precisa rastrear também quem não interage (ex.: bounce) ou quer comportamento clássico de pixel o mais cedo possível.
+                    </p>
+                    <div className="relative rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 overflow-hidden">
+                      <div className="flex items-center justify-end px-3 py-2 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/80">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(installSnippets.immediate);
+                            showFlash('Código copiado!');
+                          }}
+                          className="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-500 hover:text-zinc-700 dark:text-zinc-300 transition-colors"
+                        >
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="13"
+                            height="13"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                          </svg>
+                          Copiar
+                        </button>
+                      </div>
+                      <pre className="text-xs p-4 m-0">
+                        <code className="block break-all text-zinc-700 dark:text-zinc-300 leading-relaxed">{installSnippets.immediate}</code>
+                      </pre>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {installSubTab === 'extras' && (
+                <div className="space-y-4">
+                  <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/80 dark:bg-zinc-900/40 p-4">
+                    <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Lista de códigos</h3>
+                    <p className="text-xs text-zinc-600 dark:text-zinc-400 mt-1 leading-relaxed">
+                      Adicione códigos (Clarity, GTM etc.) que serão injetados quando o tracker Trajettu rodar. Com <code className="text-[11px] bg-zinc-200 dark:bg-zinc-800/60 px-1 rounded">loader.js</code>,
+                      isso acontece só após load + primeira interação (ou <code className="text-[11px] bg-zinc-200 dark:bg-zinc-800/60 px-1 rounded">ta_pick</code>/<code className="text-[11px] bg-zinc-200 dark:bg-zinc-800/60 px-1 rounded">ta_test</code>).
+                    </p>
+                    <div className="mt-3 rounded-lg border border-zinc-200 dark:border-zinc-800 overflow-hidden">
+                      <div className="grid grid-cols-12 gap-2 px-3 py-2 text-[11px] bg-zinc-100 dark:bg-zinc-900/70 text-zinc-600 dark:text-zinc-400">
+                        <div className="col-span-5">Nome</div>
+                        <div className="col-span-2">Posição</div>
+                        <div className="col-span-2">Status</div>
+                        <div className="col-span-3 text-right">Ações</div>
+                      </div>
+                      <div className="divide-y divide-zinc-200 dark:divide-zinc-800 bg-white dark:bg-zinc-950/40">
+                        {injectListLoading && (
+                          <div className="px-3 py-3 text-xs text-zinc-500">Carregando…</div>
+                        )}
+                        {!injectListLoading && injectedSnippets.length === 0 && (
+                          <div className="px-3 py-3 text-xs text-zinc-500">Nenhum código cadastrado.</div>
+                        )}
+                        {!injectListLoading &&
+                          injectedSnippets.map((sn) => (
+                            <div key={sn.id} className="grid grid-cols-12 gap-2 px-3 py-2 text-xs items-center">
+                              <div className="col-span-5 text-zinc-800 dark:text-zinc-200 truncate">{sn.name}</div>
+                              <div className="col-span-2 text-zinc-600 dark:text-zinc-400">{sn.position}</div>
+                              <div className="col-span-2">
+                                <span className={`text-[11px] px-2 py-0.5 rounded ${sn.enabled ? 'bg-emerald-500/15 text-emerald-400' : 'bg-zinc-500/15 text-zinc-400'}`}>
+                                  {sn.enabled ? 'ativo' : 'pausado'}
+                                </span>
+                              </div>
+                              <div className="col-span-3 flex justify-end gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => beginEditInject(sn)}
+                                  className="text-xs px-2 py-1 rounded border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-900/50"
+                                >
+                                  Editar
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => removeInjectedSnippet(sn.id)}
+                                  className="text-xs px-2 py-1 rounded border border-red-500/30 text-red-400 hover:bg-red-500/10"
+                                >
+                                  Excluir
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <form onSubmit={saveInjectedSnippet} className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/80 dark:bg-zinc-900/40 p-4 space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{injectEditId ? 'Editar código' : 'Novo código'}</h3>
+                      {injectEditId && (
+                        <button type="button" onClick={resetInjectForm} className="text-xs text-zinc-500 hover:text-zinc-300">
+                          Cancelar edição
+                        </button>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="sm:col-span-2 space-y-1">
+                        <label className="text-xs font-medium text-zinc-700 dark:text-zinc-300">Nome</label>
+                        <input
+                          value={injectName}
+                          onChange={(e) => setInjectName(e.target.value)}
+                          className="w-full text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-800 dark:text-zinc-200 px-3 py-2 outline-none focus:border-emerald-500/50"
+                          placeholder="Ex.: Microsoft Clarity"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-medium text-zinc-700 dark:text-zinc-300">Posição</label>
+                        <select
+                          aria-label="Posição do código extra"
+                          value={injectPosition}
+                          onChange={(e) => setInjectPosition(e.target.value === 'body' ? 'body' : 'head')}
+                          className="w-full text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-800 dark:text-zinc-200 px-3 py-2 outline-none focus:border-emerald-500/50"
+                        >
+                          <option value="head">head</option>
+                          <option value="body">body</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input id="inject-enabled" type="checkbox" checked={injectEnabled} onChange={(e) => setInjectEnabled(e.target.checked)} />
+                      <label htmlFor="inject-enabled" className="text-xs text-zinc-600 dark:text-zinc-400">
+                        Ativo
+                      </label>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-zinc-700 dark:text-zinc-300">HTML/JS</label>
+                      <textarea
+                        value={injectHtml}
+                        onChange={(e) => setInjectHtml(e.target.value)}
+                        rows={6}
+                        spellCheck={false}
+                        className="w-full text-xs font-mono rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-800 dark:text-zinc-200 px-3 py-2 outline-none focus:border-emerald-500/50"
+                        placeholder={'Ex.: <script async src=\"https://www.clarity.ms/tag/...\"></script>'}
+                      />
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="submit"
+                        disabled={savingInject}
+                        className="text-sm font-medium rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white px-4 py-2"
+                      >
+                        {savingInject ? 'Salvando…' : 'Salvar'}
+                      </button>
+                      <span className="text-[11px] text-zinc-500">Limite ~200 mil caracteres por código.</span>
+                    </div>
+                  </form>
+
+                  <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/80 dark:bg-zinc-900/40 p-4 space-y-3">
+                    <div>
+                      <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Legado (bloco único)</h3>
+                      <p className="text-xs text-zinc-600 dark:text-zinc-400 mt-1 leading-relaxed">
+                        Compatibilidade com versões antigas: você pode manter um bloco único para head/body. Recomendado migrar para a lista acima.
+                      </p>
+                    </div>
+                    <form onSubmit={saveInjectSnippets} className="space-y-3">
+                      <div className="space-y-1.5">
+                        <label htmlFor="inject-head" className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                          &lt;head&gt; (antes do fechamento)
+                        </label>
+                        <textarea
+                          id="inject-head"
+                          value={injectHeadDraft}
+                          onChange={(e) => setInjectHeadDraft(e.target.value)}
+                          rows={4}
+                          spellCheck={false}
+                          className="w-full text-xs font-mono rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-800 dark:text-zinc-200 px-3 py-2 outline-none focus:border-emerald-500/50"
+                          placeholder="Cole aqui scripts/meta recomendados para o head (ex.: Clarity, GTM)"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label htmlFor="inject-body" className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                          &lt;body&gt; (fim da página)
+                        </label>
+                        <textarea
+                          id="inject-body"
+                          value={injectBodyDraft}
+                          onChange={(e) => setInjectBodyDraft(e.target.value)}
+                          rows={4}
+                          spellCheck={false}
+                          className="w-full text-xs font-mono rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-800 dark:text-zinc-200 px-3 py-2 outline-none focus:border-emerald-500/50"
+                          placeholder="Ex.: noscript ou segundo bloco do GTM"
+                        />
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <button
+                          type="submit"
+                          disabled={savingInject}
+                          className="text-sm font-medium rounded-lg bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-white px-4 py-2"
+                        >
+                          {savingInject ? 'Salvando…' : 'Salvar legado'}
+                        </button>
+                        <span className="text-[11px] text-zinc-500">Limite ~200 mil caracteres por campo.</span>
+                      </div>
+                    </form>
+                  </div>
                 </div>
-                <div className="space-y-1.5">
-                  <label htmlFor="inject-head" className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                    &lt;head&gt; (antes do fechamento)
-                  </label>
-                  <textarea
-                    id="inject-head"
-                    value={injectHeadDraft}
-                    onChange={(e) => setInjectHeadDraft(e.target.value)}
-                    rows={5}
-                    spellCheck={false}
-                    className="w-full text-xs font-mono rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-800 dark:text-zinc-200 px-3 py-2 outline-none focus:border-emerald-500/50"
-                    placeholder="Cole aqui scripts/meta recomendados para o head (ex.: Clarity, GTM)"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label htmlFor="inject-body" className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                    &lt;body&gt; (fim da página)
-                  </label>
-                  <textarea
-                    id="inject-body"
-                    value={injectBodyDraft}
-                    onChange={(e) => setInjectBodyDraft(e.target.value)}
-                    rows={5}
-                    spellCheck={false}
-                    className="w-full text-xs font-mono rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-800 dark:text-zinc-200 px-3 py-2 outline-none focus:border-emerald-500/50"
-                    placeholder="Ex.: noscript ou segundo bloco do GTM"
-                  />
-                </div>
-                <div className="flex items-center gap-3">
-                  <button
-                    type="submit"
-                    disabled={savingInject}
-                    className="text-sm font-medium rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white px-4 py-2"
-                  >
-                    {savingInject ? 'Salvando…' : 'Salvar códigos'}
-                  </button>
-                  <span className="text-[11px] text-zinc-500">Limite ~200 mil caracteres por campo.</span>
-                </div>
-              </form>
+              )}
 
               {/* ── Data Quality Card ── */}
               {dataQuality && dataQuality.total_events > 0 && (
