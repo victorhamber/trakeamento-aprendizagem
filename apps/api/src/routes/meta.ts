@@ -773,7 +773,7 @@ router.get('/campaigns/funnel-breakdown', requireAuth, async (req, res) => {
           hasCustomRange ? { since: sinceRaw, until: untilRaw } : undefined
         );
       } catch (syncErr) {
-        console.warn('[funnel-breakdown] force syncDailyInsights failed:', syncErr);
+          console.warn('[funnel-breakdown] force syncDailyInsights failed:', (syncErr as any)?.message || syncErr);
       }
     }
 
@@ -918,7 +918,7 @@ router.get('/campaigns/funnel-breakdown', requireAuth, async (req, res) => {
         );
         result = await pool.query(funnelSql, params);
       } catch (syncErr) {
-        console.warn('[funnel-breakdown] syncDailyInsights failed:', syncErr);
+        console.warn('[funnel-breakdown] syncDailyInsights failed:', (syncErr as any)?.message || syncErr);
       }
     }
 
@@ -951,7 +951,7 @@ router.get('/campaigns/funnel-breakdown', requireAuth, async (req, res) => {
           ];
         }
       } catch (liveErr) {
-        console.warn('[funnel-breakdown] fetchCampaignInsights failed:', liveErr);
+        console.warn('[funnel-breakdown] fetchCampaignInsights failed:', (liveErr as any)?.message || liveErr);
       }
     }
 
@@ -984,7 +984,7 @@ router.get('/campaigns/funnel-breakdown', requireAuth, async (req, res) => {
           }
         }
       } catch (fpErr) {
-        console.warn('[funnel-breakdown] first-party page per ad failed:', fpErr);
+        console.warn('[funnel-breakdown] first-party page per ad failed:', (fpErr as any)?.message || fpErr);
       }
     }
 

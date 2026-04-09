@@ -5,6 +5,57 @@ import { decryptString } from '../lib/crypto';
 import { addDaysToYmd, getMetaReportTimeZone, getYmdInReportTz } from '../lib/meta-report-timezone';
 
 export class MetaMarketingService {
+  private summarizeMetaError(err: unknown): string {
+    try {
+      if (!axios.isAxiosError(err)) return String((err as any)?.message || err || 'unknown error');
+      const status = err.response?.status;
+      const data: any = err.response?.data;
+      const fb = data?.error;
+      const code = fb?.code;
+      const sub = fb?.error_subcode;
+      const msg = fb?.message || err.message || 'Meta API error';
+      const trace = fb?.fbtrace_id ? ` fbtrace=${fb.fbtrace_id}` : '';
+      return `status=${status} code=${code} subcode=${sub} msg=${msg}${trace}`;
+    } catch {
+      return 'Meta API error';
+    }
+  }
+
+  private isRetryableMetaError(err: unknown): boolean {
+    if (!axios.isAxiosError(err)) return false;
+    const status = err.response?.status;
+    const fb: any = (err.response?.data as any)?.error;
+    const code = fb?.code;
+    const sub = fb?.error_subcode;
+    const msg = String(fb?.message || err.message || '').toLowerCase();
+
+    // Meta às vezes responde 400 com "Service temporarily unavailable" (code=2, subcode=1504044).
+    if (code === 2) return true;
+    if (sub === 1504044) return true;
+    if (status === 429 || status === 503 || status === 502 || status === 504) return true;
+    if (msg.includes('temporarily unavailable') || msg.includes('unknown error')) return true;
+    return false;
+  }
+
+  private async withMetaRetry<T>(fn: () => Promise<T>, label: string): Promise<T> {
+    const maxAttempts = 4;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        return await fn();
+      } catch (err) {
+        const retryable = this.isRetryableMetaError(err);
+        if (!retryable || attempt >= maxAttempts) throw err;
+        const backoffMs = Math.min(20_000, 800 * Math.pow(2, attempt - 1));
+        console.warn(
+          `[MetaSync] ${label} failed (attempt ${attempt}/${maxAttempts}), retrying in ${backoffMs}ms: ${this.summarizeMetaError(err)}`
+        );
+        await new Promise((r) => setTimeout(r, backoffMs));
+      }
+    }
+    // should be unreachable
+    throw new Error('Meta retry loop exhausted');
+  }
+
   private dedupeInsightRows(
     rows: Record<string, unknown>[],
     keyOf: (row: Record<string, unknown>) => string
@@ -36,10 +87,14 @@ export class MetaMarketingService {
       body.append('access_token', token);
       body.append('batch', JSON.stringify(batchPayload));
 
-      const res = await axios.post(`https://graph.facebook.com/v19.0/`, body.toString(), {
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        timeout: 120_000,
-      });
+      const res = await this.withMetaRetry(
+        () =>
+          axios.post(`https://graph.facebook.com/v19.0/`, body.toString(), {
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            timeout: 120_000,
+          }),
+        'adset-meta batch'
+      );
 
       const arr = res.data;
       if (!Array.isArray(arr)) continue;
@@ -383,7 +438,10 @@ export class MetaMarketingService {
     let currentParams = params;
 
     while (currentUrl) {
-      const apiRes: any = await axios.get(currentUrl, { params: currentParams });
+      const apiRes: any = await this.withMetaRetry(
+        () => axios.get(currentUrl as string, { params: currentParams }),
+        'insights page'
+      );
       const data = apiRes.data?.data;
       if (Array.isArray(data)) {
         allData = allData.concat(data);
@@ -466,10 +524,14 @@ export class MetaMarketingService {
     body.append('access_token', token);
     body.append('batch', JSON.stringify(batchPayload));
 
-    const res = await axios.post(`https://graph.facebook.com/v19.0/`, body.toString(), {
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      timeout: 120_000,
-    });
+    const res = await this.withMetaRetry(
+      () =>
+        axios.post(`https://graph.facebook.com/v19.0/`, body.toString(), {
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          timeout: 120_000,
+        }),
+      'insights first-pages batch'
+    );
 
     const arr = res.data;
     if (!Array.isArray(arr) || arr.length !== 3) {
@@ -491,7 +553,10 @@ export class MetaMarketingService {
     let allData: Record<string, unknown>[] = [];
     let currentUrl: string | null = firstNextUrl;
     while (currentUrl) {
-      const apiRes: any = await axios.get(currentUrl);
+      const apiRes: any = await this.withMetaRetry(
+        () => axios.get(currentUrl as string),
+        'insights next page'
+      );
       const data = apiRes.data?.data;
       if (Array.isArray(data)) {
         allData = allData.concat(data);
@@ -554,7 +619,7 @@ export class MetaMarketingService {
         adSetInsights = [...adset0.data, ...adsetRest];
         campaignInsights = [...camp0.data, ...campRest];
       } catch (batchErr) {
-        console.warn('[MetaSync] insights batch failed, using parallel GET:', batchErr);
+        console.warn('[MetaSync] insights batch failed, using parallel GET:', this.summarizeMetaError(batchErr));
         [adInsights, adSetInsights, campaignInsights] = await Promise.all([
           this.fetchAllPages(baseUrl, { access_token: cfg.token, level: 'ad', ...timeParams, time_increment: 1, fields: adFields, limit: 500 }),
           this.fetchAllPages(baseUrl, { access_token: cfg.token, level: 'adset', ...timeParams, time_increment: 1, fields: adSetFields, limit: 500 }),
