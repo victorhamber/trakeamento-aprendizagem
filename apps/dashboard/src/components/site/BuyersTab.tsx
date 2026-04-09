@@ -75,8 +75,6 @@ export function BuyersTab({ siteId }: { siteId: number }) {
   const [rows, setRows] = useState<BuyerRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [backfillLoading, setBackfillLoading] = useState(false);
-  const [backfillMsg, setBackfillMsg] = useState<string | null>(null);
 
   const [selected, setSelected] = useState<null | { externalId: string | null; buyerKey: string; title?: string | null }>(null);
   const [detail, setDetail] = useState<BuyerDetail | null>(null);
@@ -86,27 +84,6 @@ export function BuyersTab({ siteId }: { siteId: number }) {
   const purchasesPerPage = 10;
 
   const canOpen = useMemo(() => !!selected, [selected]);
-
-  const runBackfill = async () => {
-    setBackfillLoading(true);
-    setBackfillMsg(null);
-    try {
-      const dry = await api.post(`/sites/${siteId}/identity/backfill-purchases-eid`, null, { params: { dry_run: true, limit: 2000 } });
-      const would = Number(dry.data?.would_update_count || 0);
-      const confirm = window.confirm(
-        `Reconciliar compras antigas para external_id canônico (eid_)?\n\nCompras que seriam atualizadas: ${would}\n\nIsso ajuda a ligar checkout ↔ jornada do site.`
-      );
-      if (!confirm) return;
-      const res = await api.post(`/sites/${siteId}/identity/backfill-purchases-eid`, null, { params: { limit: 5000 } });
-      const n = Number(res.data?.updated_count || 0);
-      setBackfillMsg(`Backfill concluído. Compras atualizadas: ${n}.`);
-      await load();
-    } catch (e: any) {
-      setBackfillMsg(e?.response?.data?.error || 'Erro ao executar backfill.');
-    } finally {
-      setBackfillLoading(false);
-    }
-  };
 
   const load = async () => {
     setLoading(true);
@@ -186,18 +163,8 @@ export function BuyersTab({ siteId }: { siteId: number }) {
           <p className="mt-0.5 text-xs text-zinc-600 dark:text-zinc-500 leading-relaxed">
             Lista de compradores do site/pixel com páginas acessadas e melhor atribuição possível (via UTMs/Meta quando existirem).
           </p>
-          {backfillMsg ? <div className="mt-2 text-[11px] text-zinc-600 dark:text-zinc-400">{backfillMsg}</div> : null}
         </div>
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => runBackfill()}
-            disabled={backfillLoading}
-            className="text-xs px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white/60 dark:bg-zinc-950/25 text-zinc-700 dark:text-zinc-200 hover:bg-white dark:hover:bg-zinc-950/40 disabled:opacity-40"
-            title="Tenta ligar compras antigas ao external_id canônico (eid_) usando fbp/fbc/email_hash"
-          >
-            {backfillLoading ? 'Reconciliando…' : 'Reconciliar compras antigas'}
-          </button>
           <button
             type="button"
             onClick={() => load()}
@@ -323,6 +290,9 @@ export function BuyersTab({ siteId }: { siteId: number }) {
                         <div className="text-[11px] font-semibold text-zinc-600 dark:text-zinc-400">Atribuição (melhor esforço)</div>
                         {detail.behavior.meta_attribution ? (
                           <div className="mt-1 space-y-1 text-[11px] text-zinc-600 dark:text-zinc-400">
+                            <div className="text-[10px] text-zinc-500 dark:text-zinc-500">
+                              Tentamos atribuir pela combinação de UTMs e dados da Meta (quando disponíveis).
+                            </div>
                             <div>
                               <span className="font-medium text-zinc-800 dark:text-zinc-200">Campanha:</span>{' '}
                               {detail.behavior.meta_attribution.campaign_name || detail.behavior.meta_attribution.campaign_id || '—'}
@@ -340,7 +310,12 @@ export function BuyersTab({ siteId }: { siteId: number }) {
                             ) : null}
                           </div>
                         ) : (
-                          <div className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">Sem atribuição.</div>
+                          <div className="mt-1 text-[11px] text-zinc-600 dark:text-zinc-400">
+                            <div className="text-[10px] text-zinc-500 dark:text-zinc-500">
+                              Atribuição aparece quando existe UTM (ex.: `utm_content`/`utm_campaign`) ou quando conseguimos casar com a Meta.
+                            </div>
+                            <div className="mt-1">Sem atribuição para essa compra.</div>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -489,14 +464,31 @@ export function BuyersTab({ siteId }: { siteId: number }) {
                             </div>
                           ))}
                         </div>
+                        <div className="mt-4 text-xs font-semibold text-zinc-600 dark:text-zinc-400">Último toque (UTMs)</div>
                         {detail.behavior.last_touch ? (
-                          <>
-                            <div className="mt-4 text-xs font-semibold text-zinc-600 dark:text-zinc-400">Último toque (UTMs)</div>
-                            <pre className="mt-2 text-[11px] whitespace-pre-wrap rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/35 p-3 text-zinc-700 dark:text-zinc-200">
-                              {JSON.stringify(detail.behavior.last_touch, null, 2)}
-                            </pre>
-                          </>
-                        ) : null}
+                          <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                            {([
+                              ['utm_source', 'Origem'],
+                              ['utm_medium', 'Mídia'],
+                              ['utm_campaign', 'Campanha'],
+                              ['utm_content', 'Conteúdo'],
+                              ['utm_term', 'Termo'],
+                              ['click_id', 'Click ID'],
+                            ] as const).map(([k, label]) => (
+                              <div
+                                key={k}
+                                className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white/60 dark:bg-zinc-950/20 px-3 py-2 flex items-center justify-between gap-3"
+                              >
+                                <span className="text-zinc-600 dark:text-zinc-400">{label}</span>
+                                <span className="font-medium text-zinc-800 dark:text-zinc-200 truncate max-w-[60%]" title={detail.behavior.last_touch?.[k] || ''}>
+                                  {detail.behavior.last_touch?.[k] || '—'}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="mt-2 text-[11px] text-zinc-500 dark:text-zinc-500">Sem UTMs detectáveis.</div>
+                        )}
                       </div>
                     </div>
                   </div>
