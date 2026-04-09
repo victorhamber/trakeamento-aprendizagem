@@ -1,5 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { api } from '../../lib/api';
+import { ReportWizard } from './ReportWizard';
 
 export type FunnelCampaignOption = { id: string; name: string; is_active?: boolean };
 
@@ -37,6 +40,7 @@ type FunnelRow = {
 
 type Props = {
   siteId: number;
+  siteKey: string;
   campaigns: FunnelCampaignOption[];
   hasMetaConnection: boolean;
   hasAdAccount: boolean;
@@ -51,6 +55,87 @@ const formatMoney = (value: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 2 }).format(value);
 
 const formatNumber = (value: number) => new Intl.NumberFormat('pt-BR').format(value);
+
+type DiagnosisReport = {
+  analysis_text?: string;
+  context?: Record<string, unknown>;
+} & Record<string, unknown>;
+
+function splitMarkdownH2Sections(text: string): Array<{ title: string; body: string }> {
+  const trimmed = text.trim();
+  if (!trimmed) return [];
+  const parts = trimmed.split(/\n##\s+/);
+  const sections: Array<{ title: string; body: string }> = [];
+  const hasLeading = !trimmed.startsWith('## ') && parts[0]?.trim();
+  if (hasLeading) {
+    sections.push({ title: 'Resumo executivo', body: parts[0].trim() });
+  }
+  for (let i = 1; i < parts.length; i += 1) {
+    const part = parts[i]?.trim();
+    if (!part) continue;
+    const lines = part.split('\n');
+    const title = lines[0]?.trim() || 'Seção';
+    const body = lines.slice(1).join('\n').trim();
+    sections.push({ title, body });
+  }
+  if (!sections.length) {
+    sections.push({ title: 'Conteúdo', body: trimmed });
+  }
+  return sections;
+}
+
+const reportMarkdownComponents = {
+  table: ({ children }: { children?: React.ReactNode }) => (
+    <div className="overflow-auto rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/40 my-4">
+      <table className="w-full border-collapse">{children}</table>
+    </div>
+  ),
+  thead: ({ children }: { children?: React.ReactNode }) => (
+    <thead className="bg-zinc-50 dark:bg-zinc-900/60">{children}</thead>
+  ),
+  th: ({ children }: { children?: React.ReactNode }) => (
+    <th className="text-left text-[10px] font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-400 px-4 py-2.5 border-b border-zinc-200 dark:border-zinc-800">
+      {children}
+    </th>
+  ),
+  td: ({ children }: { children?: React.ReactNode }) => (
+    <td className="text-xs text-zinc-600 dark:text-zinc-400 px-4 py-2.5 border-b border-zinc-200 dark:border-zinc-800">
+      {children}
+    </td>
+  ),
+  h3: ({ children }: { children?: React.ReactNode }) => (
+    <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100 mt-8 mb-4 flex items-center gap-2">{children}</h3>
+  ),
+  h4: ({ children }: { children?: React.ReactNode }) => (
+    <h4 className="text-sm font-bold text-blue-600 dark:text-blue-400 mt-6 mb-3 bg-blue-50 dark:bg-blue-500/10 px-3 py-1.5 rounded-md inline-flex items-center gap-2">
+      {children}
+    </h4>
+  ),
+  p: ({ children }: { children?: React.ReactNode }) => (
+    <p className="text-sm text-zinc-600 dark:text-zinc-400 mb-3 leading-relaxed">{children}</p>
+  ),
+  strong: ({ children }: { children?: React.ReactNode }) => (
+    <strong className="font-semibold text-zinc-800 dark:text-zinc-200">{children}</strong>
+  ),
+  blockquote: ({ children }: { children?: React.ReactNode }) => (
+    <blockquote className="border-l-4 border-amber-500/50 bg-gradient-to-r from-amber-500/10 to-transparent rounded-r-lg px-4 py-3 my-5 text-zinc-700 dark:text-zinc-300 not-italic">
+      {children}
+    </blockquote>
+  ),
+  ul: ({ children }: { children?: React.ReactNode }) => (
+    <ul className="list-none space-y-2 my-3 text-zinc-600 dark:text-zinc-400">{children}</ul>
+  ),
+  li: ({ children }: { children?: React.ReactNode }) => (
+    <li className="flex gap-2">
+      <span className="text-amber-500 mt-0.5">•</span>
+      <span>{children}</span>
+    </li>
+  ),
+  ol: ({ children }: { children?: React.ReactNode }) => (
+    <ol className="list-decimal list-inside space-y-2 my-3 text-zinc-600 dark:text-zinc-400">{children}</ol>
+  ),
+  hr: () => <div className="my-8 h-px w-full bg-zinc-200 dark:bg-zinc-800/80" />,
+};
 
 function formatGeneratedAt(iso: string) {
   try {
@@ -252,7 +337,9 @@ function FunnelInfoCards({ row }: { row: FunnelRow }) {
   const lp = Number(row.funnel.landing_page_views || 0);
   const ic = Number(row.funnel.initiates_checkout || 0);
   const p = Number(row.funnel.purchases || 0);
+  const clicks = Number(row.funnel.link_clicks || 0);
   const visitToPurchase = lp > 0 ? p / lp : 0;
+  const pillC2LP = benchPill(benchLevel(clicks > 0 ? lp / clicks : 0, 0.15, 0.25, 0.35));
   const pillV2IC = benchPill(benchLevel(lp > 0 ? ic / lp : 0, 0.03, 0.06, 0.12));
   const pillIC2P = benchPill(benchLevel(ic > 0 ? p / ic : 0, 0.15, 0.25, 0.40));
   const pillV2P = benchPill(benchLevel(visitToPurchase, 0.01, 0.02, 0.04));
@@ -260,7 +347,12 @@ function FunnelInfoCards({ row }: { row: FunnelRow }) {
     <>
       <div className="mt-4 grid grid-cols-3 gap-2 text-[10px] text-zinc-500">
         <div className="rounded-lg bg-zinc-100 dark:bg-zinc-800/50 p-2 border border-zinc-200 dark:border-zinc-700/50">
-          <div className="text-zinc-600 dark:text-zinc-400">Clique → página</div>
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-zinc-600 dark:text-zinc-400">Clique → página</div>
+            <span className={pillC2LP.cls} title="Benchmark global DR (2025–2026)">
+              {pillC2LP.label}
+            </span>
+          </div>
           <div className="text-zinc-900 dark:text-zinc-200 font-semibold tabular-nums">{row.funnel_rates.lp_from_clicks_pct}%</div>
         </div>
         <div className="rounded-lg bg-zinc-100 dark:bg-zinc-800/50 p-2 border border-zinc-200 dark:border-zinc-700/50">
@@ -303,6 +395,7 @@ function severityBorder(sev: string | undefined) {
 
 export function CampaignFunnelPanel({
   siteId,
+  siteKey,
   campaigns,
   hasMetaConnection,
   hasAdAccount,
@@ -334,6 +427,16 @@ export function CampaignFunnelPanel({
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
   const [simpleMode, setSimpleMode] = useState(true);
+  const [activePanel, setActivePanel] = useState<'chat' | 'report' | 'history'>('chat');
+  const [report, setReport] = useState<DiagnosisReport | null>(null);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportError, setReportError] = useState<string | null>(null);
+  const [showWizard, setShowWizard] = useState(false);
+  const [wizardAds, setWizardAds] = useState<Array<{ id: string; name: string }>>([]);
+  const [wizardLoading, setWizardLoading] = useState(false);
+  const [reportHistory, setReportHistory] = useState<
+    Array<{ id: string; storageKey: string; createdAt: string; campaignId: string; campaignName: string; periodLabel: string }>
+  >([]);
   const chatBoxRef = React.useRef<HTMLDivElement | null>(null);
   const chatAutoScrollRef = React.useRef(true);
 
@@ -351,6 +454,54 @@ export function CampaignFunnelPanel({
     () => periodPresetLabel(metricsPreset, metricsSince, metricsUntil),
     [metricsPreset, metricsSince, metricsUntil]
   );
+
+  const reportStorageKey = useMemo(() => {
+    if (!campaignId) return '';
+    const since = metricsPreset === 'custom' ? metricsSince : '';
+    const until = metricsPreset === 'custom' ? metricsUntil : '';
+    return `funnel:report:${siteId}:${campaignId}:${metricsPreset}:${since}:${until}`;
+  }, [siteId, campaignId, metricsPreset, metricsSince, metricsUntil]);
+
+  const historyStorageKey = useMemo(() => `funnel:report-history:${siteId}`, [siteId]);
+
+  const reportSections = useMemo(
+    () => splitMarkdownH2Sections(report?.analysis_text || ''),
+    [report?.analysis_text]
+  );
+
+  const visibleReportSections = useMemo(
+    () => reportSections.filter((s) => !s.title.toLowerCase().includes('tabela de métricas')),
+    [reportSections]
+  );
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(historyStorageKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) setReportHistory(parsed);
+    } catch {
+      /* ignore */
+    }
+  }, [historyStorageKey]);
+
+  useEffect(() => {
+    if (!reportStorageKey) {
+      setReport(null);
+      return;
+    }
+    try {
+      const raw = localStorage.getItem(reportStorageKey);
+      if (!raw) {
+        setReport(null);
+        return;
+      }
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') setReport(parsed as DiagnosisReport);
+    } catch {
+      setReport(null);
+    }
+  }, [reportStorageKey]);
 
   const dateParams = useCallback(() => {
     const p: Record<string, string | number> = { site_id: siteId };
@@ -429,6 +580,122 @@ export function CampaignFunnelPanel({
       ];
     });
   }, [campaignId]);
+
+  const openReportWizard = useCallback(async () => {
+    if (!campaignId) return;
+    setWizardLoading(true);
+    setReportError(null);
+    try {
+      const res = await api.get(`/integrations/sites/${siteId}/meta/ads`, {
+        params: { campaign_id: campaignId },
+      });
+      setWizardAds((res.data?.ads || []).map((a: any) => ({ id: String(a.id), name: String(a.name || a.id) })));
+    } catch (e) {
+      console.error(e);
+      setWizardAds([]);
+    } finally {
+      setWizardLoading(false);
+      setShowWizard(true);
+    }
+  }, [siteId, campaignId]);
+
+  const handleWizardGenerate = useCallback(
+    async (context: { objective: string; landing_page_url: string; selected_ad_ids?: string[] }) => {
+      if (!campaignId) return;
+      setShowWizard(false);
+      setReportLoading(true);
+      setReportError(null);
+      try {
+        const params: Record<string, string> = { campaign_id: campaignId };
+        if (metricsPreset === 'custom') {
+          params.since = metricsSince;
+          params.until = metricsUntil;
+        } else {
+          params.date_preset = metricsPreset;
+        }
+        const res = await api.post(
+          '/recommendations/generate',
+          {
+            objective: context.objective,
+            landing_page_url: context.landing_page_url,
+            selected_ad_ids: context.selected_ad_ids,
+          },
+          { headers: { 'x-site-key': siteKey }, params }
+        );
+        const next = (res.data || null) as DiagnosisReport | null;
+        setReport(next);
+        setActivePanel('report');
+        if (next && reportStorageKey) {
+          localStorage.setItem(reportStorageKey, JSON.stringify(next));
+          const now = new Date().toISOString();
+          const itemId = `${reportStorageKey}:${now}`;
+          const campaignName = selectedCampaignName || 'Campanha';
+          localStorage.setItem(itemId, JSON.stringify(next));
+          const entry = { id: itemId, storageKey: itemId, createdAt: now, campaignId: String(campaignId), campaignName, periodLabel };
+          setReportHistory((prev) => {
+            const updated = [entry, ...prev].slice(0, 25);
+            localStorage.setItem(historyStorageKey, JSON.stringify(updated));
+            return updated;
+          });
+        }
+      } catch (err) {
+        console.error(err);
+        setReport(null);
+        setActivePanel('chat');
+        setReportError('Erro ao gerar relatório. Tente novamente em instantes.');
+      } finally {
+        setReportLoading(false);
+      }
+    },
+    [
+      campaignId,
+      metricsPreset,
+      metricsSince,
+      metricsUntil,
+      siteKey,
+      reportStorageKey,
+      historyStorageKey,
+      selectedCampaignName,
+      periodLabel,
+    ]
+  );
+
+  const copyReport = useCallback(async () => {
+    const text = (report?.analysis_text || '').trim();
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      /* ignore */
+    }
+  }, [report?.analysis_text]);
+
+  const openWhatsAppReport = useCallback(() => {
+    const text = (report?.analysis_text || '').trim();
+    if (!text) return;
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
+  }, [report?.analysis_text]);
+
+  const openEmailReport = useCallback(() => {
+    const text = (report?.analysis_text || '').trim();
+    if (!text) return;
+    const subject = `Relatório — ${selectedCampaignName || 'campanha'} (${periodLabel})`;
+    window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(text)}`;
+  }, [report?.analysis_text, selectedCampaignName, periodLabel]);
+
+  const openHistoryItem = useCallback((storageKey: string) => {
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        setReport(parsed as DiagnosisReport);
+        setActivePanel('report');
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   const onChatScroll = useCallback(() => {
     const el = chatBoxRef.current;
@@ -862,85 +1129,219 @@ export function CampaignFunnelPanel({
             </div>
 
             <div className="mt-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-900/40 p-4">
-              <div className="flex items-start justify-between gap-3 mb-3">
+              <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
                 <div className="space-y-0.5 min-w-0">
-                  <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Diagnóstico IA (chat)</div>
+                  <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Assistente IA</div>
                   <div className="text-[11px] text-zinc-600 dark:text-zinc-400">
                     Campanha: <span className="font-medium">{selectedCampaignName || '—'}</span>
                   </div>
                 </div>
-              </div>
-
-              <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/35 overflow-hidden flex flex-col h-[620px] max-h-[72vh]">
-                <div
-                  ref={chatBoxRef}
-                  onScroll={onChatScroll}
-                  className="flex-1 overflow-auto p-4 space-y-3 custom-scrollbar"
-                >
-                  {chatMessages.map((m, idx) => (
-                    <div key={idx} className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
-                      <div
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="inline-flex rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/60 dark:bg-zinc-950/20 p-1">
+                    {([
+                      { key: 'chat', label: 'Chat' },
+                      { key: 'report', label: 'Relatório', disabled: !report },
+                      { key: 'history', label: 'Histórico', disabled: reportHistory.length === 0 },
+                    ] as Array<{ key: 'chat' | 'report' | 'history'; label: string; disabled?: boolean }>).map((t) => (
+                      <button
+                        key={t.key}
+                        type="button"
+                        disabled={t.disabled}
+                        onClick={() => setActivePanel(t.key)}
                         className={
-                          'max-w-[92%] whitespace-pre-wrap px-4 py-3 text-[13px] leading-relaxed shadow-sm ' +
-                          (m.role === 'user'
-                            ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 rounded-2xl rounded-br-md'
-                            : 'bg-white/95 text-zinc-900 dark:bg-zinc-900/60 dark:text-zinc-100 border border-zinc-200/70 dark:border-zinc-800/80 rounded-2xl rounded-bl-md')
+                          'text-[11px] px-3 py-1.5 rounded-lg transition-colors ' +
+                          (activePanel === t.key
+                            ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
+                            : 'text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800') +
+                          (t.disabled ? ' opacity-40 cursor-not-allowed' : '')
                         }
                       >
-                        {m.content}
-                      </div>
-                    </div>
-                  ))}
-                  {chatLoading ? (
-                    <div className="flex justify-start">
-                      <div className="max-w-[92%] rounded-2xl rounded-bl-md px-4 py-3 text-[13px] leading-relaxed bg-white/95 dark:bg-zinc-900/60 border border-zinc-200/70 dark:border-zinc-800/80 text-zinc-600 dark:text-zinc-300">
-                        Digitando…
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-
-                <div className="border-t border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-950/35 p-3 space-y-2">
-                  <div className="text-[11px] text-zinc-500 dark:text-zinc-400">Ações rápidas</div>
-                  <div className="flex gap-2 overflow-x-auto custom-scrollbar pb-1">
-                    {chatQuickActions.map((a) => (
-                      <button
-                        key={a.key}
-                        type="button"
-                        onClick={() => sendChatText(a.text).catch(() => {})}
-                        disabled={chatLoading || !campaignId}
-                        className="shrink-0 text-[11px] px-3 py-1.5 rounded-full border border-zinc-200/80 dark:border-zinc-800 bg-white/60 dark:bg-zinc-900/40 text-zinc-700 dark:text-zinc-200 hover:bg-white dark:hover:bg-zinc-900/70 disabled:opacity-40"
-                      >
-                        {a.label}
+                        {t.label}
                       </button>
                     ))}
                   </div>
-
-                  <div className="flex gap-2 items-center">
-                    <input
-                      value={chatInput}
-                      onChange={(e) => setChatInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                          e.preventDefault();
-                          sendChat().catch(() => {});
-                        }
-                      }}
-                      placeholder={campaignId ? 'Faça uma pergunta (ex.: por que ninguém inicia checkout?)' : 'Selecione uma campanha para começar'}
-                      className="flex-1 text-sm rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 outline-none focus:border-blue-500/50"
-                      disabled={chatLoading || !campaignId}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => sendChat().catch(() => {})}
-                      disabled={chatLoading || !chatInput.trim() || !campaignId}
-                      className="text-sm px-3 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 text-zinc-800 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-40"
-                    >
-                      {chatLoading ? 'Enviando…' : 'Enviar'}
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => openReportWizard().catch(() => {})}
+                    disabled={!campaignId || wizardLoading || reportLoading || chatLoading}
+                    className="text-[11px] px-3 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white border border-blue-600/40 disabled:opacity-40"
+                    title="Gera um relatório completo (salva no histórico)"
+                  >
+                    {wizardLoading || reportLoading ? 'Gerando…' : 'Gerar relatório'}
+                  </button>
                 </div>
               </div>
+
+              {reportError ? (
+                <div className="mb-3 rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+                  {reportError}
+                </div>
+              ) : null}
+
+              <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/35 overflow-hidden flex flex-col h-[620px] max-h-[72vh]">
+                {activePanel === 'chat' ? (
+                  <>
+                    <div
+                      ref={chatBoxRef}
+                      onScroll={onChatScroll}
+                      className="flex-1 overflow-auto p-4 space-y-3 custom-scrollbar"
+                    >
+                      {chatMessages.map((m, idx) => (
+                        <div key={idx} className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
+                          <div
+                            className={
+                              'max-w-[92%] whitespace-pre-wrap px-4 py-3 text-[13px] leading-relaxed shadow-sm ' +
+                              (m.role === 'user'
+                                ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 rounded-2xl rounded-br-md'
+                                : 'bg-white/95 text-zinc-900 dark:bg-zinc-900/60 dark:text-zinc-100 border border-zinc-200/70 dark:border-zinc-800/80 rounded-2xl rounded-bl-md')
+                            }
+                          >
+                            {m.content}
+                          </div>
+                        </div>
+                      ))}
+                      {chatLoading ? (
+                        <div className="flex justify-start">
+                          <div className="max-w-[92%] rounded-2xl rounded-bl-md px-4 py-3 text-[13px] leading-relaxed bg-white/95 dark:bg-zinc-900/60 border border-zinc-200/70 dark:border-zinc-800/80 text-zinc-600 dark:text-zinc-300">
+                            Digitando…
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <div className="border-t border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-950/35 p-3 space-y-2">
+                      <div className="text-[11px] text-zinc-500 dark:text-zinc-400">Ações rápidas</div>
+                      <div className="flex gap-2 overflow-x-auto custom-scrollbar pb-1">
+                        {chatQuickActions.map((a) => (
+                          <button
+                            key={a.key}
+                            type="button"
+                            onClick={() => sendChatText(a.text).catch(() => {})}
+                            disabled={chatLoading || !campaignId}
+                            className="shrink-0 text-[11px] px-3 py-1.5 rounded-full border border-zinc-200/80 dark:border-zinc-800 bg-white/60 dark:bg-zinc-900/40 text-zinc-700 dark:text-zinc-200 hover:bg-white dark:hover:bg-zinc-900/70 disabled:opacity-40"
+                          >
+                            {a.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="flex gap-2 items-center">
+                        <input
+                          value={chatInput}
+                          onChange={(e) => setChatInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                              e.preventDefault();
+                              sendChat().catch(() => {});
+                            }
+                          }}
+                          placeholder={campaignId ? 'Faça uma pergunta (ex.: por que ninguém inicia checkout?)' : 'Selecione uma campanha para começar'}
+                          className="flex-1 text-sm rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 outline-none focus:border-blue-500/50"
+                          disabled={chatLoading || !campaignId}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => sendChat().catch(() => {})}
+                          disabled={chatLoading || !chatInput.trim() || !campaignId}
+                          className="text-sm px-3 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 text-zinc-800 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-40"
+                        >
+                          {chatLoading ? 'Enviando…' : 'Enviar'}
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                ) : activePanel === 'report' ? (
+                  <div className="flex-1 overflow-auto p-4 custom-scrollbar">
+                    {!report?.analysis_text ? (
+                      <div className="rounded-xl border border-dashed border-zinc-200 dark:border-zinc-800 bg-white/60 dark:bg-zinc-950/30 px-6 py-10 text-center text-sm text-zinc-600 dark:text-zinc-400">
+                        Nenhum relatório gerado ainda.
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => copyReport().catch(() => {})}
+                            className="text-[11px] px-2.5 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-800"
+                          >
+                            Copiar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openWhatsAppReport()}
+                            className="text-[11px] px-2.5 py-1.5 rounded-lg border border-emerald-600/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200 hover:bg-emerald-500/20"
+                          >
+                            WhatsApp
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openEmailReport()}
+                            className="text-[11px] px-2.5 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-800"
+                          >
+                            E-mail
+                          </button>
+                        </div>
+                        {visibleReportSections.map((section, index) => (
+                          <div
+                            key={`${section.title}-${index}`}
+                            className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/85 dark:bg-zinc-950/25 overflow-hidden"
+                          >
+                            <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-800/40 bg-zinc-50 dark:bg-zinc-900/40">
+                              <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{section.title}</div>
+                            </div>
+                            {section.body ? (
+                              <div className="px-4 py-4">
+                                <ReactMarkdown remarkPlugins={[remarkGfm]} components={reportMarkdownComponents}>
+                                  {section.body}
+                                </ReactMarkdown>
+                              </div>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex-1 overflow-auto p-4 custom-scrollbar">
+                    {reportHistory.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-zinc-200 dark:border-zinc-800 bg-white/60 dark:bg-zinc-950/30 px-6 py-10 text-center text-sm text-zinc-600 dark:text-zinc-400">
+                        Sem relatórios no histórico.
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {reportHistory.map((h) => (
+                          <button
+                            key={h.id}
+                            type="button"
+                            onClick={() => openHistoryItem(h.storageKey)}
+                            className="w-full text-left rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-950/25 px-4 py-3 hover:bg-white dark:hover:bg-zinc-950/40 transition-colors"
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 truncate">
+                                  {h.campaignName}
+                                </div>
+                                <div className="text-[11px] text-zinc-600 dark:text-zinc-400">
+                                  {h.periodLabel} · {new Date(h.createdAt).toLocaleString('pt-BR')}
+                                </div>
+                              </div>
+                              <span className="text-[11px] text-blue-600 dark:text-blue-400">Abrir</span>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <ReportWizard
+                open={showWizard}
+                onClose={() => setShowWizard(false)}
+                onGenerate={handleWizardGenerate}
+                ads={wizardAds}
+                loading={wizardLoading || reportLoading}
+              />
             </div>
           </>
         ) : (

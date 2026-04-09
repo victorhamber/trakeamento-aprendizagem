@@ -335,7 +335,7 @@ export const SitePage = () => {
   const [diagnosisClickId, setDiagnosisClickId] = useState('{{ad.id}}');
   const [showUrlPaster, setShowUrlPaster] = useState(false);
   const [showWizard, setShowWizard] = useState(false);
-  const [wizardAds, setWizardAds] = useState<any[]>([]);
+  const [wizardAds] = useState<any[]>([]);
   const [pastedUrl, setPastedUrl] = useState('');
   const [utmOptions, setUtmOptions] = useState<{
     sources: string[];
@@ -1285,7 +1285,6 @@ ${scriptContent}
       { key: 'ga' as const, label: 'Google Analytics' },
       { key: 'matching' as const, label: 'Eventos' },
       { key: 'webhooks' as const, label: 'Webhooks' },
-      { key: 'reports' as const, label: 'Diagnóstico IA' },
     ],
     []
   );
@@ -1753,33 +1752,7 @@ ${scriptContent}
     }
   };
 
-  const generateReport = async () => {
-    if (!site) return;
-    if (!selectedCampaignId) {
-      showFlash('Selecione uma campanha para gerar o diagnóstico.', 'error');
-      setTab('reports');
-      loadCampaigns({ force: true }).catch(() => { });
-      return;
-    }
-    if (metricsPreset === 'custom' && (!metricsSince || !metricsUntil)) {
-      showFlash('Defina o período personalizado.', 'error');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const res = await api.get(`/integrations/sites/${id}/meta/ads`, {
-        params: { campaign_id: selectedCampaignId }
-      });
-      setWizardAds(res.data.ads || []);
-    } catch (err) {
-      console.error('Failed to load ads for wizard', err);
-      setWizardAds([]);
-    } finally {
-      setLoading(false);
-      setShowWizard(true);
-    }
-  };
+  // Relatórios foram movidos para a aba Campanhas (Assistente IA).
   const handleWizardGenerate = async (context: {
     objective: string;
     landing_page_url: string;
@@ -2067,10 +2040,6 @@ ${scriptContent}
     return (metrics.landing_page_views / base) * 100;
   };
 
-  const canGenerate =
-    !!site &&
-    !!selectedCampaignId &&
-    !(metricsPreset === 'custom' && (!metricsSince || !metricsUntil));
   const selectedCampaign = selectedCampaignId ? campaigns.find((c) => c.id === selectedCampaignId) : null;
 
   const inputCls =
@@ -2123,40 +2092,7 @@ ${scriptContent}
   return (
     <Layout
       title={site ? site.name : 'Site'}
-      right={
-        <button
-          onClick={generateReport}
-          disabled={loading || !canGenerate}
-          className="relative inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white text-sm font-medium rounded-xl px-5 py-2.5 disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-blue-900/30 transition-all duration-150"
-        >
-          {loading ? (
-            <>
-              <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
-              Processando…
-            </>
-          ) : (
-            <>
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z" />
-              </svg>
-              Gerar diagnóstico
-            </>
-          )}
-        </button>
-      }
+      right={null}
     >
       {/* ── Header ── */}
       <div className="flex items-start justify-between gap-4 mb-1">
@@ -4067,6 +4003,7 @@ ${scriptContent}
 
                 <CampaignFunnelPanel
                   siteId={id}
+                  siteKey={site?.site_key || ''}
                   campaigns={funnelCampaignPicklist}
                   hasMetaConnection={!!meta?.has_facebook_connection}
                   hasAdAccount={!!meta?.ad_account_id}
