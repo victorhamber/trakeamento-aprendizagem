@@ -72,13 +72,71 @@ function resolvePurchaseEventSourceUrl(
   siteDomain: string | null | undefined,
   siteTrackingDomain: string | null | undefined
 ): string {
-  for (const key of ['page_url', 'referrer'] as const) {
-    const c = payload[key];
-    if (typeof c === 'string') {
-      const t = c.trim();
-      if (t.startsWith('http://') || t.startsWith('https://')) return t;
-    }
+  const d = (payload.data as Record<string, unknown>) || payload;
+  const purchase = (d.purchase as Record<string, unknown>) || (payload.purchase as Record<string, unknown>) || {};
+  const tp =
+    (payload.trackingParameters as Record<string, unknown>) ||
+    (payload.tracking_parameters as Record<string, unknown>) ||
+    {};
+  const cd = (payload.custom_data as Record<string, unknown>) || (payload.custom_args as Record<string, unknown>) || {};
+  const trackingObj =
+    (d.tracking as Record<string, unknown>) ||
+    (payload.tracking as Record<string, unknown>) ||
+    (purchase.tracking as Record<string, unknown>) ||
+    {};
+
+  const candidates: unknown[] = [
+    // raiz
+    payload.page_url,
+    payload.pageUrl,
+    payload.url,
+    payload.event_source_url,
+    payload.eventSourceUrl,
+    payload.referrer,
+    payload.referrer_url,
+    payload.document_referrer,
+
+    // data.*
+    (d as any).page_url,
+    (d as any).pageUrl,
+    (d as any).url,
+    (d as any).event_source_url,
+    (d as any).eventSourceUrl,
+    (d as any).referrer,
+    (d as any).referrer_url,
+    (d as any).document_referrer,
+
+    // purchase.*
+    (purchase as any).page_url,
+    (purchase as any).pageUrl,
+    (purchase as any).url,
+    (purchase as any).event_source_url,
+    (purchase as any).eventSourceUrl,
+    (purchase as any).referrer,
+    (purchase as any).referrer_url,
+    (purchase as any).document_referrer,
+
+    // tracking params / custom
+    (tp as any).page_url,
+    (tp as any).pageUrl,
+    (tp as any).url,
+    (tp as any).referrer_url,
+    (cd as any).page_url,
+    (cd as any).pageUrl,
+    (cd as any).url,
+    (cd as any).referrer_url,
+    (trackingObj as any).page_url,
+    (trackingObj as any).pageUrl,
+    (trackingObj as any).url,
+    (trackingObj as any).referrer_url,
+  ];
+
+  for (const c of candidates) {
+    if (typeof c !== 'string') continue;
+    const t = c.trim();
+    if (t.startsWith('http://') || t.startsWith('https://')) return t;
   }
+
   const rawHost = (siteTrackingDomain || siteDomain || '').trim();
   if (!rawHost) return '';
   const hostOnly = rawHost.replace(/^https?:\/\//i, '').split('/')[0]?.trim();
@@ -627,11 +685,28 @@ async function processPurchaseWebhook({
       ? rawReferrerUrl
       : undefined;
 
+  // Se o resolver caiu no domínio (sem path), mas temos um referrer_url completo,
+  // preferimos usar o referrer como event_source_url para refletir a página real (ex.: /higado-vital).
+  const effectiveEventSourceUrl = (() => {
+    const esu = String(purchaseEventSourceUrl || '').trim();
+    if (!esu) return '';
+    if (!capiReferrerUrl) return esu;
+    try {
+      const a = new URL(esu);
+      const b = new URL(capiReferrerUrl);
+      const esuLooksLikeDomainOnly = (a.pathname === '/' || a.pathname === '') && !a.search && !a.hash;
+      const sameHost = a.host === b.host;
+      return esuLooksLikeDomainOnly && sameHost ? capiReferrerUrl : esu;
+    } catch {
+      return esu;
+    }
+  })();
+
   const capiPayload: any = {
     event_name: 'Purchase',
     event_time: Math.floor((platformDate?.getTime() || Date.now()) / 1000),
     event_id: `purchase_${orderId}`,
-    event_source_url: purchaseEventSourceUrl || undefined,
+    event_source_url: effectiveEventSourceUrl || undefined,
     ...(capiReferrerUrl ? { referrer_url: capiReferrerUrl } : {}),
     action_source: 'website',
     user_data: {
