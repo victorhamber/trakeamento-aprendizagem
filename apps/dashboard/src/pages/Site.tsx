@@ -875,11 +875,19 @@ export const SitePage = () => {
       return;
     }
 
-    if (evtName === 'Purchase') {
+    const wantsValueCurrency =
+      eventSupportsValueAndCurrency(evtName) &&
+      (String(urlRuleEventValue || '').trim() !== '' || String(urlRuleEventCurrency || '').trim() !== '');
+    if (evtName === 'Purchase' || wantsValueCurrency) {
       const v = parseFloat(String(urlRuleEventValue).trim());
       const cur = String(urlRuleEventCurrency).trim();
       if (!String(urlRuleEventValue).trim() || !Number.isFinite(v) || v < 0) {
-        showFlash('Purchase exige valor numérico (≥ 0) e moeda (ex.: BRL).', 'error');
+        showFlash(
+          evtName === 'Purchase'
+            ? 'Purchase exige valor numérico (≥ 0) e moeda (ex.: BRL).'
+            : 'Para enviar valor, preencha um número (≥ 0) e a moeda (ex.: BRL).',
+          'error'
+        );
         return;
       }
       if (!/^[A-Za-z]{3}$/.test(cur)) {
@@ -897,14 +905,9 @@ export const SitePage = () => {
         parameters: {}
       };
 
-      if (evtName === 'Purchase') {
+      if (evtName === 'Purchase' || wantsValueCurrency) {
         payload.parameters.value = parseFloat(String(urlRuleEventValue).trim());
         payload.parameters.currency = String(urlRuleEventCurrency).trim().toUpperCase();
-      } else if (urlRuleEventType === 'Custom') {
-        if (urlRuleEventValue) {
-          payload.parameters.value = parseFloat(urlRuleEventValue);
-          payload.parameters.currency = urlRuleEventCurrency;
-        }
       }
 
       if (selectedRuleId) {
@@ -949,11 +952,19 @@ export const SitePage = () => {
       return;
     }
 
-    if (evtName === 'Purchase') {
+    const wantsValueCurrency =
+      eventSupportsValueAndCurrency(evtName) &&
+      (String(buttonRuleEventValue || '').trim() !== '' || String(buttonRuleEventCurrency || '').trim() !== '');
+    if (evtName === 'Purchase' || wantsValueCurrency) {
       const v = parseFloat(String(buttonRuleEventValue).trim());
       const cur = String(buttonRuleEventCurrency).trim();
       if (!String(buttonRuleEventValue).trim() || !Number.isFinite(v) || v < 0) {
-        showFlash('Purchase exige valor numérico (≥ 0) e moeda (ex.: BRL).', 'error');
+        showFlash(
+          evtName === 'Purchase'
+            ? 'Purchase exige valor numérico (≥ 0) e moeda (ex.: BRL).'
+            : 'Para enviar valor, preencha um número (≥ 0) e a moeda (ex.: BRL).',
+          'error'
+        );
         return;
       }
       if (!/^[A-Za-z]{3}$/.test(cur)) {
@@ -975,14 +986,9 @@ export const SitePage = () => {
       if (hasClass) payload.parameters.match_class_contains = buttonRuleClassContains.trim();
       if (hasCss) payload.parameters.match_css = buttonRuleCss.trim();
 
-      if (evtName === 'Purchase') {
+      if (evtName === 'Purchase' || wantsValueCurrency) {
         payload.parameters.value = parseFloat(String(buttonRuleEventValue).trim());
         payload.parameters.currency = String(buttonRuleEventCurrency).trim().toUpperCase();
-      } else if (buttonRuleEventType === 'Custom') {
-        if (buttonRuleEventValue) {
-          payload.parameters.value = parseFloat(buttonRuleEventValue);
-          payload.parameters.currency = buttonRuleEventCurrency;
-        }
       }
 
       if (selectedRuleId) {
