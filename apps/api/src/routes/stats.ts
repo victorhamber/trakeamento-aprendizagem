@@ -7,6 +7,13 @@ import { getMetaReportTimeZone, resolveDashboardPeriodRange } from '../lib/meta-
 
 const router = Router();
 
+// Cache curto para evitar 12 queries pesadas a cada refresh do dashboard.
+const BEST_TIMES_CACHE_TTL_MS = 120_000; // 2 min
+const bestTimesCache = new Map<
+  string,
+  { at: number; value: any }
+>();
+
 // TEMPORARY: Diagnostic endpoint to debug purchase visibility issues
 router.get('/debug-purchase/:orderId', requireAuth, async (req, res) => {
   const orderId = req.params.orderId;
@@ -219,6 +226,11 @@ router.get('/best-times', requireAuth, async (req, res) => {
   const period = (req.query.period as string) || 'last_30d';
   const { start, end } = resolveDashboardPeriodRange(period);
   const reportTz = getMetaReportTimeZone();
+  const cacheKey = `a:${auth.accountId}|s:${siteId ?? 'all'}|p:${String(period || '').toLowerCase()}|tz:${reportTz}`;
+  const cached = bestTimesCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < BEST_TIMES_CACHE_TTL_MS) {
+    return res.json(cached.value);
+  }
 
   try {
     // Queries para encontrar picos por tipo de evento
@@ -546,20 +558,21 @@ router.get('/best-times', requireAuth, async (req, res) => {
       };
     };
 
-    const [pageview, purchase, lead, checkout] = await Promise.all([
-      getPeak(['PageView']),
-      getPeak(['Purchase']),
-      getPeak(['Lead', 'CompleteRegistration', 'Contact', 'Schedule']),
-      getPeak(['InitiateCheckout', 'AddToCart']),
-    ]);
+    // Evita sobrecarregar o Postgres com 12 queries simultâneas.
+    const pageview = await getPeak(['PageView']);
+    const purchase = await getPeak(['Purchase']);
+    const lead = await getPeak(['Lead', 'CompleteRegistration', 'Contact', 'Schedule']);
+    const checkout = await getPeak(['InitiateCheckout', 'AddToCart']);
 
-    return res.json({
+    const out = {
       pageview,
       purchase,
       lead,
       checkout,
       report_timezone: reportTz,
-    });
+    };
+    bestTimesCache.set(cacheKey, { at: Date.now(), value: out });
+    return res.json(out);
   } catch (e: any) {
     console.error(e);
     res.status(500).json({ error: e.message });
