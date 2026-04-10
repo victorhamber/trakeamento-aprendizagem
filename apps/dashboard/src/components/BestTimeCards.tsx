@@ -17,6 +17,7 @@ type PeakData = {
 };
 
 type BestTimesData = {
+  pageview: PeakData;
   purchase: PeakData;
   lead: PeakData;
   checkout: PeakData;
@@ -214,8 +215,8 @@ export function BestTimeCards({ siteId, period = 'last_30d' }: BestTimeCardsProp
   }, [siteId, period]);
 
   if (loading) return (
-    <div className="mb-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-      {[1, 2, 3].map(i => (
+    <div className="mb-6 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      {[1, 2, 3, 4].map(i => (
         <div key={i} className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 p-5 h-[300px] animate-pulse">
           <div className="h-4 w-24 bg-zinc-200 dark:bg-zinc-800 rounded mb-4"></div>
           <div className="space-y-3">
@@ -244,7 +245,13 @@ export function BestTimeCards({ siteId, period = 'last_30d' }: BestTimeCardsProp
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-stretch">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 items-stretch">
+        <Card
+          title="PageView (visitas)"
+          data={data?.pageview || emptyData}
+          color="bg-violet-500"
+          textColor="text-violet-600 dark:text-violet-400"
+        />
         <Card
           title="Leads (Cadastro)"
           data={data?.lead || emptyData}

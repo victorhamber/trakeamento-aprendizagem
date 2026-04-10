@@ -775,13 +775,15 @@ router.get('/best-times', requireAuth, async (req, res) => {
       };
     };
 
-    const [purchase, lead, checkout] = await Promise.all([
+    const [pageview, purchase, lead, checkout] = await Promise.all([
+      getPeak(['PageView']),
       getPeak(['Purchase']),
       getPeak(['Lead', 'CompleteRegistration', 'Contact', 'Schedule']),
-      getPeak(['InitiateCheckout', 'AddToCart'])
+      getPeak(['InitiateCheckout', 'AddToCart']),
     ]);
 
     return res.json({
+      pageview,
       purchase,
       lead,
       checkout,
