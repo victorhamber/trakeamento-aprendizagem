@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { META_GRAPH_API_VERSION } from '../lib/meta-graph-version';
 
 const TOKEN = 'EAAcKFnFDeBgBQnQee6fjt46OYijR8fahJO9yAUbchGN4V87OWPlBYhx0jmRXYWcmWAnyZCCsD9DNURJx9sq9MmvrboTKGS1b3rn5oRgHVgyED1hAynyZCNQspkCZAffabWLnfWfou2JvSOI7AFFm0tFfvt2wpbHv6MPmZBN6zZC1NQron4BpYbce4lIB8NrcrFZBF8HgfZAaTMraFh14CPwjfpLQVBFvZBU0UFTAsgn5KZBa9F0pPywvyli5dN3q6eSXbGO9Gw3jqvIn6uprq8BhKm6Ol2yhLzPjJ8wZDZD';
 
@@ -8,14 +9,14 @@ async function verify() {
   try {
     // 1. Identificar o usuário
     console.log('\n1️⃣  Identificando dono do Token...');
-    const me = await axios.get(`https://graph.facebook.com/v19.0/me`, {
+    const me = await axios.get(`https://graph.facebook.com/${META_GRAPH_API_VERSION}/me`, {
       params: { access_token: TOKEN, fields: 'id,name' }
     });
     console.log(`✅ Token Válido! Usuário: ${me.data.name} (ID: ${me.data.id})`);
 
     // 2. Listar Contas de Anúncios
     console.log('\n2️⃣  Buscando Contas de Anúncios...');
-    const adAccounts = await axios.get(`https://graph.facebook.com/v19.0/me/adaccounts`, {
+    const adAccounts = await axios.get(`https://graph.facebook.com/${META_GRAPH_API_VERSION}/me/adaccounts`, {
       params: {
         access_token: TOKEN,
         fields: 'name,account_id,currency,account_status',
@@ -40,7 +41,7 @@ async function verify() {
     console.log(`\n3️⃣  Testando extração de dados da conta: ${firstAccount.name} (${adAccountId})...`);
     
     try {
-      const insights = await axios.get(`https://graph.facebook.com/v19.0/${adAccountId}/insights`, {
+      const insights = await axios.get(`https://graph.facebook.com/${META_GRAPH_API_VERSION}/${adAccountId}/insights`, {
         params: {
           access_token: TOKEN,
           level: 'campaign',

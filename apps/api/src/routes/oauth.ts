@@ -5,10 +5,11 @@ import { requireAuth } from '../middleware/auth';
 import { pool } from '../db/pool';
 import { encryptString } from '../lib/crypto';
 import { getJwtSecret } from '../lib/jwt';
+import { META_GRAPH_API_VERSION } from '../lib/meta-graph-version';
 
 const router = Router();
 
-const fbApiVersion = 'v19.0';
+const fbApiVersion = META_GRAPH_API_VERSION;
 
 router.get('/meta/start', requireAuth, async (req, res) => {
   const siteId = Number(req.query.site_id);

@@ -6,9 +6,10 @@ import { encryptString } from '../lib/crypto';
 import { decryptString } from '../lib/crypto';
 import { CapiEvent, capiService } from '../services/capi';
 import { getClientIp } from '../lib/ip';
+import { META_GRAPH_API_VERSION } from '../lib/meta-graph-version';
 
 const router = Router();
-const fbApiVersion = 'v19.0';
+const fbApiVersion = META_GRAPH_API_VERSION;
 
 async function getMetaUserToken(siteId: number, res: any): Promise<string | null> {
   const row = await pool.query('SELECT fb_user_token_enc, fb_token_expires_at FROM integrations_meta WHERE site_id = $1', [siteId]);

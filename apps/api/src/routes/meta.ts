@@ -3,6 +3,7 @@ import { metaMarketingService } from '../services/meta-marketing';
 import { requireAuth } from '../middleware/auth';
 import { pool } from '../db/pool';
 import { encryptString } from '../lib/crypto';
+import { summarizeMetaMarketingError } from '../lib/meta-api-error';
 import {
   addDaysToYmd,
   calendarDaysInclusive,
@@ -773,7 +774,7 @@ router.get('/campaigns/funnel-breakdown', requireAuth, async (req, res) => {
           hasCustomRange ? { since: sinceRaw, until: untilRaw } : undefined
         );
       } catch (syncErr) {
-          console.warn('[funnel-breakdown] force syncDailyInsights failed:', (syncErr as any)?.message || syncErr);
+        console.warn('[funnel-breakdown] force syncDailyInsights failed:', summarizeMetaMarketingError(syncErr));
       }
     }
 
@@ -918,7 +919,7 @@ router.get('/campaigns/funnel-breakdown', requireAuth, async (req, res) => {
         );
         result = await pool.query(funnelSql, params);
       } catch (syncErr) {
-        console.warn('[funnel-breakdown] syncDailyInsights failed:', (syncErr as any)?.message || syncErr);
+        console.warn('[funnel-breakdown] syncDailyInsights failed:', summarizeMetaMarketingError(syncErr));
       }
     }
 
@@ -951,7 +952,7 @@ router.get('/campaigns/funnel-breakdown', requireAuth, async (req, res) => {
           ];
         }
       } catch (liveErr) {
-        console.warn('[funnel-breakdown] fetchCampaignInsights failed:', (liveErr as any)?.message || liveErr);
+        console.warn('[funnel-breakdown] fetchCampaignInsights failed:', summarizeMetaMarketingError(liveErr));
       }
     }
 
@@ -984,7 +985,10 @@ router.get('/campaigns/funnel-breakdown', requireAuth, async (req, res) => {
           }
         }
       } catch (fpErr) {
-        console.warn('[funnel-breakdown] first-party page per ad failed:', (fpErr as any)?.message || fpErr);
+        console.warn(
+          '[funnel-breakdown] first-party page per ad failed:',
+          fpErr instanceof Error ? fpErr.message : summarizeMetaMarketingError(fpErr)
+        );
       }
     }
 
@@ -1015,9 +1019,9 @@ router.get('/campaigns/funnel-breakdown', requireAuth, async (req, res) => {
       compare_rows,
       compare_label,
     });
-  } catch (err: any) {
-    console.error('campaigns/funnel-breakdown error:', err);
-    res.status(500).json({ error: err.message });
+  } catch (err: unknown) {
+    console.error('campaigns/funnel-breakdown error:', summarizeMetaMarketingError(err));
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Internal server error' });
   }
 });
 

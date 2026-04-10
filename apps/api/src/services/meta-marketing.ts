@@ -2,23 +2,13 @@ import axios from 'axios';
 import type { PoolClient } from 'pg';
 import { pool } from '../db/pool';
 import { decryptString } from '../lib/crypto';
+import { summarizeMetaMarketingError } from '../lib/meta-api-error';
+import { META_GRAPH_API_VERSION } from '../lib/meta-graph-version';
 import { addDaysToYmd, getMetaReportTimeZone, getYmdInReportTz } from '../lib/meta-report-timezone';
 
 export class MetaMarketingService {
   private summarizeMetaError(err: unknown): string {
-    try {
-      if (!axios.isAxiosError(err)) return String((err as any)?.message || err || 'unknown error');
-      const status = err.response?.status;
-      const data: any = err.response?.data;
-      const fb = data?.error;
-      const code = fb?.code;
-      const sub = fb?.error_subcode;
-      const msg = fb?.message || err.message || 'Meta API error';
-      const trace = fb?.fbtrace_id ? ` fbtrace=${fb.fbtrace_id}` : '';
-      return `status=${status} code=${code} subcode=${sub} msg=${msg}${trace}`;
-    } catch {
-      return 'Meta API error';
-    }
+    return summarizeMetaMarketingError(err);
   }
 
   private isRetryableMetaError(err: unknown): boolean {
@@ -37,15 +27,27 @@ export class MetaMarketingService {
     return false;
   }
 
+  /** Batch Graph retorna HTTP 200 com itens code=400 — parse lança Error com corpo JSON da Meta. */
+  private isRetryableBatchParseError(err: unknown): boolean {
+    const msg = String((err as Error)?.message || '');
+    if (!msg.includes('Batch item HTTP')) return false;
+    const lower = msg.toLowerCase();
+    if (lower.includes('temporarily unavailable')) return true;
+    if (lower.includes('"code":2') || lower.includes('"code": 2')) return true;
+    if (lower.includes('1504044')) return true;
+    if (lower.includes('unknown error')) return true;
+    return false;
+  }
+
   private async withMetaRetry<T>(fn: () => Promise<T>, label: string): Promise<T> {
-    const maxAttempts = 4;
+    const maxAttempts = 6;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         return await fn();
       } catch (err) {
-        const retryable = this.isRetryableMetaError(err);
+        const retryable = this.isRetryableMetaError(err) || this.isRetryableBatchParseError(err);
         if (!retryable || attempt >= maxAttempts) throw err;
-        const backoffMs = Math.min(20_000, 800 * Math.pow(2, attempt - 1));
+        const backoffMs = Math.min(35_000, 1000 * Math.pow(2, attempt - 1));
         console.warn(
           `[MetaSync] ${label} failed (attempt ${attempt}/${maxAttempts}), retrying in ${backoffMs}ms: ${this.summarizeMetaError(err)}`
         );
@@ -89,7 +91,7 @@ export class MetaMarketingService {
 
       const res = await this.withMetaRetry(
         () =>
-          axios.post(`https://graph.facebook.com/v19.0/`, body.toString(), {
+          axios.post(`https://graph.facebook.com/${META_GRAPH_API_VERSION}/`, body.toString(), {
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             timeout: 120_000,
           }),
@@ -432,6 +434,24 @@ export class MetaMarketingService {
     return { since: addDaysToYmd(todayStr, -7), until: todayStr };
   }
 
+  /**
+   * Presets como `maximum` geram anos de linhas com time_increment=1; a Meta costuma falhar (1504044 / timeout).
+   * Mantemos no máx. ~13 meses por sync; linhas mais antigas em meta_insights_daily permanecem até outro sync menor.
+   */
+  private clampInsightsSyncRange(range: { since: string; until: string }): { since: string; until: string } {
+    const MAX_DAYS = 400;
+    const a = new Date(`${range.since}T12:00:00.000Z`);
+    const b = new Date(`${range.until}T12:00:00.000Z`);
+    if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return range;
+    const diff = Math.ceil((b.getTime() - a.getTime()) / 86_400_000);
+    if (diff <= MAX_DAYS) return range;
+    const cappedSince = addDaysToYmd(range.until, -MAX_DAYS);
+    console.warn(
+      `[MetaSync] Insights window capped to ${MAX_DAYS}d (requested ~${diff}d: ${range.since} → ${range.until})`
+    );
+    return { since: cappedSince, until: range.until };
+  }
+
   private async fetchAllPages(url: string, params: any): Promise<Record<string, unknown>[]> {
     let allData: Record<string, unknown>[] = [];
     let currentUrl: string | null = url;
@@ -524,28 +544,30 @@ export class MetaMarketingService {
     body.append('access_token', token);
     body.append('batch', JSON.stringify(batchPayload));
 
-    const res = await this.withMetaRetry(
-      () =>
-        axios.post(`https://graph.facebook.com/v19.0/`, body.toString(), {
+    return await this.withMetaRetry(async () => {
+      const res = await axios.post(
+        `https://graph.facebook.com/${META_GRAPH_API_VERSION}/`,
+        body.toString(),
+        {
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
           timeout: 120_000,
-        }),
-      'insights first-pages batch'
-    );
+        }
+      );
 
-    const arr = res.data;
-    if (!Array.isArray(arr) || arr.length !== 3) {
-      throw new Error('Unexpected batch response shape');
-    }
+      const arr = res.data;
+      if (!Array.isArray(arr) || arr.length !== 3) {
+        throw new Error('Unexpected batch response shape');
+      }
 
-    const a = this.parseBatchInsightItem(arr[0]);
-    const b = this.parseBatchInsightItem(arr[1]);
-    const c = this.parseBatchInsightItem(arr[2]);
-    return [
-      { data: a.data, nextUrl: a.nextUrl },
-      { data: b.data, nextUrl: b.nextUrl },
-      { data: c.data, nextUrl: c.nextUrl },
-    ];
+      const a = this.parseBatchInsightItem(arr[0]);
+      const b = this.parseBatchInsightItem(arr[1]);
+      const c = this.parseBatchInsightItem(arr[2]);
+      return [
+        { data: a.data, nextUrl: a.nextUrl },
+        { data: b.data, nextUrl: b.nextUrl },
+        { data: c.data, nextUrl: c.nextUrl },
+      ];
+    }, 'insights first-pages batch');
   }
 
   private async fetchRemainingPagesFromNext(firstNextUrl: string | null): Promise<Record<string, unknown>[]> {
@@ -576,11 +598,11 @@ export class MetaMarketingService {
     if (!cfg) return;
 
     // Resolve the actual date window so we can delete stale rows before inserting
-    const range = this.resolveDateRange(datePreset, timeRange);
+    const range = this.clampInsightsSyncRange(this.resolveDateRange(datePreset, timeRange));
     const timeParams = { time_range: { since: range.since, until: range.until } };
 
     try {
-      const baseUrl = `https://graph.facebook.com/v19.0/${cfg.adAccountId}/insights`;
+      const baseUrl = `https://graph.facebook.com/${META_GRAPH_API_VERSION}/${cfg.adAccountId}/insights`;
 
       // ── Fetch all three levels ────────────────────────────────────────────
 
@@ -703,13 +725,7 @@ export class MetaMarketingService {
         count: adInsights.length + adSetInsights.length + campaignInsights.length,
       };
     } catch (error: unknown) {
-      if (axios.isAxiosError(error)) {
-        console.error('Meta Marketing API Error:', error.response?.data || error.message);
-      } else if (error instanceof Error) {
-        console.error('Meta Marketing API Error:', error.message);
-      } else {
-        console.error('Meta Marketing API Error:', error);
-      }
+      console.error('[MetaSync] syncDailyInsights failed:', summarizeMetaMarketingError(error));
       throw error;
     }
   }
@@ -723,7 +739,7 @@ export class MetaMarketingService {
     if (!cfg) return [];
 
     const fields = [...MetaMarketingService.BASE_FIELDS].join(',');
-    const url = `https://graph.facebook.com/v19.0/${cfg.adAccountId}/insights`;
+    const url = `https://graph.facebook.com/${META_GRAPH_API_VERSION}/${cfg.adAccountId}/insights`;
 
     const rows = await this.fetchAllPages(url, {
       access_token: cfg.token,

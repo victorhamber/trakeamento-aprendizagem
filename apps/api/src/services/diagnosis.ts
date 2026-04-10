@@ -3,6 +3,7 @@ import { pool } from '../db/pool';
 import { llmService } from './llm';
 import { metaMarketingService } from './meta-marketing';
 import { decryptString } from '../lib/crypto';
+import { META_GRAPH_API_VERSION } from '../lib/meta-graph-version';
 
 export class DiagnosisService {
   // ── Helpers ────────────────────────────────────────────────────────────────
@@ -139,7 +140,7 @@ export class DiagnosisService {
 
       const token = decryptString(meta.fb_user_token_enc);
       const adAccountId = meta.ad_account_id.trim();
-      const fbApiVersion = 'v19.0';
+      const fbApiVersion = META_GRAPH_API_VERSION;
       const actId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
 
       // Fetch ads for this campaign with creative details
