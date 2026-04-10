@@ -37,6 +37,33 @@ const sanitizeMapping = (input: unknown) => {
   return mapping;
 };
 
+/** Heurística simples: celular / tablet / desktop a partir do User-Agent (não substitui analytics de device real). */
+function deviceHintFromUserAgent(ua: string | null | undefined): 'mobile' | 'tablet' | 'desktop' | 'unknown' {
+  if (!ua || typeof ua !== 'string' || !ua.trim()) return 'unknown';
+  const u = ua.toLowerCase();
+  if (/\bipad\b|tablet|playbook|\bsilk\b|kindle/.test(u)) return 'tablet';
+  if (/\bandroid\b/.test(u) && !/\bmobile\b/.test(u)) return 'tablet';
+  if (/mobi|iphone|ipod|android.*\bmobile\b|blackberry|iemobile|opera mini|webos|windows phone/.test(u)) return 'mobile';
+  return 'desktop';
+}
+
+function buildBuyerUserAgentSummary(opts: {
+  visitorUa: string | null | undefined;
+  lastPageviewUa: string | null | undefined;
+}) {
+  const from_visitor_profile =
+    opts.visitorUa && String(opts.visitorUa).trim() ? String(opts.visitorUa).trim() : null;
+  const from_last_pageview_before_purchase =
+    opts.lastPageviewUa && String(opts.lastPageviewUa).trim() ? String(opts.lastPageviewUa).trim() : null;
+  const effective_user_agent = from_last_pageview_before_purchase || from_visitor_profile;
+  return {
+    device_hint: deviceHintFromUserAgent(effective_user_agent),
+    from_last_pageview_before_purchase,
+    from_visitor_profile,
+    effective_user_agent,
+  };
+}
+
 /** Meta Purchase exige currency + value (Pixel / CAPI). */
 const BUTTON_RULE_HREF_MAX = 500;
 const BUTTON_RULE_CLASS_MAX = 200;
@@ -1206,7 +1233,7 @@ router.get('/:siteId/buyers/by-key/:buyerKey', requireAuth, async (req, res) => 
 
     // best-effort: encontrar um visitor que corresponda ao buyer_key (só faz sentido para email_hash/fbp/fbc)
     const visitorRes = await pool.query(
-      `SELECT site_key, external_id, email_hash, fbp, fbc, last_seen_at, last_traffic_source
+      `SELECT site_key, external_id, email_hash, fbp, fbc, last_seen_at, last_traffic_source, last_user_agent
        FROM site_visitors
        WHERE site_key = $1
          AND (
@@ -1233,7 +1260,8 @@ router.get('/:siteId/buyers/by-key/:buyerKey', requireAuth, async (req, res) => 
             event_name,
             event_time,
             event_source_url,
-            custom_data
+            custom_data,
+            user_data->>'client_user_agent' AS client_user_agent
            FROM web_events
            WHERE site_key = $1
              AND user_data->>'external_id' = $2
@@ -1249,6 +1277,7 @@ router.get('/:siteId/buyers/by-key/:buyerKey', requireAuth, async (req, res) => 
     const pvBefore: Record<string, number> = {};
     let pvCountBefore = 0;
     let lastPageviewBeforePurchase: { url: string; at: string } | null = null;
+    let lastPageviewUaBeforePurchase: string | null = null;
     const pageviewTimeline: Array<{ at: string; url: string; utm?: Record<string, string> | null }> = [];
     if (lastPurchaseAt) {
       for (const e of eventsRes.rows) {
@@ -1259,6 +1288,9 @@ router.get('/:siteId/buyers/by-key/:buyerKey', requireAuth, async (req, res) => 
           pvBefore[e.event_source_url] = (pvBefore[e.event_source_url] || 0) + 1;
           if (!lastPageviewBeforePurchase) {
             lastPageviewBeforePurchase = { url: e.event_source_url, at: String(e.event_time) };
+            const ua =
+              typeof (e as any).client_user_agent === 'string' ? String((e as any).client_user_agent).trim() : '';
+            lastPageviewUaBeforePurchase = ua || null;
           }
           let utm: Record<string, string> | null = null;
           if (e.custom_data && typeof e.custom_data === 'object') {
@@ -1282,6 +1314,11 @@ router.get('/:siteId/buyers/by-key/:buyerKey', requireAuth, async (req, res) => 
       .slice(0, 25)
       .map(([url, count]) => ({ url, count }));
 
+    const uaSummary = buildBuyerUserAgentSummary({
+      visitorUa: v?.last_user_agent as string | undefined,
+      lastPageviewUa: lastPageviewUaBeforePurchase,
+    });
+
     return res.json({
       buyer: {
         buyer_key: buyerKey,
@@ -1303,6 +1340,10 @@ router.get('/:siteId/buyers/by-key/:buyerKey', requireAuth, async (req, res) => 
         top_pages_before_last_purchase: topPages,
         last_pageview_before_last_purchase: lastPageviewBeforePurchase,
         pageviews_timeline_before_last_purchase: pageviewTimeline.slice(0, 500),
+        last_touch: null,
+        meta_attribution: null,
+        meta_attribution_source: null,
+        user_agent: uaSummary,
       },
       events: eventsRes.rows,
     });
@@ -1356,7 +1397,7 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
     // 0) Se existir visitor para esse external_id, usamos as chaves dele (email_hash/fbp/fbc)
     // para encontrar compras do checkout — mesmo quando purchases.external_id não bate.
     const visitorByExternalRes = await pool.query(
-      `SELECT site_key, external_id, email_hash, fbp, fbc, last_seen_at, last_traffic_source
+      `SELECT site_key, external_id, email_hash, fbp, fbc, last_seen_at, last_traffic_source, last_user_agent
        FROM site_visitors
        WHERE site_key = $1 AND external_id = $2
        LIMIT 1`,
@@ -1396,7 +1437,7 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
     const pEmailHash = p0?.buyer_email_hash ? String(p0.buyer_email_hash) : null;
 
     const visitorRes = await pool.query(
-      `SELECT site_key, external_id, email_hash, fbp, fbc, last_seen_at, last_traffic_source
+      `SELECT site_key, external_id, email_hash, fbp, fbc, last_seen_at, last_traffic_source, last_user_agent
        FROM site_visitors
        WHERE site_key = $1
          AND (
@@ -1423,7 +1464,8 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
             event_name,
             event_time,
             event_source_url,
-            custom_data
+            custom_data,
+            user_data->>'client_user_agent' AS client_user_agent
            FROM web_events
            WHERE site_key = $1
              AND user_data->>'external_id' = $2
@@ -1441,6 +1483,7 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
     let pvCountBefore = 0;
     let lastTouchUtm: Record<string, string> | null = null;
     let lastPageviewBeforePurchase: { url: string; at: string } | null = null;
+    let lastPageviewUaBeforePurchase: string | null = null;
     const pageviewTimeline: Array<{ at: string; url: string; utm?: Record<string, string> | null }> = [];
     if (lastPurchaseAt) {
       for (const e of eventsRes.rows) {
@@ -1451,6 +1494,9 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
           pvBefore[e.event_source_url] = (pvBefore[e.event_source_url] || 0) + 1;
           if (!lastPageviewBeforePurchase) {
             lastPageviewBeforePurchase = { url: e.event_source_url, at: String(e.event_time) };
+            const ua =
+              typeof (e as any).client_user_agent === 'string' ? String((e as any).client_user_agent).trim() : '';
+            lastPageviewUaBeforePurchase = ua || null;
           }
           let utm: Record<string, string> | null = null;
           if (!lastTouchUtm && e.custom_data && typeof e.custom_data === 'object') {
@@ -1545,6 +1591,14 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
       }
     }
 
+    const visitorUa =
+      (v?.last_user_agent != null ? String(v.last_user_agent) : '') ||
+      (v0?.last_user_agent != null ? String(v0.last_user_agent) : '');
+    const uaSummary = buildBuyerUserAgentSummary({
+      visitorUa: visitorUa.trim() || null,
+      lastPageviewUa: lastPageviewUaBeforePurchase,
+    });
+
     return res.json({
       buyer: {
         // external_id do visitor (events) quando existir; senão mantém o que veio pelo checkout
@@ -1569,6 +1623,7 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
         last_touch: lastTouchUtm,
         meta_attribution: attribution,
         meta_attribution_source: attributionSource,
+        user_agent: uaSummary,
       },
       events: eventsRes.rows,
     });

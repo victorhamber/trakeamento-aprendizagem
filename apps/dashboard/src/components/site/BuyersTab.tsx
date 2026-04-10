@@ -56,7 +56,26 @@ type BuyerDetail = {
       ad_name?: string | null;
     };
     meta_attribution_source?: string | null;
+    user_agent?: {
+      device_hint: 'mobile' | 'tablet' | 'desktop' | 'unknown';
+      from_last_pageview_before_purchase: string | null;
+      from_visitor_profile: string | null;
+      effective_user_agent: string | null;
+    } | null;
   };
+};
+
+const deviceHintLabel = (h: string | undefined) => {
+  switch (h) {
+    case 'mobile':
+      return 'Celular';
+    case 'tablet':
+      return 'Tablet';
+    case 'desktop':
+      return 'Desktop';
+    default:
+      return 'Indisponível';
+  }
 };
 
 const money = (n: number) =>
@@ -318,6 +337,38 @@ export function BuyersTab({ siteId }: { siteId: number }) {
                           </div>
                         )}
                       </div>
+                    </div>
+
+                    <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-950/25 p-3">
+                      <div className="text-[11px] font-semibold text-zinc-600 dark:text-zinc-400">Dispositivo (User-Agent)</div>
+                      <div className="mt-1 text-[10px] text-zinc-500 dark:text-zinc-500">
+                        Estimativa a partir do navegador no último PageView antes da compra (quando existir) ou do perfil do visitante no site.
+                      </div>
+                      {detail.behavior.user_agent?.effective_user_agent ? (
+                        <>
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
+                              {deviceHintLabel(detail.behavior.user_agent?.device_hint)}
+                            </span>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full border border-zinc-200 dark:border-zinc-700 text-zinc-500 dark:text-zinc-400">
+                              {detail.behavior.user_agent?.device_hint === 'unknown' ? 'UA vazio' : 'heurística'}
+                            </span>
+                          </div>
+                          {detail.behavior.user_agent?.from_last_pageview_before_purchase ? (
+                            <div className="mt-1 text-[10px] text-zinc-500 dark:text-zinc-500">Fonte: último pageview antes da compra</div>
+                          ) : detail.behavior.user_agent?.from_visitor_profile ? (
+                            <div className="mt-1 text-[10px] text-zinc-500 dark:text-zinc-500">Fonte: último evento registrado no perfil</div>
+                          ) : null}
+                          <pre className="mt-2 max-h-24 overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 p-2 text-[10px] text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap break-all">
+                            {detail.behavior.user_agent.effective_user_agent}
+                          </pre>
+                        </>
+                      ) : (
+                        <div className="mt-2 text-[11px] text-zinc-600 dark:text-zinc-400">
+                          Sem User-Agent nos dados ligados a este comprador. Verifique se o rastreador envia{' '}
+                          <code className="text-[10px]">client_user_agent</code> nos eventos.
+                        </div>
+                      )}
                     </div>
 
                     <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-950/25 p-4">
