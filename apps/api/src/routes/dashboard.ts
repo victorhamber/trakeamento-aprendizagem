@@ -1,6 +1,12 @@
 import { Router } from 'express';
 import { pool } from '../db/pool';
 import { requireAuth } from '../middleware/auth';
+import {
+  addDaysToYmd,
+  getMetaReportTimeZone,
+  resolveDashboardPeriodRange,
+  startOfZonedDayUtc,
+} from '../lib/meta-report-timezone';
 
 const router = Router();
 
@@ -51,15 +57,6 @@ function parseYmdLocal(s: string): { y: number; m: number; d: number } | null {
   return { y, m: mo, d };
 }
 
-/** Início/fim do dia civil em UTC a partir de Y-M-D (evita deslocamento servidor vs Postgres timestamptz). */
-function startUtcFromYmd(y: number, m: number, d: number): Date {
-  return new Date(Date.UTC(y, m - 1, d, 0, 0, 0, 0));
-}
-
-function endUtcFromYmd(y: number, m: number, d: number): Date {
-  return new Date(Date.UTC(y, m - 1, d, 23, 59, 59, 999));
-}
-
 /** Normaliza query ?period= (trim, lower, aliases) para bater com o app e o web */
 function normalizeMobilePeriodParam(raw: string): string {
   const p = String(raw || 'today').trim().toLowerCase();
@@ -74,7 +71,7 @@ function resolveMobilePeriod(
   untilStr?: string
 ): { start: Date | null; end: Date } | { error: string } {
   const now = new Date();
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const tz = getMetaReportTimeZone();
 
   if (period === 'custom') {
     if (!sinceStr || !untilStr) {
@@ -85,38 +82,26 @@ function resolveMobilePeriod(
     if (!a || !b) {
       return { error: 'Datas inválidas. Use o formato YYYY-MM-DD.' };
     }
-    let start = startUtcFromYmd(a.y, a.m, a.d);
-    let end = endUtcFromYmd(b.y, b.m, b.d);
-    if (start.getTime() > end.getTime()) {
+    const sinceYmd = `${a.y}-${String(a.m).padStart(2, '0')}-${String(a.d).padStart(2, '0')}`;
+    const untilYmd = `${b.y}-${String(b.m).padStart(2, '0')}-${String(b.d).padStart(2, '0')}`;
+    const start = startOfZonedDayUtc(sinceYmd, tz);
+    const endInclusive = new Date(startOfZonedDayUtc(addDaysToYmd(untilYmd, 1), tz).getTime() - 1);
+    if (start.getTime() > endInclusive.getTime()) {
       return { error: 'A data inicial não pode ser maior que a final.' };
     }
     if (start.getTime() > now.getTime()) {
       return { error: 'O período não pode estar inteiro no futuro.' };
     }
-    const endCap = end.getTime() > now.getTime() ? now : end;
-    return { start, end: endCap };
+    const end = endInclusive.getTime() > now.getTime() ? now : endInclusive;
+    return { start, end };
   }
 
-  switch (period) {
-    case 'yesterday': {
-      const yStart = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000);
-      return { start: yStart, end: todayStart };
-    }
-    case 'last_7d':
-      return { start: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000), end: now };
-    case 'last_14d':
-      return { start: new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000), end: now };
-    case 'last_15d':
-      return { start: new Date(now.getTime() - 15 * 24 * 60 * 60 * 1000), end: now };
-    case 'last_30d':
-      return { start: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000), end: now };
-    /** `start: null` = sem limite inferior no SQL (todo o histórico até `end`) */
-    case 'maximum':
-      return { start: null, end: now };
-    case 'today':
-    default:
-      return { start: todayStart, end: now };
+  if (period === 'maximum') {
+    return { start: null, end: now };
   }
+
+  const { start, end } = resolveDashboardPeriodRange(period, now);
+  return { start, end };
 }
 
 function parseSiteIds(raw: unknown): number[] {
@@ -235,22 +220,10 @@ router.get('/funnel', async (req, res) => {
   const period = (req.query.period as string) || 'last_30d';
 
   const now = new Date();
-  let start: Date;
-  let end: Date = now;
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
-  switch (period) {
-    case 'today': start = todayStart; break;
-    case 'yesterday':
-      start = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000);
-      end = todayStart;
-      break;
-    case 'last_7d': start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000); break;
-    case 'last_14d': start = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000); break;
-    case 'last_30d': start = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000); break;
-    case 'maximum': start = new Date(0); break;
-    default: start = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-  }
+  const p = ['today', 'yesterday', 'last_7d', 'last_14d', 'last_30d', 'maximum'].includes(period)
+    ? period
+    : 'last_30d';
+  const { start, end } = resolveDashboardPeriodRange(p, now);
 
   try {
     // Query 1: Web Events — usa subquery ANY para acionar o índice (site_key, event_name, event_time)

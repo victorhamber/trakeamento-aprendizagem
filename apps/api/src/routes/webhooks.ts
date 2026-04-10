@@ -533,6 +533,167 @@ function resolveHotmartPurchaseTimestamp(
   return undefined;
 }
 
+/** Valor/moeda “raiz” do checkout Hotmart (comissão produtor/afiliado quando existir). */
+function resolveHotmartMoneyFromCommissionsOrPurchase(
+  purchase: Record<string, unknown>,
+  d: Record<string, unknown>,
+  commissions: unknown[]
+): { value: number; currency: string } {
+  const pr = recordOf(purchase);
+  const fp = recordOf(pr.full_price as unknown);
+  const pp = recordOf(pr.price as unknown);
+  let rawValue: unknown =
+    fp.value ?? pp.value ?? pr.amount ?? pr.total ?? (d as { amount?: unknown }).amount ?? 0;
+  let currency =
+    coerceWebhookStr(fp.currency_value) ||
+    coerceWebhookStr(pp.currency_value) ||
+    coerceWebhookStr((d as { currency?: unknown }).currency) ||
+    'BRL';
+
+  if (Array.isArray(commissions) && commissions.length > 0) {
+    const validCommissions = commissions.filter(
+      (c: any) => c && (c.source === 'PRODUCER' || c.source === 'AFFILIATE')
+    );
+    const commission = (
+      validCommissions.length > 0
+        ? validCommissions[0]
+        : commissions.filter((c: any) => c && c.source !== 'HOTMART' && c.source !== 'MARKETPLACE')[0]
+    ) as { value?: unknown; currency_value?: unknown } | undefined;
+    if (commission && commission.value !== undefined) {
+      rawValue = commission.value;
+      if (commission.currency_value) currency = String(commission.currency_value);
+    }
+  }
+
+  return { value: parseFloat(String(rawValue)) || 0, currency };
+}
+
+type HotmartCheckoutLine = {
+  orderId: string;
+  value: number;
+  currency: string;
+  contentName: string;
+  /** Rótulo curto para push / Meta (ex.: Order bump). */
+  saleLineLabel?: string;
+};
+
+function dedupeHotmartLinesByOrderId(lines: HotmartCheckoutLine[]): HotmartCheckoutLine[] {
+  const seen = new Set<string>();
+  const out: HotmartCheckoutLine[] = [];
+  for (const l of lines) {
+    if (seen.has(l.orderId)) {
+      console.warn('[Hotmart] Linha com order_id duplicado ignorada:', l.orderId);
+      continue;
+    }
+    seen.add(l.orderId);
+    out.push(l);
+  }
+  return out;
+}
+
+/**
+ * Expande um POST Hotmart em uma ou mais linhas (produto principal, order bump, upsell).
+ * - `purchase.items[]`: uma linha por item quando a Hotmart envia o carrinho no mesmo payload.
+ * - Transação filha com `order_bump.parent_purchase_transaction` igual a `transaction`: evita colisão em UNIQUE(site_key, order_id).
+ */
+function buildHotmartCheckoutLines(
+  payload: Record<string, unknown>,
+  d: Record<string, unknown>,
+  purchase: Record<string, unknown>,
+  commissions: unknown[],
+  rootProductName: string
+): HotmartCheckoutLine[] {
+  const mainTx = resolveHotmartOrderId(payload, d, purchase);
+  const rootMoney = resolveHotmartMoneyFromCommissionsOrPurchase(purchase, d, commissions);
+  const ob = recordOf(purchase.order_bump as unknown);
+  const parentPurchaseTx = coerceWebhookStr(ob.parent_purchase_transaction);
+  const rootProd = recordOf(d.product as unknown);
+  const rootPid = rootProd.id;
+
+  const itemsRaw = purchase.items ?? d.items;
+  if (Array.isArray(itemsRaw) && itemsRaw.length > 0) {
+    const lines: HotmartCheckoutLine[] = [];
+    for (let i = 0; i < itemsRaw.length; i++) {
+      const it = recordOf(itemsRaw[i]);
+      const prod = recordOf(it.product as unknown);
+      const priceB = recordOf((it.price || it.full_price) as unknown);
+      let v = parseFloat(String(priceB.value ?? it.value ?? 0)) || 0;
+      let cur =
+        coerceWebhookStr(priceB.currency_value) ||
+        coerceWebhookStr(it.currency_value as string) ||
+        rootMoney.currency;
+      const pid = prod.id ?? it.product_id;
+      let oid =
+        coerceWebhookStr(it.transaction) ||
+        coerceWebhookStr((it as { purchase_transaction?: unknown }).purchase_transaction);
+      if (!oid) {
+        oid = pid != null ? `${mainTx}:p${pid}` : `${mainTx}:line${i}`;
+      }
+      if (v <= 0 && itemsRaw.length === 1) {
+        v = rootMoney.value;
+        cur = rootMoney.currency;
+      } else if (v <= 0 && rootMoney.value > 0) {
+        v = rootMoney.value / itemsRaw.length;
+        cur = rootMoney.currency;
+      }
+      const name =
+        coerceWebhookStr(prod.name) ||
+        coerceWebhookStr(it.name) ||
+        rootProductName ||
+        'Produto';
+      let saleLineLabel: string | undefined;
+      if (it.is_order_bump === true || recordOf(it.order_bump as unknown).is_order_bump === true) {
+        saleLineLabel = 'Order bump';
+      } else if (String(it.type || it.offer_type || '')
+        .toUpperCase()
+        .includes('UPSELL')) {
+        saleLineLabel = 'Upsell';
+      } else if (i > 0) {
+        saleLineLabel = 'Item adicional';
+      }
+      lines.push({
+        orderId: oid.slice(0, 100),
+        value: v,
+        currency: cur || 'BRL',
+        contentName: name,
+        saleLineLabel,
+      });
+    }
+    return dedupeHotmartLinesByOrderId(lines);
+  }
+
+  let orderId = mainTx;
+  const childTx = coerceWebhookStr(purchase.transaction);
+  if (parentPurchaseTx) {
+    const tx = childTx || mainTx;
+    if (tx === parentPurchaseTx) {
+      orderId =
+        rootPid != null
+          ? `${parentPurchaseTx}:p${rootPid}`.slice(0, 100)
+          : `${parentPurchaseTx}:addon`.slice(0, 100);
+    } else {
+      orderId = tx.slice(0, 100);
+    }
+  }
+
+  const saleLineLabel = parentPurchaseTx ? 'Order bump / Upsell' : undefined;
+  const contentName =
+    rootProductName ||
+    coerceWebhookStr(rootProd.name) ||
+    coerceWebhookStr((purchase as { product?: { name?: string } }).product?.name) ||
+    'Produto';
+
+  return [
+    {
+      orderId,
+      value: rootMoney.value,
+      currency: rootMoney.currency,
+      contentName,
+      saleLineLabel,
+    },
+  ];
+}
+
 // ─── Core Ingestion Engine for all Webhooks ──────────────────────────────────
 async function processPurchaseWebhook({
   siteKey, payload, email, phone, firstName, lastName, city, state, zip, country, dob,
@@ -540,6 +701,8 @@ async function processPurchaseWebhook({
   purchaseTimestamp,
   /** Valor mapeado (webhook custom) ou vazio para inferir do payload */
   paymentMethodRaw,
+  /** Ex.: "Order bump" — prefixa Meta + notificações */
+  saleLineLabel,
 }: any) {
   const { finalStatus, sendToCapi } = normalizeStatus(status);
   
@@ -555,6 +718,13 @@ async function processPurchaseWebhook({
   }
 
   console.log(`[Webhook] processPurchaseWebhook called: value=${value} currency=${currency} status=${finalStatus} orderId=${orderId} platform=${platform} siteKey=${siteKey}`);
+
+  const displayContentName =
+    saleLineLabel && contentName
+      ? `${saleLineLabel}: ${contentName}`
+      : saleLineLabel && !contentName
+        ? String(saleLineLabel)
+        : contentName;
 
   // Fetch site settings (Pixel, Token)
   const siteRes = await pool.query(
@@ -671,6 +841,39 @@ async function processPurchaseWebhook({
 
   // 2. CAPI Payload
   const purchasePayload = payload as Record<string, unknown>;
+
+  /** Hotmart costuma enviar 2+ POSTs PURCHASE_APPROVED com `id` diferentes e o mesmo `transaction` — evita 2× CAPI e 2× notificação. */
+  let skipHotmartDuplicateSideEffects = false;
+  if (platform === 'hotmart' && orderId) {
+    const prevRow = await pool.query(
+      `SELECT amount, currency, status, updated_at, raw_payload
+       FROM purchases WHERE site_key = $1 AND order_id = $2`,
+      [siteKey, orderId]
+    );
+    if (prevRow.rowCount && prevRow.rows[0]) {
+      const ex = prevRow.rows[0];
+      const sameMoney =
+        Math.abs(Number(ex.amount) - Number(value)) < 0.0001 &&
+        String(ex.currency || '').toUpperCase() === String(currency || '').toUpperCase();
+      const sameStatus =
+        String(ex.status || '').toLowerCase().trim() === String(finalStatus || '').toLowerCase().trim();
+      const ageMs = Date.now() - new Date(ex.updated_at as string).getTime();
+      const fresh = ageMs >= 0 && ageMs < 5 * 60 * 1000;
+      const newEventId = coerceWebhookStr(purchasePayload.id);
+      const prevPayload = ex.raw_payload as Record<string, unknown> | null | undefined;
+      const prevEventId =
+        prevPayload && typeof prevPayload === 'object' ? coerceWebhookStr(prevPayload.id) : '';
+      if (sameMoney && sameStatus && fresh && newEventId && prevEventId) {
+        skipHotmartDuplicateSideEffects = true;
+        console.log(
+          `[Hotmart] Reenvio do mesmo pedido (order=${orderId}, webhook id ${newEventId}${
+            newEventId !== prevEventId ? ` ≠ ${prevEventId}` : ' repetido'
+          }) — sem novo CAPI nem push`
+        );
+      }
+    }
+  }
+
   const purchaseEventSourceUrl = resolvePurchaseEventSourceUrl(
     purchasePayload,
     siteDomain,
@@ -741,7 +944,7 @@ async function processPurchaseWebhook({
     custom_data: {
       value: Number(value) || 0,
       currency: (currency || 'BRL').toUpperCase(),
-      content_name: contentName || undefined,
+      content_name: displayContentName || undefined,
       content_type: 'product',
       utm_source: utmSource || undefined,
       utm_medium: utmMedium || undefined,
@@ -768,7 +971,7 @@ async function processPurchaseWebhook({
   }
   rawPayloadForDb._capi_debug = capiPayload;
 
-  if (mergedExternalId || dbEmailHash || mergedFbpSafe || mergedFbcSafe) {
+  if (!skipHotmartDuplicateSideEffects && (mergedExternalId || dbEmailHash || mergedFbpSafe || mergedFbcSafe)) {
     pool.query(`
       INSERT INTO site_visitors (
         site_key, external_id, fbc, fbp, email_hash, phone_hash,
@@ -826,7 +1029,7 @@ async function processPurchaseWebhook({
   ]);
 
   // 4. Dispatch — with cross-site pixel dedup
-  if (sendToCapi && metaEnabled && pixel_id && capiToken) {
+  if (sendToCapi && metaEnabled && pixel_id && capiToken && !skipHotmartDuplicateSideEffects) {
     // Dedup: verifica se outro site com o MESMO pixel já enviou este pedido com dados mais ricos
     let shouldSendCapi = true;
     try {
@@ -869,7 +1072,7 @@ async function processPurchaseWebhook({
     }
   }
 
-  if (sendToCapi && siteAccountId) {
+  if (sendToCapi && siteAccountId && !skipHotmartDuplicateSideEffects) {
     const pendingPaymentKind = resolvePendingPaymentKind(finalStatus, paymentMethodRaw, payload);
     const notifyKind: SaleNotifyKind =
       finalStatus === 'pending_payment' ? 'pending_payment' : 'sale';
@@ -878,7 +1081,7 @@ async function processPurchaseWebhook({
       currency,
       orderId,
       platform,
-      productName: contentName,
+      productName: displayContentName,
       notifyKind,
       pendingPaymentKind,
     };
@@ -924,27 +1127,111 @@ router.post('/purchase', async (req, res) => {
   const fbp = payload.fbp || payload.custom_args?.fbp || payload.data?.fbp;
   const fbc = payload.fbc || payload.custom_args?.fbc || payload.data?.fbc;
 
-  let platform = 'generic', email, firstName, lastName, phone, value, currency, status, orderId, city, state, zip, country, dob, contentName, purchaseTimestamp;
-
   if (payload.hottok || payload.data?.hottok || payload.buyer?.email || payload.data?.buyer?.email) {
-    platform = 'hotmart';
     const d = payload.data || payload;
     const buyer = d.buyer || payload.buyer || {};
     const purchase = d.purchase || payload.purchase || {};
-    email = buyer.email;
-    firstName = buyer.first_name || buyer.name?.split(' ')[0];
-    lastName = buyer.last_name || buyer.name?.split(' ').slice(1).join(' ');
-    phone = buyer.checkout_phone || buyer.phone;
-    value = purchase.full_price?.value ?? purchase.price?.value ?? d.amount ?? 0;
-    currency = purchase.full_price?.currency_value ?? purchase.price?.currency_value ?? d.currency ?? 'BRL';
-    status = purchase.status || payload.status || payload.event;
-    orderId = purchase.transaction || payload.id;
-    city = buyer.address?.city;
-    state = buyer.address?.state;
-    zip = buyer.address?.zipCode;
-    country = buyer.address?.country || buyer.checkout_country?.iso;
-    contentName = (payload.product || d.product)?.name;
-  } else if (payload.webhook_event_type || payload.Customer) {
+    const commissions = d.commissions || (payload as { data?: { commissions?: unknown } }).data?.commissions || [];
+    const purchaseStatus = purchase.status || d.status;
+    const status = resolveHotmartStatusFromEvent(payload.event, purchaseStatus, d, payload);
+    const trackingObj = recordOf(d.tracking || payload.tracking || {});
+    const origin = recordOf(purchase.origin || trackingObj || {});
+    const hmTrack = extractHotmartBrowserAndUtm(
+      payload,
+      recordOf(d),
+      recordOf(purchase),
+      recordOf(buyer),
+      trackingObj,
+      origin
+    );
+    const payloadForProcess =
+      payload && typeof payload === 'object'
+        ? ({ ...payload } as Record<string, unknown>)
+        : ({} as Record<string, unknown>);
+    if (hmTrack.utm_source) payloadForProcess.utm_source = hmTrack.utm_source;
+    if (hmTrack.utm_medium) payloadForProcess.utm_medium = hmTrack.utm_medium;
+    if (hmTrack.utm_campaign) payloadForProcess.utm_campaign = hmTrack.utm_campaign;
+    if (hmTrack.utm_content) payloadForProcess.utm_content = hmTrack.utm_content;
+    if (hmTrack.utm_term) payloadForProcess.utm_term = hmTrack.utm_term;
+
+    const rootProductName = String(
+      (d.product as { name?: string } | undefined)?.name || (payload as { product?: { name?: string } }).product?.name || ''
+    );
+    const lines = buildHotmartCheckoutLines(payload, d, purchase, commissions, rootProductName);
+    const purchaseTimestamp = resolveHotmartPurchaseTimestamp(payload, d, purchase);
+    const buyerAddr = buyer.address || d.address || {};
+
+    const email = buyer.email || payload.email;
+    const firstName = buyer.first_name || buyer.name?.split(' ')[0];
+    const lastName = buyer.last_name || buyer.name?.split(' ').slice(1).join(' ');
+    const phone = buyer.checkout_phone || buyer.phone;
+
+    const evLog = String(payload.event || d.event || '')
+      .toUpperCase()
+      .replace(/[\s-]+/g, '_');
+    if (
+      ['PURCHASE_COMPLETE', 'PURCHASE_APPROVED', 'SUBSCRIPTION_PURCHASE_COMPLETE'].includes(evLog) &&
+      String(purchaseStatus || '')
+        .toLowerCase()
+        .includes('pending')
+    ) {
+      console.log(
+        `[Hotmart] Usando evento ${evLog} como aprovado (purchase.status ainda pendente) orders=${lines
+          .map((l) => l.orderId)
+          .join(',')}`
+      );
+    }
+
+    for (const line of lines) {
+      const result = await processPurchaseWebhook({
+        siteKey,
+        payload: payloadForProcess,
+        email,
+        phone,
+        firstName,
+        lastName,
+        city: buyerAddr.city as string | undefined,
+        state: buyerAddr.state as string | undefined,
+        zip: buyerAddr.zipCode as string | undefined,
+        country: (buyerAddr.country_iso || buyerAddr.country || 'BR') as string,
+        fbp: hmTrack.fbp || fbp,
+        fbc: hmTrack.fbc || fbc,
+        externalId: (d as { user_id?: unknown }).user_id || buyer.document || buyer.id,
+        clientIp: hmTrack.clientIp || undefined,
+        clientUa: hmTrack.clientUa || undefined,
+        value: line.value,
+        currency: line.currency,
+        status,
+        orderId: line.orderId,
+        platform: 'hotmart',
+        contentName: line.contentName,
+        saleLineLabel: line.saleLineLabel,
+        purchaseTimestamp,
+        paymentMethodRaw: extractPaymentMethodRaw(payload),
+      });
+      if (!result.success) return res.status(result.status || 500).json({ error: result.error });
+    }
+    return res.json({ received: true, hotmart_lines: lines.length });
+  }
+
+  let platform = 'generic',
+    email,
+    firstName,
+    lastName,
+    phone,
+    value,
+    currency,
+    status,
+    orderId,
+    city,
+    state,
+    zip,
+    country,
+    dob,
+    contentName,
+    purchaseTimestamp;
+
+  if (payload.webhook_event_type || payload.Customer) {
     platform = 'kiwify';
     const customer = payload.Customer || payload.customer || {};
     email = customer.email;
@@ -1013,23 +1300,15 @@ router.post('/hotmart', async (req, res) => {
   const lastName = buyer.last_name || buyer.name?.split(' ').slice(1).join(' ');
   const phone = buyer.checkout_phone || buyer.phone;
 
-  const commissions = d.commissions || payload.data?.commissions || [];
-  let rawValue = purchase.full_price?.value ?? purchase.price?.value ?? purchase.amount ?? purchase.total ?? d.amount ?? 0;
-  let currency = purchase.full_price?.currency_value || purchase.price?.currency_value || d.currency || 'BRL';
-
-  if (Array.isArray(commissions) && commissions.length > 0) {
-    const validCommissions = commissions.filter((c: any) => c && (c.source === 'PRODUCER' || c.source === 'AFFILIATE'));
-    const commission = validCommissions.length > 0 ? validCommissions[0] : commissions.filter((c: any) => c && c.source !== 'HOTMART' && c.source !== 'MARKETPLACE')[0];
-    if (commission && commission.value !== undefined) {
-      rawValue = commission.value;
-      if (commission.currency_value) currency = commission.currency_value;
-    }
-  }
-
-  const value = parseFloat(String(rawValue)) || 0;
+  const commissions = d.commissions || (payload as { data?: { commissions?: unknown } }).data?.commissions || [];
   const purchaseStatus = purchase.status || d.status;
   const status = resolveHotmartStatusFromEvent(payload.event, purchaseStatus, d, payload);
-  const orderId = resolveHotmartOrderId(payload, d, purchase);
+  const rootProductName = String(
+    (d.product as { name?: string } | undefined)?.name || (payload as { product?: { name?: string } }).product?.name || ''
+  );
+  const lines = buildHotmartCheckoutLines(payload, d, purchase, commissions, rootProductName);
+  const purchaseTimestamp = resolveHotmartPurchaseTimestamp(payload, d, purchase);
+
   const evLog = String(payload.event || d.event || '')
     .toUpperCase()
     .replace(/[\s-]+/g, '_');
@@ -1040,7 +1319,9 @@ router.post('/hotmart', async (req, res) => {
       .includes('pending')
   ) {
     console.log(
-      `[Hotmart] Usando evento ${evLog} como aprovado (purchase.status ainda pendente) order=${orderId}`
+      `[Hotmart] Usando evento ${evLog} como aprovado (purchase.status ainda pendente) orders=${lines
+        .map((l) => l.orderId)
+        .join(',')}`
     );
   }
   const buyerAddr = buyer.address || d.address || {};
@@ -1056,21 +1337,38 @@ router.post('/hotmart', async (req, res) => {
   if (hmTrack.utm_content) payloadForProcess.utm_content = hmTrack.utm_content;
   if (hmTrack.utm_term) payloadForProcess.utm_term = hmTrack.utm_term;
 
-  const result = await processPurchaseWebhook({
-    siteKey, payload: payloadForProcess, email, phone, firstName, lastName, city: buyerAddr.city, state: buyerAddr.state, zip: buyerAddr.zipcode, country: buyerAddr.country_iso || buyerAddr.country || 'BR',
-    fbp: hmTrack.fbp || undefined,
-    fbc: hmTrack.fbc || undefined,
-    externalId: d.user_id || buyer.document || buyer.id,
-    clientIp: hmTrack.clientIp || undefined,
-    clientUa: hmTrack.clientUa || undefined,
-    value, currency, status, orderId, platform: 'hotmart',
-    contentName: d.product?.name || payload.product?.name,
-    purchaseTimestamp: resolveHotmartPurchaseTimestamp(payload, d, purchase),
-    paymentMethodRaw: extractPaymentMethodRaw(payload),
-  });
+  for (const line of lines) {
+    const result = await processPurchaseWebhook({
+      siteKey,
+      payload: payloadForProcess,
+      email,
+      phone,
+      firstName,
+      lastName,
+      city: buyerAddr.city as string | undefined,
+      state: buyerAddr.state as string | undefined,
+      zip: (buyerAddr.zipcode ?? buyerAddr.zipCode) as string | undefined,
+      country: (buyerAddr.country_iso || buyerAddr.country || 'BR') as string,
+      fbp: hmTrack.fbp || undefined,
+      fbc: hmTrack.fbc || undefined,
+      externalId: (d as { user_id?: unknown }).user_id || buyer.document || buyer.id,
+      clientIp: hmTrack.clientIp || undefined,
+      clientUa: hmTrack.clientUa || undefined,
+      value: line.value,
+      currency: line.currency,
+      status,
+      orderId: line.orderId,
+      platform: 'hotmart',
+      contentName: line.contentName,
+      saleLineLabel: line.saleLineLabel,
+      purchaseTimestamp,
+      paymentMethodRaw: extractPaymentMethodRaw(payload),
+    });
 
-  if (!result.success) return res.status(result.status || 500).json({ error: result.error });
-  return res.json({ received: true });
+    if (!result.success) return res.status(result.status || 500).json({ error: result.error });
+  }
+
+  return res.json({ received: true, hotmart_lines: lines.length });
 });
 
 router.post('/kiwify', async (req, res) => {

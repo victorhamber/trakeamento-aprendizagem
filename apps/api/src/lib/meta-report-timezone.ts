@@ -48,3 +48,52 @@ export function startOfZonedDayUtc(ymd: string, tz: string): Date {
   }
   return first;
 }
+
+/**
+ * Janelas do dashboard / overview / funil: sempre no calendário de {@link getMetaReportTimeZone}
+ * (ex.: America/Sao_Paulo), nunca na meia-noite “local” do processo Node (UTC no Docker).
+ */
+export function resolveDashboardPeriodRange(
+  period: string,
+  now: Date = new Date()
+): { start: Date; end: Date } {
+  const tz = getMetaReportTimeZone();
+  const p = String(period || 'today').trim().toLowerCase();
+  const todayYmd = getYmdInReportTz(now, tz);
+  let start: Date;
+  let end: Date = now;
+
+  switch (p) {
+    case 'today':
+      start = startOfZonedDayUtc(todayYmd, tz);
+      break;
+    case 'yesterday': {
+      const y = addDaysToYmd(todayYmd, -1);
+      start = startOfZonedDayUtc(y, tz);
+      end = new Date(startOfZonedDayUtc(todayYmd, tz).getTime() - 1);
+      break;
+    }
+    case 'last_7d':
+      start = startOfZonedDayUtc(addDaysToYmd(todayYmd, -7), tz);
+      break;
+    case 'last_14d':
+      start = startOfZonedDayUtc(addDaysToYmd(todayYmd, -14), tz);
+      break;
+    case 'last_15d':
+      start = startOfZonedDayUtc(addDaysToYmd(todayYmd, -15), tz);
+      break;
+    case 'last_30d':
+      start = startOfZonedDayUtc(addDaysToYmd(todayYmd, -30), tz);
+      break;
+    case 'maximum':
+    case 'max':
+    case 'all':
+    case 'tudo':
+    case 'full':
+      start = new Date(0);
+      break;
+    default:
+      start = startOfZonedDayUtc(addDaysToYmd(todayYmd, -30), tz);
+  }
+  return { start, end };
+}

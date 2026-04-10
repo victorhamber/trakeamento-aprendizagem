@@ -3,50 +3,9 @@ import { requireAuth } from '../middleware/auth';
 import { pool } from '../db/pool';
 import geoip from 'geoip-lite';
 import { pixelCountryTokenToIso2, resolvePixelCountryToken } from '../lib/pixel-country';
-import {
-  addDaysToYmd,
-  getMetaReportTimeZone,
-  getYmdInReportTz,
-  startOfZonedDayUtc,
-} from '../lib/meta-report-timezone';
+import { getMetaReportTimeZone, resolveDashboardPeriodRange } from '../lib/meta-report-timezone';
 
 const router = Router();
-
-/** Janela do relatório de picos: calendário em META_INSIGHTS_TIMEZONE (padrão America/Sao_Paulo), não no fuso do servidor Node. */
-function resolveBestTimesRange(period: string): { start: Date; end: Date } {
-  const tz = getMetaReportTimeZone();
-  const now = new Date();
-  const todayYmd = getYmdInReportTz(now, tz);
-  let start: Date;
-  let end: Date = now;
-
-  switch (period) {
-    case 'today':
-      start = startOfZonedDayUtc(todayYmd, tz);
-      break;
-    case 'yesterday': {
-      const y = addDaysToYmd(todayYmd, -1);
-      start = startOfZonedDayUtc(y, tz);
-      end = startOfZonedDayUtc(todayYmd, tz);
-      break;
-    }
-    case 'last_7d':
-      start = startOfZonedDayUtc(addDaysToYmd(todayYmd, -7), tz);
-      break;
-    case 'last_14d':
-      start = startOfZonedDayUtc(addDaysToYmd(todayYmd, -14), tz);
-      break;
-    case 'last_30d':
-      start = startOfZonedDayUtc(addDaysToYmd(todayYmd, -30), tz);
-      break;
-    case 'maximum':
-      start = new Date(0);
-      break;
-    default:
-      start = startOfZonedDayUtc(addDaysToYmd(todayYmd, -30), tz);
-  }
-  return { start, end };
-}
 
 // TEMPORARY: Diagnostic endpoint to debug purchase visibility issues
 router.get('/debug-purchase/:orderId', requireAuth, async (req, res) => {
@@ -58,13 +17,16 @@ router.get('/debug-purchase/:orderId', requireAuth, async (req, res) => {
       [orderId]
     );
     const now = new Date();
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const tz = getMetaReportTimeZone();
+    const { start: todayReportTzStart } = resolveDashboardPeriodRange('today', now);
     return res.json({
       found: (result.rowCount || 0) > 0,
       row: result.rows[0] || null,
       server_now_utc: now.toISOString(),
-      today_start_utc: todayStart.toISOString(),
-      note: 'Compare platform_date/created_at with today_start to see if it falls within "Hoje" filter',
+      meta_report_timezone: tz,
+      today_start_report_calendar_utc: todayReportTzStart.toISOString(),
+      note:
+        'Compare platform_date/created_at with today_start_report_calendar_utc (início do dia civil no META_INSIGHTS_TIMEZONE) para o filtro "Hoje".',
     });
   } catch (err: any) {
     return res.status(500).json({ error: err.message });
@@ -78,35 +40,12 @@ router.get('/overview', requireAuth, async (req, res) => {
   const siteId = req.query.siteId ? Number(req.query.siteId) : null;
 
   const now = new Date();
-  let start: Date;
-  let end: Date = now;
-
-  // Normaliza truncando horas para as opções baseadas em dias
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
-  switch (period) {
-    case 'today':
-      start = todayStart;
-      break;
-    case 'yesterday':
-      start = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000);
-      end = todayStart;
-      break;
-    case 'last_7d':
-      start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-      break;
-    case 'last_14d':
-      start = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
-      break;
-    case 'last_30d':
-      start = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-      break;
-    case 'maximum':
-      start = new Date(0); // Epoch
-      break;
-    default: // custom range if sent as yyyy-mm-dd (fallback para simple today)
-      start = todayStart;
-  }
+  const p = ['today', 'yesterday', 'last_7d', 'last_14d', 'last_30d', 'maximum'].includes(period)
+    ? period
+    : 'today';
+  const { start, end } = resolveDashboardPeriodRange(p, now);
+  const reportTz = getMetaReportTimeZone();
+  const reportTodayYmd = new Intl.DateTimeFormat('sv-SE', { timeZone: reportTz }).format(now).slice(0, 10);
 
   const sites = await pool.query('SELECT COUNT(*)::int as c FROM sites WHERE account_id = $1', [auth.accountId]);
 
@@ -151,6 +90,15 @@ router.get('/overview', requireAuth, async (req, res) => {
     purchases_today: purchasesPeriod.rows[0]?.c || 0,
     total_revenue: purchasesPeriod.rows[0]?.total_revenue || 0,
     reports_7d: reportsPeriod.rows[0]?.c || 0,
+    // debug: ajuda a validar se "Hoje" está no fuso correto
+    _range: {
+      period: p,
+      report_timezone: reportTz,
+      report_today_ymd: reportTodayYmd,
+      start_utc: start.toISOString(),
+      end_utc: end.toISOString(),
+      server_now_utc: now.toISOString(),
+    },
   });
 });
 
@@ -165,16 +113,8 @@ router.get('/sites/:siteId/quality', requireAuth, async (req, res) => {
   const siteKey = site.rows[0].site_key;
 
   const now = new Date();
-  let start: Date;
-  let end: Date = now;
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
-  switch (period) {
-    case 'today': start = todayStart; break;
-    case 'last_7d': start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000); break;
-    case 'last_30d': start = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000); break;
-    default: start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-  }
+  const p = ['today', 'last_7d', 'last_30d'].includes(period) ? period : 'last_7d';
+  const { start, end } = resolveDashboardPeriodRange(p, now);
 
   try {
     const QUALITY_SAMPLE_LIMIT = 50000;
@@ -244,19 +184,10 @@ router.get('/sales-daily', requireAuth, async (req, res) => {
   const siteId = req.query.siteId ? Number(req.query.siteId) : null;
 
   const now = new Date();
-  let start: Date;
-  const end: Date = now;
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
-  switch (period) {
-    case 'today': start = todayStart; break;
-    case 'yesterday': start = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000); break;
-    case 'last_7d': start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000); break;
-    case 'last_14d': start = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000); break;
-    case 'last_30d': start = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000); break;
-    case 'maximum': start = new Date(0); break;
-    default: start = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-  }
+  const p = ['today', 'yesterday', 'last_7d', 'last_14d', 'last_30d', 'maximum'].includes(period)
+    ? period
+    : 'last_30d';
+  const { start, end } = resolveDashboardPeriodRange(p, now);
 
   try {
     const result = await pool.query(
@@ -286,7 +217,7 @@ router.get('/best-times', requireAuth, async (req, res) => {
   const auth = req.auth!;
   const siteId = req.query.siteId ? Number(req.query.siteId) : null;
   const period = (req.query.period as string) || 'last_30d';
-  const { start, end } = resolveBestTimesRange(period);
+  const { start, end } = resolveDashboardPeriodRange(period);
   const reportTz = getMetaReportTimeZone();
 
   try {
