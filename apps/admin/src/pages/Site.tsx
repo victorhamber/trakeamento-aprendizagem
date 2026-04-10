@@ -3362,9 +3362,9 @@ ${scriptContent}
                   <div>
                     <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Configuração de Eventos por Botão</h3>
                     <p className="text-sm text-zinc-600 dark:text-zinc-500">
-                      Dispare eventos ao clicar em CTAs. Use texto estável, ou critérios estilo Meta (destino do link, classe{' '}
-                      <code className="text-xs">btn-cta</code>, seletor CSS). Percentuais dinâmicos no texto (ex.: 75% vs 0%) são
-                      tratados como equivalentes no match por texto.
+                      Dispare eventos ao clicar em CTAs. Você pode combinar critérios como texto do botão, destino do link (href),
+                      classe (ex.: <code className="text-xs">btn-cta</code>) e seletor CSS. Percentuais dinâmicos no texto (ex.: 75%
+                      vs 0%) são tratados como equivalentes no match por texto.
                     </p>
                     <div className="mt-4 space-y-2">
                       <label htmlFor="site-btn-selector-page-url" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">
@@ -3374,7 +3374,7 @@ ${scriptContent}
                         id="site-btn-selector-page-url"
                         value={buttonSelectorPageUrl}
                         onChange={(e) => setButtonSelectorPageUrl(e.target.value)}
-                        placeholder="https://readlyme.com/higado-vital/"
+                        placeholder="https://exemplo.com/minha-pagina/"
                         className={inputCls}
                       />
                       <p className="text-xs text-zinc-500 dark:text-zinc-400">
@@ -3403,7 +3403,7 @@ ${scriptContent}
                             : 'bg-zinc-200 text-zinc-500 border-zinc-200 dark:bg-zinc-900/40 dark:text-zinc-500 dark:border-zinc-800')
                         }
                       >
-                        Abrir seletor na página (estilo Meta)
+                        Abrir seletor na página
                       </button>
                       <button
                         type="button"
