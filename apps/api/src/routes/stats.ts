@@ -408,19 +408,18 @@ router.get('/best-times', requireAuth, async (req, res) => {
 
         topLocationsQuery = `
           WITH events_base AS (
-            SELECT e.site_key, e.user_data
+            SELECT e.site_key, e.user_data, e.event_time
             FROM web_events e
             WHERE e.site_key = ANY(
               SELECT site_key FROM sites WHERE account_id = $1 AND ($2::int IS NULL OR id = $2::int)
             )
               AND e.event_name = ANY($5) AND e.event_time >= $3 AND e.event_time <= $4
+            ORDER BY e.event_time DESC
+            LIMIT 5000
           ),
           attributed AS (
             SELECT
-              COALESCE(
-                NULLIF(btrim(COALESCE(eb.user_data->>'client_ip_address', '')), ''),
-                sv_loc.ip
-              ) as ip,
+              NULLIF(btrim(COALESCE(eb.user_data->>'client_ip_address', '')), '') as ip,
               CASE
                 WHEN NOT (eb.user_data ? 'country') THEN NULL::text
                 WHEN jsonb_typeof(eb.user_data->'country') = 'array'
@@ -428,20 +427,6 @@ router.get('/best-times', requireAuth, async (req, res) => {
                 ELSE NULLIF(btrim(eb.user_data->>'country'), '')
               END AS pixel_country
             FROM events_base eb
-            LEFT JOIN LATERAL (
-              SELECT sv.last_ip as ip
-              FROM site_visitors sv
-              WHERE sv.site_key = eb.site_key
-                AND (
-                  (eb.user_data->>'external_id' IS NOT NULL AND sv.external_id = eb.user_data->>'external_id')
-                  OR (eb.user_data->>'em' IS NOT NULL AND sv.email_hash = eb.user_data->>'em')
-                  OR (eb.user_data->>'ph' IS NOT NULL AND sv.phone_hash = eb.user_data->>'ph')
-                  OR (eb.user_data->>'fbp' IS NOT NULL AND sv.fbp = eb.user_data->>'fbp')
-                  OR (eb.user_data->>'fbc' IS NOT NULL AND sv.fbc = eb.user_data->>'fbc')
-                )
-              ORDER BY sv.last_seen_at DESC
-              LIMIT 1
-            ) sv_loc ON TRUE
           )
           SELECT ip, pixel_country, COUNT(*)::int as count
           FROM attributed
