@@ -261,6 +261,8 @@ router.get('/best-times', requireAuth, async (req, res) => {
             )
               AND COALESCE(p.platform_date, p.created_at) >= $3 AND COALESCE(p.platform_date, p.created_at) <= $4
               AND p.status IN ('approved', 'paid', 'completed', 'active')
+            ORDER BY COALESCE(p.platform_date, p.created_at) DESC
+            LIMIT 2000
           ),
           attributed AS (
             SELECT
@@ -306,6 +308,8 @@ router.get('/best-times', requireAuth, async (req, res) => {
               WHERE e.site_key = pb.site_key
                 AND e.event_name IN ('InitiateCheckout', 'AddToCart')
                 AND e.event_time <= pb.created_at
+                AND e.event_time >= $3
+                AND e.event_time <= $4
                 AND (
                   (pb.buyer_email_hash IS NOT NULL AND e.user_data->>'em' = pb.buyer_email_hash)
                   OR (pb.fbp IS NOT NULL AND e.user_data->>'fbp' = pb.fbp)
@@ -334,6 +338,8 @@ router.get('/best-times', requireAuth, async (req, res) => {
                   OR (pb.extracted_external_id IS NOT NULL AND e.user_data->>'external_id' = pb.extracted_external_id)
                 )
                 AND e.event_time <= pb.created_at
+                AND e.event_time >= $3
+                AND e.event_time <= $4
                 AND (
                   NULLIF(e.custom_data->>'traffic_source', '') IS NOT NULL
                   OR NULLIF(e.custom_data->>'utm_source', '') IS NOT NULL
@@ -352,6 +358,8 @@ router.get('/best-times', requireAuth, async (req, res) => {
                 AND e.event_name IN ('InitiateCheckout', 'AddToCart')
                 AND e.event_time <= pb.created_at
                 AND e.event_time >= pb.created_at - INTERVAL '24 hours'
+                AND e.event_time >= $3
+                AND e.event_time <= $4
                 AND (
                   NULLIF(e.custom_data->>'traffic_source', '') IS NOT NULL
                   OR NULLIF(e.custom_data->>'utm_source', '') IS NOT NULL
@@ -379,6 +387,7 @@ router.get('/best-times', requireAuth, async (req, res) => {
         topLocationsQuery = `
           WITH purchases_base AS (
             SELECT p.site_key, p.buyer_email_hash, p.fbp, p.fbc,
+                   COALESCE(p.platform_date, p.created_at) as created_at,
                    p.raw_payload->'_capi_debug'->'user_data'->>'client_ip_address' as capi_ip,
                    p.raw_payload->>'_extracted_external_id' AS extracted_external_id
             FROM purchases p
@@ -387,6 +396,8 @@ router.get('/best-times', requireAuth, async (req, res) => {
             )
               AND COALESCE(p.platform_date, p.created_at) >= $3 AND COALESCE(p.platform_date, p.created_at) <= $4
               AND p.status IN ('approved', 'paid', 'completed', 'active')
+            ORDER BY COALESCE(p.platform_date, p.created_at) DESC
+            LIMIT 2000
           ),
           attributed AS (
             SELECT
@@ -415,6 +426,9 @@ router.get('/best-times', requireAuth, async (req, res) => {
                   OR (pb.fbc IS NOT NULL AND e.user_data->>'fbc' = pb.fbc)
                   OR (pb.extracted_external_id IS NOT NULL AND e.user_data->>'external_id' = pb.extracted_external_id)
                 )
+                AND e.event_time <= pb.created_at
+                AND e.event_time >= $3
+                AND e.event_time <= $4
                 AND e.user_data->>'client_ip_address' IS NOT NULL
               ORDER BY e.event_time DESC
               LIMIT 1
@@ -435,6 +449,9 @@ router.get('/best-times', requireAuth, async (req, res) => {
                   OR (pb.fbc IS NOT NULL AND e.user_data->>'fbc' = pb.fbc)
                   OR (pb.extracted_external_id IS NOT NULL AND e.user_data->>'external_id' = pb.extracted_external_id)
                 )
+                AND e.event_time <= pb.created_at
+                AND e.event_time >= $3
+                AND e.event_time <= $4
                 AND e.user_data->'country' IS NOT NULL
                 AND (
                   (jsonb_typeof(e.user_data->'country') = 'array'

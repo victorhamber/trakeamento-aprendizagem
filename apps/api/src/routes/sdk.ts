@@ -28,8 +28,9 @@ router.get('/meta-param-builder.js', (_req, res) => {
 });
 
 /**
- * Carrega tracker.js só após window "load" + primeira interação (performance; sem rastrear bounce passivo).
- * Exceção: URLs com ta_pick ou ta_test (modo seletor / teste no painel) injetam o tracker logo após o load.
+ * Carrega tracker.js o quanto antes, mas permite diferir "códigos extras" (snippets injetados)
+ * até a primeira interação — evita perder amostragem do Meta (pixel + CAPI) em páginas com bounce.
+ * Exceção: URLs com ta_pick ou ta_test (modo seletor / teste no painel) injetam sem deferir extras.
  */
 router.get('/loader.js', (req, res) => {
   const key = typeof req.query.key === 'string' ? req.query.key.trim() : '';
@@ -51,9 +52,12 @@ router.get('/loader.js', (req, res) => {
   const js = `(function(){
   var u=${JSON.stringify(trackerUrl)};
   var done=false;
-  function inject(){
+  function inject(deferExtras){
     if(done)return;
     done=true;
+    try{
+      if(deferExtras) window.__TA_DEFER_EXTRAS = true;
+    }catch(_e){}
     var s=document.createElement('script');
     s.src=u;
     s.async=true;
@@ -68,19 +72,10 @@ router.get('/loader.js', (req, res) => {
       return p.has('ta_pick')||p.has('ta_test');
     }catch(_e){return false;}
   }
-  function onFirst(){
-    window.removeEventListener('pointerdown',onFirst,true);
-    window.removeEventListener('keydown',onFirst,true);
-    window.removeEventListener('scroll',onFirst,true);
-    window.removeEventListener('touchstart',onFirst,true);
-    inject();
-  }
   function afterLoad(){
-    if(needPickerOrTest()){inject();return;}
-    window.addEventListener('pointerdown',onFirst,true);
-    window.addEventListener('keydown',onFirst,true);
-    window.addEventListener('scroll',onFirst,{passive:true,capture:true});
-    window.addEventListener('touchstart',onFirst,{passive:true,capture:true});
+    if(needPickerOrTest()){inject(false);return;}
+    // Carrega o tracker cedo para não perder PageView/Meta; difere apenas os snippets extras.
+    inject(true);
   }
   if(document.readyState==='complete')afterLoad();
   else window.addEventListener('load',afterLoad,{once:true});
@@ -2134,6 +2129,30 @@ router.get('/tracker.js', async (req, res) => {
   function applyCustomSnippetsOnce() {
     try {
       if (window.__TA_CUSTOM_SNIPPETS_APPLIED) return;
+      // Modo performance híbrido: tracker inicia (Meta + CAPI), mas snippets extras só após primeira interação.
+      // loader.js seta window.__TA_DEFER_EXTRAS = true.
+      try {
+        if (window.__TA_DEFER_EXTRAS === true) {
+          if (!window.__TA_DEFER_EXTRAS_HOOKED) {
+            window.__TA_DEFER_EXTRAS_HOOKED = true;
+            var onFirstExtras = function() {
+              try {
+                window.removeEventListener('pointerdown', onFirstExtras, true);
+                window.removeEventListener('keydown', onFirstExtras, true);
+                window.removeEventListener('scroll', onFirstExtras, true);
+                window.removeEventListener('touchstart', onFirstExtras, true);
+              } catch(_eOff) {}
+              try { window.__TA_DEFER_EXTRAS = false; } catch(_eFlag) {}
+              try { applyCustomSnippetsOnce(); } catch(_eApply) {}
+            };
+            window.addEventListener('pointerdown', onFirstExtras, true);
+            window.addEventListener('keydown', onFirstExtras, true);
+            window.addEventListener('scroll', onFirstExtras, { passive: true, capture: true });
+            window.addEventListener('touchstart', onFirstExtras, { passive: true, capture: true });
+          }
+          return;
+        }
+      } catch(_eDefer) {}
       var cfg = window.TRACKING_CONFIG;
       if (!cfg) return;
       var h = cfg.injectHeadHtml;
