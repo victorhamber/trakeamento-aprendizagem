@@ -246,15 +246,10 @@ router.get('/best-times', requireAuth, async (req, res) => {
         `;
 
         topSourcesQuery = `
+          -- Performance: no Purchase, evitar JOINs laterais (web_events/site_visitors) que podem estourar timeout.
+          -- Usamos apenas dados já persistidos na compra (raw_payload / utm_source / sck/src).
           WITH purchases_base AS (
-            SELECT
-              p.site_key,
-              COALESCE(p.platform_date, p.created_at) as created_at,
-              p.raw_payload,
-              p.buyer_email_hash,
-              p.fbp,
-              p.fbc,
-              p.raw_payload->>'_extracted_external_id' AS extracted_external_id
+            SELECT p.raw_payload
             FROM purchases p
             WHERE p.site_key = ANY(
               SELECT site_key FROM sites WHERE account_id = $1 AND ($2::int IS NULL OR id = $2::int)
@@ -262,111 +257,20 @@ router.get('/best-times', requireAuth, async (req, res) => {
               AND COALESCE(p.platform_date, p.created_at) >= $3 AND COALESCE(p.platform_date, p.created_at) <= $4
               AND p.status IN ('approved', 'paid', 'completed', 'active')
             ORDER BY COALESCE(p.platform_date, p.created_at) DESC
-            LIMIT 2000
+            LIMIT 500
           ),
           attributed AS (
             SELECT
               COALESCE(
-                sv_source.source,
-                ic_source.source,
-                ev_source.source,
-                ic_site_source.source,
-                NULLIF(pb.raw_payload->'custom_data'->>'traffic_source', ''),
-                NULLIF(pb.raw_payload->'custom_data'->>'utm_source', ''),
-                NULLIF(pb.raw_payload->>'utm_source', ''),
-                NULLIF(pb.raw_payload->>'src', ''),
-                NULLIF(pb.raw_payload->>'sck', ''),
-                NULLIF(pb.raw_payload->'trackingParameters'->>'utm_source', '')
+                NULLIF((raw_payload->'custom_data'->>'traffic_source')::text, ''),
+                NULLIF((raw_payload->'custom_data'->>'utm_source')::text, ''),
+                NULLIF((raw_payload->>'utm_source')::text, ''),
+                NULLIF((raw_payload->>'src')::text, ''),
+                NULLIF((raw_payload->>'sck')::text, ''),
+                NULLIF((raw_payload->'trackingParameters'->>'utm_source')::text, ''),
+                NULLIF((raw_payload->'tracking_parameters'->>'utm_source')::text, '')
               ) as source
-            FROM purchases_base pb
-            LEFT JOIN LATERAL (
-              SELECT
-                CASE
-                  WHEN sv.last_traffic_source IS NULL OR btrim(sv.last_traffic_source) = '' THEN NULL
-                  WHEN lower(sv.last_traffic_source) LIKE 'trk_%' THEN NULL
-                  WHEN sv.last_traffic_source ~* '(^|[?&])utm_source=' THEN
-                    NULLIF((regexp_match(sv.last_traffic_source, '(?:^|[?&])utm_source=([^&#]+)'))[1], '')
-                  ELSE sv.last_traffic_source
-                END as source
-              FROM site_visitors sv
-              WHERE sv.site_key = pb.site_key
-                AND (
-                  (pb.buyer_email_hash IS NOT NULL AND sv.email_hash = pb.buyer_email_hash)
-                  OR (pb.fbp IS NOT NULL AND sv.fbp = pb.fbp)
-                  OR (pb.fbc IS NOT NULL AND sv.fbc = pb.fbc)
-                )
-              ORDER BY sv.last_seen_at DESC
-              LIMIT 1
-            ) sv_source ON TRUE
-            LEFT JOIN LATERAL (
-              SELECT
-                COALESCE(
-                  NULLIF(e.custom_data->>'traffic_source', ''),
-                  NULLIF(e.custom_data->>'utm_source', '')
-                ) as source
-              FROM web_events e
-              WHERE e.site_key = pb.site_key
-                AND e.event_name IN ('InitiateCheckout', 'AddToCart')
-                AND e.event_time <= pb.created_at
-                AND e.event_time >= $3
-                AND e.event_time <= $4
-                AND (
-                  (pb.buyer_email_hash IS NOT NULL AND e.user_data->>'em' = pb.buyer_email_hash)
-                  OR (pb.fbp IS NOT NULL AND e.user_data->>'fbp' = pb.fbp)
-                  OR (pb.fbc IS NOT NULL AND e.user_data->>'fbc' = pb.fbc)
-                  OR (pb.extracted_external_id IS NOT NULL AND e.user_data->>'external_id' = pb.extracted_external_id)
-                )
-                AND (
-                  NULLIF(e.custom_data->>'traffic_source', '') IS NOT NULL
-                  OR NULLIF(e.custom_data->>'utm_source', '') IS NOT NULL
-                )
-              ORDER BY e.event_time DESC
-              LIMIT 1
-            ) ic_source ON TRUE
-            LEFT JOIN LATERAL (
-              SELECT
-                COALESCE(
-                  NULLIF(e.custom_data->>'traffic_source', ''),
-                  NULLIF(e.custom_data->>'utm_source', '')
-                ) as source
-              FROM web_events e
-              WHERE e.site_key = pb.site_key
-                AND (
-                  (pb.buyer_email_hash IS NOT NULL AND e.user_data->>'em' = pb.buyer_email_hash)
-                  OR (pb.fbp IS NOT NULL AND e.user_data->>'fbp' = pb.fbp)
-                  OR (pb.fbc IS NOT NULL AND e.user_data->>'fbc' = pb.fbc)
-                  OR (pb.extracted_external_id IS NOT NULL AND e.user_data->>'external_id' = pb.extracted_external_id)
-                )
-                AND e.event_time <= pb.created_at
-                AND e.event_time >= $3
-                AND e.event_time <= $4
-                AND (
-                  NULLIF(e.custom_data->>'traffic_source', '') IS NOT NULL
-                  OR NULLIF(e.custom_data->>'utm_source', '') IS NOT NULL
-                )
-              ORDER BY e.event_time DESC
-              LIMIT 1
-            ) ev_source ON TRUE
-            LEFT JOIN LATERAL (
-              SELECT
-                COALESCE(
-                  NULLIF(e.custom_data->>'traffic_source', ''),
-                  NULLIF(e.custom_data->>'utm_source', '')
-                ) as source
-              FROM web_events e
-              WHERE e.site_key = pb.site_key
-                AND e.event_name IN ('InitiateCheckout', 'AddToCart')
-                AND e.event_time <= pb.created_at
-                AND e.event_time >= pb.created_at - INTERVAL '24 hours'
-                AND e.event_time >= $3
-                AND e.event_time <= $4
-                AND (
-                  NULLIF(e.custom_data->>'traffic_source', '') IS NOT NULL
-                  OR NULLIF(e.custom_data->>'utm_source', '') IS NOT NULL
-                )
-              ORDER BY e.event_time DESC
-              LIMIT 1
-            ) ic_site_source ON TRUE
+            FROM purchases_base
           )
           SELECT
             COALESCE(
@@ -385,11 +289,10 @@ router.get('/best-times', requireAuth, async (req, res) => {
         `;
 
         topLocationsQuery = `
+          -- Performance: para Purchase, usamos IP salvo na compra (CAPI debug) e evitamos JOINs laterais.
           WITH purchases_base AS (
-            SELECT p.site_key, p.buyer_email_hash, p.fbp, p.fbc,
-                   COALESCE(p.platform_date, p.created_at) as created_at,
-                   p.raw_payload->'_capi_debug'->'user_data'->>'client_ip_address' as capi_ip,
-                   p.raw_payload->>'_extracted_external_id' AS extracted_external_id
+            SELECT
+              p.raw_payload->'_capi_debug'->'user_data'->>'client_ip_address' as ip
             FROM purchases p
             WHERE p.site_key = ANY(
               SELECT site_key FROM sites WHERE account_id = $1 AND ($2::int IS NULL OR id = $2::int)
@@ -397,77 +300,12 @@ router.get('/best-times', requireAuth, async (req, res) => {
               AND COALESCE(p.platform_date, p.created_at) >= $3 AND COALESCE(p.platform_date, p.created_at) <= $4
               AND p.status IN ('approved', 'paid', 'completed', 'active')
             ORDER BY COALESCE(p.platform_date, p.created_at) DESC
-            LIMIT 2000
-          ),
-          attributed AS (
-            SELECT
-              COALESCE(sv_loc.ip, ev_ip.ip, pb.capi_ip) as ip,
-              ev_country.pixel_country AS pixel_country
-            FROM purchases_base pb
-            LEFT JOIN LATERAL (
-              SELECT sv.last_ip as ip
-              FROM site_visitors sv
-              WHERE sv.site_key = pb.site_key
-                AND (
-                  (pb.buyer_email_hash IS NOT NULL AND sv.email_hash = pb.buyer_email_hash)
-                  OR (pb.fbp IS NOT NULL AND sv.fbp = pb.fbp)
-                  OR (pb.fbc IS NOT NULL AND sv.fbc = pb.fbc)
-                )
-              ORDER BY sv.last_seen_at DESC
-              LIMIT 1
-            ) sv_loc ON TRUE
-            LEFT JOIN LATERAL (
-              SELECT e.user_data->>'client_ip_address' as ip
-              FROM web_events e
-              WHERE e.site_key = pb.site_key
-                AND (
-                  (pb.buyer_email_hash IS NOT NULL AND e.user_data->>'em' = pb.buyer_email_hash)
-                  OR (pb.fbp IS NOT NULL AND e.user_data->>'fbp' = pb.fbp)
-                  OR (pb.fbc IS NOT NULL AND e.user_data->>'fbc' = pb.fbc)
-                  OR (pb.extracted_external_id IS NOT NULL AND e.user_data->>'external_id' = pb.extracted_external_id)
-                )
-                AND e.event_time <= pb.created_at
-                AND e.event_time >= $3
-                AND e.event_time <= $4
-                AND e.user_data->>'client_ip_address' IS NOT NULL
-              ORDER BY e.event_time DESC
-              LIMIT 1
-            ) ev_ip ON sv_loc.ip IS NULL
-            LEFT JOIN LATERAL (
-              SELECT
-                CASE
-                  WHEN NOT (e.user_data ? 'country') THEN NULL::text
-                  WHEN jsonb_typeof(e.user_data->'country') = 'array'
-                    THEN NULLIF(btrim(e.user_data->'country'->>0), '')
-                  ELSE NULLIF(btrim(e.user_data->>'country'), '')
-                END AS pixel_country
-              FROM web_events e
-              WHERE e.site_key = pb.site_key
-                AND (
-                  (pb.buyer_email_hash IS NOT NULL AND e.user_data->>'em' = pb.buyer_email_hash)
-                  OR (pb.fbp IS NOT NULL AND e.user_data->>'fbp' = pb.fbp)
-                  OR (pb.fbc IS NOT NULL AND e.user_data->>'fbc' = pb.fbc)
-                  OR (pb.extracted_external_id IS NOT NULL AND e.user_data->>'external_id' = pb.extracted_external_id)
-                )
-                AND e.event_time <= pb.created_at
-                AND e.event_time >= $3
-                AND e.event_time <= $4
-                AND e.user_data->'country' IS NOT NULL
-                AND (
-                  (jsonb_typeof(e.user_data->'country') = 'array'
-                    AND jsonb_array_length(COALESCE(e.user_data->'country', '[]'::jsonb)) > 0)
-                  OR (jsonb_typeof(e.user_data->'country') = 'string'
-                    AND length(btrim(e.user_data->>'country')) > 0)
-                )
-              ORDER BY e.event_time DESC
-              LIMIT 1
-            ) ev_country ON TRUE
+            LIMIT 500
           )
-          SELECT ip, pixel_country, COUNT(*)::int as count
-          FROM attributed
-          WHERE (ip IS NOT NULL AND btrim(ip::text) <> '')
-             OR (pixel_country IS NOT NULL AND btrim(pixel_country) <> '')
-          GROUP BY ip, pixel_country
+          SELECT ip, NULL::text as pixel_country, COUNT(*)::int as count
+          FROM purchases_base
+          WHERE ip IS NOT NULL AND btrim(ip::text) <> ''
+          GROUP BY 1
           ORDER BY 3 DESC
           LIMIT 100
         `;
