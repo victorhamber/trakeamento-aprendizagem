@@ -308,6 +308,21 @@ export const SitePage = () => {
   const [formEventCurrency, setFormEventCurrency] = useState('BRL');
   const [formTheme, setFormTheme] = useState<'light' | 'dark'>('light');
 
+  const eventSupportsValueAndCurrency = (t: string) => {
+    return (
+      t === 'Purchase' ||
+      t === 'InitiateCheckout' ||
+      t === 'AddToCart' ||
+      t === 'AddPaymentInfo' ||
+      t === 'Donate' ||
+      t === 'StartTrial' ||
+      t === 'Subscribe' ||
+      t === 'Custom'
+    );
+  };
+
+  const currencyOptions = ['BRL', 'USD', 'MXN', 'EUR', 'GBP', 'COP', 'ARS', 'CLP', 'PEN'] as const;
+
   // New Form Builder State
   const [savedForms, setSavedForms] = useState<any[]>([]);
   const [selectedFormId, setSelectedFormId] = useState<number | null>(null);
@@ -3234,11 +3249,11 @@ ${scriptContent}
                         />
                       </div>
                     )}
-                    {(urlRuleEventType === 'Purchase' || urlRuleEventType === 'Custom') && (
+                    {eventSupportsValueAndCurrency(urlRuleEventType) && (
                       <div className="md:col-span-3 grid grid-cols-2 gap-2">
                         <div>
                           <label htmlFor="site-url-rule-event-value" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
-                            Valor{urlRuleEventType === 'Purchase' ? ' (obrigatório para Purchase)' : ''}:
+                            Valor{urlRuleEventType === 'Purchase' ? ' (obrigatório para Purchase)' : ' (opcional)'}:
                           </label>
                           <input
                             id="site-url-rule-event-value"
@@ -3252,7 +3267,7 @@ ${scriptContent}
                         </div>
                         <div>
                           <label htmlFor="site-url-rule-event-currency" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
-                            Moeda{urlRuleEventType === 'Purchase' ? ' (obrigatório)' : ''}:
+                            Moeda{urlRuleEventType === 'Purchase' ? ' (obrigatório)' : ' (opcional)'}:
                           </label>
                           <select
                             id="site-url-rule-event-currency"
@@ -3260,9 +3275,11 @@ ${scriptContent}
                             onChange={(e) => setUrlRuleEventCurrency(e.target.value)}
                             className={selectCls}
                           >
-                            <option value="BRL">BRL</option>
-                            <option value="USD">USD</option>
-                            <option value="EUR">EUR</option>
+                            {currencyOptions.map((c) => (
+                              <option key={c} value={c}>
+                                {c}
+                              </option>
+                            ))}
                           </select>
                         </div>
                       </div>
@@ -3480,11 +3497,11 @@ ${scriptContent}
                         />
                       </div>
                     )}
-                    {(buttonRuleEventType === 'Purchase' || buttonRuleEventType === 'Custom') && (
+                    {eventSupportsValueAndCurrency(buttonRuleEventType) && (
                       <div className="md:col-span-3 grid grid-cols-2 gap-2">
                         <div>
                           <label htmlFor="site-btn-rule-event-value" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
-                            Valor{buttonRuleEventType === 'Purchase' ? ' (obrigatório para Purchase)' : ''}:
+                            Valor{buttonRuleEventType === 'Purchase' ? ' (obrigatório para Purchase)' : ' (opcional)'}:
                           </label>
                           <input
                             id="site-btn-rule-event-value"
@@ -3498,7 +3515,7 @@ ${scriptContent}
                         </div>
                         <div>
                           <label htmlFor="site-btn-rule-event-currency" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
-                            Moeda{buttonRuleEventType === 'Purchase' ? ' (obrigatório)' : ''}:
+                            Moeda{buttonRuleEventType === 'Purchase' ? ' (obrigatório)' : ' (opcional)'}:
                           </label>
                           <select
                             id="site-btn-rule-event-currency"
@@ -3506,9 +3523,11 @@ ${scriptContent}
                             onChange={(e) => setButtonRuleEventCurrency(e.target.value)}
                             className={selectCls}
                           >
-                            <option value="BRL">BRL</option>
-                            <option value="USD">USD</option>
-                            <option value="EUR">EUR</option>
+                            {currencyOptions.map((c) => (
+                              <option key={c} value={c}>
+                                {c}
+                              </option>
+                            ))}
                           </select>
                         </div>
                       </div>
@@ -3874,11 +3893,11 @@ ${scriptContent}
                           </div>
                         )}
 
-                        {(formEventType === 'Purchase' || formEventType === 'Custom') && (
+                        {eventSupportsValueAndCurrency(formEventType) && (
                           <div className="grid grid-cols-2 gap-2">
                             <div>
                               <label htmlFor="site-form-event-value" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
-                                Valor
+                                Valor{formEventType === 'Purchase' ? ' (obrigatório)' : ' (opcional)'}
                               </label>
                               <input
                                 id="site-form-event-value"
@@ -3892,7 +3911,7 @@ ${scriptContent}
                             </div>
                             <div>
                               <label htmlFor="site-form-event-currency" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
-                                Moeda
+                                Moeda{formEventType === 'Purchase' ? ' (obrigatório)' : ' (opcional)'}
                               </label>
                               <select
                                 id="site-form-event-currency"
@@ -3900,9 +3919,11 @@ ${scriptContent}
                                 onChange={(e) => setFormEventCurrency(e.target.value)}
                                 className={selectCls}
                               >
-                                <option value="BRL">BRL</option>
-                                <option value="USD">USD</option>
-                                <option value="EUR">EUR</option>
+                                {currencyOptions.map((c) => (
+                                  <option key={c} value={c}>
+                                    {c}
+                                  </option>
+                                ))}
                               </select>
                             </div>
                           </div>
