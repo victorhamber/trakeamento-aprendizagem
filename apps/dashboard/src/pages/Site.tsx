@@ -2249,9 +2249,11 @@ ${scriptContent}
                       </span>
                     </div>
                     <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">
-                      Primeiro carrega só um script pequeno. Depois que a página termina de carregar, o tracker completo só é baixado na{' '}
-                      <strong className="text-zinc-700 dark:text-zinc-300">primeira interação</strong> (clique, toque, tecla ou scroll). Visitantes que só abrem e fecham não
-                      disparam rastreamento. O modo seletor de botão no painel (
+                      Primeiro carrega só um script pequeno. Depois que a página termina de carregar, o tracker inicia e já carrega o{' '}
+                      <strong className="text-zinc-700 dark:text-zinc-300">Meta Pixel (web) + eventos server</strong> para não perder amostragem.
+                      Os <strong className="text-zinc-700 dark:text-zinc-300">códigos extras</strong> (GTM, Clarity etc.) só são injetados na{' '}
+                      <strong className="text-zinc-700 dark:text-zinc-300">primeira interação</strong> (clique, toque, tecla ou scroll).
+                      O modo seletor de botão no painel (
                       <code className="text-[11px] bg-zinc-200 dark:bg-zinc-800/60 px-1 rounded">ta_pick</code> /{' '}
                       <code className="text-[11px] bg-zinc-200 dark:bg-zinc-800/60 px-1 rounded">ta_test</code>) carrega o tracker logo após o load, sem precisar clicar na página.
                     </p>
