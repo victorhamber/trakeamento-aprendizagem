@@ -51,34 +51,33 @@ function getHashToIsoMap(): Map<string, string> {
 const regionNamesPt = new Intl.DisplayNames(['pt-BR'], { type: 'region' });
 
 /**
+ * Extrai ISO 3166-1 alpha-2 do valor enviado no pixel (hash SHA-256 de ISO2 minúsculo, ou ISO2 em texto).
+ */
+export function pixelCountryTokenToIso2(token: string | null | undefined): string | null {
+  if (token == null || typeof token !== 'string') return null;
+  const t = token.trim();
+  if (!t) return null;
+  if (/^[a-f0-9]{64}$/i.test(t)) {
+    const iso = getHashToIsoMap().get(t.toLowerCase());
+    return iso || null;
+  }
+  if (/^[a-z]{2}$/i.test(t)) {
+    return t.toUpperCase();
+  }
+  return null;
+}
+
+/**
  * Converte `user_data.country` do pixel (hash SHA-256 de ISO2 minúsculo, ou ISO2 em texto)
  * em rótulo amigável. Retorna null se não for possível interpretar.
  */
 export function resolvePixelCountryToken(token: string | null | undefined): string | null {
-  if (token == null || typeof token !== 'string') return null;
-  const t = token.trim();
-  if (!t) return null;
-
-  if (/^[a-f0-9]{64}$/i.test(t)) {
-    const iso = getHashToIsoMap().get(t.toLowerCase());
-    if (!iso) return null;
-    try {
-      const name = regionNamesPt.of(iso);
-      return name ? `${name} (${iso}) · pixel` : `${iso} · pixel`;
-    } catch {
-      return `${iso} · pixel`;
-    }
+  const iso = pixelCountryTokenToIso2(token);
+  if (!iso) return null;
+  try {
+    const name = regionNamesPt.of(iso);
+    return name ? `${name} (${iso}) · pixel` : `${iso} · pixel`;
+  } catch {
+    return `${iso} · pixel`;
   }
-
-  if (/^[a-z]{2}$/i.test(t)) {
-    const iso = t.toUpperCase();
-    try {
-      const name = regionNamesPt.of(iso);
-      return name ? `${name} (${iso}) · pixel` : `${iso} · pixel`;
-    } catch {
-      return `${iso} · pixel`;
-    }
-  }
-
-  return null;
 }

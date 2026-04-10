@@ -161,9 +161,10 @@ const Card = ({ title, data, color, textColor }: { title: string; data: PeakData
                 Top Regiões
               </h4>
               <p className="text-[9px] text-zinc-500 dark:text-zinc-500 leading-snug mb-2">
-                Quando o pixel envia <strong>país</strong> (advanced matching / identify), usamos isso primeiro
-                (rótulos &quot;· pixel&quot;). O restante é estimativa por IP — não é o país de segmentação do
-                anúncio; VPN, CDN e datacenters podem parecer EUA/Europa.
+                País do <strong>pixel</strong> (Meta) é cruzado com o país do <strong>IP</strong>: se baterem,
+                mostramos cidade/estado do IP com &quot;· pixel&quot;. Se não baterem, ficamos só no país do
+                pixel para evitar cidade errada (VPN, CDN, datacenter). Sem país do pixel, segue só estimativa
+                por IP.
               </p>
               <div className="space-y-1.5">
                 {data.top_locations.map((loc, idx) => (

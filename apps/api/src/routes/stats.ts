@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { requireAuth } from '../middleware/auth';
 import { pool } from '../db/pool';
 import geoip from 'geoip-lite';
-import { resolvePixelCountryToken } from '../lib/pixel-country';
+import { pixelCountryTokenToIso2, resolvePixelCountryToken } from '../lib/pixel-country';
 import {
   addDaysToYmd,
   getMetaReportTimeZone,
@@ -680,31 +680,47 @@ router.get('/best-times', requireAuth, async (req, res) => {
         pool.query(topLocationsQuery, auxParams),
       ]);
 
-      // Resolve IPs em Localizações em memória (rápido com geoip-lite)
+      // Resolve IPs em Localizações em memória (rápido com geoip-lite).
+      // Se o país do Meta (pixel) e o país do GeoIP baterem, usamos cidade/estado do IP + sufixo · pixel.
+      // Se não baterem, ficamos só no país do pixel (evita cidade de datacenter/VPN em outro país).
       const locationCounts = new Map<string, number>();
-      
-      locationResult.rows.forEach((row) => {
-        const pixelLabel = resolvePixelCountryToken(
-          row.pixel_country != null ? String(row.pixel_country) : undefined
-        );
-        let locName: string | null = pixelLabel;
-        const ipRaw = row.ip != null ? String(row.ip).trim() : '';
-        if (!locName && ipRaw !== '') {
-          let ip = ipRaw;
-          if (ip.includes(',')) ip = ip.split(',')[0].trim();
-          ip = ip.replace(/^::ffff:/, '');
 
-          const geo = geoip.lookup(ip);
-          if (geo) {
-            const parts: string[] = [];
-            if (geo.city && geo.city !== 'null') parts.push(geo.city);
-            if (geo.region && geo.region !== 'null') parts.push(geo.region);
-            if (parts.length > 0) {
-              locName = `${parts.join(', ')} - ${geo.country || 'BR'}`;
-            } else if (geo.country && geo.country !== 'null') {
-              locName = geo.country;
-            }
-          }
+      const geoFromIp = (ipRaw: string): { iso2: string; locName: string } | null => {
+        let ip = ipRaw.trim();
+        if (!ip) return null;
+        if (ip.includes(',')) ip = ip.split(',')[0].trim();
+        ip = ip.replace(/^::ffff:/, '');
+        const geo = geoip.lookup(ip);
+        if (!geo || !geo.country || geo.country === 'null') return null;
+        const iso2 = String(geo.country).toUpperCase();
+        const parts: string[] = [];
+        if (geo.city && geo.city !== 'null') parts.push(geo.city);
+        if (geo.region && geo.region !== 'null') parts.push(geo.region);
+        const locName =
+          parts.length > 0 ? `${parts.join(', ')} - ${iso2}` : iso2;
+        return { iso2, locName };
+      };
+
+      locationResult.rows.forEach((row) => {
+        const pixelToken =
+          row.pixel_country != null ? String(row.pixel_country) : undefined;
+        const pixelIso = pixelCountryTokenToIso2(pixelToken);
+        const pixelLabel = resolvePixelCountryToken(pixelToken);
+        const ipRaw = row.ip != null ? String(row.ip).trim() : '';
+        const geo = ipRaw !== '' ? geoFromIp(ipRaw) : null;
+
+        let locName: string | null = null;
+        if (pixelIso && geo && geo.iso2 === pixelIso) {
+          locName =
+            geo.locName.includes(',') || geo.locName.length > 3
+              ? `${geo.locName} · pixel`
+              : pixelLabel;
+        } else if (pixelIso && geo && geo.iso2 !== pixelIso) {
+          locName = pixelLabel;
+        } else if (pixelLabel) {
+          locName = pixelLabel;
+        } else if (geo) {
+          locName = geo.locName;
         }
 
         if (locName) {
