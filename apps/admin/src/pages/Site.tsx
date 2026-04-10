@@ -314,6 +314,7 @@ export const SitePage = () => {
       t === 'InitiateCheckout' ||
       t === 'AddToCart' ||
       t === 'AddPaymentInfo' ||
+      t === 'ViewContent' ||
       t === 'Donate' ||
       t === 'StartTrial' ||
       t === 'Subscribe' ||
