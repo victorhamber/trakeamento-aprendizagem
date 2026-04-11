@@ -337,70 +337,27 @@ router.get('/best-times', requireAuth, async (req, res) => {
           ORDER BY 3 DESC
         `;
 
+        // Performance: evitar LATERAL em site_visitors/purchases sobre todo o período (estourava statement_timeout).
+        // Fontes = só o que já está no evento (igual filosofia do ramo Purchase).
         topSourcesQuery = `
           WITH events_base AS (
-            SELECT e.site_key, e.event_time, e.user_data, e.custom_data, e.event_source_url
+            SELECT e.custom_data
             FROM web_events e
             WHERE e.site_key = ANY(
               SELECT site_key FROM sites WHERE account_id = $1 AND ($2::int IS NULL OR id = $2::int)
             )
               AND e.event_name = ANY($5) AND e.event_time >= $3 AND e.event_time <= $4
+            ORDER BY e.event_time DESC
+            LIMIT 5000
           ),
           attributed AS (
             SELECT
               COALESCE(
-                sv_source.source,
-                purchase_source.source,
-                NULLIF(eb.custom_data->>'traffic_source', ''),
-                NULLIF(eb.custom_data->>'utm_source', ''),
+                NULLIF(btrim(eb.custom_data->>'traffic_source'), ''),
+                NULLIF(btrim(eb.custom_data->>'utm_source'), ''),
                 NULL
               ) as source
             FROM events_base eb
-            LEFT JOIN LATERAL (
-              SELECT
-                CASE
-                  WHEN sv.last_traffic_source IS NULL OR btrim(sv.last_traffic_source) = '' THEN NULL
-                  WHEN lower(sv.last_traffic_source) LIKE 'trk_%' THEN NULL
-                  WHEN sv.last_traffic_source ~* '(^|[?&])utm_source=' THEN
-                    NULLIF((regexp_match(sv.last_traffic_source, '(?:^|[?&])utm_source=([^&#]+)'))[1], '')
-                  ELSE sv.last_traffic_source
-                END as source
-              FROM site_visitors sv
-              WHERE sv.site_key = eb.site_key
-                AND (
-                  (eb.user_data->>'external_id' IS NOT NULL AND sv.external_id = eb.user_data->>'external_id')
-                  OR (eb.user_data->>'em' IS NOT NULL AND sv.email_hash = eb.user_data->>'em')
-                  OR (eb.user_data->>'ph' IS NOT NULL AND sv.phone_hash = eb.user_data->>'ph')
-                  OR (eb.user_data->>'fbp' IS NOT NULL AND sv.fbp = eb.user_data->>'fbp')
-                  OR (eb.user_data->>'fbc' IS NOT NULL AND sv.fbc = eb.user_data->>'fbc')
-                )
-              ORDER BY sv.last_seen_at DESC
-              LIMIT 1
-            ) sv_source ON TRUE
-            LEFT JOIN LATERAL (
-              SELECT
-                CASE
-                  WHEN sv.last_traffic_source IS NULL OR btrim(sv.last_traffic_source) = '' THEN NULL
-                  WHEN lower(sv.last_traffic_source) LIKE 'trk_%' THEN NULL
-                  WHEN sv.last_traffic_source ~* '(^|[?&])utm_source=' THEN
-                    NULLIF((regexp_match(sv.last_traffic_source, '(?:^|[?&])utm_source=([^&#]+)'))[1], '')
-                  ELSE sv.last_traffic_source
-                END as source
-              FROM purchases pb
-              JOIN site_visitors sv ON sv.site_key = pb.site_key
-                AND (pb.buyer_email_hash = sv.email_hash OR (pb.fbp IS NOT NULL AND sv.fbp = pb.fbp) OR (pb.fbc IS NOT NULL AND sv.fbc = pb.fbc))
-              WHERE pb.site_key = eb.site_key
-                AND pb.created_at >= eb.event_time
-                AND pb.created_at <= eb.event_time + INTERVAL '7 days'
-                AND pb.status IN ('approved', 'paid', 'completed', 'active')
-                AND (
-                  (eb.user_data->>'em' IS NOT NULL AND pb.buyer_email_hash = eb.user_data->>'em')
-                  OR (eb.user_data->>'fbp' IS NOT NULL AND pb.fbp = eb.user_data->>'fbp')
-                  OR (eb.user_data->>'fbc' IS NOT NULL AND pb.fbc = eb.user_data->>'fbc')
-                )
-              ORDER BY pb.created_at ASC
-              LIMIT 1
-            ) purchase_source ON TRUE
           )
           SELECT
             COALESCE(
@@ -457,11 +414,10 @@ router.get('/best-times', requireAuth, async (req, res) => {
         : [...paramsBase, eventNames, reportTz];
       const auxParams = isPurchase ? [...paramsBase] : [...paramsBase, eventNames];
 
-      const [peakResult, sourceResult, locationResult] = await Promise.all([
-        pool.query(query, peakParams),
-        pool.query(topSourcesQuery, auxParams),
-        pool.query(topLocationsQuery, auxParams),
-      ]);
+      // Sequencial: menos pico de carga no Postgres; a query de fontes já foi a mais pesada.
+      const peakResult = await pool.query(query, peakParams);
+      const sourceResult = await pool.query(topSourcesQuery, auxParams);
+      const locationResult = await pool.query(topLocationsQuery, auxParams);
 
       // Resolve IPs em Localizações em memória (rápido com geoip-lite).
       // Se o país do Meta (pixel) e o país do GeoIP baterem, usamos cidade/estado do IP + sufixo · pixel.
