@@ -501,6 +501,23 @@ router.get('/tracker.js', async (req, res) => {
         }
       }
     } catch(_e) {}
+    // Cliques Meta/Google muitas vezes trazem só fbclid/gclid (sem utm_*). O painel e o checkout tratam isso como origem paga.
+    try {
+      if (out.fbclid && !out.click_id) out.click_id = out.fbclid;
+      if (!out.utm_source && out.fbclid) {
+        out.utm_source = 'facebook';
+        if (!out.utm_medium) out.utm_medium = 'cpc';
+      } else if (!out.utm_source && out.gclid) {
+        out.utm_source = 'google';
+        if (!out.utm_medium) out.utm_medium = 'cpc';
+      } else if (!out.utm_source && out.ttclid) {
+        out.utm_source = 'tiktok';
+        if (!out.utm_medium) out.utm_medium = 'paid';
+      } else if (!out.utm_source && out.twclid) {
+        out.utm_source = 'twitter';
+        if (!out.utm_medium) out.utm_medium = 'paid';
+      }
+    } catch (_e2) {}
     return out;
   }
 

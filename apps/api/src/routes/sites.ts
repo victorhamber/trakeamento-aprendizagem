@@ -1379,19 +1379,56 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
       try {
         const params = new URLSearchParams(s.startsWith('?') ? s.slice(1) : s);
         const pick = (k: string) => (params.get(k) || '').trim();
-        const utm_source = pick('utm_source');
-        const utm_medium = pick('utm_medium');
+        let utm_source = pick('utm_source');
+        let utm_medium = pick('utm_medium');
         const utm_campaign = pick('utm_campaign');
         const utm_content = pick('utm_content');
         const utm_term = pick('utm_term');
-        const click_id = pick('click_id');
-        if (utm_source || utm_campaign || utm_content || click_id) {
+        let click_id = pick('click_id');
+        const fbclid = pick('fbclid');
+        const gclid = pick('gclid');
+        if (!click_id && fbclid) click_id = fbclid;
+        if (!utm_source && fbclid) {
+          utm_source = 'facebook';
+          if (!utm_medium) utm_medium = 'cpc';
+        } else if (!utm_source && gclid) {
+          utm_source = 'google';
+          if (!utm_medium) utm_medium = 'cpc';
+        }
+        if (utm_source || utm_campaign || utm_content || click_id || fbclid || gclid) {
           return { utm_source, utm_medium, utm_campaign, utm_content, utm_term, click_id };
         }
         return null;
       } catch {
         return null;
       }
+    };
+
+    /** UTMs explícitos ou inferidos a partir de fbclid/gclid (anúncios costumam não enviar utm_* na URL). */
+    const utmFromPageviewCustomData = (cd: unknown): Record<string, string> | null => {
+      if (!cd || typeof cd !== 'object') return null;
+      const o = cd as Record<string, unknown>;
+      const pick = (k: string) => (typeof o[k] === 'string' ? o[k] : '');
+      let utm_source = pick('utm_source');
+      let utm_medium = pick('utm_medium');
+      const utm_campaign = pick('utm_campaign');
+      const utm_content = pick('utm_content');
+      const utm_term = pick('utm_term');
+      let click_id = pick('click_id');
+      const fbclid = pick('fbclid');
+      const gclid = pick('gclid');
+      if (!click_id && fbclid) click_id = fbclid;
+      if (!utm_source && fbclid) {
+        utm_source = 'facebook';
+        if (!utm_medium) utm_medium = 'cpc';
+      } else if (!utm_source && gclid) {
+        utm_source = 'google';
+        if (!utm_medium) utm_medium = 'cpc';
+      }
+      if (utm_source || utm_campaign || utm_content || click_id || fbclid || gclid) {
+        return { utm_source, utm_medium, utm_campaign, utm_content, utm_term, click_id };
+      }
+      return null;
     };
 
     // 0) Se existir visitor para esse external_id, usamos as chaves dele (email_hash/fbp/fbc)
@@ -1499,29 +1536,11 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
             lastPageviewUaBeforePurchase = ua || null;
           }
           let utm: Record<string, string> | null = null;
-          if (!lastTouchUtm && e.custom_data && typeof e.custom_data === 'object') {
-            const cd = e.custom_data as any;
-            const pick = (k: string) => (typeof cd[k] === 'string' ? cd[k] : '');
-            const utm_source = pick('utm_source');
-            const utm_medium = pick('utm_medium');
-            const utm_campaign = pick('utm_campaign');
-            const utm_content = pick('utm_content');
-            const utm_term = pick('utm_term');
-            const click_id = pick('click_id');
-            if (utm_source || utm_campaign || utm_content || click_id) {
-              lastTouchUtm = { utm_source, utm_medium, utm_campaign, utm_content, utm_term, click_id };
-            }
+          if (!lastTouchUtm && e.custom_data) {
+            lastTouchUtm = utmFromPageviewCustomData(e.custom_data);
           }
-          if (e.custom_data && typeof e.custom_data === 'object') {
-            const cd = e.custom_data as any;
-            const pick = (k: string) => (typeof cd[k] === 'string' ? cd[k] : '');
-            const utm_source = pick('utm_source');
-            const utm_medium = pick('utm_medium');
-            const utm_campaign = pick('utm_campaign');
-            const utm_content = pick('utm_content');
-            const utm_term = pick('utm_term');
-            const click_id = pick('click_id');
-            if (utm_source || utm_campaign || utm_content || click_id) utm = { utm_source, utm_medium, utm_campaign, utm_content, utm_term, click_id };
+          if (e.custom_data) {
+            utm = utmFromPageviewCustomData(e.custom_data);
           }
           pageviewTimeline.push({ at: String(e.event_time), url: e.event_source_url, utm });
         }
