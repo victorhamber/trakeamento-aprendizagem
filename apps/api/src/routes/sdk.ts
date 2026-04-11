@@ -481,6 +481,9 @@ router.get('/tracker.js', async (req, res) => {
   }
 
   // ─── Attribution params ───────────────────────────────────────────────────
+  // Reforço: cookie _ta_attr (90d) além da URL + sessionStorage — Pixel/CAPI e ingest recebem UTMs
+  // mesmo após SPA/redirect sem query; prioridade = URL > sessionStorage > cookie.
+  var ATTRIB_COOKIE = '_ta_attr';
   function getAttributionParams() {
     var out  = {};
     var keys = ['utm_source','utm_medium','utm_campaign','utm_content','utm_term',
@@ -501,6 +504,18 @@ router.get('/tracker.js', async (req, res) => {
         }
       }
     } catch(_e) {}
+    try {
+      var rawC = getCookie(ATTRIB_COOKIE);
+      if (rawC) {
+        var parsed = JSON.parse(rawC);
+        if (parsed && typeof parsed === 'object') {
+          for (var ci = 0; ci < keys.length; ci++) {
+            var ck = keys[ci];
+            if (!out[ck] && parsed[ck]) out[ck] = String(parsed[ck]);
+          }
+        }
+      }
+    } catch (_ec) {}
     // Cliques Meta/Google muitas vezes trazem só fbclid/gclid (sem utm_*). O painel e o checkout tratam isso como origem paga.
     try {
       if (out.fbclid && !out.click_id) out.click_id = out.fbclid;
@@ -518,6 +533,21 @@ router.get('/tracker.js', async (req, res) => {
         if (!out.utm_medium) out.utm_medium = 'paid';
       }
     } catch (_e2) {}
+    try {
+      for (var si = 0; si < keys.length; si++) {
+        var sk = keys[si];
+        if (out[sk]) try { sessionStorage.setItem('ta_' + sk, String(out[sk])); } catch(_ss) {}
+      }
+      var slim = {};
+      for (var wi = 0; wi < keys.length; wi++) {
+        var wk = keys[wi];
+        if (out[wk]) slim[wk] = String(out[wk]).slice(0, 400);
+      }
+      if (Object.keys(slim).length) {
+        var js = JSON.stringify(slim);
+        if (js.length < 3500) setCookie(ATTRIB_COOKIE, js, COOKIE_TTL_90D);
+      }
+    } catch (_e3) {}
     return out;
   }
 
