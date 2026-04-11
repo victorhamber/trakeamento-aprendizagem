@@ -584,10 +584,11 @@ async function resolveEventSourceUrlForIngest(
     pickStringField(tl, 'page_path') ||
     '/';
 
+  // page_location costuma ser location.href (com hash); event_url às vezes era só origin+path — priorizar o mais completo.
   const candidates: (string | undefined)[] = [
     typeof event.event_source_url === 'string' ? event.event_source_url : undefined,
-    pickStringField(cd, 'event_url'),
     pickStringField(cd, 'page_location'),
+    pickStringField(cd, 'event_url'),
     pickStringField(cd, 'page_url'),
     typeof req.headers.referer === 'string' ? req.headers.referer : undefined,
   ];

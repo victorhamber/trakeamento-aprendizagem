@@ -1068,7 +1068,8 @@ router.get('/tracker.js', async (req, res) => {
           referrer:      document.referrer,
           traffic_source: getTrafficSource(),
           page_path:     location.pathname,
-          event_url:     location.origin + location.pathname + (location.search || ''),
+          // URL completa (inclui hash) — SPAs na raiz usam #/rota; sem hash o Meta/CAPI vê só o domínio.
+          event_url:     location.href,
           page_location: location.href
         }, attrs),
         telemetry: telemetry
@@ -1089,7 +1090,7 @@ router.get('/tracker.js', async (req, res) => {
       setTimeout(function() {
         if (cfg.metaPixelId || hasFbq()) {
           trackMeta('PageView', Object.assign(
-            { event_url: location.origin + location.pathname,
+            { event_url: location.href,
               traffic_source: getTrafficSource() || document.referrer || '' },
             getTimeFields(eventTime),
             payload.custom_data
@@ -1130,7 +1131,7 @@ router.get('/tracker.js', async (req, res) => {
         custom_data:      Object.assign({
           page_title:   document.title,
           page_path:    location.pathname,
-          event_url:    location.origin + location.pathname + (location.search || ''),
+          event_url:    location.href,
           page_location: location.href,
           traffic_source: getTrafficSource()
         }, attrs)
@@ -1204,7 +1205,7 @@ router.get('/tracker.js', async (req, res) => {
       var baseCustom = {
         page_title:       document.title,
         page_path:        location.pathname,
-        event_url:        location.origin + location.pathname + (location.search || ''),
+        event_url:        location.href,
         page_location:    location.href,
         traffic_source:   getTrafficSource()
       };
@@ -1238,7 +1239,7 @@ router.get('/tracker.js', async (req, res) => {
         var isCustom = STANDARD_EVENTS.indexOf(eventName) < 0;
         var metaParams = Object.assign(
           {
-            event_url:   location.origin + location.pathname,
+            event_url:   location.href,
             page_title:  document.title
           },
           getTimeFields(eventTime),
@@ -1477,6 +1478,9 @@ router.get('/tracker.js', async (req, res) => {
       totalClicks = 0;
       ctaClicks = 0;
       setTimeout(function() { pageView(); checkUrlRules(); }, 0);
+    });
+    window.addEventListener('hashchange', function() {
+      setTimeout(checkUrlRules, 0);
     });
   } catch(_e) {}
 
