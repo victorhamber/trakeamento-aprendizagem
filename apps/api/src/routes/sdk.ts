@@ -481,9 +481,26 @@ router.get('/tracker.js', async (req, res) => {
   }
 
   // ─── Attribution params ───────────────────────────────────────────────────
-  // Reforço: cookie _ta_attr (90d) além da URL + sessionStorage — Pixel/CAPI e ingest recebem UTMs
-  // mesmo após SPA/redirect sem query; prioridade = URL > sessionStorage > cookie.
+  // Reforço: URL > sessionStorage > cookie > localStorage > referrer (mesma origem) — Pixel/CAPI/checkout.
+  // Redirecionamentos HTTP que tiram a query da barra costumam deixar document.referrer com a URL anterior
+  // (mesmo host); não parseamos referrer cross-origin (evita utm forjado de sites externos).
   var ATTRIB_COOKIE = '_ta_attr';
+  function persistAttributionBlob(obj) {
+    try {
+      var keys = ['utm_source','utm_medium','utm_campaign','utm_content','utm_term',
+                  'click_id','gclid','ttclid','twclid','fbclid'];
+      var slim = {};
+      for (var wi = 0; wi < keys.length; wi++) {
+        var wk = keys[wi];
+        if (obj[wk]) slim[wk] = String(obj[wk]).slice(0, 400);
+      }
+      if (!Object.keys(slim).length) return;
+      var js = JSON.stringify(slim);
+      if (js.length >= 3500) return;
+      setCookie(ATTRIB_COOKIE, js, COOKIE_TTL_90D);
+      try { localStorage.setItem(ATTRIB_COOKIE, js); } catch(_ls) {}
+    } catch (_pw) {}
+  }
   function getAttributionParams() {
     var out  = {};
     var keys = ['utm_source','utm_medium','utm_campaign','utm_content','utm_term',
@@ -516,6 +533,32 @@ router.get('/tracker.js', async (req, res) => {
         }
       }
     } catch (_ec) {}
+    try {
+      var rawLs = localStorage.getItem(ATTRIB_COOKIE);
+      if (rawLs) {
+        var pLs = JSON.parse(rawLs);
+        if (pLs && typeof pLs === 'object') {
+          for (var li = 0; li < keys.length; li++) {
+            var lk = keys[li];
+            if (!out[lk] && pLs[lk]) out[lk] = String(pLs[lk]);
+          }
+        }
+      }
+    } catch (_els) {}
+    try {
+      var refRaw = document.referrer;
+      if (refRaw) {
+        var refU = new URL(refRaw);
+        if (refU.origin === location.origin) {
+          for (var ri = 0; ri < keys.length; ri++) {
+            var rk = keys[ri];
+            if (out[rk]) continue;
+            var rv = refU.searchParams.get(rk);
+            if (rv) out[rk] = rv;
+          }
+        }
+      }
+    } catch (_er) {}
     // Cliques Meta/Google muitas vezes trazem só fbclid/gclid (sem utm_*). O painel e o checkout tratam isso como origem paga.
     try {
       if (out.fbclid && !out.click_id) out.click_id = out.fbclid;
@@ -538,18 +581,11 @@ router.get('/tracker.js', async (req, res) => {
         var sk = keys[si];
         if (out[sk]) try { sessionStorage.setItem('ta_' + sk, String(out[sk])); } catch(_ss) {}
       }
-      var slim = {};
-      for (var wi = 0; wi < keys.length; wi++) {
-        var wk = keys[wi];
-        if (out[wk]) slim[wk] = String(out[wk]).slice(0, 400);
-      }
-      if (Object.keys(slim).length) {
-        var js = JSON.stringify(slim);
-        if (js.length < 3500) setCookie(ATTRIB_COOKIE, js, COOKIE_TTL_90D);
-      }
+      persistAttributionBlob(out);
     } catch (_e3) {}
     return out;
   }
+  try { getAttributionParams(); } catch (_bootAttr) {}
 
   function truncateCheckoutParam(val, maxLen) {
     if (val == null || val === '') return '';
@@ -1216,6 +1252,7 @@ router.get('/tracker.js', async (req, res) => {
       delete cleanCustom.match_css;
 
       // ViewContent / carrinho / checkout: o Events Manager alerta ROAS sem value+currency — envia par mínimo (0 + BRL se vazio).
+      // Moeda precisa ser ISO 4217 de 3 letras (ex.: MXN); "R$", números etc. viram BRL.
       if (eventName === 'ViewContent' || eventName === 'AddToCart' || eventName === 'InitiateCheckout') {
         var rawV = cleanCustom.value;
         var parsedV = rawV !== undefined && rawV !== null && String(rawV).trim() !== '' ? parseFloat(String(rawV)) : NaN;
@@ -1225,10 +1262,11 @@ router.get('/tracker.js', async (req, res) => {
           cleanCustom.value = parsedV;
         }
         var rawC = cleanCustom.currency;
-        if (rawC === undefined || rawC === null || String(rawC).trim() === '') {
+        var curS = (rawC === undefined || rawC === null) ? '' : String(rawC).trim().toUpperCase();
+        if (!curS || curS === '0' || !/^[A-Z]{3}$/.test(curS)) {
           cleanCustom.currency = 'BRL';
         } else {
-          cleanCustom.currency = String(rawC).trim().toUpperCase();
+          cleanCustom.currency = curS;
         }
       }
 
@@ -1514,8 +1552,15 @@ router.get('/tracker.js', async (req, res) => {
       setTimeout(function() { pageView(); checkUrlRules(); }, 0);
     };
     history.replaceState = function() {
+      pageEngagement();
+      pageEngagementEventId = null;
+      startMs = Date.now();
+      visibleMs = 0;
+      maxScroll = 0;
+      totalClicks = 0;
+      ctaClicks = 0;
       _replaceState.apply(history, arguments);
-      setTimeout(checkUrlRules, 0);
+      setTimeout(function() { pageView(); checkUrlRules(); }, 0);
     };
     window.addEventListener('popstate', function() {
       pageEngagementEventId = null;

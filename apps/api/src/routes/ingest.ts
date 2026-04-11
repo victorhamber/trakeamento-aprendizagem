@@ -11,6 +11,7 @@ import { DDI_LIST } from '../lib/ddi';
 import { getClientIp } from '../lib/ip';
 import { preserveMetaClickIds } from '../lib/meta-attribution';
 import { mergeUserDataWithMetaParamBuilder } from '../lib/meta-param-builder-ingest';
+import { normalizeMetaCurrencyCode } from '../lib/meta-currency';
 
 const LRUCache = require('lru-cache').LRUCache || require('lru-cache');
 
@@ -457,19 +458,10 @@ function buildMetaCustomDataForCapi(
     if (metaCustomData['value'] === undefined) {
       metaCustomData['value'] = 0;
     }
-    const cur = metaCustomData['currency'];
-    if (cur === undefined || cur === null || String(cur).trim() === '') {
-      metaCustomData['currency'] = 'BRL';
-    } else {
-      metaCustomData['currency'] = String(cur).trim().toUpperCase();
-    }
+    metaCustomData['currency'] = normalizeMetaCurrencyCode(metaCustomData['currency']);
   } else {
     if (metaCustomData['value'] !== undefined) {
-      if (!metaCustomData['currency']) {
-        metaCustomData['currency'] = 'BRL';
-      } else {
-        metaCustomData['currency'] = String(metaCustomData['currency']).trim().toUpperCase();
-      }
+      metaCustomData['currency'] = normalizeMetaCurrencyCode(metaCustomData['currency']);
     } else {
       delete metaCustomData['currency'];
     }
