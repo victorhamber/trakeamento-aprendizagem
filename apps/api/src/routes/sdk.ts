@@ -1379,11 +1379,27 @@ router.get('/tracker.js', async (req, res) => {
         
         var fullUrl = location.href.toLowerCase();
 
-        if (rule.rule_type === 'url_contains' && (currentPath.indexOf(matchVal) >= 0 || fullUrl.indexOf(matchVal) >= 0)) {
-          isMatch = true;
+        if (rule.rule_type === 'url_contains') {
+          // Legado: "contém /" casava com toda URL; tratamos só "/" como página inicial.
+          if (matchVal === '/') {
+            try {
+              var pnx = (location.pathname || '').toLowerCase();
+              if (pnx.length > 1 && pnx.slice(-1) === '/') pnx = pnx.slice(0, -1);
+              isMatch = pnx === '' || pnx === '/';
+            } catch (_px) { isMatch = false; }
+          } else if (currentPath.indexOf(matchVal) >= 0 || fullUrl.indexOf(matchVal) >= 0) {
+            isMatch = true;
+          }
         }
         else if (rule.rule_type === 'url_equals' && (currentPath === matchVal || fullUrl === matchVal)) {
           isMatch = true;
+        }
+        else if (rule.rule_type === 'path_is_root') {
+          try {
+            var pn = (location.pathname || '').toLowerCase();
+            if (pn.length > 1 && pn.slice(-1) === '/') pn = pn.slice(0, -1);
+            isMatch = pn === '' || pn === '/';
+          } catch (_pr) { isMatch = false; }
         }
 
         if (isMatch) {

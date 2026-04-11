@@ -830,7 +830,12 @@ router.post('/:siteId/event-rules', requireAuth, async (req, res) => {
   if (!site.rowCount) return res.status(404).json({ error: 'Site not found' });
 
   const { rule_type, match_value, match_text, event_name, event_type, parameters } = req.body;
-  if (!match_value || !event_name) return res.status(400).json({ error: 'Missing fields' });
+  if (!event_name) return res.status(400).json({ error: 'Missing fields' });
+  const rt = rule_type || 'url_contains';
+  if (rt !== 'path_is_root' && (!match_value || String(match_value).trim() === '')) {
+    return res.status(400).json({ error: 'Missing fields' });
+  }
+  const mv = rt === 'path_is_root' ? '/' : String(match_value).trim();
   if (rule_type === 'button_click' && !buttonRuleHasMatch(match_text, parameters)) {
     return res.status(400).json({
       error:
@@ -847,8 +852,8 @@ router.post('/:siteId/event-rules', requireAuth, async (req, res) => {
      RETURNING *`,
     [
       siteId,
-      rule_type || 'url_contains',
-      match_value,
+      rt,
+      mv,
       match_text || null,
       event_name,
       event_type || 'custom',
@@ -868,7 +873,12 @@ router.put('/:siteId/event-rules/:id', requireAuth, async (req, res) => {
   if (!site.rowCount) return res.status(404).json({ error: 'Site not found' });
 
   const { rule_type, match_value, match_text, event_name, event_type, parameters } = req.body;
-  if (!match_value || !event_name) return res.status(400).json({ error: 'Missing fields' });
+  if (!event_name) return res.status(400).json({ error: 'Missing fields' });
+  const rtPut = rule_type || 'url_contains';
+  if (rtPut !== 'path_is_root' && (!match_value || String(match_value).trim() === '')) {
+    return res.status(400).json({ error: 'Missing fields' });
+  }
+  const mvPut = rtPut === 'path_is_root' ? '/' : String(match_value).trim();
   if (rule_type === 'button_click' && !buttonRuleHasMatch(match_text, parameters)) {
     return res.status(400).json({
       error:
@@ -885,8 +895,8 @@ router.put('/:siteId/event-rules/:id', requireAuth, async (req, res) => {
      WHERE id = $7 AND site_id = $8
      RETURNING *`,
     [
-      rule_type || 'url_contains',
-      match_value,
+      rtPut,
+      mvPut,
       match_text || null,
       event_name,
       event_type || 'custom',

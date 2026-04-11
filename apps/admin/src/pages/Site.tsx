@@ -281,6 +281,7 @@ export const SitePage = () => {
   // Event Rules & Form Generator State
   const [eventRules, setEventRules] = useState<any[]>([]);
   const [urlRuleValue, setUrlRuleValue] = useState('');
+  const [urlRuleUrlMatchKind, setUrlRuleUrlMatchKind] = useState<'contains' | 'home'>('contains');
   const [urlRuleEventType, setUrlRuleEventType] = useState('Purchase');
   const [urlRuleCustomName, setUrlRuleCustomName] = useState('');
   const [urlRuleEventValue, setUrlRuleEventValue] = useState('');
@@ -803,7 +804,7 @@ export const SitePage = () => {
   }, [id]);
 
   const handleAddUrlRule = async () => {
-    if (!urlRuleValue) {
+    if (urlRuleUrlMatchKind !== 'home' && !urlRuleValue.trim()) {
       showFlash('Preencha o trecho da URL', 'error');
       return;
     }
@@ -836,8 +837,8 @@ export const SitePage = () => {
 
     try {
       const payload: any = {
-        rule_type: 'url_contains',
-        match_value: urlRuleValue,
+        rule_type: urlRuleUrlMatchKind === 'home' ? 'path_is_root' : 'url_contains',
+        match_value: urlRuleUrlMatchKind === 'home' ? '/' : urlRuleValue.trim(),
         event_name: evtName,
         event_type: urlRuleEventType === 'Custom' ? 'custom' : 'standard',
         parameters: {}
@@ -857,6 +858,7 @@ export const SitePage = () => {
       }
 
       setUrlRuleValue('');
+      setUrlRuleUrlMatchKind('contains');
       setUrlRuleCustomName('');
       setUrlRuleEventValue('');
       setUrlRuleEventCurrency('BRL');
@@ -955,8 +957,18 @@ export const SitePage = () => {
 
   const handleEditRule = (rule: any) => {
     setSelectedRuleId(rule.id);
-    if (rule.rule_type === 'url_contains') {
-      setUrlRuleValue(rule.match_value);
+    if (rule.rule_type === 'path_is_root') {
+      setUrlRuleUrlMatchKind('home');
+      setUrlRuleValue('');
+      const isCustom = rule.event_type === 'custom';
+      setUrlRuleEventType(isCustom ? 'Custom' : rule.event_name);
+      setUrlRuleCustomName(isCustom ? rule.event_name : '');
+      setUrlRuleEventValue(rule.parameters?.value?.toString() || '');
+      setUrlRuleEventCurrency(rule.parameters?.currency || 'BRL');
+      setEventSubTab('url');
+    } else if (rule.rule_type === 'url_contains' || rule.rule_type === 'url_equals' || !rule.rule_type) {
+      setUrlRuleUrlMatchKind('contains');
+      setUrlRuleValue(rule.match_value || '');
       const isCustom = rule.event_type === 'custom';
       setUrlRuleEventType(isCustom ? 'Custom' : rule.event_name);
       setUrlRuleCustomName(isCustom ? rule.event_name : '');
@@ -982,6 +994,7 @@ export const SitePage = () => {
   const handleCancelEditRule = () => {
     setSelectedRuleId(null);
     setUrlRuleValue('');
+    setUrlRuleUrlMatchKind('contains');
     setUrlRuleCustomName('');
     setUrlRuleEventValue('');
     setUrlRuleEventCurrency('BRL');
@@ -3217,21 +3230,38 @@ ${scriptContent}
                   <div>
                     <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Configuração de Eventos por URL</h3>
                     <p className="text-sm text-zinc-600 dark:text-zinc-500">
-                      Dispare eventos automaticamente quando a URL contiver um trecho específico (ex: "obrigado").
+                      Dispare eventos quando a URL contiver um trecho ou apenas na{' '}
+                      <strong className="font-medium text-zinc-700 dark:text-zinc-300">página inicial</strong> (domínio raiz, sem slug). Não use “contém{' '}
+                      <code className="text-xs">/</code>” para a home — isso casa com todas as rotas.
                     </p>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end bg-zinc-50 dark:bg-zinc-900/30 p-5 rounded-xl border border-zinc-200 dark:border-zinc-800">
+                    <div className="md:col-span-3">
+                      <label htmlFor="site-url-rule-match-kind" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
+                        Tipo de regra:
+                      </label>
+                      <select
+                        id="site-url-rule-match-kind"
+                        value={urlRuleUrlMatchKind}
+                        onChange={(e) => setUrlRuleUrlMatchKind(e.target.value as 'contains' | 'home')}
+                        className={selectCls}
+                      >
+                        <option value="contains">URL contém (trecho)</option>
+                        <option value="home">Só página inicial (/)</option>
+                      </select>
+                    </div>
                     <div className="md:col-span-4">
                       <label htmlFor="site-url-rule-contains" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
-                        Se a URL contém:
+                        {urlRuleUrlMatchKind === 'home' ? 'Trecho (desabilitado na home)' : 'Se a URL contém:'}
                       </label>
                       <input
                         id="site-url-rule-contains"
                         value={urlRuleValue}
                         onChange={(e) => setUrlRuleValue(e.target.value)}
-                        placeholder="Ex: /obrigado-compra"
-                        className={inputCls}
+                        placeholder={urlRuleUrlMatchKind === 'home' ? '—' : 'Ex: /obrigado-compra'}
+                        disabled={urlRuleUrlMatchKind === 'home'}
+                        className={inputCls + (urlRuleUrlMatchKind === 'home' ? ' opacity-60 cursor-not-allowed' : '')}
                       />
                     </div>
                     <div className="md:col-span-3">
@@ -3346,10 +3376,26 @@ ${scriptContent}
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-zinc-800/60">
-                          {eventRules.filter(r => r.rule_type === 'url_contains' || r.rule_type === 'url_equals' || !r.rule_type).map((rule) => (
+                          {eventRules
+                            .filter(
+                              (r) =>
+                                r.rule_type === 'url_contains' ||
+                                r.rule_type === 'url_equals' ||
+                                r.rule_type === 'path_is_root' ||
+                                !r.rule_type
+                            )
+                            .map((rule) => (
                             <tr key={rule.id} className="hover:bg-zinc-50 dark:bg-zinc-900/20">
-                              <td className="px-4 py-3">URL Contém</td>
-                              <td className="px-4 py-3 font-mono text-zinc-700 dark:text-zinc-300">{rule.match_value}</td>
+                              <td className="px-4 py-3">
+                                {rule.rule_type === 'path_is_root'
+                                  ? 'Página inicial'
+                                  : rule.rule_type === 'url_equals'
+                                    ? 'URL igual'
+                                    : 'URL contém'}
+                              </td>
+                              <td className="px-4 py-3 font-mono text-zinc-700 dark:text-zinc-300">
+                                {rule.rule_type === 'path_is_root' ? '—' : rule.match_value}
+                              </td>
                               <td className="px-4 py-3">
                                 <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-500/10 text-blue-300 border border-blue-500/20">
                                   {rule.event_name}
