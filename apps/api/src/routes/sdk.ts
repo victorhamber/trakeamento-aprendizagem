@@ -2214,18 +2214,52 @@ router.get('/tracker.js', async (req, res) => {
     } catch (_e) {}
   }
 
+  /** Evita o mesmo <script src="..."> duas vezes (head + snippet, ou HTML colado em duplicata). */
+  function __taNormalizeScriptSrc(srcAttr) {
+    try {
+      if (!srcAttr || typeof srcAttr !== 'string') return '';
+      return new URL(srcAttr.trim(), location.href).href;
+    } catch (_u) {
+      return '';
+    }
+  }
+  function __taScriptSrcAlreadyLoaded(absUrl) {
+    if (!absUrl) return false;
+    try {
+      var nodes = document.getElementsByTagName('script');
+      var i = 0;
+      for (i = 0; i < nodes.length; i++) {
+        var s = nodes[i].getAttribute('src');
+        if (!s) continue;
+        if (__taNormalizeScriptSrc(s) === absUrl) return true;
+      }
+    } catch (_e) {}
+    return false;
+  }
+
   /** Injeta HTML do painel (script externo/inline, noscript, etc.) com execução correta de scripts. */
   function injectHtmlFragment(html, parent) {
     try {
       if (!html || !parent) return;
       var str = String(html).trim();
       if (!str) return;
+      if (!window.__TA_INJECTED_SCRIPT_SRC) window.__TA_INJECTED_SCRIPT_SRC = {};
+      var injectedSrc = window.__TA_INJECTED_SCRIPT_SRC;
       var tpl = document.createElement('template');
       tpl.innerHTML = str;
       var scripts = tpl.content.querySelectorAll('script');
       var k = 0;
       for (k = 0; k < scripts.length; k++) {
         var oldS = scripts[k];
+        var srcAttr = oldS.getAttribute && oldS.getAttribute('src');
+        if (srcAttr) {
+          var abs = __taNormalizeScriptSrc(srcAttr);
+          if (abs && (injectedSrc[abs] || __taScriptSrcAlreadyLoaded(abs))) {
+            try { oldS.remove(); } catch (_rm) {}
+            continue;
+          }
+          if (abs) injectedSrc[abs] = true;
+        }
         var nu = document.createElement('script');
         var attrs = oldS.attributes;
         var ai = 0;
