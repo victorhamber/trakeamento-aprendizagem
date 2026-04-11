@@ -412,6 +412,106 @@ function pickReferrerUrlForCapi(
   return undefined;
 }
 
+/** Meta Events Manager costuma alertar ROAS quando estes eventos não trazem value+currency. */
+const META_ROAS_HINT_EVENTS = new Set(['ViewContent', 'AddToCart', 'InitiateCheckout']);
+
+/**
+ * Monta `custom_data` enviado ao CAPI a partir do ingest (campos comerciais + atribuição).
+ */
+function buildMetaCustomDataForCapi(
+  eventName: string,
+  cd: Record<string, unknown>,
+  tl: Record<string, unknown>
+): { metaCustomData: Record<string, unknown>; refUrl: string | undefined } {
+  const refUrl = pickReferrerUrlForCapi(cd, tl);
+  const metaCustomData: Record<string, unknown> = {};
+
+  const metaCustomFields = [
+    'value',
+    'currency',
+    'content_name',
+    'content_category',
+    'content_ids',
+    'content_type',
+    'contents',
+    'num_items',
+    'order_id',
+    'predicted_ltv',
+    'search_string',
+    'status',
+    'delivery_category',
+  ];
+
+  for (const f of metaCustomFields) {
+    if (cd[f] !== undefined && cd[f] !== null && cd[f] !== '') {
+      if (f === 'value') {
+        const val = parseFloat(String(cd[f]));
+        if (!Number.isNaN(val)) metaCustomData[f] = val;
+      } else {
+        metaCustomData[f] = cd[f];
+      }
+    }
+  }
+
+  if (META_ROAS_HINT_EVENTS.has(eventName)) {
+    if (metaCustomData['value'] === undefined) {
+      metaCustomData['value'] = 0;
+    }
+    const cur = metaCustomData['currency'];
+    if (cur === undefined || cur === null || String(cur).trim() === '') {
+      metaCustomData['currency'] = 'BRL';
+    } else {
+      metaCustomData['currency'] = String(cur).trim().toUpperCase();
+    }
+  } else {
+    if (metaCustomData['value'] !== undefined) {
+      if (!metaCustomData['currency']) {
+        metaCustomData['currency'] = 'BRL';
+      } else {
+        metaCustomData['currency'] = String(metaCustomData['currency']).trim().toUpperCase();
+      }
+    } else {
+      delete metaCustomData['currency'];
+    }
+  }
+
+  if (!metaCustomData['content_name']) {
+    if (cd['content_name'] && cd['content_name'] !== '') {
+      metaCustomData['content_name'] = cd['content_name'];
+    } else if (cd['page_title'] && cd['page_title'] !== '') {
+      metaCustomData['content_name'] = cd['page_title'];
+    } else if (tl['page_title'] && tl['page_title'] !== '') {
+      metaCustomData['content_name'] = tl['page_title'];
+    }
+  }
+
+  if (!metaCustomData['content_type'] && metaCustomData['value'] !== undefined) {
+    const n = Number(metaCustomData['value']);
+    if (!Number.isNaN(n) && n > 0) {
+      metaCustomData['content_type'] = 'product';
+    }
+  }
+
+  const attributionFields: [string, unknown][] = [
+    ['utm_source', cd['utm_source'] || tl['utm_source']],
+    ['utm_medium', cd['utm_medium'] || tl['utm_medium']],
+    ['utm_campaign', cd['utm_campaign'] || tl['utm_campaign']],
+    ['utm_term', cd['utm_term'] || tl['utm_term']],
+    ['utm_content', cd['utm_content'] || tl['utm_content']],
+    ['page_path', cd['page_path'] || tl['page_path']],
+    ['page_title', cd['page_title'] || tl['page_title']],
+    ...(refUrl ? [] : ([['referrer', cd['referrer'] || tl['referrer']]] as [string, unknown][])),
+    ['traffic_source', cd['traffic_source']],
+  ];
+  for (const [key, val] of attributionFields) {
+    if (val !== undefined && val !== null && val !== '') {
+      metaCustomData[key] = val;
+    }
+  }
+
+  return { metaCustomData, refUrl };
+}
+
 function joinOriginAndPath(originOrBase: string, pagePath: string): string {
   let raw = originOrBase.trim();
   if (!raw.startsWith('http://') && !raw.startsWith('https://')) {
@@ -834,81 +934,7 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
       // @see https://developers.facebook.com/docs/marketing-api/conversions-api/parameters
       const cd = event.custom_data ?? {};
       const tl = event.telemetry ?? {} as Record<string, unknown>;
-      const refUrl = pickReferrerUrlForCapi(cd, tl);
-      const metaCustomData: Record<string, unknown> = {};
-
-      // Campos padrão do Meta custom_data
-      const metaCustomFields = [
-        'value', 'currency', 'content_name', 'content_category',
-        'content_ids', 'content_type', 'contents', 'num_items',
-        'order_id', 'predicted_ltv', 'search_string', 'status',
-        'delivery_category',
-      ];
-
-      for (const f of metaCustomFields) {
-        // Correção: apenas inclui se não for undefined/null E (se for value/currency) não for string vazia
-        // Facebook rejeita value="" ou currency=""
-        if (cd[f] !== undefined && cd[f] !== null && cd[f] !== '') {
-          // Parse float para value se vier como string
-          if (f === 'value') {
-            const val = parseFloat(cd[f] as string);
-            if (!isNaN(val)) metaCustomData[f] = val;
-          } else {
-            metaCustomData[f] = cd[f];
-          }
-        }
-      }
-
-      // Validação de Currency (se tem value, precisa de currency válida)
-      if (metaCustomData['value'] !== undefined) {
-        if (!metaCustomData['currency']) {
-          metaCustomData['currency'] = 'BRL'; // Default BRL se não informado
-        }
-      } else {
-        // Se não tem value, remove currency para evitar warning de "missing value parameter"
-        delete metaCustomData['currency'];
-      }
-      // Fallbacks para campos comuns
-      if (!metaCustomData['content_name']) {
-        if (cd['content_name'] && cd['content_name'] !== '') {
-          metaCustomData['content_name'] = cd['content_name'];
-        } else if (cd['page_title'] && cd['page_title'] !== '') {
-          metaCustomData['content_name'] = cd['page_title'];
-        } else if (tl['page_title'] && tl['page_title'] !== '') {
-          metaCustomData['content_name'] = tl['page_title'];
-        }
-      }
-      // content_type só faz sentido em eventos de comércio (Purchase, AddToCart, etc.)
-      // Para PageView/PageEngagement, o Meta ignora e pode poluir o payload
-      if (!metaCustomData['content_type'] && metaCustomData['value'] !== undefined) {
-        metaCustomData['content_type'] = 'product';
-      }
-
-      // ── Dados de atribuição para o Meta CAPI ──────────────────────────────
-      // APENAS campos que o Meta utiliza para atribuição e análise.
-      // Dados de engajamento (dwell_time, scroll, clicks) e dispositivo (screen, platform, 
-      // timezone, language, connection_type) ficam apenas no DB para o agente IA.
-      // O Meta ignora esses campos e eles só poluem o payload.
-      const attributionFields: [string, unknown][] = [
-        // UTM parameters — essenciais para atribuição
-        ['utm_source', cd['utm_source'] || tl['utm_source']],
-        ['utm_medium', cd['utm_medium'] || tl['utm_medium']],
-        ['utm_campaign', cd['utm_campaign'] || tl['utm_campaign']],
-        ['utm_term', cd['utm_term'] || tl['utm_term']],
-        ['utm_content', cd['utm_content'] || tl['utm_content']],
-        // Dados de página — úteis para content_name fallback
-        ['page_path', cd['page_path'] || tl['page_path']],
-        ['page_title', cd['page_title'] || tl['page_title']],
-        // referrer absoluto vai em referrer_url no corpo do evento (evita duplicar)
-        ...(refUrl ? [] : ([['referrer', cd['referrer'] || tl['referrer']]] as [string, unknown][])),
-        // Fonte de tráfego
-        ['traffic_source', cd['traffic_source']],
-      ];
-      for (const [key, val] of attributionFields) {
-        if (val !== undefined && val !== null && val !== '') {
-          metaCustomData[key] = val;
-        }
-      }
+      const { metaCustomData, refUrl } = buildMetaCustomDataForCapi(eventName, cd, tl);
 
       const actionSrc = actionSourceForCapi(event.action_source);
 
@@ -1151,40 +1177,7 @@ router.post('/batch', cors(), ingestLimiter, async (req, res) => {
         // CAPI payload (espelha POST /events: custom_data + referrer_url + action_source)
         const cd = p.event.custom_data ?? {};
         const tl = p.event.telemetry ?? {} as Record<string, unknown>;
-        const refUrl = pickReferrerUrlForCapi(cd, tl);
-        const metaCustomData: Record<string, unknown> = {};
-        const metaCustomFields = [
-          'value', 'currency', 'content_name', 'content_category',
-          'content_ids', 'content_type', 'contents', 'num_items',
-          'order_id', 'predicted_ltv', 'search_string', 'status', 'delivery_category',
-        ];
-        for (const f of metaCustomFields) {
-          if (cd[f] !== undefined && cd[f] !== null && cd[f] !== '') {
-            if (f === 'value') { const val = parseFloat(cd[f] as string); if (!isNaN(val)) metaCustomData[f] = val; }
-            else metaCustomData[f] = cd[f];
-          }
-        }
-        if (metaCustomData['value'] !== undefined) { if (!metaCustomData['currency']) metaCustomData['currency'] = 'BRL'; }
-        else delete metaCustomData['currency'];
-        if (!metaCustomData['content_name']) {
-          if (cd['content_name'] && cd['content_name'] !== '') metaCustomData['content_name'] = cd['content_name'];
-          else if (cd['page_title'] && cd['page_title'] !== '') metaCustomData['content_name'] = cd['page_title'];
-          else if (tl['page_title'] && tl['page_title'] !== '') metaCustomData['content_name'] = tl['page_title'];
-        }
-        if (!metaCustomData['content_type'] && metaCustomData['value'] !== undefined) {
-          metaCustomData['content_type'] = 'product';
-        }
-        const attributionFields: [string, unknown][] = [
-          ['utm_source', cd['utm_source'] || tl['utm_source']], ['utm_medium', cd['utm_medium'] || tl['utm_medium']],
-          ['utm_campaign', cd['utm_campaign'] || tl['utm_campaign']], ['utm_term', cd['utm_term'] || tl['utm_term']],
-          ['utm_content', cd['utm_content'] || tl['utm_content']], ['page_path', cd['page_path'] || tl['page_path']],
-          ['page_title', cd['page_title'] || tl['page_title']],
-          ...(refUrl ? [] : ([['referrer', cd['referrer'] || tl['referrer']]] as [string, unknown][])),
-          ['traffic_source', cd['traffic_source']],
-        ];
-        for (const [key, val] of attributionFields) {
-          if (val !== undefined && val !== null && val !== '') metaCustomData[key] = val;
-        }
+        const { metaCustomData, refUrl } = buildMetaCustomDataForCapi(p.eventName, cd, tl);
 
         const actionSrc = actionSourceForCapi(p.event.action_source);
 

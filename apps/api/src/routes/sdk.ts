@@ -1167,6 +1167,23 @@ router.get('/tracker.js', async (req, res) => {
       delete cleanCustom.match_class_contains;
       delete cleanCustom.match_css;
 
+      // ViewContent / carrinho / checkout: o Events Manager alerta ROAS sem value+currency — envia par mínimo (0 + BRL se vazio).
+      if (eventName === 'ViewContent' || eventName === 'AddToCart' || eventName === 'InitiateCheckout') {
+        var rawV = cleanCustom.value;
+        var parsedV = rawV !== undefined && rawV !== null && String(rawV).trim() !== '' ? parseFloat(String(rawV)) : NaN;
+        if (!isFinite(parsedV) || parsedV < 0) {
+          cleanCustom.value = 0;
+        } else {
+          cleanCustom.value = parsedV;
+        }
+        var rawC = cleanCustom.currency;
+        if (rawC === undefined || rawC === null || String(rawC).trim() === '') {
+          cleanCustom.currency = 'BRL';
+        } else {
+          cleanCustom.currency = String(rawC).trim().toUpperCase();
+        }
+      }
+
       // Dedup por evento; regras (URL/botão) usam chave por id da regra para não matar outro CTA com o mesmo event_name
       var evKey = eventName;
       if (ruleDedupId != null && ruleDedupId !== '') {
