@@ -78,6 +78,27 @@ const deviceHintLabel = (h: string | undefined) => {
   }
 };
 
+/** Resumo na linha da jornada: campanha quando existe na URL; senão origem/mídia/click (ex.: só fbclid). */
+function formatPageviewAttributionSummary(utm: Record<string, string> | null | undefined): string | null {
+  if (!utm) return null;
+  const camp = (utm.utm_campaign || '').trim();
+  const cont = (utm.utm_content || '').trim();
+  if (camp || cont) {
+    const left = camp || '—';
+    return cont ? `${left} · ${cont}` : left;
+  }
+  const src = (utm.utm_source || '').trim();
+  const med = (utm.utm_medium || '').trim();
+  const cid = (utm.click_id || '').trim();
+  if (src || med) {
+    const parts = [src, med].filter(Boolean);
+    if (cid) parts.push(cid.length > 28 ? `${cid.slice(0, 26)}…` : cid);
+    return parts.join(' · ');
+  }
+  if (cid) return cid.length > 36 ? `${cid.slice(0, 34)}…` : cid;
+  return null;
+}
+
 const money = (n: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 2 }).format(n || 0);
 
@@ -484,13 +505,16 @@ export function BuyersTab({ siteId }: { siteId: number }) {
                             <div key={`${pv.at}-${idx}`} className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white/60 dark:bg-zinc-950/20 px-3 py-2">
                               <div className="flex items-center justify-between gap-3 text-[11px] text-zinc-600 dark:text-zinc-400">
                                 <span className="font-medium text-zinc-800 dark:text-zinc-200">{dt(pv.at)}</span>
-                                {pv.utm?.utm_campaign || pv.utm?.utm_content ? (
-                                  <span className="truncate max-w-[50%]">
-                                    {pv.utm.utm_campaign || '—'}{pv.utm.utm_content ? ` · ${pv.utm.utm_content}` : ''}
-                                  </span>
-                                ) : (
-                                  <span className="text-zinc-500 dark:text-zinc-500">sem utm</span>
-                                )}
+                                {(() => {
+                                  const summary = formatPageviewAttributionSummary(pv.utm);
+                                  return summary ? (
+                                    <span className="truncate max-w-[50%]" title={summary}>
+                                      {summary}
+                                    </span>
+                                  ) : (
+                                    <span className="text-zinc-500 dark:text-zinc-500">sem utm</span>
+                                  );
+                                })()}
                               </div>
                               <div className="mt-1 text-[11px] text-zinc-600 dark:text-zinc-400 truncate" title={pv.url}>
                                 {pv.url}
