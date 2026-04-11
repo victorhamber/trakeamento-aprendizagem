@@ -1821,6 +1821,26 @@ ${scriptContent}
     }
   }, [utmBaseUrl, utmSource, utmMedium, utmCampaign, utmContent, utmTerm, utmClickId]);
 
+  /** Para colar no Meta: manter `{{ }}` literal — URLSearchParams codifica para %7B e o Meta não substitui. */
+  const metaAdsUrlParams = useMemo(() => {
+    const parts: string[] = [];
+    const add = (key: string, raw: string) => {
+      const value = (raw || '').trim();
+      if (!value) return;
+      const encKey = encodeURIComponent(key);
+      const hasMetaPlaceholder = /\{\{[\s\S]*?\}\}/.test(value);
+      const encVal = hasMetaPlaceholder ? value : encodeURIComponent(value);
+      parts.push(`${encKey}=${encVal}`);
+    };
+    add('utm_source', utmSource);
+    add('utm_medium', utmMedium);
+    add('utm_campaign', utmCampaign);
+    add('utm_content', utmContent);
+    add('utm_term', utmTerm);
+    add('click_id', utmClickId);
+    return parts.join('&');
+  }, [utmSource, utmMedium, utmCampaign, utmContent, utmTerm, utmClickId]);
+
   const getBreakdownCtr = (row: MetaBreakdownItem) => {
     if (row.ctr_calc_pct !== undefined) return row.ctr_calc_pct;
     const clicks = row.clicks || 0;
@@ -2982,11 +3002,10 @@ ${scriptContent}
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
-                        disabled={!utmUrl || utmUrl.indexOf('?') === -1}
+                        disabled={!metaAdsUrlParams}
                         onClick={() => {
-                          if (!utmUrl || utmUrl.indexOf('?') === -1) return;
-                          const queryOnly = utmUrl.substring(utmUrl.indexOf('?') + 1);
-                          navigator.clipboard.writeText(queryOnly);
+                          if (!metaAdsUrlParams) return;
+                          navigator.clipboard.writeText(metaAdsUrlParams);
                           showFlash('Parâmetros copiados!');
                         }}
                         className="text-[11px] border border-blue-500/30 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/40 text-blue-700 dark:text-blue-300 px-3 py-2 rounded-lg transition-colors disabled:opacity-40"
@@ -2995,8 +3014,12 @@ ${scriptContent}
                       </button>
                     </div>
                   </div>
+                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mb-2">
+                    Cole exatamente isto no Meta: os placeholders precisam aparecer como{' '}
+                    <code className="text-[10px]">{'{{'}…{'}}'}</code>, não como <code className="text-[10px]">%7B%7B</code> — senão o Meta não substitui.
+                  </p>
                   <div className="text-xs text-zinc-800 dark:text-zinc-200 break-all font-mono bg-white dark:bg-black/20 p-3 rounded-lg border border-zinc-200 dark:border-zinc-800">
-                    {utmUrl && utmUrl.indexOf('?') !== -1 ? utmUrl.substring(utmUrl.indexOf('?') + 1) : 'Preencha as UTMs para gerar os parâmetros.'}
+                    {metaAdsUrlParams || 'Preencha as UTMs para gerar os parâmetros.'}
                   </div>
                 </div>
 
