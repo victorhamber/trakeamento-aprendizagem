@@ -259,9 +259,9 @@ router.get('/best-times', requireAuth, async (req, res) => {
 
         topSourcesQuery = `
           -- Performance: no Purchase, evitar JOINs laterais (web_events/site_visitors) que podem estourar timeout.
-          -- Usamos apenas dados já persistidos na compra (raw_payload / utm_source / sck/src).
+          -- Fonte: colunas utm_* + custom_data (CAPI) + raw_payload Hotmart + _capi_debug (gravado pelo webhook).
           WITH purchases_base AS (
-            SELECT p.raw_payload
+            SELECT p.raw_payload, p.utm_source AS col_utm_source, p.custom_data AS purchase_custom_data
             FROM purchases p
             WHERE p.site_key = ANY(
               SELECT site_key FROM sites WHERE account_id = $1 AND ($2::int IS NULL OR id = $2::int)
@@ -274,6 +274,11 @@ router.get('/best-times', requireAuth, async (req, res) => {
           attributed AS (
             SELECT
               COALESCE(
+                NULLIF(btrim(col_utm_source::text), ''),
+                NULLIF((purchase_custom_data->>'utm_source')::text, ''),
+                NULLIF((purchase_custom_data->>'traffic_source')::text, ''),
+                NULLIF((raw_payload->'_capi_debug'->'custom_data'->>'utm_source')::text, ''),
+                NULLIF((raw_payload->'_capi_debug'->'custom_data'->>'traffic_source')::text, ''),
                 NULLIF((raw_payload->'custom_data'->>'traffic_source')::text, ''),
                 NULLIF((raw_payload->'custom_data'->>'utm_source')::text, ''),
                 NULLIF((raw_payload->>'utm_source')::text, ''),
