@@ -78,7 +78,7 @@ const deviceHintLabel = (h: string | undefined) => {
   }
 };
 
-/** Resumo na linha da jornada: campanha quando existe na URL; senão origem/mídia/click (ex.: só fbclid). */
+/** Resumo na linha da jornada (UTMs vêm da API: URL + custom_data). Campanha quando existir; senão origem/mídia/click. */
 function formatPageviewAttributionSummary(utm: Record<string, string> | null | undefined): string | null {
   if (!utm) return null;
   const camp = (utm.utm_campaign || '').trim();

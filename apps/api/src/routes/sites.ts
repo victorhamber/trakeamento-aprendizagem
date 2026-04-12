@@ -1101,6 +1101,107 @@ function resolveBuyersPurchaseStatusFilter(raw: unknown): 'approved' | 'pending'
   return 'approved';
 }
 
+/** Query string (?a=b) ou fragmento salvo em `last_traffic_source`. */
+function parseTrafficSourceQuery(raw: unknown): Record<string, string> | null {
+  if (typeof raw !== 'string') return null;
+  const s = raw.trim();
+  if (!s) return null;
+  try {
+    const params = new URLSearchParams(s.startsWith('?') ? s.slice(1) : s);
+    const pick = (k: string) => (params.get(k) || '').trim();
+    let utm_source = pick('utm_source');
+    let utm_medium = pick('utm_medium');
+    const utm_campaign = pick('utm_campaign');
+    const utm_content = pick('utm_content');
+    const utm_term = pick('utm_term');
+    let click_id = pick('click_id');
+    const fbclid = pick('fbclid');
+    const gclid = pick('gclid');
+    if (!click_id && fbclid) click_id = fbclid;
+    if (!utm_source && fbclid) {
+      utm_source = 'facebook';
+      if (!utm_medium) utm_medium = 'cpc';
+    } else if (!utm_source && gclid) {
+      utm_source = 'google';
+      if (!utm_medium) utm_medium = 'cpc';
+    }
+    if (utm_source || utm_campaign || utm_content || click_id || fbclid || gclid) {
+      return { utm_source, utm_medium, utm_campaign, utm_content, utm_term, click_id };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** UTMs a partir de `event_source_url` (landing real costuma ter utm_* que não vão no custom_data). */
+function utmFromEventSourceUrl(url: string): Record<string, string> | null {
+  try {
+    const u = new URL(url);
+    return parseTrafficSourceQuery(u.search || '');
+  } catch {
+    const i = url.indexOf('?');
+    if (i < 0) return null;
+    return parseTrafficSourceQuery(url.slice(i));
+  }
+}
+
+/** UTMs explícitos ou inferidos a partir de fbclid/gclid no custom_data do PageView. */
+function utmFromPageviewCustomData(cd: unknown): Record<string, string> | null {
+  if (!cd || typeof cd !== 'object') return null;
+  const o = cd as Record<string, unknown>;
+  const pick = (k: string) => (typeof o[k] === 'string' ? o[k] : '');
+  let utm_source = pick('utm_source');
+  let utm_medium = pick('utm_medium');
+  const utm_campaign = pick('utm_campaign');
+  const utm_content = pick('utm_content');
+  const utm_term = pick('utm_term');
+  let click_id = pick('click_id');
+  const fbclid = pick('fbclid');
+  const gclid = pick('gclid');
+  if (!click_id && fbclid) click_id = fbclid;
+  if (!utm_source && fbclid) {
+    utm_source = 'facebook';
+    if (!utm_medium) utm_medium = 'cpc';
+  } else if (!utm_source && gclid) {
+    utm_source = 'google';
+    if (!utm_medium) utm_medium = 'cpc';
+  }
+  if (utm_source || utm_campaign || utm_content || click_id || fbclid || gclid) {
+    return { utm_source, utm_medium, utm_campaign, utm_content, utm_term, click_id };
+  }
+  return null;
+}
+
+const BUYER_UTM_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'click_id'] as const;
+
+/** Prioriza query da URL (utm_* da landing); completa com custom_data (ex.: só fbclid no pixel). */
+function mergePageviewUtm(customData: unknown, eventSourceUrl: string | null | undefined): Record<string, string> | null {
+  const fromUrl =
+    typeof eventSourceUrl === 'string' && eventSourceUrl.trim()
+      ? utmFromEventSourceUrl(eventSourceUrl.trim())
+      : null;
+  const fromCd = utmFromPageviewCustomData(customData);
+  if (!fromUrl && !fromCd) return null;
+  const out: Record<string, string> = {};
+  for (const k of BUYER_UTM_KEYS) {
+    const vu = (fromUrl?.[k] || '').trim();
+    const vc = (fromCd?.[k] || '').trim();
+    out[k] = vu || vc || '';
+  }
+  const has = out.utm_source || out.utm_campaign || out.utm_content || out.click_id;
+  return has ? out : null;
+}
+
+function utmFromVisitorTrafficSource(raw: string): Record<string, string> | null {
+  const s = raw.trim();
+  if (!s) return null;
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(s) || s.startsWith('//')) {
+    return utmFromEventSourceUrl(s);
+  }
+  return parseTrafficSourceQuery(s.startsWith('?') ? s : `?${s}`);
+}
+
 /**
  * Lista compradores (best-effort) baseado em `purchases` + `site_visitors`.
  * Observação: a identidade pode vir de email_hash, fbp/fbc ou external_id.
@@ -1298,6 +1399,7 @@ router.get('/:siteId/buyers/by-key/:buyerKey', requireAuth, async (req, res) => 
     const lastPurchaseAt = purchasesRes.rows[0]?.purchased_at ? new Date(purchasesRes.rows[0].purchased_at) : null;
     const pvBefore: Record<string, number> = {};
     let pvCountBefore = 0;
+    let lastTouchUtm: Record<string, string> | null = null;
     let lastPageviewBeforePurchase: { url: string; at: string } | null = null;
     let lastPageviewUaBeforePurchase: string | null = null;
     const pageviewTimeline: Array<{ at: string; url: string; utm?: Record<string, string> | null }> = [];
@@ -1308,27 +1410,21 @@ router.get('/:siteId/buyers/by-key/:buyerKey', requireAuth, async (req, res) => 
         if (e.event_name === 'PageView' && typeof e.event_source_url === 'string' && e.event_source_url) {
           pvCountBefore += 1;
           pvBefore[e.event_source_url] = (pvBefore[e.event_source_url] || 0) + 1;
+          const mergedUtm = mergePageviewUtm(e.custom_data, e.event_source_url);
           if (!lastPageviewBeforePurchase) {
             lastPageviewBeforePurchase = { url: e.event_source_url, at: String(e.event_time) };
+            lastTouchUtm = mergedUtm;
             const ua =
               typeof (e as any).client_user_agent === 'string' ? String((e as any).client_user_agent).trim() : '';
             lastPageviewUaBeforePurchase = ua || null;
           }
-          let utm: Record<string, string> | null = null;
-          if (e.custom_data && typeof e.custom_data === 'object') {
-            const cd = e.custom_data as any;
-            const pick = (k: string) => (typeof cd[k] === 'string' ? cd[k] : '');
-            const utm_source = pick('utm_source');
-            const utm_medium = pick('utm_medium');
-            const utm_campaign = pick('utm_campaign');
-            const utm_content = pick('utm_content');
-            const utm_term = pick('utm_term');
-            const click_id = pick('click_id');
-            if (utm_source || utm_campaign || utm_content || click_id) utm = { utm_source, utm_medium, utm_campaign, utm_content, utm_term, click_id };
-          }
-          pageviewTimeline.push({ at: String(e.event_time), url: e.event_source_url, utm });
+          pageviewTimeline.push({ at: String(e.event_time), url: e.event_source_url, utm: mergedUtm });
         }
       }
+    }
+
+    if (!lastTouchUtm && v?.last_traffic_source) {
+      lastTouchUtm = utmFromVisitorTrafficSource(String(v.last_traffic_source));
     }
 
     const topPages = Object.entries(pvBefore)
@@ -1362,7 +1458,7 @@ router.get('/:siteId/buyers/by-key/:buyerKey', requireAuth, async (req, res) => 
         top_pages_before_last_purchase: topPages,
         last_pageview_before_last_purchase: lastPageviewBeforePurchase,
         pageviews_timeline_before_last_purchase: pageviewTimeline.slice(0, 500),
-        last_touch: null,
+        last_touch: lastTouchUtm,
         meta_attribution: null,
         meta_attribution_source: null,
         user_agent: uaSummary,
@@ -1395,65 +1491,6 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
     const purchasesOffset = Math.max(0, Number(req.query.purchases_offset || 0));
     const purchaseStatusFilter = resolveBuyersPurchaseStatusFilter(req.query.purchase_status);
     const statusInList = purchaseStatusFilter === 'pending' ? PENDING_PURCHASE_STATUSES : APPROVED_PURCHASE_STATUSES;
-
-    const parseTrafficSource = (raw: unknown): Record<string, string> | null => {
-      if (typeof raw !== 'string') return null;
-      const s = raw.trim();
-      if (!s) return null;
-      try {
-        const params = new URLSearchParams(s.startsWith('?') ? s.slice(1) : s);
-        const pick = (k: string) => (params.get(k) || '').trim();
-        let utm_source = pick('utm_source');
-        let utm_medium = pick('utm_medium');
-        const utm_campaign = pick('utm_campaign');
-        const utm_content = pick('utm_content');
-        const utm_term = pick('utm_term');
-        let click_id = pick('click_id');
-        const fbclid = pick('fbclid');
-        const gclid = pick('gclid');
-        if (!click_id && fbclid) click_id = fbclid;
-        if (!utm_source && fbclid) {
-          utm_source = 'facebook';
-          if (!utm_medium) utm_medium = 'cpc';
-        } else if (!utm_source && gclid) {
-          utm_source = 'google';
-          if (!utm_medium) utm_medium = 'cpc';
-        }
-        if (utm_source || utm_campaign || utm_content || click_id || fbclid || gclid) {
-          return { utm_source, utm_medium, utm_campaign, utm_content, utm_term, click_id };
-        }
-        return null;
-      } catch {
-        return null;
-      }
-    };
-
-    /** UTMs explícitos ou inferidos a partir de fbclid/gclid (anúncios costumam não enviar utm_* na URL). */
-    const utmFromPageviewCustomData = (cd: unknown): Record<string, string> | null => {
-      if (!cd || typeof cd !== 'object') return null;
-      const o = cd as Record<string, unknown>;
-      const pick = (k: string) => (typeof o[k] === 'string' ? o[k] : '');
-      let utm_source = pick('utm_source');
-      let utm_medium = pick('utm_medium');
-      const utm_campaign = pick('utm_campaign');
-      const utm_content = pick('utm_content');
-      const utm_term = pick('utm_term');
-      let click_id = pick('click_id');
-      const fbclid = pick('fbclid');
-      const gclid = pick('gclid');
-      if (!click_id && fbclid) click_id = fbclid;
-      if (!utm_source && fbclid) {
-        utm_source = 'facebook';
-        if (!utm_medium) utm_medium = 'cpc';
-      } else if (!utm_source && gclid) {
-        utm_source = 'google';
-        if (!utm_medium) utm_medium = 'cpc';
-      }
-      if (utm_source || utm_campaign || utm_content || click_id || fbclid || gclid) {
-        return { utm_source, utm_medium, utm_campaign, utm_content, utm_term, click_id };
-      }
-      return null;
-    };
 
     // 0) Se existir visitor para esse external_id, usamos as chaves dele (email_hash/fbp/fbc)
     // para encontrar compras do checkout — mesmo quando purchases.external_id não bate.
@@ -1553,27 +1590,22 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
         if (e.event_name === 'PageView' && typeof e.event_source_url === 'string' && e.event_source_url) {
           pvCountBefore += 1;
           pvBefore[e.event_source_url] = (pvBefore[e.event_source_url] || 0) + 1;
+          const mergedUtm = mergePageviewUtm(e.custom_data, e.event_source_url);
           if (!lastPageviewBeforePurchase) {
             lastPageviewBeforePurchase = { url: e.event_source_url, at: String(e.event_time) };
+            lastTouchUtm = mergedUtm;
             const ua =
               typeof (e as any).client_user_agent === 'string' ? String((e as any).client_user_agent).trim() : '';
             lastPageviewUaBeforePurchase = ua || null;
           }
-          let utm: Record<string, string> | null = null;
-          if (!lastTouchUtm && e.custom_data) {
-            lastTouchUtm = utmFromPageviewCustomData(e.custom_data);
-          }
-          if (e.custom_data) {
-            utm = utmFromPageviewCustomData(e.custom_data);
-          }
-          pageviewTimeline.push({ at: String(e.event_time), url: e.event_source_url, utm });
+          pageviewTimeline.push({ at: String(e.event_time), url: e.event_source_url, utm: mergedUtm });
         }
       }
     }
 
-    // Fallback: se não encontramos UTMs em PageView, tenta o last_traffic_source do visitante.
+    // Fallback: se não encontramos UTMs no último PageView pré-compra, tenta o last_traffic_source do visitante.
     if (!lastTouchUtm && v?.last_traffic_source) {
-      lastTouchUtm = parseTrafficSource(v.last_traffic_source);
+      lastTouchUtm = utmFromVisitorTrafficSource(String(v.last_traffic_source));
     }
 
     const topPages = Object.entries(pvBefore)
