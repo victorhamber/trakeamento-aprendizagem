@@ -1092,6 +1092,14 @@ router.delete('/:siteId/custom-webhooks/:hookId', requireAuth, async (req, res) 
 // ─── Buyers (Compradores) ────────────────────────────────────────────────────
 
 const APPROVED_PURCHASE_STATUSES = `('approved', 'paid', 'completed', 'active')`;
+/** Mesmos pendentes que `normalizeStatus` em webhooks.ts grava como `pending_payment` ou reconhece antes. */
+const PENDING_PURCHASE_STATUSES = `('pending_payment', 'waiting_payment', 'pending', 'billet_printed', 'purchase_billet_printed')`;
+
+function resolveBuyersPurchaseStatusFilter(raw: unknown): 'approved' | 'pending' {
+  const s = String(raw || 'approved').toLowerCase().trim();
+  if (s === 'pending' || s === 'pending_payment' || s === 'awaiting' || s === 'awaiting_payment') return 'pending';
+  return 'approved';
+}
 
 /**
  * Lista compradores (best-effort) baseado em `purchases` + `site_visitors`.
@@ -1108,6 +1116,8 @@ router.get('/:siteId/buyers', requireAuth, async (req, res) => {
 
   const limit = Math.min(200, Math.max(10, Number(req.query.limit || 50)));
   const offset = Math.max(0, Number(req.query.offset || 0));
+  const purchaseStatusFilter = resolveBuyersPurchaseStatusFilter(req.query.purchase_status);
+  const statusInList = purchaseStatusFilter === 'pending' ? PENDING_PURCHASE_STATUSES : APPROVED_PURCHASE_STATUSES;
 
   try {
     const result = await pool.query(
@@ -1131,7 +1141,7 @@ router.get('/:siteId/buyers', requireAuth, async (req, res) => {
           COALESCE(p.buyer_email_hash, p.fbp, p.fbc, p.order_id, ('purchase:' || p.id::text)) AS buyer_key
         FROM purchases p
         WHERE p.site_key = $1
-          AND p.status IN ${APPROVED_PURCHASE_STATUSES}
+          AND p.status IN ${statusInList}
       ),
       buyers AS (
         SELECT
@@ -1214,6 +1224,8 @@ router.get('/:siteId/buyers/by-key/:buyerKey', requireAuth, async (req, res) => 
   try {
     const purchasesLimit = Math.min(100, Math.max(5, Number(req.query.purchases_limit || 10)));
     const purchasesOffset = Math.max(0, Number(req.query.purchases_offset || 0));
+    const purchaseStatusFilter = resolveBuyersPurchaseStatusFilter(req.query.purchase_status);
+    const statusInList = purchaseStatusFilter === 'pending' ? PENDING_PURCHASE_STATUSES : APPROVED_PURCHASE_STATUSES;
 
     const purchasesRes = await pool.query(
       `SELECT
@@ -1227,7 +1239,7 @@ router.get('/:siteId/buyers/by-key/:buyerKey', requireAuth, async (req, res) => 
         COUNT(*) OVER()::int AS total_count
        FROM purchases
        WHERE site_key = $1
-         AND status IN ${APPROVED_PURCHASE_STATUSES}
+         AND status IN ${statusInList}
          AND (
            COALESCE(buyer_email_hash, fbp, fbc, order_id, ('purchase:' || id::text)) = $2
          )
@@ -1381,6 +1393,8 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
   try {
     const purchasesLimit = Math.min(100, Math.max(5, Number(req.query.purchases_limit || 10)));
     const purchasesOffset = Math.max(0, Number(req.query.purchases_offset || 0));
+    const purchaseStatusFilter = resolveBuyersPurchaseStatusFilter(req.query.purchase_status);
+    const statusInList = purchaseStatusFilter === 'pending' ? PENDING_PURCHASE_STATUSES : APPROVED_PURCHASE_STATUSES;
 
     const parseTrafficSource = (raw: unknown): Record<string, string> | null => {
       if (typeof raw !== 'string') return null;
@@ -1462,7 +1476,7 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
         COUNT(*) OVER()::int AS total_count
        FROM purchases
        WHERE site_key = $1
-         AND status IN ${APPROVED_PURCHASE_STATUSES}
+         AND status IN ${statusInList}
          AND (
            external_id::text = $2
            OR order_id = $2

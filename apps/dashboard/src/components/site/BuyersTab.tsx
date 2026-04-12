@@ -100,7 +100,20 @@ function formatPageviewAttributionSummary(utm: Record<string, string> | null | u
 }
 
 const money = (n: number) =>
-  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 2 }).format(n || 0);
+  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(n || 0);
+
+function purchaseStatusLabel(status: string | null | undefined): string {
+  const s = String(status || '').toLowerCase().trim();
+  if (['approved', 'paid', 'completed', 'active'].includes(s)) return 'Aprovada';
+  if (
+    ['pending_payment', 'waiting_payment', 'pending', 'billet_printed', 'purchase_billet_printed'].includes(s)
+  ) {
+    return 'Aguardando pagamento';
+  }
+  return status?.trim() || '—';
+}
+
+type PurchaseListFilter = 'approved' | 'pending';
 
 function dt(iso: string | null | undefined) {
   if (!iso) return '—';
@@ -112,6 +125,7 @@ function dt(iso: string | null | undefined) {
 }
 
 export function BuyersTab({ siteId }: { siteId: number }) {
+  const [purchaseListFilter, setPurchaseListFilter] = useState<PurchaseListFilter>('approved');
   const [rows, setRows] = useState<BuyerRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -129,7 +143,9 @@ export function BuyersTab({ siteId }: { siteId: number }) {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.get(`/sites/${siteId}/buyers`, { params: { limit: 100 } });
+      const res = await api.get(`/sites/${siteId}/buyers`, {
+        params: { limit: 100, purchase_status: purchaseListFilter },
+      });
       setRows((res.data?.buyers || []) as BuyerRow[]);
     } catch (e: any) {
       setError(e?.response?.data?.error || 'Erro ao carregar compradores.');
@@ -141,7 +157,7 @@ export function BuyersTab({ siteId }: { siteId: number }) {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [siteId]);
+  }, [siteId, purchaseListFilter]);
 
   useEffect(() => {
     if (!selected) {
@@ -155,10 +171,20 @@ export function BuyersTab({ siteId }: { siteId: number }) {
       try {
         const res = selected.externalId
           ? await api.get(`/sites/${siteId}/buyers/${encodeURIComponent(selected.externalId)}`, {
-              params: { lookback_days: 30, purchases_limit: purchasesPerPage, purchases_offset: 0 },
+              params: {
+                lookback_days: 30,
+                purchases_limit: purchasesPerPage,
+                purchases_offset: 0,
+                purchase_status: purchaseListFilter,
+              },
             })
           : await api.get(`/sites/${siteId}/buyers/by-key/${encodeURIComponent(selected.buyerKey)}`, {
-              params: { lookback_days: 30, purchases_limit: purchasesPerPage, purchases_offset: 0 },
+              params: {
+                lookback_days: 30,
+                purchases_limit: purchasesPerPage,
+                purchases_offset: 0,
+                purchase_status: purchaseListFilter,
+              },
             });
         setDetail(res.data as BuyerDetail);
       } catch (e: any) {
@@ -168,7 +194,7 @@ export function BuyersTab({ siteId }: { siteId: number }) {
         setDetailLoading(false);
       }
     })();
-  }, [siteId, selected]);
+  }, [siteId, selected, purchaseListFilter]);
 
   useEffect(() => {
     if (!selected) return;
@@ -180,10 +206,20 @@ export function BuyersTab({ siteId }: { siteId: number }) {
         const offset = (purchasesPage - 1) * purchasesPerPage;
         const res = selected.externalId
           ? await api.get(`/sites/${siteId}/buyers/${encodeURIComponent(selected.externalId)}`, {
-              params: { lookback_days: 30, purchases_limit: purchasesPerPage, purchases_offset: offset },
+              params: {
+                lookback_days: 30,
+                purchases_limit: purchasesPerPage,
+                purchases_offset: offset,
+                purchase_status: purchaseListFilter,
+              },
             })
           : await api.get(`/sites/${siteId}/buyers/by-key/${encodeURIComponent(selected.buyerKey)}`, {
-              params: { lookback_days: 30, purchases_limit: purchasesPerPage, purchases_offset: offset },
+              params: {
+                lookback_days: 30,
+                purchases_limit: purchasesPerPage,
+                purchases_offset: offset,
+                purchase_status: purchaseListFilter,
+              },
             });
         setDetail(res.data as BuyerDetail);
       } catch (e: any) {
@@ -193,7 +229,7 @@ export function BuyersTab({ siteId }: { siteId: number }) {
         setDetailLoading(false);
       }
     })();
-  }, [siteId, selected, purchasesPage]);
+  }, [siteId, selected, purchasesPage, purchaseListFilter]);
 
   return (
     <div className="space-y-4">
@@ -204,7 +240,41 @@ export function BuyersTab({ siteId }: { siteId: number }) {
             Lista de compradores do site/pixel com páginas acessadas e melhor atribuição possível (via UTMs/Meta quando existirem).
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <div
+            className="inline-flex rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50/80 dark:bg-zinc-900/50 p-0.5"
+            role="group"
+            aria-label="Filtrar por status da compra"
+          >
+            <button
+              type="button"
+              onClick={() => {
+                setSelected(null);
+                setPurchaseListFilter('approved');
+              }}
+              className={
+                purchaseListFilter === 'approved'
+                  ? 'text-xs px-3 py-2 rounded-md bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-sm font-medium'
+                  : 'text-xs px-3 py-2 rounded-md text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
+              }
+            >
+              Aprovadas
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSelected(null);
+                setPurchaseListFilter('pending');
+              }}
+              className={
+                purchaseListFilter === 'pending'
+                  ? 'text-xs px-3 py-2 rounded-md bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-sm font-medium'
+                  : 'text-xs px-3 py-2 rounded-md text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
+              }
+            >
+              Aguardando pagamento
+            </button>
+          </div>
           <button
             type="button"
             onClick={() => load()}
@@ -420,7 +490,7 @@ export function BuyersTab({ siteId }: { siteId: number }) {
                                 <td className="py-2 pr-3 text-right tabular-nums text-zinc-800 dark:text-zinc-200 whitespace-nowrap">
                                   {p.amount != null ? money(Number(p.amount)) : '—'}
                                 </td>
-                                <td className="py-2 text-zinc-600 dark:text-zinc-400">{p.status || '—'}</td>
+                                <td className="py-2 text-zinc-600 dark:text-zinc-400">{purchaseStatusLabel(p.status)}</td>
                               </tr>
                             ))}
                             {detail.purchases.length === 0 ? (
