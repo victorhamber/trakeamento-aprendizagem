@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import fs from 'fs';
 import path from 'path';
+import axios from 'axios';
 import { requireAuth } from '../middleware/auth';
 import { pool } from '../db/pool';
 import { findOwnedSiteByKey } from '../lib/site-access';
@@ -30,6 +31,44 @@ function loadChecklist(): MentorChecklistFile {
   const filePath = resolveChecklistPath();
   checklistCache = JSON.parse(fs.readFileSync(filePath, 'utf8')) as MentorChecklistFile;
   return checklistCache;
+}
+
+function normalizeLandingUrl(raw: string): string {
+  const s = String(raw || '').trim();
+  if (!s) return '';
+  if (/^https?:\/\//i.test(s)) return s.replace(/\/+$/, '');
+  return `https://${s.replace(/\/+$/, '')}`;
+}
+
+async function fetchLandingPageContent(url: string): Promise<string | null> {
+  try {
+    const u = String(url || '').trim();
+    if (!u || !u.startsWith('http')) return null;
+    const response = await axios.get(u, {
+      headers: {
+        'User-Agent': 'TrajettuBot/1.0 (Mentor Coach)',
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      },
+      timeout: 8000,
+      maxContentLength: 500_000,
+      validateStatus: (s) => s >= 200 && s < 300,
+    });
+
+    let html = typeof response.data === 'string' ? response.data : '';
+    if (!html) return null;
+    html = html
+      .replace(/<script\b[^>]*>([\s\S]*?)<\/script>/gim, '')
+      .replace(/<style\b[^>]*>([\s\S]*?)<\/style>/gim, '')
+      .replace(/<noscript\b[^>]*>([\s\S]*?)<\/noscript>/gim, '');
+    const text = html
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 12_000);
+    return text.length ? text : null;
+  } catch {
+    return null;
+  }
 }
 
 const router = Router();
@@ -89,6 +128,32 @@ router.post('/coach', requireAuth, async (req, res) => {
   const pixelConfigured = enabled && !!meta.pixel_id;
   const capiConfigured = enabled && !!meta.has_capi;
   const metaConnected = enabled && (!!meta.has_marketing || !!meta.has_fb);
+
+  // Landing page recorte (opcional): usa tracking_domain/domain cadastrados no site.
+  let landingPage: Record<string, unknown> | null = null;
+  try {
+    const hostRow = await pool.query(
+      `SELECT COALESCE(NULLIF(TRIM(tracking_domain), ''), NULLIF(TRIM(domain), '')) AS host
+       FROM sites WHERE id = $1 LIMIT 1`,
+      [siteId]
+    );
+    const host = hostRow.rows?.[0]?.host ? String(hostRow.rows[0].host) : '';
+    const lpUrl = normalizeLandingUrl(host);
+    const content = lpUrl ? await fetchLandingPageContent(lpUrl) : null;
+    const contentOk = typeof content === 'string' && content.length > 0;
+    landingPage = {
+      url: lpUrl || null,
+      content: contentOk ? content : '',
+      content_source: contentOk ? 'http_html_text' : lpUrl ? 'fetch_failed_or_empty' : 'no_url',
+      content_note: contentOk
+        ? 'Texto obtido pelo servidor Trajettu via HTTP GET do HTML publico (scripts/estilos removidos; texto plano, ate ~12000 caracteres). Nao e renderizacao JS completa nem screenshot.'
+        : lpUrl
+          ? 'Fetch da URL falhou ou retornou vazio (rede, bloqueio, bot, SPA sem conteudo no HTML inicial). Nao invente copy da pagina.'
+          : 'Nenhuma URL de landing definida para este site (domain/tracking_domain vazio).',
+    };
+  } catch {
+    landingPage = null;
+  }
 
   let metricsAgg: Record<string, unknown> | null = null;
   let campaignLabel: string | null = null;
@@ -186,6 +251,7 @@ router.post('/coach', requireAuth, async (req, res) => {
     focus_phase,
     next_items_across_phases,
     completed_item_ids: completedIds,
+    landing_page: landingPage,
     site_signals: {
       pixel_configured: pixelConfigured,
       capi_configured: capiConfigured,

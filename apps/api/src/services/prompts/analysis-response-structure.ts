@@ -182,18 +182,21 @@ Faca uma analise **conservadora** baseada em checklist + metricas (load/dwell/sc
 
 ## Plano de Acao 100% Pratico
 
-Inclua uma lista NUMERADA no inicio desta secao (1., 2., 3., ...) com os passos mais urgentes; depois pode usar a tabela por prazo.
+**Anti-redundancia (obrigatorio):** nao repita as mesmas acoes em mais de um bloco. Proibido: lista numerada + tabela + checklist com os mesmos itens.
+
+Escolha **apenas um** formato principal:
+
+- **Opcao 1 (preferida):** lista numerada com **3 a 7** itens. Em cada linha: o que fazer, metrica alvo e prazo (**Hoje** / **Esta semana** / **Proximo ciclo**) — tudo no mesmo item. Nao adicione tabela nem checklist espelhando isso.
+
+- **Opcao 2:** **somente** a tabela abaixo (sem lista numerada nem checklist com o mesmo conteudo):
 
 | Prazo | Acao (O Que + Metrica Alvo) | Como Implementar |
 |:---|:---|:---|
-| **Hoje** | [cortar sangramento — ex: pausar anuncio X] | [passo a passo com numeros] |
-| **Esta Semana** | [alavanca HSO/PAS — ex: nova copy] | [antes/depois concreto] |
-| **Proximo Ciclo** | [mudanca estrategica] | [reestruturacao clara] |
+| **Hoje** | [ex.: pausar anuncio X] | [passos concretos] |
+| **Esta Semana** | [ex.: nova copy / teste] | [como medir] |
+| **Proximo Ciclo** | [ex.: mudanca estrategica] | [criterio de sucesso] |
 
-### Checklist Final
-- [ ] [Acao 1]
-- [ ] [Acao 2]
-- [ ] [Acao 3]
+Se usar a **Opcao 2**, nao inclua "### Checklist Final". Checklist so se for **micro-passos novos** (max 3) que nao aparecem na tabela.
 
 ---
 *Diagnostico gerado por Analista IA (Frameworks: PAS, HSO, Pareto, Schwartz) — Meta Ads + CAPI + DB.*`);
@@ -265,7 +268,7 @@ Tabela criativo / promessa / headline LP + correcoes se mismatch.`);
 
 ## Plano de Acao 100% Pratico
 
-Lista NUMERADA (1., 2., 3., ...) **priorizando LP/CRO** (testes, copy, prova social real, velocidade, mobile). Depois tabela por prazo se quiser.
+**Uma** forma apenas: OU lista numerada (3-5 itens, cada um com prazo na linha) OU tabela Hoje/Semana/Ciclo — nao os dois com o mesmo texto. Sem checklist duplicado.
 
 ---
 *Perfil: landing-page — Meta Ads + CAPI + DB.*`);
@@ -347,7 +350,7 @@ Maximo **8-12 linhas** ou bullets: conexao clique→LP, hipoteses de friccao, 3 
 
 ## Plano de Acao 100% Pratico
 
-Numerado + tabela por prazo. Foco em **gargalos de funil** (atencao, clique, pagina, evento otimizado).
+**Uma** forma apenas (lista com prazos na linha **ou** tabela por prazo). Foco em gargalos de funil. Nao repita as mesmas acoes em dois blocos.
 
 ---
 *Perfil: funnel — Meta Ads + CAPI + DB.*`);
@@ -448,7 +451,7 @@ Coerencia anuncio ↔ LP.`);
 
 ## Plano de Acao 100% Pratico
 
-Priorize **testes de criativo** (hooks, formatos, angulos, CTAs), lances por anuncio vencedor, e pausa de sangramento.
+Priorize testes de criativo, lances no vencedor e pausa de sangramento. **Uma** lista ou **uma** tabela — sem checklist espelhado.
 
 ---
 *Perfil: creative — Meta Ads + CAPI + DB.*`);

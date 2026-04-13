@@ -7,6 +7,7 @@ import {
   type AnalysisProfile,
 } from './prompts/analysis-profiles';
 import { buildAnalysisSystemPrompt } from './prompts/analysis-system-prompt';
+import { buildMentorConversionMasterPrompt } from './prompts/mentor-conversion-master-prompt';
 
 interface LlmConfig {
   apiKey: string;
@@ -311,18 +312,12 @@ export class LlmService {
 
   private buildMentorSystemPrompt(): string {
     return [
-      'Voce e um mentor senior de Meta Ads (Facebook/Instagram) para utilizadores da plataforma Trajettu.',
-      'Tom: direto, encorajador, acionavel. Idioma: portugues do Brasil.',
-      'A trilha tem 8 fases na ordem: Oferta e Produto; Publico e Segmentacao; Criativo; Metricas do Gestor; Landing Page; Financeiro/ROAS; Setup tecnico; Escala.',
-      'Use o objeto checklist_progress e focus_phase para dizer onde a pessoa esta.',
-      'Use site_signals e metricas_aggregate (quando existirem) para personalizar: ex. sem pixel/CAPI sugira priorizar rastreamento; CTR baixo → criativo/publico; muitas compras → escala com cuidado.',
-      'Nao repita o checklist inteiro. Priorize 3 a 5 proximos passos concretos.',
-      'Formato de saida obrigatorio em Markdown:',
-      '## Onde voce esta',
-      '## Proximos passos (priorizados)',
-      '## Ligacao com os dados do Trajettu (se houver dados uteis no JSON; senao diga que faltam dados e o que configurar)',
-      '## Observacoes da trilha',
-      'Sem blocos de codigo. Sem cumprimentos longos.',
+      '=== BASE TRAJETTU (MENTOR /coach) ===',
+      'Voce e o mentor Meta Ads da plataforma Trajettu. Idioma: portugues do Brasil.',
+      'Entrada: um unico JSON (checklist, fase em foco, sinais de integracao, metricas agregadas opcionais). Nao invente chaves que nao existam no JSON.',
+      'Integre a trilha de 8 fases com o playbook Conversion Master abaixo; o formato final da resposta continua obrigatorio (quatro ##).',
+      '',
+      buildMentorConversionMasterPrompt(),
     ].join('\n');
   }
 
@@ -569,7 +564,7 @@ Terminologia Meta: ao reportar alcance ou tamanho de audiencia, prefira "contas 
 Alinhamento com a estrutura OBRIGATORIA deste relatorio:
 - Em ## Diagnostico Executivo: comece com 1-2 frases de resumo executivo (equivalente ao "Resumo Executivo" da Meta), depois a tabela.
 - ## Analise do Funil e ## Diagnostico de 3 Camadas cobrem o papel de "Diagnostico de Performance" (explicacao tecnica do porque dos numeros).
-- Em ## Plano de Acao: use lista NUMERADA (1., 2., 3., ...) com passos praticos (lances, criativos, publico, pagina). Mantenha o titulo exato ## Plano de Acao.`);
+- Em ## Plano de Acao 100% Pratico: evite redundancia (ver estrutura de resposta): uma lista **ou** uma tabela, nao os dois espelhados.`);
 
     // ── Copywriting / Persuasão (camada de qualidade, com ética e anti-genérico) ──
     sections.push(`
@@ -942,18 +937,7 @@ Faca uma analise **conservadora** baseada em checklist + metricas (load/dwell/sc
 
 ## Plano de Acao 100% Pratico
 
-Inclua uma lista NUMERADA no inicio desta secao (1., 2., 3., ...) com os passos mais urgentes; depois pode usar a tabela por prazo.
-
-| Prazo | Acao (O Que + Metrica Alvo) | Como Implementar |
-|:---|:---|:---|
-| **Hoje** | [cortar sangramento — ex: pausar anuncio X] | [passo a passo com numeros] |
-| **Esta Semana** | [alavanca HSO/PAS — ex: nova copy] | [antes/depois concreto] |
-| **Proximo Ciclo** | [mudanca estrategica] | [reestruturacao clara] |
-
-### ✅ Checklist Final
-- [ ] [Acao 1]
-- [ ] [Acao 2]
-- [ ] [Acao 3]
+**Anti-redundancia:** uma lista numerada (com prazo em cada item) **ou** somente a tabela Hoje/Semana/Ciclo — nao ambos com o mesmo conteudo; sem checklist espelhado.
 
 ---
 *Diagnostico gerado por Analista IA (Frameworks: PAS, HSO, Pareto, Schwartz) — Meta Ads + CAPI + DB.*`);

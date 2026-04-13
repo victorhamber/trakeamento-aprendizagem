@@ -31,6 +31,21 @@ describe('validateAnalysisMarkdown', () => {
     expect(result.outOfOrder).toContain('## Analise do Funil');
   });
 
+  it('aceita ## Plano de Acao 100% Pratico como equivalente a ## Plano de Acao', () => {
+    const result = validateAnalysisMarkdown(
+      [
+        '## Diagnostico Executivo',
+        'Resumo',
+        '## Analise do Funil',
+        'Funil',
+        '## Plano de Acao 100% Pratico',
+        '1. Passo.',
+      ].join('\n\n')
+    );
+    expect(result.valid).toBe(true);
+    expect(result.missing).toEqual([]);
+  });
+
   it('aceita lista customizada de secoes obrigatorias', () => {
     const required = ['## Diagnostico Executivo', '## Analise da Landing Page', '## Plano de Acao'] as const;
     const ok = validateAnalysisMarkdown(

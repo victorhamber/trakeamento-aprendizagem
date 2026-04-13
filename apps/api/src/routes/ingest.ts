@@ -1,4 +1,3 @@
-import geoip from 'geoip-lite';
 import { Router, Request } from 'express';
 import { createHash } from 'crypto';
 import { z } from 'zod';
@@ -9,6 +8,7 @@ import rateLimit from 'express-rate-limit'; // Added import for express-rate-lim
 import cors from 'cors'; // Added import for cors
 import { DDI_LIST } from '../lib/ddi';
 import { getClientIp } from '../lib/ip';
+import { resolveServerGeoHint, geoFromGeoipLite } from '../lib/request-geo';
 import { preserveMetaClickIds } from '../lib/meta-attribution';
 import { mergeUserDataWithMetaParamBuilder } from '../lib/meta-param-builder-ingest';
 import { normalizeMetaCurrencyCode } from '../lib/meta-currency';
@@ -136,8 +136,8 @@ function normalizeAndHash(field: string, value: string | string[] | undefined, o
     let digits = norm;
     let iso = (options?.country || '').toUpperCase().trim();
     if (!iso && options?.ip) {
-      const geo = geoip.lookup(options.ip);
-      if (geo?.country) iso = geo.country;
+      const g = geoFromGeoipLite(options.ip);
+      if (g.country) iso = g.country;
     }
     const targetCountry = iso || 'BR';
     const ddi = DDI_LIST.find(d => d.country === targetCountry)?.code;
@@ -289,54 +289,6 @@ function isDuplicate(siteKey: string, eventId: string): boolean {
 
 function resolveClientIp(req: Request, userData: NonNullable<IngestEvent['user_data']>) {
   return getClientIp(req) || userData.client_ip_address || '';
-}
-
-function resolveGeo(clientIp: string) {
-  const cleanIp = clientIp.replace(/^::ffff:/, '');
-  if (!cleanIp || cleanIp.length <= 6) return {};
-  // geoip-lite não resolve IPv6 puro; evita gerar dado errado.
-  if (cleanIp.includes(':')) return {};
-  const geo = geoip.lookup(cleanIp);
-  if (!geo) return {};
-  return {
-    city: geo.city || undefined,
-    region: geo.region || undefined,
-    country: geo.country || undefined,
-  };
-}
-
-function pickHeader(req: Request, key: string): string {
-  const v = req.get(key);
-  return typeof v === 'string' ? v.trim() : '';
-}
-
-function resolveGeoFromHeaders(req: Request): { city?: string; region?: string; country?: string } {
-  // País via headers comuns de proxy/CDN (não precisa de DB e funciona em IPv6)
-  const country =
-    pickHeader(req, 'cf-ipcountry') ||
-    pickHeader(req, 'x-vercel-ip-country') ||
-    pickHeader(req, 'x-country-code') ||
-    pickHeader(req, 'cloudfront-viewer-country') ||
-    '';
-
-  // Cidade/estado dependem do provedor; só usamos se vierem explicitamente
-  const city =
-    pickHeader(req, 'cf-ipcity') ||
-    pickHeader(req, 'x-vercel-ip-city') ||
-    pickHeader(req, 'x-geo-city') ||
-    '';
-
-  const region =
-    pickHeader(req, 'cf-region') ||
-    pickHeader(req, 'x-vercel-ip-country-region') ||
-    pickHeader(req, 'x-geo-region') ||
-    '';
-
-  const out: { city?: string; region?: string; country?: string } = {};
-  if (country && /^[A-Za-z]{2}$/.test(country)) out.country = country.toUpperCase();
-  if (city) out.city = city;
-  if (region) out.region = region;
-  return out;
 }
 
 /** URL http(s) válida para event_source_url (CAPI / eventos website). */
@@ -609,7 +561,7 @@ function resolveClientUserAgentForCapi(
   return FALLBACK_CAPI_UA;
 }
 
-function buildCapiUserData(
+async function buildCapiUserData(
   req: Request,
   userData: NonNullable<IngestEvent['user_data']>,
   siteKey: string,
@@ -617,8 +569,7 @@ function buildCapiUserData(
 ) {
   const clientIp = resolveClientIp(req, userData);
   const clientUserAgent = resolveClientUserAgentForCapi(req, userData);
-  const geo = resolveGeo(clientIp);
-  const geoHdr = resolveGeoFromHeaders(req);
+  const geoHint = await resolveServerGeoHint(req, clientIp);
   const pickCustom = (field: string) => {
     const val = customData[field];
     if (typeof val === 'string') return val;
@@ -643,16 +594,13 @@ function buildCapiUserData(
 
   const ct =
     pick('ct') ??
-    (geo.city ? hashPii(normalizers.ct(geo.city)) : undefined) ??
-    (geoHdr.city ? hashPii(normalizers.ct(geoHdr.city)) : undefined);
+    (geoHint.city ? hashPii(normalizers.ct(geoHint.city)) : undefined);
   const st =
     pick('st') ??
-    (geo.region ? hashPii(normalizers.st(geo.region)) : undefined) ??
-    (geoHdr.region ? hashPii(normalizers.st(geoHdr.region)) : undefined);
+    (geoHint.region ? hashPii(normalizers.st(geoHint.region)) : undefined);
   const country =
     pick('country') ??
-    (geo.country ? hashPii(normalizers.country(geo.country)) : undefined) ??
-    (geoHdr.country ? hashPii(normalizers.country(geoHdr.country)) : undefined);
+    (geoHint.country ? hashPii(normalizers.country(geoHint.country)) : undefined);
   const fbp = preserveMetaClickIds(userData.fbp || pickCustom('fbp'));
   const fbc = preserveMetaClickIds(userData.fbc || pickCustom('fbc'));
   const externalIdRaw = userData.external_id || pickCustom('external_id');
@@ -793,7 +741,7 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
     // Build enriched user data BEFORE persisting to DB
     // This ensures the server-side IP is saved in web_events for later recovery by Enrichment
     const rawUserData = event.user_data ?? {};
-    const capiUser = buildCapiUserData(req, rawUserData, siteKey, event.custom_data ?? {});
+    const capiUser = await buildCapiUserData(req, rawUserData, siteKey, event.custom_data ?? {});
     const enrichedUserData = { ...rawUserData, ...capiUser };
 
     let result;
@@ -1107,7 +1055,7 @@ router.post('/batch', cors(), ingestLimiter, async (req, res) => {
 
       // Visitor UPSERTs + CAPI + GA4 — all fire-and-forget per event
       for (const p of inserted) {
-        const capiUser = buildCapiUserData(req, p.event.user_data || {}, siteKey, p.event.custom_data ?? {});
+        const capiUser = await buildCapiUserData(req, p.event.user_data || {}, siteKey, p.event.custom_data ?? {});
         const rawExtB = capiUser.external_id;
         const extId =
           rawExtB != null && String(rawExtB).trim() !== ''

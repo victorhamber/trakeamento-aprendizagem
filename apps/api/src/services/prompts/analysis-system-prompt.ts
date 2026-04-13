@@ -61,7 +61,7 @@ Terminologia Meta: ao reportar alcance ou tamanho de audiencia, prefira "contas 
 Alinhamento com a estrutura OBRIGATORIA deste relatorio:
 - Em ## Diagnostico Executivo: comece com 1-2 frases de resumo executivo (equivalente ao "Resumo Executivo" da Meta), depois a tabela.
 - ## Analise do Funil e ## Diagnostico de 3 Camadas cobrem o papel de "Diagnostico de Performance" (explicacao tecnica do porque dos numeros).
-- Em ## Plano de Acao: use lista NUMERADA (1., 2., 3., ...) com passos praticos (lances, criativos, publico, pagina). Mantenha o titulo exato ## Plano de Acao.`,
+- Em ## Plano de Acao 100% Pratico: siga o bloco "ESTRUTURA DE RESPOSTA" — **uma** lista numerada **ou** **uma** tabela por prazo; nao repita as mesmas acoes em checklist. Titulo de secao como no template (## nivel 2).`,
   },
   {
     id: 'copywriting',

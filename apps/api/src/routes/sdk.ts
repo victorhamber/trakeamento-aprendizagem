@@ -2,6 +2,8 @@ import fs from 'fs';
 import path from 'path';
 import { Router } from 'express';
 import { pool } from '../db/pool';
+import { getClientIp } from '../lib/ip';
+import { resolveServerGeoHint } from '../lib/request-geo';
 
 const router = Router();
 
@@ -82,6 +84,32 @@ router.get('/loader.js', (req, res) => {
 })();`;
 
   return res.send(js);
+});
+
+/**
+ * Geo aproximada (IP + headers CDN + opcional GEO_IP_LOOKUP_URL) para preencher ct/st/country
+ * nos cookies do tracker (advanced matching do Pixel), sem campos no formulário.
+ */
+router.get('/geo-for-matching', async (req, res) => {
+  const key = typeof req.query.key === 'string' ? req.query.key.trim() : '';
+  if (!key) {
+    return res.status(400).json({ error: 'missing key' });
+  }
+  try {
+    const siteRow = await pool.query('SELECT id FROM sites WHERE site_key = $1 LIMIT 1', [key]);
+    if (!siteRow.rowCount) {
+      return res.status(404).json({ error: 'unknown site' });
+    }
+    const hint = await resolveServerGeoHint(req, getClientIp(req));
+    res.setHeader('Cache-Control', 'private, max-age=1800');
+    return res.json({
+      city: hint.city || '',
+      region: hint.region || '',
+      country: hint.country || '',
+    });
+  } catch (_e) {
+    return res.status(500).json({ error: 'geo lookup failed' });
+  }
 });
 
 router.get('/tracker.js', async (req, res) => {
@@ -979,6 +1007,78 @@ router.get('/tracker.js', async (req, res) => {
     } catch(_e) {}
   }
 
+  /** Atualiza advanced matching no fbq após novos cookies (_ta_ct / _ta_st / _ta_country). */
+  function refreshMetaFbqAdvancedMatching() {
+    try {
+      var cfg = window.TRACKING_CONFIG;
+      if (!window.fbq || !cfg || !cfg.metaPixelId) return;
+      var am = getMetaUserDataFromCookies();
+      var fbcInit = getFbc();
+      if (fbcInit) am.fbc = fbcInit;
+      if (Object.keys(am).length > 0) {
+        window.fbq('init', cfg.metaPixelId, am);
+      }
+    } catch(_e) {}
+  }
+
+  /**
+   * Busca cidade/estado/país no servidor (IP) e grava cookies hasheados se ainda vazios.
+   * Cookie _ta_geo_hint_done (24h) evita chamadas repetidas.
+   */
+  function prefetchGeoForMatching() {
+    try {
+      var cfg = window.TRACKING_CONFIG;
+      if (!cfg || !cfg.apiUrl || !cfg.siteKey) return;
+      if (getCookie('_ta_geo_hint_done')) return;
+      if (getCookie('_ta_ct') && getCookie('_ta_st') && getCookie('_ta_country')) {
+        setCookie('_ta_geo_hint_done', '1', 86400);
+        return;
+      }
+      var url = cfg.apiUrl + '/sdk/geo-for-matching?key=' + encodeURIComponent(cfg.siteKey);
+      fetch(url, { mode: 'cors', credentials: 'omit' })
+        .then(function(r) { return r.ok ? r.json() : null; })
+        .then(function(j) {
+          function finish() {
+            setCookie('_ta_geo_hint_done', '1', 86400);
+          }
+          if (!j || typeof j !== 'object') {
+            finish();
+            return;
+          }
+          var pending = 0;
+          function bump() {
+            pending--;
+            if (pending <= 0) {
+              finish();
+              refreshMetaFbqAdvancedMatching();
+            }
+          }
+          function maybeSetGeoCookie(name, raw, norm) {
+            if (getCookie(name)) return;
+            var rs = (raw || '').toString().trim();
+            if (!rs) return;
+            var n = norm ? norm(rs) : rs;
+            if (!n) return;
+            pending++;
+            sha256Hex(n, function(hash) {
+              if (hash) setCookie(name, hash, COOKIE_TTL_2Y);
+              bump();
+            });
+          }
+          maybeSetGeoCookie('_ta_ct', j.city, normCityState);
+          maybeSetGeoCookie('_ta_st', j.region, normCityState);
+          maybeSetGeoCookie('_ta_country', j.country, normCountry);
+          if (pending === 0) {
+            finish();
+            refreshMetaFbqAdvancedMatching();
+          }
+        })
+        .catch(function() {
+          setCookie('_ta_geo_hint_done', '1', 86400);
+        });
+    } catch(_e) {}
+  }
+
   function trackMeta(eventName, params, eventId, isCustom) {
     try {
       if (!window.fbq) return;
@@ -1598,13 +1698,7 @@ router.get('/tracker.js', async (req, res) => {
       try {
         applyIdentify(obj);
         window.__TA_IDENTIFY = Object.assign(window.__TA_IDENTIFY || {}, obj || {});
-        // Re-init fbq com advanced matching atualizado
-        if (window.fbq && window.TRACKING_CONFIG && window.TRACKING_CONFIG.metaPixelId) {
-          var am = getMetaUserDataFromCookies();
-          if (Object.keys(am).length > 0) {
-            window.fbq('init', window.TRACKING_CONFIG.metaPixelId, am);
-          }
-        }
+        refreshMetaFbqAdvancedMatching();
       } catch(_e) {}
     };
 
@@ -2352,6 +2446,7 @@ router.get('/tracker.js', async (req, res) => {
   }
 
   function initTracker() {
+    prefetchGeoForMatching();
     applyCustomSnippetsOnce();
     var pick = getPickerConfig();
     if (pick) {
