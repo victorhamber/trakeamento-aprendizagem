@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { api } from '../lib/api';
+import { labelForAnalysisProfile, type ReportWizardGenerateContext } from '../lib/analysis-profile';
 import { formatDateTimeBrt } from '../lib/utils';
 import { stripTrajettuAuxFromMatchPath } from '../lib/trajettuAuxPath';
 import { DDI_LIST } from '../lib/ddi';
@@ -76,11 +77,13 @@ type MetaBreakdownItem = {
 };
 type DiagnosisReport = {
   analysis_text?: string;
+  analysis_profile?: string;
   context?: {
     campaign_id?: string | null;
     date_preset?: string;
     since?: string;
     until?: string;
+    analysis_profile?: string;
     utm_source?: string;
     utm_medium?: string;
     utm_campaign?: string;
@@ -1756,11 +1759,7 @@ ${scriptContent}
       setShowWizard(true);
     }
   };
-  const handleWizardGenerate = async (context: {
-    objective: string;
-    landing_page_url: string;
-    selected_ad_ids?: string[];
-  }) => {
+  const handleWizardGenerate = async (context: ReportWizardGenerateContext) => {
     if (!site) return;
     setShowWizard(false);
     setLoading(true);
@@ -1778,12 +1777,14 @@ ${scriptContent}
       if (diagnosisUtmContent) params.utm_content = diagnosisUtmContent;
       if (diagnosisUtmTerm) params.utm_term = diagnosisUtmTerm;
       if (diagnosisClickId) params.click_id = diagnosisClickId;
+      params.analysis_profile = context.analysisProfile;
       const res = await api.post(
         '/recommendations/generate',
         {
           objective: context.objective,
           landing_page_url: context.landing_page_url,
           selected_ad_ids: context.selected_ad_ids,
+          analysisProfile: context.analysisProfile,
         },
         { headers: { 'x-site-key': site.site_key }, params }
       );
@@ -4576,6 +4577,17 @@ ${scriptContent}
 
                 {report?.analysis_text && (
                   <div className="space-y-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span
+                        className="text-[11px] px-2.5 py-1.5 rounded-lg border border-violet-500/30 bg-violet-500/10 text-violet-800 dark:text-violet-200"
+                        title="Perfil usado na última geração"
+                      >
+                        Perfil:{' '}
+                        {labelForAnalysisProfile(
+                          report.analysis_profile || report.context?.analysis_profile || ''
+                        )}
+                      </span>
+                    </div>
                     {visibleReportSections.map((section, index) => (
                       <div
                         key={`${section.title}-${index}`}

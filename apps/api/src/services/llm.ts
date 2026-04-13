@@ -1,6 +1,12 @@
 import axios, { AxiosError } from 'axios';
 import { pool } from '../db/pool';
 import { decryptString } from '../lib/crypto';
+import {
+  ANALYSIS_PROFILE_DEFAULT,
+  validateAnalysisMarkdownForProfile,
+  type AnalysisProfile,
+} from './prompts/analysis-profiles';
+import { buildAnalysisSystemPrompt } from './prompts/analysis-system-prompt';
 
 interface LlmConfig {
   apiKey: string;
@@ -180,33 +186,27 @@ export class LlmService {
     return await this.callOpenAI(apiKey, model, systemPrompt, userContent, 1, maxTokens);
   }
 
-  private readonly REQUIRED_SECTIONS = [
-    '## Diagnostico Executivo',
-    '## Analise do Funil',
-    '## Plano de Acao',
-  ];
-
   /** Secoes "esperadas" opcionais: nao gerar aviso no relatorio se o modelo omitir (evita falsos positivos). */
   private getExpectedSections(_snapshot: Record<string, unknown>): string[] {
     return [];
   }
 
-  private validateOutput(content: string, snapshot?: Record<string, unknown>): { valid: boolean; missing: string[]; missingExpected: string[]; truncated: boolean } {
-    const missing = this.REQUIRED_SECTIONS.filter(
-      section => !content.includes(section)
-    );
-    const trimmed = content.trimEnd();
-    const truncated = !trimmed.endsWith('*') && !trimmed.endsWith('---') && !trimmed.endsWith('|')
-      && !trimmed.endsWith('.') && !trimmed.endsWith(')')
-      && trimmed.length > 2000;
-
+  private validateOutput(
+    content: string,
+    snapshot: Record<string, unknown> | undefined,
+    profile: AnalysisProfile
+  ) {
     const expected = snapshot ? this.getExpectedSections(snapshot) : [];
-    const missingExpected = expected.filter(s => !content.includes(s));
-
-    return { valid: missing.length === 0, missing, missingExpected, truncated };
+    return validateAnalysisMarkdownForProfile(content, profile, expected);
   }
 
-  private appendValidationWarnings(content: string, missing: string[], missingExpected: string[], truncated: boolean): string {
+  private appendValidationWarnings(
+    content: string,
+    missing: string[],
+    missingExpected: string[],
+    truncated: boolean,
+    outOfOrder: string[] = []
+  ): string {
     const warnings: string[] = [];
     if (truncated) {
       warnings.push('> ⚠️ **Aviso:** Este relatório pode estar incompleto (resposta truncada pelo modelo).');
@@ -217,11 +217,19 @@ export class LlmService {
     if (missingExpected.length > 0) {
       warnings.push(`> ⚠️ **Seções esperadas não incluídas:** ${missingExpected.join(', ')}. Dados disponíveis não foram utilizados.`);
     }
+    if (outOfOrder.length > 0) {
+      warnings.push(`> Secoes fora de ordem: ${outOfOrder.join(', ')}. O modelo saiu da estrutura esperada.`);
+    }
     if (warnings.length === 0) return content;
     return content + '\n\n---\n\n' + warnings.join('\n\n');
   }
 
-  public async generateAnalysisForSite(siteKey: string, snapshot: unknown): Promise<string> {
+  public async generateAnalysisForSite(
+    siteKey: string,
+    snapshot: unknown,
+    options?: { analysisProfile?: AnalysisProfile }
+  ): Promise<string> {
+    const profile = options?.analysisProfile ?? ANALYSIS_PROFILE_DEFAULT;
     const cfg = await this.getKeyForSite(siteKey);
     const apiKey = cfg?.apiKey || process.env.OPENAI_API_KEY || '';
     const model = cfg?.model || DEFAULT_MODEL;
@@ -230,26 +238,47 @@ export class LlmService {
       return this.fallbackReport(snapshot);
     }
     const snapRecord = snapshot && typeof snapshot === 'object' ? snapshot as Record<string, unknown> : {};
-    const systemPrompt = this.buildSystemPrompt(snapRecord);
+    const systemPrompt = buildAnalysisSystemPrompt(snapRecord, { profile });
     const snapshotJson = this.sanitizeSnapshot(snapshot);
     const userBriefing = this.buildUserBriefing(snapRecord);
     const userContent = `${userBriefing}\n\n---\n\nDados completos (JSON):\n\n${snapshotJson}`;
     try {
       let content = await this.callOpenAI(apiKey, model, systemPrompt, userContent);
-      const validation = this.validateOutput(content, snapRecord);
+      const validation = this.validateOutput(content, snapRecord, profile);
 
       if (!validation.valid) {
-        this.log('warn', `Output missing sections: ${validation.missing.join(', ')}. Retrying...`);
+        this.log('warn', 'Output failed structure validation. Retrying...', {
+          missing: validation.missing,
+          outOfOrder: validation.outOfOrder,
+        });
         try {
           const retryPrompt = `Voce gerou um relatorio incompleto. As seguintes secoes OBRIGATORIAS estao faltando: ${validation.missing.join(', ')}.\n\nPor favor, gere o relatorio COMPLETO seguindo a estrutura exata do system prompt. Inclua TODAS as secoes obrigatorias.\n\nDados:\n\n${snapshotJson}`;
           content = await this.callOpenAI(apiKey, model, systemPrompt, retryPrompt);
-          const revalidation = this.validateOutput(content, snapRecord);
-          content = this.appendValidationWarnings(content, revalidation.missing, revalidation.missingExpected, revalidation.truncated);
+          const revalidation = this.validateOutput(content, snapRecord, profile);
+          content = this.appendValidationWarnings(
+            content,
+            revalidation.missing,
+            revalidation.missingExpected,
+            revalidation.truncated,
+            revalidation.outOfOrder
+          );
         } catch {
-          content = this.appendValidationWarnings(content, validation.missing, validation.missingExpected, validation.truncated);
+          content = this.appendValidationWarnings(
+            content,
+            validation.missing,
+            validation.missingExpected,
+            validation.truncated,
+            validation.outOfOrder
+          );
         }
       } else {
-        content = this.appendValidationWarnings(content, [], validation.missingExpected, validation.truncated);
+        content = this.appendValidationWarnings(
+          content,
+          [],
+          validation.missingExpected,
+          validation.truncated,
+          validation.outOfOrder
+        );
       }
 
       return content;

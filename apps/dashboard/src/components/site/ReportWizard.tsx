@@ -1,12 +1,14 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import {
+    ANALYSIS_PROFILE_OPTIONS,
+    type AnalysisProfileId,
+    type ReportWizardGenerateContext,
+} from '../../lib/analysis-profile';
+
 interface ReportWizardProps {
     open: boolean;
     onClose: () => void;
-    onGenerate: (context: {
-        objective: string;
-        landing_page_url: string;
-        selected_ad_ids?: string[];
-    }) => void;
+    onGenerate: (context: ReportWizardGenerateContext) => void;
     ads: Array<{ id: string; name: string }>;
     loading: boolean;
 }
@@ -32,6 +34,13 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
     const [customObjective, setCustomObjective] = useState('');
     const [lpUrl, setLpUrl] = useState('');
     const [selectedAdIds, setSelectedAdIds] = useState<string[]>(ads.map((a) => a.id));
+    const [analysisProfile, setAnalysisProfile] = useState<AnalysisProfileId>('full');
+
+    useEffect(() => {
+        if (!open) return;
+        setAnalysisProfile('full');
+        setSelectedAdIds(ads.map((a) => a.id));
+    }, [open, ads]);
 
     if (!open) return null;
 
@@ -50,6 +59,7 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
             objective: finalObjective,
             landing_page_url: lpUrl,
             selected_ad_ids: selectedAdIds.length > 0 ? selectedAdIds : undefined,
+            analysisProfile,
         });
     };
 
@@ -145,6 +155,29 @@ export const ReportWizard: React.FC<ReportWizardProps> = ({
                     {/* Step 3: Creatives (Optional) */}
                     {step === 3 && (
                         <div className="space-y-4">
+                            <div className="space-y-2">
+                                <label
+                                    htmlFor="report-wizard-analysis-profile"
+                                    className="block text-sm font-medium text-zinc-800 dark:text-zinc-200"
+                                >
+                                    Tipo de relatório
+                                </label>
+                                <select
+                                    id="report-wizard-analysis-profile"
+                                    value={analysisProfile}
+                                    onChange={(e) => setAnalysisProfile(e.target.value as AnalysisProfileId)}
+                                    className={inputCls}
+                                >
+                                    {ANALYSIS_PROFILE_OPTIONS.map((opt) => (
+                                        <option key={opt.value} value={opt.value} title={opt.description}>
+                                            {opt.label}
+                                        </option>
+                                    ))}
+                                </select>
+                                <p className="text-xs text-zinc-500 dark:text-zinc-600 leading-relaxed">
+                                    O mesmo período e dados da campanha são usados; muda o foco do texto gerado pela IA.
+                                </p>
+                            </div>
                             <p className="text-sm text-zinc-600 dark:text-zinc-400">
                                 Selecione quais criativos você deseja que a inteligência artificial analise. O conteúdo real dos anúncios será buscado automaticamente da API do Meta.
                             </p>

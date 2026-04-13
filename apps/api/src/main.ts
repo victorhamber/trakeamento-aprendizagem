@@ -54,17 +54,19 @@ app.use((req, res, next) => {
     req.path.startsWith('/sdk') ||
     req.path.startsWith('/ingest') ||
     req.path.startsWith('/public');
+  const isAllowedOrigin = !!origin && allowedOrigins.some(o => origin.startsWith(o));
 
   if (origin) {
     if (isPublicRoute) {
       res.setHeader('Access-Control-Allow-Origin', origin);
-    } else if (allowedOrigins.some(o => origin.startsWith(o))) {
+    } else if (isAllowedOrigin) {
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Access-Control-Allow-Credentials', 'true');
     } else {
-      // Fallback permissivo para evitar bloqueios de CORS enquanto debugamos
-      res.setHeader('Access-Control-Allow-Origin', origin);
-      res.setHeader('Access-Control-Allow-Credentials', 'true');
+      if (req.method === 'OPTIONS') {
+        return res.status(403).json({ error: 'Origin not allowed' });
+      }
+      return res.status(403).json({ error: 'Origin not allowed' });
     }
   } else if (isPublicRoute) {
     res.setHeader('Access-Control-Allow-Origin', '*');

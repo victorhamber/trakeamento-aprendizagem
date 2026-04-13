@@ -1,86 +1,84 @@
 import { Router } from 'express';
 import { diagnosisService } from '../services/diagnosis';
-
 import { requireAuth } from '../middleware/auth';
 import { pool } from '../db/pool';
 import { llmService } from '../services/llm';
+import { findOwnedSiteById, findOwnedSiteByKey } from '../lib/site-access';
 import { addDaysToYmd, getMetaReportTimeZone, getYmdInReportTz, startOfZonedDayUtc } from '../lib/meta-report-timezone';
+import { recommendationChatInputSchema, recommendationGenerateInputSchema } from '../services/agent-tools';
 
 const router = Router();
 
 router.post('/generate', requireAuth, async (req, res) => {
-  const siteKey = req.query.key || req.headers['x-site-key'];
-  if (!siteKey) return res.status(400).json({ error: 'Missing site key' });
-  const campaignId =
-    typeof req.query.campaign_id === 'string' && req.query.campaign_id.trim() ? req.query.campaign_id.trim() : null;
-  if (!campaignId) return res.status(400).json({ error: 'Missing campaign_id' });
-  const datePreset =
-    typeof req.query.date_preset === 'string' && req.query.date_preset.trim() ? req.query.date_preset.trim() : undefined;
-  const since = typeof req.query.since === 'string' && req.query.since.trim() ? req.query.since.trim() : undefined;
-  const until = typeof req.query.until === 'string' && req.query.until.trim() ? req.query.until.trim() : undefined;
-  const utmSource =
-    typeof req.query.utm_source === 'string' && req.query.utm_source.trim() ? req.query.utm_source.trim() : undefined;
-  const utmMedium =
-    typeof req.query.utm_medium === 'string' && req.query.utm_medium.trim() ? req.query.utm_medium.trim() : undefined;
-  const utmCampaign =
-    typeof req.query.utm_campaign === 'string' && req.query.utm_campaign.trim()
-      ? req.query.utm_campaign.trim()
-      : undefined;
-  const utmContent =
-    typeof req.query.utm_content === 'string' && req.query.utm_content.trim()
-      ? req.query.utm_content.trim()
-      : undefined;
-  const utmTerm =
-    typeof req.query.utm_term === 'string' && req.query.utm_term.trim() ? req.query.utm_term.trim() : undefined;
-  const clickId =
-    typeof req.query.click_id === 'string' && req.query.click_id.trim() ? req.query.click_id.trim() : undefined;
+  const auth = req.auth!;
+  const rawBody = req.body || {};
+  const rawSiteKey = req.query.key || req.headers['x-site-key'];
   const daysRaw = Number(req.query.days || 7);
-  const days = Number.isFinite(daysRaw) ? Math.min(90, Math.max(1, Math.trunc(daysRaw))) : 7;
 
-  const force = req.query.force === 'true' || req.query.force === '1';
+  const parsedInput = recommendationGenerateInputSchema.safeParse({
+    siteKey: typeof rawSiteKey === 'string' ? rawSiteKey : '',
+    campaignId: typeof req.query.campaign_id === 'string' ? req.query.campaign_id : '',
+    datePreset: typeof req.query.date_preset === 'string' ? req.query.date_preset : undefined,
+    since: typeof req.query.since === 'string' ? req.query.since : undefined,
+    until: typeof req.query.until === 'string' ? req.query.until : undefined,
+    days: Number.isFinite(daysRaw) ? Math.trunc(daysRaw) : 7,
+    force: req.query.force === 'true' || req.query.force === '1',
+    utmFilters: {
+      utm_source: typeof req.query.utm_source === 'string' ? req.query.utm_source : undefined,
+      utm_medium: typeof req.query.utm_medium === 'string' ? req.query.utm_medium : undefined,
+      utm_campaign: typeof req.query.utm_campaign === 'string' ? req.query.utm_campaign : undefined,
+      utm_content: typeof req.query.utm_content === 'string' ? req.query.utm_content : undefined,
+      utm_term: typeof req.query.utm_term === 'string' ? req.query.utm_term : undefined,
+      click_id: typeof req.query.click_id === 'string' ? req.query.click_id : undefined,
+    },
+    userContext: {
+      stated_objective: typeof rawBody.objective === 'string' ? rawBody.objective : undefined,
+      landing_page_url: typeof rawBody.landing_page_url === 'string' ? rawBody.landing_page_url : undefined,
+      selected_ad_ids: Array.isArray(rawBody.selected_ad_ids)
+        ? rawBody.selected_ad_ids.filter((id: unknown): id is string => typeof id === 'string')
+        : undefined,
+    },
+    analysisProfile:
+      typeof req.query.analysis_profile === 'string'
+        ? req.query.analysis_profile
+        : typeof rawBody.analysis_profile === 'string'
+          ? rawBody.analysis_profile
+          : undefined,
+  });
 
-  // User context from wizard (optional)
-  const body = req.body || {};
-  const userContext = {
-    stated_objective: typeof body.objective === 'string' ? body.objective.trim() : undefined,
-    landing_page_url: typeof body.landing_page_url === 'string' ? body.landing_page_url.trim() : undefined,
-    selected_ad_ids: Array.isArray(body.selected_ad_ids)
-      ? body.selected_ad_ids.filter((id: any) => typeof id === 'string')
-      : undefined,
-  };
-  // Remove undefined fields
-  const cleanContext = Object.fromEntries(
-    Object.entries(userContext).filter(([, v]) => v !== undefined && v !== '')
-  );
+  if (!parsedInput.success) {
+    return res.status(400).json({
+      error: 'invalid_input',
+      details: parsedInput.error.flatten(),
+    });
+  }
+
+  const input = parsedInput.data;
+  const ownedSite = await findOwnedSiteByKey(auth.accountId, input.siteKey);
+  if (!ownedSite) return res.status(404).json({ error: 'Site not found' });
 
   try {
     const reportOptions = {
-      datePreset,
-      since,
-      until,
-      utm_source: utmSource,
-      utm_medium: utmMedium,
-      utm_campaign: utmCampaign,
-      utm_content: utmContent,
-      utm_term: utmTerm,
-      click_id: clickId,
-      force,
-      userContext: Object.keys(cleanContext).length > 0 ? cleanContext : undefined,
-    } as any;
-    const report = await diagnosisService.generateReport(siteKey as string, days, campaignId, reportOptions);
+      siteId: ownedSite.id,
+      datePreset: input.datePreset,
+      since: input.since,
+      until: input.until,
+      force: input.force,
+      userContext: input.userContext,
+      analysisProfile: input.analysisProfile,
+      ...(input.utmFilters || {}),
+    };
+
+    const report = await diagnosisService.generateReport(input.siteKey, input.days, input.campaignId, reportOptions);
     res.json({
       ...report,
       context: {
-        campaign_id: campaignId,
-        date_preset: datePreset,
-        since,
-        until,
-        utm_source: utmSource,
-        utm_medium: utmMedium,
-        utm_campaign: utmCampaign,
-        utm_content: utmContent,
-        utm_term: utmTerm,
-        click_id: clickId,
+        campaign_id: input.campaignId,
+        date_preset: input.datePreset,
+        since: input.since,
+        until: input.until,
+        analysis_profile: input.analysisProfile,
+        ...(input.utmFilters || {}),
       },
     });
   } catch (err: unknown) {
@@ -101,7 +99,6 @@ function resolveSinceUntilYmd(datePreset?: string, since?: string, until?: strin
   }
   if (preset === 'last_14d') return { sinceYmd: addDaysToYmd(today, -14), untilYmd: today };
   if (preset === 'last_30d') return { sinceYmd: addDaysToYmd(today, -30), untilYmd: today };
-  // default/last_7d
   return { sinceYmd: addDaysToYmd(today, -7), untilYmd: today };
 }
 
@@ -127,45 +124,50 @@ const FUNNEL_BENCHMARKS = {
 };
 
 router.post('/chat', requireAuth, async (req, res) => {
-  // Prefer site_key when provided (compat com cliente antigo), mas aceite site_id (chat embutido no funil).
-  let siteKey = (req.query.key || req.headers['x-site-key']) as string | undefined;
-  const siteIdRaw =
+  const auth = req.auth!;
+  const rawBody = req.body || {};
+  const rawSiteId =
     typeof req.query.site_id === 'string' && req.query.site_id.trim() ? Number(req.query.site_id) : undefined;
-  if (!siteKey && !Number.isFinite(siteIdRaw)) return res.status(400).json({ error: 'Missing site key' });
-  const campaignId =
-    typeof req.query.campaign_id === 'string' && req.query.campaign_id.trim() ? req.query.campaign_id.trim() : null;
-  if (!campaignId) return res.status(400).json({ error: 'Missing campaign_id' });
 
-  const datePreset =
-    typeof req.query.date_preset === 'string' && req.query.date_preset.trim() ? req.query.date_preset.trim() : undefined;
-  const since = typeof req.query.since === 'string' && req.query.since.trim() ? req.query.since.trim() : undefined;
-  const until = typeof req.query.until === 'string' && req.query.until.trim() ? req.query.until.trim() : undefined;
+  const parsedInput = recommendationChatInputSchema.safeParse({
+    siteKey: typeof req.query.key === 'string'
+      ? req.query.key
+      : typeof req.headers['x-site-key'] === 'string'
+        ? req.headers['x-site-key']
+        : undefined,
+    siteId: Number.isFinite(rawSiteId) ? Math.trunc(rawSiteId!) : undefined,
+    campaignId: typeof req.query.campaign_id === 'string' ? req.query.campaign_id : '',
+    datePreset: typeof req.query.date_preset === 'string' ? req.query.date_preset : undefined,
+    since: typeof req.query.since === 'string' ? req.query.since : undefined,
+    until: typeof req.query.until === 'string' ? req.query.until : undefined,
+    messages: Array.isArray((rawBody as { messages?: unknown[] }).messages)
+      ? ((rawBody as { messages?: unknown[] }).messages as unknown[])
+      : [],
+  });
 
-  const body = (req.body || {}) as { messages?: Array<{ role: 'user' | 'assistant'; content: string }> };
-  const messages = Array.isArray(body.messages) ? body.messages.filter((m) => m && typeof m.content === 'string') : [];
+  if (!parsedInput.success) {
+    return res.status(400).json({
+      error: 'invalid_input',
+      details: parsedInput.error.flatten(),
+    });
+  }
+
+  const input = parsedInput.data;
 
   try {
-    let siteId: number | undefined;
-    if (siteKey) {
-      const siteRow = await pool.query('SELECT id FROM sites WHERE site_key = $1', [siteKey]);
-      siteId = siteRow.rows[0]?.id as number | undefined;
-    } else {
-      const auth = (req as any).auth as { accountId: number } | undefined;
-      const owns = await pool.query('SELECT site_key FROM sites WHERE id = $1 AND account_id = $2', [
-        siteIdRaw,
-        auth?.accountId,
-      ]);
-      if (!owns.rowCount) return res.status(404).json({ error: 'Site not found' });
-      siteKey = String(owns.rows[0].site_key);
-      siteId = siteIdRaw;
-    }
+    const ownedSite = input.siteKey
+      ? await findOwnedSiteByKey(auth.accountId, input.siteKey)
+      : await findOwnedSiteById(auth.accountId, input.siteId!);
 
-    const { sinceYmd, untilYmd } = resolveSinceUntilYmd(datePreset, since, until);
+    if (!ownedSite) return res.status(404).json({ error: 'Site not found' });
+
+    const siteId = ownedSite.id;
+    const siteKey = ownedSite.siteKey;
+    const { sinceYmd, untilYmd } = resolveSinceUntilYmd(input.datePreset, input.since, input.until);
     const tz = getMetaReportTimeZone();
     const sinceUtc = startOfZonedDayUtc(sinceYmd, tz);
     const untilUtc = startOfZonedDayUtc(addDaysToYmd(untilYmd, 1), tz);
 
-    // Puxa um snapshot do funil (nível campanha) a partir do DB.
     const funnel = await pool.query(
       `
       SELECT
@@ -182,7 +184,7 @@ router.post('/chat', requireAuth, async (req, res) => {
         AND date_start < $4
         AND adset_id IS NULL AND ad_id IS NULL
       `,
-      [siteId, campaignId, sinceUtc, untilUtc]
+      [siteId, input.campaignId, sinceUtc, untilUtc]
     );
 
     const f = funnel.rows[0] || {};
@@ -196,9 +198,9 @@ router.post('/chat', requireAuth, async (req, res) => {
     const snapshot = {
       site_id: siteId,
       site_key: siteKey,
-      campaign_id: campaignId,
+      campaign_id: input.campaignId,
       campaign_name: String(f.campaign_name || ''),
-      period: { date_preset: datePreset || 'last_7d', since: sinceYmd, until: untilYmd, report_timezone: tz },
+      period: { date_preset: input.datePreset || 'last_7d', since: sinceYmd, until: untilYmd, report_timezone: tz },
       funnel: {
         link_clicks: Number(f.link_clicks || 0),
         visits,
@@ -215,20 +217,20 @@ router.post('/chat', requireAuth, async (req, res) => {
     };
 
     const systemPrompt = [
-      'Você é um analista de performance de Direct Response para Meta Ads.',
-      'Você responde em Português (Brasil).',
-      'Você NÃO inventa dados: use apenas o snapshot JSON fornecido.',
-      'Seu formato é chat: responda curto e acionável.',
-      'Faça NO MÁXIMO 1 pergunta por mensagem (para guiar o usuário).',
-      'Use benchmarks globais para classificar as taxas (ruim/ok/bom/excelente) e sugerir próximos testes.',
-      'Se o usuário pedir, você aprofunda com checklists.',
+      'Voce e um analista de performance de Direct Response para Meta Ads.',
+      'Voce responde em Portugues (Brasil).',
+      'Voce NAO inventa dados: use apenas o snapshot JSON fornecido.',
+      'Seu formato e chat: responda curto e acionavel.',
+      'Faca NO MAXIMO 1 pergunta por mensagem (para guiar o usuario).',
+      'Use benchmarks globais para classificar as taxas (ruim/ok/bom/excelente) e sugerir proximos testes.',
+      'Se o usuario pedir, voce aprofunda com checklists.',
     ].join('\n');
 
-    const userContent = `Contexto (JSON):\n${JSON.stringify(snapshot, null, 2)}\n\nHistórico:\n${JSON.stringify(messages.slice(-12), null, 2)}\n\nResponda agora ao usuário (última mensagem é a mais recente).`;
-    const answer = await llmService.chatOnce(String(siteKey), systemPrompt, userContent, 700);
+    const userContent = `Contexto (JSON):\n${JSON.stringify(snapshot, null, 2)}\n\nHistorico:\n${JSON.stringify(input.messages.slice(-12), null, 2)}\n\nResponda agora ao usuario (ultima mensagem e a mais recente).`;
+    const answer = await llmService.chatOnce(siteKey, systemPrompt, userContent, 700);
     res.json({ answer, snapshot });
-  } catch (err: any) {
-    console.error('[recommendations/chat] error:', err?.message || err);
+  } catch (err: unknown) {
+    console.error('[recommendations/chat] error:', err instanceof Error ? err.message : err);
     res.status(500).json({ error: 'internal_error' });
   }
 });

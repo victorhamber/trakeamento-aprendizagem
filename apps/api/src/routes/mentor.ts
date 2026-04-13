@@ -3,7 +3,9 @@ import fs from 'fs';
 import path from 'path';
 import { requireAuth } from '../middleware/auth';
 import { pool } from '../db/pool';
+import { findOwnedSiteByKey } from '../lib/site-access';
 import { llmService } from '../services/llm';
+import { mentorCoachInputSchema } from '../services/agent-tools';
 
 type MentorItem = { id: string; text: string; hints?: string[] };
 type MentorPhase = { id: string; order: number; title: string; badge?: string; note?: string; items: MentorItem[] };
@@ -43,24 +45,32 @@ router.get('/checklist', requireAuth, (_req, res) => {
 router.post('/coach', requireAuth, async (req, res) => {
   const auth = req.auth!;
   const body = req.body || {};
-  const siteKey = typeof body.site_key === 'string' ? body.site_key.trim() : '';
-  if (!siteKey) return res.status(400).json({ error: 'Missing site_key' });
+  const parsedInput = mentorCoachInputSchema.safeParse({
+    siteKey: typeof body.site_key === 'string' ? body.site_key : '',
+    focusPhaseId: typeof body.focus_phase_id === 'string' ? body.focus_phase_id : undefined,
+    completedItemIds: Array.isArray(body.completed_item_ids)
+      ? body.completed_item_ids.filter((x: unknown): x is string => typeof x === 'string')
+      : [],
+    campaignId: typeof body.campaign_id === 'string' ? body.campaign_id : undefined,
+  });
 
-  const focusPhaseId = typeof body.focus_phase_id === 'string' ? body.focus_phase_id.trim() : null;
-  const completedRaw = body.completed_item_ids;
-  const completedIds = Array.isArray(completedRaw)
-    ? completedRaw.filter((x: unknown): x is string => typeof x === 'string').map((s) => s.trim()).filter(Boolean)
-    : [];
+  if (!parsedInput.success) {
+    return res.status(400).json({
+      error: 'invalid_input',
+      details: parsedInput.error.flatten(),
+    });
+  }
+
+  const input = parsedInput.data;
+  const site = await findOwnedSiteByKey(auth.accountId, input.siteKey);
+  if (!site) return res.status(404).json({ error: 'Site not found' });
+
+  const siteKey = site.siteKey;
+  const focusPhaseId = input.focusPhaseId || null;
+  const completedIds = input.completedItemIds;
   const completedSet = new Set(completedIds);
-  const campaignId =
-    typeof body.campaign_id === 'string' && body.campaign_id.trim() ? body.campaign_id.trim() : null;
-
-  const siteRow = await pool.query(
-    'SELECT id FROM sites WHERE site_key = $1 AND account_id = $2',
-    [siteKey, auth.accountId]
-  );
-  if (!siteRow.rowCount) return res.status(404).json({ error: 'Site not found' });
-  const siteId = siteRow.rows[0].id as number;
+  const campaignId = input.campaignId || null;
+  const siteId = site.id;
 
   const metaRow = await pool.query(
     `SELECT enabled,

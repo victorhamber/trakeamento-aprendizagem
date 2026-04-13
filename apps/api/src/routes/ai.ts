@@ -2,8 +2,25 @@ import { Router } from 'express';
 import { pool } from '../db/pool';
 import { requireAuth } from '../middleware/auth';
 import { encryptString } from '../lib/crypto';
+import { agentCapabilities } from '../services/agent-tools';
+import { ANALYSIS_PROFILE_DEFAULT, ANALYSIS_PROFILES } from '../services/prompts/analysis-profiles';
+import { analysisPromptModuleCatalog } from '../services/prompts/analysis-system-prompt';
 
 const router = Router();
+
+router.get('/capabilities', requireAuth, (_req, res) => {
+  return res.json({
+    capabilities: agentCapabilities.map((capability) => ({
+      id: capability.id,
+      name: capability.name,
+      description: capability.description,
+      tags: capability.tags,
+    })),
+    analysis_modules: analysisPromptModuleCatalog,
+    analysis_profiles: [...ANALYSIS_PROFILES],
+    analysis_profile_default: ANALYSIS_PROFILE_DEFAULT,
+  });
+});
 
 router.get('/settings', requireAuth, async (req, res) => {
   const auth = req.auth!;

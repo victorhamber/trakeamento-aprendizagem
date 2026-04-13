@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { api } from '../../lib/api';
+import { labelForAnalysisProfile, type ReportWizardGenerateContext } from '../../lib/analysis-profile';
 import { ReportWizard } from './ReportWizard';
 
 export type FunnelCampaignOption = { id: string; name: string; is_active?: boolean };
@@ -650,7 +651,7 @@ export function CampaignFunnelPanel({
   }, [siteId, campaignId]);
 
   const handleWizardGenerate = useCallback(
-    async (context: { objective: string; landing_page_url: string; selected_ad_ids?: string[] }) => {
+    async (context: ReportWizardGenerateContext) => {
       if (!campaignId) return;
       setShowWizard(false);
       setReportLoading(true);
@@ -663,12 +664,14 @@ export function CampaignFunnelPanel({
         } else {
           params.date_preset = metricsPreset;
         }
+        params.analysis_profile = context.analysisProfile;
         const res = await api.post(
           '/recommendations/generate',
           {
             objective: context.objective,
             landing_page_url: context.landing_page_url,
             selected_ad_ids: context.selected_ad_ids,
+            analysisProfile: context.analysisProfile,
           },
           { headers: { 'x-site-key': siteKey }, params }
         );
@@ -1386,6 +1389,23 @@ export function CampaignFunnelPanel({
                     ) : (
                       <div className="space-y-3">
                         <div className="flex flex-wrap items-center gap-2">
+                          <span
+                            className="text-[11px] px-2.5 py-1.5 rounded-lg border border-violet-500/30 bg-violet-500/10 text-violet-800 dark:text-violet-200"
+                            title="Perfil usado na última geração"
+                          >
+                            Perfil:{' '}
+                            {labelForAnalysisProfile(
+                              String(
+                                (report as { analysis_profile?: string }).analysis_profile ||
+                                  (typeof report.context === 'object' &&
+                                  report.context &&
+                                  'analysis_profile' in report.context
+                                    ? String((report.context as { analysis_profile?: string }).analysis_profile)
+                                    : '') ||
+                                  ''
+                              )
+                            )}
+                          </span>
                           <button
                             type="button"
                             onClick={() => copyReport().catch(() => {})}

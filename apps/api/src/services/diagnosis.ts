@@ -1,9 +1,19 @@
 import axios from 'axios';
 import { pool } from '../db/pool';
 import { llmService } from './llm';
+import type { AnalysisProfile } from './prompts/analysis-profiles';
 import { metaMarketingService } from './meta-marketing';
 import { decryptString } from '../lib/crypto';
 import { META_GRAPH_API_VERSION } from '../lib/meta-graph-version';
+
+function analysisProfileFromPresetKey(presetKey: string | null | undefined): AnalysisProfile {
+  const k = String(presetKey || '');
+  if (k.endsWith('_ap:landing-page')) return 'landing-page';
+  if (k.endsWith('_ap:funnel')) return 'funnel';
+  if (k.endsWith('_ap:creative')) return 'creative';
+  if (k.endsWith('_ap:full')) return 'full';
+  return 'full';
+}
 
 export class DiagnosisService {
   // ── Helpers ────────────────────────────────────────────────────────────────
@@ -471,6 +481,7 @@ export class DiagnosisService {
     days = 7,
     campaignId?: string | null,
     options?: {
+      siteId?: number;
       datePreset?: string;
       since?: string;
       until?: string;
@@ -487,10 +498,15 @@ export class DiagnosisService {
         creatives?: Array<{ ad_name: string; copy: string; media_description: string }>;
         selected_ad_ids?: string[];
       };
+      analysisProfile?: AnalysisProfile;
     }
   ) {
-    const siteRow = await pool.query('SELECT id FROM sites WHERE site_key = $1', [siteKey]);
-    const siteId = siteRow.rowCount ? (siteRow.rows[0].id as number) : null;
+    let resolvedSiteId =
+      typeof options?.siteId === 'number' && Number.isFinite(options.siteId) ? options.siteId : null;
+    if (!resolvedSiteId) {
+      const siteRow = await pool.query('SELECT id FROM sites WHERE site_key = $1', [siteKey]);
+      resolvedSiteId = siteRow.rowCount ? (siteRow.rows[0].id as number) : null;
+    }
 
     const range = this.resolveDateRange({ ...options, days });
     const { since, until, days: daysNum } = range;
@@ -499,7 +515,7 @@ export class DiagnosisService {
     let campaignFirstSpendDate: string | null = null;
     let campaignActiveDaysLifetime: number | null = null;
     let campaignActiveDaysInPeriod: number | null = null;
-    if (siteId && campaignId) {
+    if (resolvedSiteId && campaignId) {
       try {
         const firstRes = await pool.query(
           `SELECT MIN(date_start) AS first_spend_date
@@ -507,7 +523,7 @@ export class DiagnosisService {
            WHERE site_id = $1
              AND campaign_id = $2
              AND COALESCE(spend, 0) > 0`,
-          [siteId, campaignId]
+          [resolvedSiteId, campaignId]
         );
         const first = firstRes.rows[0]?.first_spend_date as string | null;
         campaignFirstSpendDate = first || null;
@@ -520,7 +536,7 @@ export class DiagnosisService {
                AND campaign_id = $2
                AND date_start >= $3
                AND COALESCE(spend, 0) > 0`,
-            [siteId, campaignId, campaignFirstSpendDate]
+            [resolvedSiteId, campaignId, campaignFirstSpendDate]
           );
           campaignActiveDaysLifetime = Number(daysRes.rows[0]?.active_days || 0) || null;
         }
@@ -533,7 +549,7 @@ export class DiagnosisService {
              AND date_start >= $3
              AND date_start < $4
              AND COALESCE(spend, 0) > 0`,
-          [siteId, campaignId, since, until]
+          [resolvedSiteId, campaignId, since, until]
         );
         campaignActiveDaysInPeriod = Number(inPeriodRes.rows[0]?.active_days || 0) || null;
       } catch (err) {
@@ -542,7 +558,9 @@ export class DiagnosisService {
     }
 
     // ── Cache check: return recent report if available (TTL 1h) ───────────
-    const cacheKey = options?.datePreset || `custom_${daysNum}d`;
+    const analysisProfile: AnalysisProfile = options?.analysisProfile ?? 'full';
+    const basePreset = options?.datePreset || `custom_${daysNum}d`;
+    const cacheKey = `${basePreset}_ap:${analysisProfile}`;
     if (!options?.force) {
       try {
         const cached = await pool.query(
@@ -555,10 +573,14 @@ export class DiagnosisService {
           [siteKey, campaignId ?? '', cacheKey ?? '']
         );
         if (cached.rowCount && cached.rows[0]) {
-          console.log(`[DiagnosisService] Cache hit — returning report from ${cached.rows[0].created_at}`);
+          const row = cached.rows[0] as Record<string, unknown>;
+          console.log(`[DiagnosisService] Cache hit — returning report from ${row.created_at}`);
           return {
-            ...cached.rows[0],
+            ...row,
             from_cache: true,
+            analysis_profile: analysisProfileFromPresetKey(
+              typeof row.date_preset === 'string' ? row.date_preset : typeof row._ck_preset === 'string' ? row._ck_preset : ''
+            ),
             meta_breakdown: { campaigns: [], adsets: [], ads: [] },
             period: {
               since: since.toISOString(),
@@ -573,11 +595,11 @@ export class DiagnosisService {
     }
 
     // ── Sync Meta data ─────────────────────────────────────────────────────────
-    if (siteId && campaignId) {
+    if (resolvedSiteId && campaignId) {
       try {
         const preset = options?.datePreset || 'last_7d';
         await metaMarketingService.syncDailyInsights(
-          siteId,
+          resolvedSiteId,
           preset,
           options?.since && options?.until ? { since: options.since, until: options.until } : undefined
         );
@@ -624,19 +646,19 @@ export class DiagnosisService {
         AND adset_id IS NULL
         AND ad_id IS NULL
         ${campaignId ? 'AND campaign_id = $4' : ''}`,
-      campaignId ? [siteId || 0, since, until, campaignId] : [siteId || 0, since, until]
+      campaignId ? [resolvedSiteId || 0, since, until, campaignId] : [resolvedSiteId || 0, since, until]
     );
 
     // ── Resolve Meta UTM macros using campaign entity data ───────────────────
     let metaEntities: { campaign_id?: string; campaign_name?: string; adset_id?: string; adset_name?: string; ad_id?: string; ad_name?: string } = {};
-    if (campaignId && siteId) {
+    if (campaignId && resolvedSiteId) {
       try {
         const entityRow = await pool.query(
           `SELECT campaign_id, campaign_name, adset_id, adset_name, ad_id, ad_name
            FROM meta_insights_daily
            WHERE site_id = $1 AND campaign_id = $2
            ORDER BY date_start DESC LIMIT 1`,
-          [siteId, campaignId]
+          [resolvedSiteId, campaignId]
         );
         if (entityRow.rowCount && entityRow.rows[0]) {
           metaEntities = {
@@ -701,7 +723,7 @@ export class DiagnosisService {
             ? { id: 'adset_id', name: 'adset_name', where: 'adset_id IS NOT NULL AND ad_id IS NULL' }
             : { id: 'ad_id', name: 'ad_name', where: 'ad_id IS NOT NULL' };
 
-      const params: Array<string | number | Date> = [siteId || 0, since, until];
+      const params: Array<string | number | Date> = [resolvedSiteId || 0, since, until];
       let campaignFilter = '';
       if (campaignId) {
         params.push(campaignId);
@@ -814,11 +836,11 @@ export class DiagnosisService {
 
     // ── Fallback: live API fetch if DB empty ───────────────────────────────────
     const hasMetaData = spend > 0 || impressions > 0 || clicks > 0 || results > 0;
-    if (!hasMetaData && campaignId && siteId) {
+    if (!hasMetaData && campaignId && resolvedSiteId) {
       try {
         const preset = options?.datePreset || 'last_7d';
         const liveRows = await metaMarketingService.fetchCampaignInsights(
-          siteId,
+          resolvedSiteId,
           preset,
           options?.since && options?.until ? { since: options.since, until: options.until } : undefined
         );
@@ -869,7 +891,7 @@ export class DiagnosisService {
     // When bank has no sales (webhook not configured), use Meta's reported purchase value
     let metaRevenue: number | null = null;
     let metaRoas: number | null = null;
-    if (roas === null && purchases > 0 && spend > 0 && siteId) {
+    if (roas === null && purchases > 0 && spend > 0 && resolvedSiteId) {
       try {
         const metaRevResult = await pool.query(
           `SELECT COALESCE(SUM(
@@ -883,7 +905,7 @@ export class DiagnosisService {
             AND date_start < $3
             AND ad_id IS NOT NULL
             ${campaignId ? 'AND campaign_id = $4' : ''}`,
-          campaignId ? [siteId, since, until, campaignId] : [siteId, since, until]
+          campaignId ? [resolvedSiteId, since, until, campaignId] : [resolvedSiteId, since, until]
         );
         const rev = Number(metaRevResult.rows[0]?.meta_revenue || 0);
         if (rev > 0) {
@@ -1205,7 +1227,7 @@ export class DiagnosisService {
             AND date_start >= $2 AND date_start < $3
             AND adset_id IS NULL AND ad_id IS NULL
             ${campaignId ? 'AND campaign_id = $4' : ''}`,
-          campaignId ? [siteId || 0, prevSince, prevUntil, campaignId] : [siteId || 0, prevSince, prevUntil]
+          campaignId ? [resolvedSiteId || 0, prevSince, prevUntil, campaignId] : [resolvedSiteId || 0, prevSince, prevUntil]
         ),
         pool.query(
           `SELECT COUNT(*)::bigint AS sales, COALESCE(SUM(amount), 0)::numeric AS revenue
@@ -1260,8 +1282,8 @@ export class DiagnosisService {
 
     // ── Auto-fetch creatives from Meta API if not provided by user ──────
     let autoCreatives: Array<{ ad_name: string; copy: string; media_description: string }> = [];
-    if (siteId && campaignId) {
-      autoCreatives = await this.fetchAdCreatives(siteId, campaignId, options?.userContext?.selected_ad_ids);
+    if (resolvedSiteId && campaignId) {
+      autoCreatives = await this.fetchAdCreatives(resolvedSiteId, campaignId, options?.userContext?.selected_ad_ids);
       if (autoCreatives.length > 0) {
         console.log(`[DiagnosisService] Auto-fetched ${autoCreatives.length} creatives from Meta`);
       }
@@ -1425,7 +1447,9 @@ export class DiagnosisService {
       user_context: hasUserContext ? finalUserContext : null,
     };
 
-    const analysis = await llmService.generateAnalysisForSite(siteKey, snapshot);
+    const analysis = await llmService.generateAnalysisForSite(siteKey, snapshot, {
+      analysisProfile,
+    });
 
     const ckCampaign = campaignId ?? '';
     const ckPreset = cacheKey ?? '';
@@ -1441,6 +1465,7 @@ export class DiagnosisService {
 
     return {
       ...reportResult.rows[0],
+      analysis_profile: analysisProfile,
       meta_breakdown: snapshot.meta_breakdown,
       period: {
         since: snapshot.since,
