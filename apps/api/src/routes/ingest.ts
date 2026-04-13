@@ -713,9 +713,9 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
 
   // Calculate base time, defaulting to now
   let eventTimeSec = event.event_time ?? Math.floor(Date.now() / 1000);
-  const currentServerSec = Math.floor(Date.now() / 1000) - 60; 
-  if (eventTimeSec > currentServerSec) {
-    eventTimeSec = currentServerSec;
+  const maxFutureSec = Math.floor(Date.now() / 1000) + 300;
+  if (eventTimeSec > maxFutureSec) {
+    eventTimeSec = Math.floor(Date.now() / 1000);
   }
 
   const eventTimeMs = eventTimeSec * 1000;
@@ -955,10 +955,10 @@ router.post('/batch', cors(), ingestLimiter, async (req, res) => {
     // Base time, defaulting to now
     let eventTimeSec = event.event_time ?? Math.floor(Date.now() / 1000);
 
-    // CAPI future time validation (defense against client clock drift or server drift)
-    const currentServerSec = Math.floor(Date.now() / 1000) - 60;
-    if (eventTimeSec > currentServerSec) {
-      eventTimeSec = currentServerSec;
+    // Only clamp timestamps that are unreasonably in the future (>5 min clock drift)
+    const maxFutureSec = Math.floor(Date.now() / 1000) + 300;
+    if (eventTimeSec > maxFutureSec) {
+      eventTimeSec = Math.floor(Date.now() / 1000);
     }
 
     const eventTimeMs = eventTimeSec * 1000;

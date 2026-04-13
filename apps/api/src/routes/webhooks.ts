@@ -941,10 +941,14 @@ async function processPurchaseWebhook({
     }
   })();
 
+  const isPending = finalStatus === 'pending_payment';
+  const capiEventName = isPending ? 'InitiateCheckout' : 'Purchase';
+  const capiEventId = isPending ? `checkout_pending_${orderId}` : `purchase_${orderId}`;
+
   const capiPayload: any = {
-    event_name: 'Purchase',
+    event_name: capiEventName,
     event_time: Math.floor((platformDate?.getTime() || Date.now()) / 1000),
-    event_id: `purchase_${orderId}`,
+    event_id: capiEventId,
     event_source_url: effectiveEventSourceUrl || undefined,
     ...(capiReferrerUrl ? { referrer_url: capiReferrerUrl } : {}),
     action_source: 'website',
@@ -1023,11 +1027,12 @@ async function processPurchaseWebhook({
       INSERT INTO site_visitors (
         site_key, external_id, fbc, fbp, email_hash, phone_hash,
         total_events, last_event_name, last_ip, last_user_agent, city, state, last_traffic_source, first_traffic_source
-      ) VALUES ($1, $2, $3, $4, $5, $6, 1, 'Purchase', $7, $8, $9, $10, $11, $11)
+      ) VALUES ($1, $2, $3, $4, $5, $6, 1, $12, $7, $8, $9, $10, $11, $11)
       ON CONFLICT (site_key, external_id) DO UPDATE SET
         fbc = COALESCE(EXCLUDED.fbc, site_visitors.fbc),
         fbp = COALESCE(EXCLUDED.fbp, site_visitors.fbp),
         email_hash = COALESCE(EXCLUDED.email_hash, site_visitors.email_hash),
+        last_event_name = EXCLUDED.last_event_name,
         last_ip = COALESCE(EXCLUDED.last_ip, site_visitors.last_ip),
         last_user_agent = COALESCE(EXCLUDED.last_user_agent, site_visitors.last_user_agent),
         city = COALESCE(EXCLUDED.city, site_visitors.city),
@@ -1036,7 +1041,7 @@ async function processPurchaseWebhook({
         last_traffic_source = COALESCE(EXCLUDED.last_traffic_source, site_visitors.last_traffic_source),
         total_events = site_visitors.total_events + 1,
         last_seen_at = NOW()
-    `, [siteKey, visitorExtId, mergedFbcSafe, mergedFbpSafe, dbEmailHash, null, mergedIp, mergedUa, finalCity, finalState, visitorTrafficStr])
+    `, [siteKey, visitorExtId, mergedFbcSafe, mergedFbpSafe, dbEmailHash, null, mergedIp, mergedUa, finalCity, finalState, visitorTrafficStr, capiEventName])
     .catch(err => console.error('[Webhook] Visitor UPSERT error:', err));
   }
 
@@ -1116,6 +1121,9 @@ async function processPurchaseWebhook({
     }
 
     if (shouldSendCapi) {
+      if (isPending) {
+        console.log(`[Webhook] Pending payment → sending as InitiateCheckout (not Purchase) for ${orderId}`);
+      }
       sendCapiWithRetry(siteKey, capiPayload).catch(err => console.error(`[Webhook] CAPI error for ${orderId}:`, err));
     }
   }
