@@ -2513,6 +2513,24 @@ router.get('/tracker.js', async (req, res) => {
     pageEngagement();
   }
 
+  // Auto ViewContent: dispara quando o visitante demonstra engajamento real
+  // (scroll > 50% E tempo > 15s). Ensina o Meta a diferenciar visitas qualificadas de bounces.
+  var _autoViewContentSent = false;
+  function checkAutoViewContent() {
+    if (_autoViewContentSent) return;
+    var dwellS = (Date.now() - startMs) / 1000;
+    if (maxScroll >= 50 && dwellS >= 15) {
+      _autoViewContentSent = true;
+      track('ViewContent', {
+        content_name: document.title,
+        content_category: 'auto_engagement',
+        value: 0,
+        currency: 'BRL'
+      });
+    }
+  }
+  setInterval(checkAutoViewContent, 3000);
+
   window.addEventListener('beforeunload', sendPageEngagement);
   document.addEventListener('visibilitychange', function() {
     if (document.visibilityState === 'hidden') pageEngagement();
