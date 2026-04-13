@@ -695,6 +695,37 @@ function buildHotmartCheckoutLines(
   ];
 }
 
+// ─── Retry com exponential backoff (mesma lógica do ingest) ──────────────────
+
+async function sendCapiWithRetry(
+  siteKey: string,
+  payload: Parameters<typeof capiService.sendEvent>[1],
+  maxAttempts = 3
+): Promise<void> {
+  let lastErrorStr = 'Unknown error';
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const res = await capiService.sendEvent(siteKey, payload);
+
+      if (res && typeof res === 'object' && ('ok' in res) && !res.ok) {
+        lastErrorStr = res.error || 'API Error';
+        throw new Error(lastErrorStr);
+      }
+
+      return;
+    } catch (err: any) {
+      if (attempt === maxAttempts) {
+        console.error(`[Webhook CAPI] Final failure after ${maxAttempts} attempts for site=${siteKey}:`, err.message || err);
+        await capiService.saveToOutbox(siteKey, payload, err.message || String(err));
+        return;
+      }
+      const delayMs = Math.min(1000 * 2 ** attempt, 10_000);
+      await new Promise(r => setTimeout(r, delayMs));
+    }
+  }
+}
+
 // ─── Core Ingestion Engine for all Webhooks ──────────────────────────────────
 async function processPurchaseWebhook({
   siteKey, payload, email, phone, firstName, lastName, city, state, zip, country, dob,
@@ -889,10 +920,14 @@ async function processPurchaseWebhook({
       ? rawReferrerUrl
       : undefined;
 
-  // Se o resolver caiu no domínio (sem path), mas temos um referrer_url completo,
-  // preferimos usar o referrer como event_source_url para refletir a página real (ex.: /higado-vital).
   const effectiveEventSourceUrl = (() => {
-    const esu = String(purchaseEventSourceUrl || '').trim();
+    let esu = String(purchaseEventSourceUrl || '').trim();
+
+    if (!esu) {
+      const envFallback = (process.env.CAPI_FALLBACK_EVENT_SOURCE_URL || '').trim();
+      if (envFallback.startsWith('http')) esu = envFallback;
+    }
+
     if (!esu) return '';
     if (!capiReferrerUrl) return esu;
     try {
@@ -1081,7 +1116,7 @@ async function processPurchaseWebhook({
     }
 
     if (shouldSendCapi) {
-      capiService.sendEvent(siteKey, capiPayload).catch(err => console.error(`[Webhook] CAPI error for ${orderId}:`, err));
+      sendCapiWithRetry(siteKey, capiPayload).catch(err => console.error(`[Webhook] CAPI error for ${orderId}:`, err));
     }
   }
 
