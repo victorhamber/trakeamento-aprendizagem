@@ -343,6 +343,7 @@ const schemaSql = `
     first_name_hash VARCHAR(64),
     last_name_hash VARCHAR(64),
     last_traffic_source TEXT,
+    first_traffic_source TEXT,
     total_events INTEGER DEFAULT 1,
     last_event_name VARCHAR(100),
   last_ip VARCHAR(45),
@@ -639,6 +640,7 @@ export const ensureSchema = async (pool: Pool) => {
     // Webhooks / processPurchaseWebhook — alinhar com routes/webhooks.ts
     await pool.query('ALTER TABLE site_visitors ADD COLUMN IF NOT EXISTS city VARCHAR(255)');
     await pool.query('ALTER TABLE site_visitors ADD COLUMN IF NOT EXISTS state VARCHAR(255)');
+    await pool.query('ALTER TABLE site_visitors ADD COLUMN IF NOT EXISTS first_traffic_source TEXT');
     await pool.query('ALTER TABLE purchases ADD COLUMN IF NOT EXISTS customer_email VARCHAR(255)');
     await pool.query('ALTER TABLE purchases ADD COLUMN IF NOT EXISTS customer_phone VARCHAR(120)');
     await pool.query('ALTER TABLE purchases ADD COLUMN IF NOT EXISTS customer_name TEXT');

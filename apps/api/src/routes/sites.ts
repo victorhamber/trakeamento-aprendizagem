@@ -5,6 +5,11 @@ import { requireAuth } from '../middleware/auth';
 import { encryptString, decryptString } from '../lib/crypto';
 import { capiService, CapiService } from '../services/capi';
 import { getClientIp } from '../lib/ip';
+import {
+  mergeUtmFillGaps,
+  parseStoredTrafficSource,
+  utmRecordFromPurchaseRow,
+} from '../lib/visitorTrafficSource';
 
 const router = Router();
 
@@ -1202,6 +1207,145 @@ function utmFromVisitorTrafficSource(raw: string): Record<string, string> | null
   return parseTrafficSourceQuery(s.startsWith('?') ? s : `?${s}`);
 }
 
+/** Completa Último toque com primeiro toque gravado no perfil + UTMs da compra (webhook). */
+function enrichBuyerLastTouchFromProfileAndPurchase(
+  lastTouchUtm: Record<string, string> | null,
+  visitors: Array<{ first_traffic_source?: string | null } | null | undefined>,
+  purchaseRow: { utm_source?: string | null; utm_medium?: string | null; utm_campaign?: string | null } | null | undefined
+): Record<string, string> | null {
+  let u = lastTouchUtm;
+  for (const vis of visitors) {
+    if (vis?.first_traffic_source) {
+      const parsed = parseStoredTrafficSource(String(vis.first_traffic_source));
+      u = mergeUtmFillGaps(u, parsed);
+    }
+  }
+  if (purchaseRow) {
+    u = mergeUtmFillGaps(u, utmRecordFromPurchaseRow(purchaseRow));
+  }
+  return u;
+}
+
+type BuyerMetaInsightRow = {
+  campaign_id?: string | null;
+  campaign_name?: string | null;
+  adset_id?: string | null;
+  adset_name?: string | null;
+  ad_id?: string | null;
+  ad_name?: string | null;
+};
+
+/** Mesma lógica do cartão “Atribuição”: meta_insights_daily por ad_id (utm_content numérico) ou nome de campanha. */
+async function resolveMetaAttributionFromUtm(
+  siteId: number,
+  utm: Record<string, string> | null | undefined
+): Promise<{ row: BuyerMetaInsightRow | null; source: string | null }> {
+  if (!utm) return { row: null, source: null };
+  const utmContent = String(utm.utm_content || '').trim();
+  const utmCampaign = String(utm.utm_campaign || '').trim();
+
+  if (utmContent && /^\d+$/.test(utmContent)) {
+    try {
+      const metaRes = await pool.query(
+        `SELECT campaign_id, campaign_name, adset_id, adset_name, ad_id, ad_name
+         FROM meta_insights_daily
+         WHERE site_id = $1
+           AND ad_id = $2
+         ORDER BY date_start DESC
+         LIMIT 1`,
+        [siteId, utmContent]
+      );
+      if (metaRes.rowCount) {
+        return { row: metaRes.rows[0] as BuyerMetaInsightRow, source: 'utm_content(ad_id)' };
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  if (utmCampaign) {
+    try {
+      const params: unknown[] = [siteId, `%${utmCampaign}%`];
+      let extra = '';
+      if (utmContent) {
+        params.push(`%${utmContent}%`);
+        extra = `AND (ad_name ILIKE $3 OR ad_id = $3)`;
+      }
+      const metaRes = await pool.query(
+        `SELECT campaign_id, campaign_name, adset_id, adset_name, ad_id, ad_name
+         FROM meta_insights_daily
+         WHERE site_id = $1
+           AND campaign_name ILIKE $2
+           ${extra}
+         ORDER BY date_start DESC
+         LIMIT 1`,
+        params
+      );
+      if (metaRes.rowCount) {
+        return { row: metaRes.rows[0] as BuyerMetaInsightRow, source: 'utm_campaign(name)' };
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  return { row: null, source: null };
+}
+
+function metaAttributionCacheKey(utm: Record<string, string> | null | undefined): string | null {
+  if (!utm) return null;
+  const c = String(utm.utm_content || '').trim();
+  const camp = String(utm.utm_campaign || '').trim();
+  if (c && /^\d+$/.test(c)) return `ad:${c}`;
+  if (camp) return `camp:${camp}\x1e${c}`;
+  return null;
+}
+
+/** Anexa campanha/conjunto/anúncio (Meta) a cada PageView da jornada; cache por combinação UTM, limite de lookups. */
+async function enrichPageviewTimelineWithMetaAttribution(
+  siteId: number,
+  timeline: Array<{ at: string; url: string; utm?: Record<string, string> | null }>,
+  maxUniqueLookups: number
+): Promise<
+  Array<{
+    at: string;
+    url: string;
+    utm?: Record<string, string> | null;
+    meta_attribution: BuyerMetaInsightRow | null;
+    meta_attribution_source: string | null;
+  }>
+> {
+  const keyOrder: string[] = [];
+  const keyToUtm = new Map<string, Record<string, string>>();
+  for (const item of timeline) {
+    const k = metaAttributionCacheKey(item.utm);
+    if (!k || keyToUtm.has(k)) continue;
+    keyToUtm.set(k, (item.utm || {}) as Record<string, string>);
+    keyOrder.push(k);
+    if (keyOrder.length >= maxUniqueLookups) break;
+  }
+
+  const cache = new Map<string, { row: BuyerMetaInsightRow | null; source: string | null }>();
+  for (const k of keyOrder) {
+    const utm = keyToUtm.get(k);
+    const resolved = await resolveMetaAttributionFromUtm(siteId, utm);
+    cache.set(k, resolved);
+  }
+
+  return timeline.map((item) => {
+    const k = metaAttributionCacheKey(item.utm);
+    if (!k) {
+      return { ...item, meta_attribution: null, meta_attribution_source: null };
+    }
+    const hit = cache.get(k);
+    return {
+      ...item,
+      meta_attribution: hit?.row ?? null,
+      meta_attribution_source: hit?.source ?? null,
+    };
+  });
+}
+
 /**
  * Lista compradores (best-effort) baseado em `purchases` + `site_visitors`.
  * Observação: a identidade pode vir de email_hash, fbp/fbc ou external_id.
@@ -1336,6 +1480,7 @@ router.get('/:siteId/buyers/by-key/:buyerKey', requireAuth, async (req, res) => 
         fbp,
         fbc,
         buyer_email_hash,
+        utm_source, utm_medium, utm_campaign,
         COALESCE(platform_date, created_at) AS purchased_at,
         COUNT(*) OVER()::int AS total_count
        FROM purchases
@@ -1356,7 +1501,7 @@ router.get('/:siteId/buyers/by-key/:buyerKey', requireAuth, async (req, res) => 
 
     // best-effort: encontrar um visitor que corresponda ao buyer_key (só faz sentido para email_hash/fbp/fbc)
     const visitorRes = await pool.query(
-      `SELECT site_key, external_id, email_hash, fbp, fbc, last_seen_at, last_traffic_source, last_user_agent
+      `SELECT site_key, external_id, email_hash, fbp, fbc, last_seen_at, last_traffic_source, first_traffic_source, last_user_agent
        FROM site_visitors
        WHERE site_key = $1
          AND (
@@ -1427,10 +1572,22 @@ router.get('/:siteId/buyers/by-key/:buyerKey', requireAuth, async (req, res) => 
       lastTouchUtm = utmFromVisitorTrafficSource(String(v.last_traffic_source));
     }
 
+    lastTouchUtm = enrichBuyerLastTouchFromProfileAndPurchase(lastTouchUtm, [v], purchasesRes.rows[0]);
+
+    if (pageviewTimeline.length && lastPageviewBeforePurchase && pageviewTimeline[0].url === lastPageviewBeforePurchase.url) {
+      pageviewTimeline[0] = { ...pageviewTimeline[0], utm: lastTouchUtm };
+    }
+
     const topPages = Object.entries(pvBefore)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 25)
       .map(([url, count]) => ({ url, count }));
+
+    const { row: byKeyAttribution, source: byKeyAttributionSource } = await resolveMetaAttributionFromUtm(
+      siteId,
+      lastTouchUtm
+    );
+    const pageviewTimelineWithMetaByKey = await enrichPageviewTimelineWithMetaAttribution(siteId, pageviewTimeline, 30);
 
     const uaSummary = buildBuyerUserAgentSummary({
       visitorUa: v?.last_user_agent as string | undefined,
@@ -1457,10 +1614,10 @@ router.get('/:siteId/buyers/by-key/:buyerKey', requireAuth, async (req, res) => 
         pageviews_before_last_purchase: pvCountBefore,
         top_pages_before_last_purchase: topPages,
         last_pageview_before_last_purchase: lastPageviewBeforePurchase,
-        pageviews_timeline_before_last_purchase: pageviewTimeline.slice(0, 500),
+        pageviews_timeline_before_last_purchase: pageviewTimelineWithMetaByKey.slice(0, 500),
         last_touch: lastTouchUtm,
-        meta_attribution: null,
-        meta_attribution_source: null,
+        meta_attribution: byKeyAttribution,
+        meta_attribution_source: byKeyAttributionSource,
         user_agent: uaSummary,
       },
       events: eventsRes.rows,
@@ -1495,7 +1652,7 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
     // 0) Se existir visitor para esse external_id, usamos as chaves dele (email_hash/fbp/fbc)
     // para encontrar compras do checkout — mesmo quando purchases.external_id não bate.
     const visitorByExternalRes = await pool.query(
-      `SELECT site_key, external_id, email_hash, fbp, fbc, last_seen_at, last_traffic_source, last_user_agent
+      `SELECT site_key, external_id, email_hash, fbp, fbc, last_seen_at, last_traffic_source, first_traffic_source, last_user_agent
        FROM site_visitors
        WHERE site_key = $1 AND external_id = $2
        LIMIT 1`,
@@ -1509,6 +1666,7 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
         id, order_id, platform, amount, currency, status,
         customer_name, customer_email, customer_phone,
         external_id, fbp, fbc, buyer_email_hash,
+        utm_source, utm_medium, utm_campaign,
         COALESCE(platform_date, created_at) AS purchased_at,
         COUNT(*) OVER()::int AS total_count
        FROM purchases
@@ -1535,7 +1693,7 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
     const pEmailHash = p0?.buyer_email_hash ? String(p0.buyer_email_hash) : null;
 
     const visitorRes = await pool.query(
-      `SELECT site_key, external_id, email_hash, fbp, fbc, last_seen_at, last_traffic_source, last_user_agent
+      `SELECT site_key, external_id, email_hash, fbp, fbc, last_seen_at, last_traffic_source, first_traffic_source, last_user_agent
        FROM site_visitors
        WHERE site_key = $1
          AND (
@@ -1608,63 +1766,19 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
       lastTouchUtm = utmFromVisitorTrafficSource(String(v.last_traffic_source));
     }
 
+    lastTouchUtm = enrichBuyerLastTouchFromProfileAndPurchase(lastTouchUtm, [v0, v], purchasesRes.rows[0]);
+
+    if (pageviewTimeline.length && lastPageviewBeforePurchase && pageviewTimeline[0].url === lastPageviewBeforePurchase.url) {
+      pageviewTimeline[0] = { ...pageviewTimeline[0], utm: lastTouchUtm };
+    }
+
     const topPages = Object.entries(pvBefore)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 25)
       .map(([url, count]) => ({ url, count }));
 
-    // Melhor esforço de atribuição (quando utm_content = ad_id e utm_campaign = campaign_name).
-    let attribution: any = null;
-    let attributionSource: string | null = null;
-    if (lastTouchUtm?.utm_content && /^\d+$/.test(lastTouchUtm.utm_content)) {
-      try {
-        const metaRes = await pool.query(
-          `SELECT campaign_id, campaign_name, adset_id, adset_name, ad_id, ad_name
-           FROM meta_insights_daily
-           WHERE site_id = $1
-             AND ad_id = $2
-           ORDER BY date_start DESC
-           LIMIT 1`,
-          [siteId, lastTouchUtm.utm_content]
-        );
-        if (metaRes.rowCount) {
-          attribution = metaRes.rows[0];
-          attributionSource = 'utm_content(ad_id)';
-        }
-      } catch {
-        attribution = null;
-      }
-    }
-
-    // Fallback: tenta casar por nome de campanha (utm_campaign) e, se tiver, por nome/id do anúncio (utm_content).
-    if (!attribution && lastTouchUtm?.utm_campaign) {
-      try {
-        const utmCampaign = String(lastTouchUtm.utm_campaign || '').trim();
-        const utmContent = String(lastTouchUtm.utm_content || '').trim();
-        const params: any[] = [siteId, `%${utmCampaign}%`];
-        let extra = '';
-        if (utmContent) {
-          params.push(`%${utmContent}%`);
-          extra = `AND (ad_name ILIKE $3 OR ad_id = $3)`;
-        }
-        const metaRes = await pool.query(
-          `SELECT campaign_id, campaign_name, adset_id, adset_name, ad_id, ad_name
-           FROM meta_insights_daily
-           WHERE site_id = $1
-             AND campaign_name ILIKE $2
-             ${extra}
-           ORDER BY date_start DESC
-           LIMIT 1`,
-          params
-        );
-        if (metaRes.rowCount) {
-          attribution = metaRes.rows[0];
-          attributionSource = 'utm_campaign(name)';
-        }
-      } catch {
-        attribution = null;
-      }
-    }
+    const { row: attribution, source: attributionSource } = await resolveMetaAttributionFromUtm(siteId, lastTouchUtm);
+    const pageviewTimelineWithMeta = await enrichPageviewTimelineWithMetaAttribution(siteId, pageviewTimeline, 30);
 
     const visitorUa =
       (v?.last_user_agent != null ? String(v.last_user_agent) : '') ||
@@ -1694,7 +1808,7 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
         pageviews_before_last_purchase: pvCountBefore,
         top_pages_before_last_purchase: topPages,
         last_pageview_before_last_purchase: lastPageviewBeforePurchase,
-        pageviews_timeline_before_last_purchase: pageviewTimeline.slice(0, 500),
+        pageviews_timeline_before_last_purchase: pageviewTimelineWithMeta.slice(0, 500),
         last_touch: lastTouchUtm,
         meta_attribution: attribution,
         meta_attribution_source: attributionSource,

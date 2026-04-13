@@ -45,7 +45,20 @@ type BuyerDetail = {
     pageviews_before_last_purchase: number;
     top_pages_before_last_purchase: Array<{ url: string; count: number }>;
     last_pageview_before_last_purchase?: null | { url: string; at: string };
-    pageviews_timeline_before_last_purchase?: Array<{ at: string; url: string; utm?: Record<string, string> | null }>;
+    pageviews_timeline_before_last_purchase?: Array<{
+      at: string;
+      url: string;
+      utm?: Record<string, string> | null;
+      meta_attribution?: null | {
+        campaign_id?: string | null;
+        campaign_name?: string | null;
+        adset_id?: string | null;
+        adset_name?: string | null;
+        ad_id?: string | null;
+        ad_name?: string | null;
+      };
+      meta_attribution_source?: string | null;
+    }>;
     last_touch: null | Record<string, string>;
     meta_attribution: null | {
       campaign_id?: string | null;
@@ -77,6 +90,28 @@ const deviceHintLabel = (h: string | undefined) => {
       return 'Indisponível';
   }
 };
+
+/** Meta (insights) por PageView da jornada — campanha / conjunto / anúncio. */
+function formatJourneyMetaAttribution(
+  m: {
+    campaign_id?: string | null;
+    campaign_name?: string | null;
+    adset_id?: string | null;
+    adset_name?: string | null;
+    ad_id?: string | null;
+    ad_name?: string | null;
+  } | null | undefined
+): string | null {
+  if (!m) return null;
+  const parts: string[] = [];
+  const camp = (m.campaign_name || m.campaign_id || '').trim();
+  const adset = (m.adset_name || m.adset_id || '').trim();
+  const ad = (m.ad_name || m.ad_id || '').trim();
+  if (camp) parts.push(`Campanha: ${camp}`);
+  if (adset) parts.push(`Conjunto: ${adset}`);
+  if (ad) parts.push(`Anúncio: ${ad}`);
+  return parts.length ? parts.join(' · ') : null;
+}
 
 /** Resumo na linha da jornada (UTMs vêm da API: URL + custom_data). Campanha quando existir; senão origem/mídia/click. */
 function formatPageviewAttributionSummary(utm: Record<string, string> | null | undefined): string | null {
@@ -564,6 +599,10 @@ export function BuyersTab({ siteId }: { siteId: number }) {
                         <div className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-2">Jornada (PageViews antes da compra)</div>
                         <div className="text-[11px] text-zinc-600 dark:text-zinc-400">
                           Total: <span className="font-semibold tabular-nums text-zinc-800 dark:text-zinc-200">{detail.behavior.pageviews_before_last_purchase}</span>
+                          <span className="text-zinc-500 dark:text-zinc-500">
+                            {' '}
+                            · Cada linha mostra a URL visitada; quando os UTMs casam com os dados sincronizados da Meta, exibimos campanha, conjunto e anúncio.
+                          </span>
                         </div>
                         {(detail.behavior.pageviews_timeline_before_last_purchase || []).length === 0 ? (
                           <div className="mt-3 text-[11px] text-zinc-500 dark:text-zinc-500">
@@ -589,6 +628,18 @@ export function BuyersTab({ siteId }: { siteId: number }) {
                               <div className="mt-1 text-[11px] text-zinc-600 dark:text-zinc-400 truncate" title={pv.url}>
                                 {pv.url}
                               </div>
+                              {(() => {
+                                const metaLine = formatJourneyMetaAttribution(pv.meta_attribution);
+                                return metaLine ? (
+                                  <div
+                                    className="mt-1.5 text-[10px] leading-snug text-indigo-700/95 dark:text-indigo-300/90"
+                                    title={pv.meta_attribution_source ? `Fonte: ${pv.meta_attribution_source}` : undefined}
+                                  >
+                                    <span className="font-semibold text-zinc-600 dark:text-zinc-400">Meta: </span>
+                                    {metaLine}
+                                  </div>
+                                ) : null;
+                              })()}
                             </div>
                           ))}
                           {(detail.behavior.pageviews_timeline_before_last_purchase || []).length > 120 ? (

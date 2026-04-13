@@ -12,6 +12,7 @@ import { getClientIp } from '../lib/ip';
 import { preserveMetaClickIds } from '../lib/meta-attribution';
 import { mergeUserDataWithMetaParamBuilder } from '../lib/meta-param-builder-ingest';
 import { normalizeMetaCurrencyCode } from '../lib/meta-currency';
+import { buildVisitorTrafficSourceString } from '../lib/visitorTrafficSource';
 
 const LRUCache = require('lru-cache').LRUCache || require('lru-cache');
 
@@ -177,32 +178,6 @@ function pickStringField(data: Record<string, unknown> | undefined, key: string)
   if (typeof value !== 'string') return undefined;
   const trimmed = value.trim();
   return trimmed ? trimmed : undefined;
-}
-
-function buildTrafficSourceValue(customData: Record<string, unknown> | undefined): string | undefined {
-  if (!customData) return undefined;
-
-  const trafficSource = pickStringField(customData, 'traffic_source');
-  if (trafficSource && !trafficSource.toLowerCase().startsWith('trk_')) return trafficSource;
-
-  const params = new URLSearchParams();
-  const utmSource = pickStringField(customData, 'utm_source');
-  const utmMedium = pickStringField(customData, 'utm_medium');
-  const utmCampaign = pickStringField(customData, 'utm_campaign');
-  const utmTerm = pickStringField(customData, 'utm_term');
-  const utmContent = pickStringField(customData, 'utm_content');
-  if (utmSource) params.set('utm_source', utmSource);
-  if (utmMedium) params.set('utm_medium', utmMedium);
-  if (utmCampaign) params.set('utm_campaign', utmCampaign);
-  if (utmTerm) params.set('utm_term', utmTerm);
-  if (utmContent) params.set('utm_content', utmContent);
-  const utmString = params.toString();
-  if (utmString) return utmString;
-
-  const taTs = pickStringField(customData, 'ta_ts');
-  if (taTs && !taTs.toLowerCase().startsWith('trk_')) return taTs;
-
-  return undefined;
 }
 
 function computeEngagement(event: IngestEvent): { score: number; bucket: EngagementBucket } | null {
@@ -874,15 +849,19 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
           ? (Array.isArray(rawExt) ? String(rawExt[0]) : String(rawExt))
           : `anon_${eventId}`;
 
-      const trafficSourceValue = buildTrafficSourceValue(event.custom_data);
+      const trafficSourceValue = buildVisitorTrafficSourceString(
+        event.custom_data as Record<string, unknown> | undefined,
+        eventSourceUrl
+      );
 
       // Run visitor UPSERT and integrations_meta update in parallel
       await Promise.all([
         pool.query(`
           INSERT INTO site_visitors (
-            site_key, external_id, fbc, fbp, email_hash, phone_hash, first_name_hash, last_name_hash, last_traffic_source, total_events, last_event_name, last_ip, last_user_agent
+            site_key, external_id, fbc, fbp, email_hash, phone_hash, first_name_hash, last_name_hash,
+            last_traffic_source, first_traffic_source, total_events, last_event_name, last_ip, last_user_agent
           ) VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8, $9, 1, $10, $11, $12
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $9, 1, $10, $11, $12
           )
           ON CONFLICT (site_key, external_id) DO UPDATE SET
             fbc = COALESCE(EXCLUDED.fbc, site_visitors.fbc),
@@ -891,6 +870,7 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
             phone_hash = COALESCE(EXCLUDED.phone_hash, site_visitors.phone_hash),
             first_name_hash = COALESCE(EXCLUDED.first_name_hash, site_visitors.first_name_hash),
             last_name_hash = COALESCE(EXCLUDED.last_name_hash, site_visitors.last_name_hash),
+            first_traffic_source = COALESCE(site_visitors.first_traffic_source, EXCLUDED.first_traffic_source),
             last_traffic_source = COALESCE(EXCLUDED.last_traffic_source, site_visitors.last_traffic_source),
             last_event_name = EXCLUDED.last_event_name,
             last_ip = COALESCE(EXCLUDED.last_ip, site_visitors.last_ip),
@@ -1133,12 +1113,16 @@ router.post('/batch', cors(), ingestLimiter, async (req, res) => {
           rawExtB != null && String(rawExtB).trim() !== ''
             ? (Array.isArray(rawExtB) ? String(rawExtB[0]) : String(rawExtB))
             : `anon_${p.eventId}`;
-        const trafficSourceValue = buildTrafficSourceValue(p.event.custom_data);
+        const trafficSourceValue = buildVisitorTrafficSourceString(
+          p.event.custom_data as Record<string, unknown> | undefined,
+          p.eventSourceUrl
+        );
 
         pool.query(`
           INSERT INTO site_visitors (
-            site_key, external_id, fbc, fbp, email_hash, phone_hash, first_name_hash, last_name_hash, last_traffic_source, total_events, last_event_name, last_ip, last_user_agent
-          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,1,$10,$11,$12)
+            site_key, external_id, fbc, fbp, email_hash, phone_hash, first_name_hash, last_name_hash,
+            last_traffic_source, first_traffic_source, total_events, last_event_name, last_ip, last_user_agent
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9,1,$10,$11,$12)
           ON CONFLICT (site_key, external_id) DO UPDATE SET
             fbc = COALESCE(EXCLUDED.fbc, site_visitors.fbc),
             fbp = COALESCE(EXCLUDED.fbp, site_visitors.fbp),
@@ -1146,6 +1130,7 @@ router.post('/batch', cors(), ingestLimiter, async (req, res) => {
             phone_hash = COALESCE(EXCLUDED.phone_hash, site_visitors.phone_hash),
             first_name_hash = COALESCE(EXCLUDED.first_name_hash, site_visitors.first_name_hash),
             last_name_hash = COALESCE(EXCLUDED.last_name_hash, site_visitors.last_name_hash),
+            first_traffic_source = COALESCE(site_visitors.first_traffic_source, EXCLUDED.first_traffic_source),
             last_traffic_source = COALESCE(EXCLUDED.last_traffic_source, site_visitors.last_traffic_source),
             last_event_name = EXCLUDED.last_event_name,
             last_ip = COALESCE(EXCLUDED.last_ip, site_visitors.last_ip),

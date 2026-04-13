@@ -11,6 +11,7 @@ import { notifyAccountNewSale } from '../services/expo-push';
 import { notifyAccountWebPushSale } from '../services/web-push-notify';
 import type { SaleNotifyKind } from '../services/sale-notification';
 import { DDI_LIST } from '../lib/ddi';
+import { buildVisitorTrafficSourceString } from '../lib/visitorTrafficSource';
 
 const router = Router();
 
@@ -971,12 +972,23 @@ async function processPurchaseWebhook({
   }
   rawPayloadForDb._capi_debug = capiPayload;
 
+  const visitorTrafficStr = buildVisitorTrafficSourceString(
+    {
+      utm_source: utmSource ? String(utmSource) : undefined,
+      utm_medium: utmMedium ? String(utmMedium) : undefined,
+      utm_campaign: utmCampaign ? String(utmCampaign) : undefined,
+      utm_content: utmContent ? String(utmContent) : undefined,
+      utm_term: utmTerm ? String(utmTerm) : undefined,
+    } as Record<string, unknown>,
+    effectiveEventSourceUrl || undefined
+  );
+
   if (!skipHotmartDuplicateSideEffects && (mergedExternalId || dbEmailHash || mergedFbpSafe || mergedFbcSafe)) {
     pool.query(`
       INSERT INTO site_visitors (
         site_key, external_id, fbc, fbp, email_hash, phone_hash,
-        total_events, last_event_name, last_ip, last_user_agent, city, state, last_traffic_source
-      ) VALUES ($1, $2, $3, $4, $5, $6, 1, 'Purchase', $7, $8, $9, $10, $11)
+        total_events, last_event_name, last_ip, last_user_agent, city, state, last_traffic_source, first_traffic_source
+      ) VALUES ($1, $2, $3, $4, $5, $6, 1, 'Purchase', $7, $8, $9, $10, $11, $11)
       ON CONFLICT (site_key, external_id) DO UPDATE SET
         fbc = COALESCE(EXCLUDED.fbc, site_visitors.fbc),
         fbp = COALESCE(EXCLUDED.fbp, site_visitors.fbp),
@@ -985,10 +997,11 @@ async function processPurchaseWebhook({
         last_user_agent = COALESCE(EXCLUDED.last_user_agent, site_visitors.last_user_agent),
         city = COALESCE(EXCLUDED.city, site_visitors.city),
         state = COALESCE(EXCLUDED.state, site_visitors.state),
+        first_traffic_source = COALESCE(site_visitors.first_traffic_source, EXCLUDED.first_traffic_source),
         last_traffic_source = COALESCE(EXCLUDED.last_traffic_source, site_visitors.last_traffic_source),
         total_events = site_visitors.total_events + 1,
         last_seen_at = NOW()
-    `, [siteKey, visitorExtId, mergedFbcSafe, mergedFbpSafe, dbEmailHash, null, mergedIp, mergedUa, finalCity, finalState, utmSource])
+    `, [siteKey, visitorExtId, mergedFbcSafe, mergedFbpSafe, dbEmailHash, null, mergedIp, mergedUa, finalCity, finalState, visitorTrafficStr])
     .catch(err => console.error('[Webhook] Visitor UPSERT error:', err));
   }
 
