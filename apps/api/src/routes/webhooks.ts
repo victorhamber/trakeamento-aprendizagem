@@ -735,6 +735,8 @@ async function processPurchaseWebhook({
   paymentMethodRaw,
   /** Ex.: "Order bump" — prefixa Meta + notificações */
   saleLineLabel,
+  /** ID do produto na plataforma (Hotmart product_id, Kiwify product_id, etc.) — enriquece content_ids no CAPI. */
+  contentId,
 }: any) {
   const { finalStatus, sendToCapi } = normalizeStatus(status);
   
@@ -827,9 +829,11 @@ async function processPurchaseWebhook({
   const mergedFbpSafe = preserveMetaClickIds(mergedFbp);
   const mergedIp = clientIp || enriched?.clientIp;
   const mergedUa = clientUa || enriched?.clientUa;
-  // Regra forte: não "trocar" external_id por hash de email.
-  // Só aceitamos external_id canônico (eid_) vindo do tracker (query/trk_) ou recuperado do perfil.
-  const mergedExternalId = canonicalEid(finalExternalId) || canonicalEid(enriched?.externalId) || undefined;
+  // Prioridade: eid_ canônico do tracker > eid_ do enrichment > hash de email como fallback (Meta recomenda).
+  const mergedExternalId =
+    canonicalEid(finalExternalId) ||
+    canonicalEid(enriched?.externalId) ||
+    (email ? CapiService.hash(email.toLowerCase()) : undefined);
 
 
   // Location recovery: Priority Webhook > Enriched (history) > GeoIP (current IP)
@@ -986,6 +990,8 @@ async function processPurchaseWebhook({
       currency: (currency || 'BRL').toUpperCase(),
       content_name: displayContentName || undefined,
       content_type: 'product',
+      content_ids: contentId ? [String(contentId)] : undefined,
+      num_items: 1,
       utm_source: utmSource || undefined,
       utm_medium: utmMedium || undefined,
       utm_campaign: utmCampaign || undefined,
@@ -1264,6 +1270,7 @@ router.post('/purchase', async (req, res) => {
         saleLineLabel: line.saleLineLabel,
         purchaseTimestamp,
         paymentMethodRaw: extractPaymentMethodRaw(payload),
+        contentId: (d.product as any)?.id || (d.product as any)?.offer_code,
       });
       if (!result.success) return res.status(result.status || 500).json({ error: result.error });
     }
@@ -1326,6 +1333,7 @@ router.post('/purchase', async (req, res) => {
     siteKey, payload, email, phone, firstName, lastName, city, state, zip, country, dob, fbp, fbc,
     value, currency, status, orderId, platform, contentName, purchaseTimestamp,
     paymentMethodRaw: extractPaymentMethodRaw(payload),
+    contentId: payload.product_id || payload.product?.id,
   });
   if (!result.success) return res.status(result.status || 500).json({ error: result.error });
   return res.json({ received: true });
@@ -1419,6 +1427,7 @@ router.post('/hotmart', async (req, res) => {
       saleLineLabel: line.saleLineLabel,
       purchaseTimestamp,
       paymentMethodRaw: extractPaymentMethodRaw(payload),
+      contentId: (d.product as any)?.id || (d.product as any)?.offer_code,
     });
 
     if (!result.success) return res.status(result.status || 500).json({ error: result.error });
@@ -1448,6 +1457,7 @@ router.post('/kiwify', async (req, res) => {
     value, currency: payload.order?.payment?.currency || 'BRL', status: payload.status, orderId: payload.id, platform: 'kiwify',
     contentName: payload.Product?.name || payload.product_name, purchaseTimestamp: payload.order?.created_at || payload.created_at,
     paymentMethodRaw: extractPaymentMethodRaw(payload),
+    contentId: payload.Product?.id || payload.product_id,
   });
   return res.json({ received: true });
 });

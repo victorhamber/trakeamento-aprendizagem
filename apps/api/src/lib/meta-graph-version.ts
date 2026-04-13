@@ -1,2 +1,2 @@
-/** Versão da Graph API para Marketing / insights (evitar v19 deprecada). */
-export const META_GRAPH_API_VERSION = 'v21.0';
+/** Versão da Graph API para Marketing / insights. */
+export const META_GRAPH_API_VERSION = 'v25.0';

@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { pool } from '../db/pool';
 import { decryptString } from '../lib/crypto';
 import { preserveMetaClickIds } from '../lib/meta-attribution';
+import { META_GRAPH_API_VERSION } from '../lib/meta-graph-version';
 
 export type CapiCustomData = Record<string, unknown>;
 /**
@@ -315,7 +316,7 @@ export class CapiService {
 
     try {
       const response = await axios.post(
-        `https://graph.facebook.com/v21.0/${cfg.pixelId}/events`,
+        `https://graph.facebook.com/${META_GRAPH_API_VERSION}/${cfg.pixelId}/events`,
         payload
       );
       const result = { ok: true, data: response.data } as const;
@@ -362,7 +363,7 @@ export class CapiService {
 
     try {
       const response = await axios.post(
-        `https://graph.facebook.com/v21.0/${cfg.pixelId}/events`,
+        `https://graph.facebook.com/${META_GRAPH_API_VERSION}/${cfg.pixelId}/events`,
         payload
       );
       console.log(`[CAPI] Success ${event.event_name} (ID: ${event.event_id}) - FB Trace: ${response.data?.fbtrace_id} - Messages: ${JSON.stringify(response.data?.messages || [])}`);
