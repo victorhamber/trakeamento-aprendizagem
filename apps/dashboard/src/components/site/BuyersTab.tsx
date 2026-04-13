@@ -134,6 +134,52 @@ function formatPageviewAttributionSummary(utm: Record<string, string> | null | u
   return null;
 }
 
+/** Primeiro segmento do path para tag visual; raiz ou vazio → "página principal". */
+function pageSlugLabelFromUrl(rawUrl: string): string {
+  const s = (rawUrl || '').trim();
+  if (!s) return 'página principal';
+  try {
+    const u = new URL(s);
+    const path = u.pathname.replace(/^\/+|\/+$/g, '');
+    if (!path) return 'página principal';
+    const segment = path.split('/').filter(Boolean)[0] || '';
+    if (!segment) return 'página principal';
+    try {
+      return decodeURIComponent(segment);
+    } catch {
+      return segment;
+    }
+  } catch {
+    const q = s.indexOf('?');
+    const withoutQuery = q >= 0 ? s.slice(0, q) : s;
+    const afterHost = withoutQuery.replace(/^[^:]+:\/\//, '').replace(/^[^/]+/, '');
+    const path = afterHost.replace(/^\/+|\/+$/g, '');
+    if (!path) return 'página principal';
+    const segment = path.split('/').filter(Boolean)[0] || '';
+    if (!segment) return 'página principal';
+    try {
+      return decodeURIComponent(segment);
+    } catch {
+      return segment;
+    }
+  }
+}
+
+function PageSlugTag({ url, className }: { url: string; className?: string }) {
+  const label = pageSlugLabelFromUrl(url);
+  return (
+    <span
+      className={
+        className ||
+        'inline-flex max-w-full items-center truncate rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-100/90 dark:bg-zinc-800/70 px-2 py-0.5 text-[10px] font-semibold text-zinc-800 dark:text-zinc-100'
+      }
+      title={url}
+    >
+      {label}
+    </span>
+  );
+}
+
 const money = (n: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(n || 0);
 
@@ -601,7 +647,7 @@ export function BuyersTab({ siteId }: { siteId: number }) {
                           Total: <span className="font-semibold tabular-nums text-zinc-800 dark:text-zinc-200">{detail.behavior.pageviews_before_last_purchase}</span>
                           <span className="text-zinc-500 dark:text-zinc-500">
                             {' '}
-                            · Cada linha mostra a URL visitada; quando os UTMs casam com os dados sincronizados da Meta, exibimos campanha, conjunto e anúncio.
+                            · Tag = slug da página (passe o mouse para ver a URL completa). Com UTMs alinhados à Meta, mostramos campanha, conjunto e anúncio.
                           </span>
                         </div>
                         {(detail.behavior.pageviews_timeline_before_last_purchase || []).length === 0 ? (
@@ -625,8 +671,8 @@ export function BuyersTab({ siteId }: { siteId: number }) {
                                   );
                                 })()}
                               </div>
-                              <div className="mt-1 text-[11px] text-zinc-600 dark:text-zinc-400 truncate" title={pv.url}>
-                                {pv.url}
+                              <div className="mt-1 flex flex-wrap items-center gap-2">
+                                <PageSlugTag url={pv.url} />
                               </div>
                               {(() => {
                                 const metaLine = formatJourneyMetaAttribution(pv.meta_attribution);
@@ -654,9 +700,12 @@ export function BuyersTab({ siteId }: { siteId: number }) {
                         <div className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-2">Top páginas (pré-compra)</div>
                         <div className="space-y-1">
                           {detail.behavior.top_pages_before_last_purchase.slice(0, 15).map((p) => (
-                            <div key={p.url} className="flex items-center justify-between gap-3 text-[11px] text-zinc-600 dark:text-zinc-400">
-                              <span className="truncate" title={p.url}>{p.url}</span>
-                              <span className="tabular-nums text-zinc-700 dark:text-zinc-200">{p.count}</span>
+                            <div key={p.url} className="flex items-center justify-between gap-3 text-[11px]">
+                              <PageSlugTag
+                                url={p.url}
+                                className="inline-flex min-w-0 max-w-[calc(100%-2.5rem)] items-center truncate rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-100/90 dark:bg-zinc-800/70 px-2 py-0.5 text-[10px] font-semibold text-zinc-800 dark:text-zinc-100"
+                              />
+                              <span className="shrink-0 tabular-nums text-zinc-700 dark:text-zinc-200">{p.count}</span>
                             </div>
                           ))}
                         </div>
