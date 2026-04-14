@@ -246,6 +246,20 @@ router.post('/coach', requireAuth, async (req, res) => {
     if (next_items_across_phases.length >= 12) break;
   }
 
+  // Carrega histórico de conversa (últimas 10 mensagens)
+  let chatHistory: Array<{ role: string; content: string }> = [];
+  try {
+    const historyRes = await pool.query(
+      `SELECT role, content FROM mentor_chat_history
+       WHERE account_id = $1 AND site_key = $2
+       ORDER BY created_at DESC LIMIT 10`,
+      [auth.accountId, siteKey]
+    );
+    chatHistory = historyRes.rows.reverse();
+  } catch {
+    chatHistory = [];
+  }
+
   const mentorContext: Record<string, unknown> = {
     checklist_progress,
     focus_phase,
@@ -262,14 +276,55 @@ router.post('/coach', requireAuth, async (req, res) => {
     },
     metrics_aggregate: metricsAgg,
     campaign: campaignId ? { id: campaignId, name: campaignLabel } : null,
+    chat_history: chatHistory.length > 0 ? chatHistory : undefined,
   };
 
   try {
     const markdown = await llmService.generateMentorGuidance(siteKey, mentorContext);
+    
+    // Salva no histórico (mensagem do sistema com contexto resumido + resposta)
+    const contextSummary = `Contexto: fase=${focus_phase?.id || 'auto'}, itens_completos=${completedIds.length}, metricas=${metricsAgg ? 'sim' : 'nao'}`;
+    await pool.query(
+      `INSERT INTO mentor_chat_history (account_id, site_key, role, content) VALUES ($1, $2, 'user', $3)`,
+      [auth.accountId, siteKey, contextSummary]
+    ).catch(() => {});
+    await pool.query(
+      `INSERT INTO mentor_chat_history (account_id, site_key, role, content) VALUES ($1, $2, 'assistant', $3)`,
+      [auth.accountId, siteKey, markdown.slice(0, 4000)]
+    ).catch(() => {});
+
+    // Limpa histórico antigo (mantém só últimas 20 mensagens por site)
+    await pool.query(
+      `DELETE FROM mentor_chat_history 
+       WHERE account_id = $1 AND site_key = $2 
+       AND id NOT IN (
+         SELECT id FROM mentor_chat_history 
+         WHERE account_id = $1 AND site_key = $2 
+         ORDER BY created_at DESC LIMIT 20
+       )`,
+      [auth.accountId, siteKey]
+    ).catch(() => {});
+
     res.json({ markdown });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'internal_error';
     res.status(500).json({ error: message });
+  }
+});
+
+// Limpa histórico de conversa do mentor para um site
+router.delete('/history/:siteKey', requireAuth, async (req, res) => {
+  const auth = req.auth!;
+  const siteKey = req.params.siteKey;
+
+  try {
+    await pool.query(
+      `DELETE FROM mentor_chat_history WHERE account_id = $1 AND site_key = $2`,
+      [auth.accountId, siteKey]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to clear history' });
   }
 });
 

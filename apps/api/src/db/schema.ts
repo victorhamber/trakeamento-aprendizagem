@@ -249,6 +249,30 @@ const schemaSql = `
     created_at TIMESTAMP DEFAULT NOW()
   );
 
+  CREATE TABLE IF NOT EXISTS capi_outbox_dead_letter (
+    id SERIAL PRIMARY KEY,
+    site_key VARCHAR(100) NOT NULL,
+    payload JSONB NOT NULL,
+    attempts INTEGER DEFAULT 0,
+    last_error TEXT,
+    original_created_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT NOW()
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_capi_dead_letter_site ON capi_outbox_dead_letter(site_key);
+  CREATE INDEX IF NOT EXISTS idx_capi_dead_letter_created ON capi_outbox_dead_letter(created_at);
+
+  CREATE TABLE IF NOT EXISTS mentor_chat_history (
+    id SERIAL PRIMARY KEY,
+    account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    site_key VARCHAR(100) NOT NULL,
+    role VARCHAR(20) NOT NULL,
+    content TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW()
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_mentor_chat_account_site ON mentor_chat_history(account_id, site_key, created_at DESC);
+
   CREATE TABLE IF NOT EXISTS site_identify_mappings (
     id SERIAL PRIMARY KEY,
     site_id INTEGER NOT NULL UNIQUE REFERENCES sites(id) ON DELETE CASCADE,
@@ -662,6 +686,42 @@ export const ensureSchema = async (pool: Pool) => {
       await pool.query('ALTER TABLE site_visitors ALTER COLUMN site_key TYPE VARCHAR(100)');
     } catch (sizeErr) {
       console.warn('Schema size/column migration skipped:', sizeErr);
+    }
+
+    // Dead letter table for failed CAPI events
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS capi_outbox_dead_letter (
+          id SERIAL PRIMARY KEY,
+          site_key VARCHAR(100) NOT NULL,
+          payload JSONB NOT NULL,
+          attempts INTEGER DEFAULT 0,
+          last_error TEXT,
+          original_created_at TIMESTAMP,
+          created_at TIMESTAMP DEFAULT NOW()
+        )
+      `);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_capi_dead_letter_site ON capi_outbox_dead_letter(site_key)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_capi_dead_letter_created ON capi_outbox_dead_letter(created_at)`);
+    } catch (dlErr) {
+      console.warn('Dead letter table migration skipped:', dlErr);
+    }
+
+    // Mentor chat history for conversation memory
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS mentor_chat_history (
+          id SERIAL PRIMARY KEY,
+          account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+          site_key VARCHAR(100) NOT NULL,
+          role VARCHAR(20) NOT NULL,
+          content TEXT NOT NULL,
+          created_at TIMESTAMP DEFAULT NOW()
+        )
+      `);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_mentor_chat_account_site ON mentor_chat_history(account_id, site_key, created_at DESC)`);
+    } catch (mcErr) {
+      console.warn('Mentor chat history migration skipped:', mcErr);
     }
   } catch (err) {
     console.warn('Schema extension skipped:', err);

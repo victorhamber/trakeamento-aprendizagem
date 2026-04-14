@@ -12,7 +12,9 @@ import { notifyAccountWebPushSale } from '../services/web-push-notify';
 import type { SaleNotifyKind } from '../services/sale-notification';
 import { DDI_LIST } from '../lib/ddi';
 import { buildVisitorTrafficSourceString } from '../lib/visitorTrafficSource';
+import { createLogger } from '../lib/logger';
 
+const log = createLogger('Webhook');
 const router = Router();
 
 function decodeTrkToken(token: string) {
@@ -1087,50 +1089,69 @@ async function processPurchaseWebhook({
     dbEmailHash
   ]);
 
-  // 4. Dispatch — with cross-site pixel dedup
+  // 4. Dispatch — with cross-site pixel dedup and health check
   if (sendToCapi && metaEnabled && pixel_id && capiToken && !skipHotmartDuplicateSideEffects) {
-    // Dedup: verifica se outro site com o MESMO pixel já enviou este pedido com dados mais ricos
-    let shouldSendCapi = true;
-    try {
-      const dupCheck = await pool.query(`
-        SELECT p.fbc, p.fbp, p.site_key,
-               (p.user_data->>'client_ip_address') as has_ip
-        FROM purchases p
-        JOIN sites s ON s.site_key = p.site_key
-        JOIN integrations_meta m ON m.site_id = s.id
-        WHERE p.order_id = $1
-          AND p.site_key != $2
-          AND m.pixel_id = $3
-        LIMIT 1
-      `, [orderId, siteKey, pixel_id]);
+    // Health check: verifica se CAPI está saudável antes de enviar
+    const capiHealthy = await capiService.isCapiHealthy(siteKey);
+    if (!capiHealthy) {
+      log.warn('CAPI not healthy, skipping immediate send (will retry via outbox)', {
+        site_key: siteKey,
+        order_id: orderId,
+      });
+      // Salva no outbox para retry posterior
+      await capiService.saveToOutbox(siteKey, capiPayload, 'CAPI not healthy at webhook time');
+    } else {
+      // Dedup: verifica se outro site com o MESMO pixel já enviou este pedido com dados mais ricos
+      let shouldSendCapi = true;
+      try {
+        const dupCheck = await pool.query(`
+          SELECT p.fbc, p.fbp, p.site_key,
+                 (p.user_data->>'client_ip_address') as has_ip
+          FROM purchases p
+          JOIN sites s ON s.site_key = p.site_key
+          JOIN integrations_meta m ON m.site_id = s.id
+          WHERE p.order_id = $1
+            AND p.site_key != $2
+            AND m.pixel_id = $3
+          LIMIT 1
+        `, [orderId, siteKey, pixel_id]);
 
-      if (dupCheck.rowCount && dupCheck.rowCount > 0) {
-        const sibling = dupCheck.rows[0];
-        const siblingHasRichData = !!(sibling.fbc && sibling.fbp && sibling.has_ip);
-        const currentHasRichData = !!(mergedFbcSafe && mergedFbpSafe && mergedIp);
+        if (dupCheck.rowCount && dupCheck.rowCount > 0) {
+          const sibling = dupCheck.rows[0];
+          const siblingHasRichData = !!(sibling.fbc && sibling.fbp && sibling.has_ip);
+          const currentHasRichData = !!(mergedFbcSafe && mergedFbpSafe && mergedIp);
 
-        if (siblingHasRichData && !currentHasRichData) {
-          // O outro site já mandou com dados melhores — pula este envio
-          console.log(`[Webhook] CAPI dedup: skipping weaker Purchase for ${orderId} on ${siteKey} (sibling ${sibling.site_key} already sent richer data to pixel ${pixel_id})`);
-          shouldSendCapi = false;
-        } else if (!siblingHasRichData && currentHasRichData) {
-          // Este site tem dados melhores — envia normalmente (vai sobrescrever o fraco via event_id)
-          console.log(`[Webhook] CAPI dedup: sending richer Purchase for ${orderId} on ${siteKey} (overriding weaker sibling data)`);
-        } else {
-          // Ambos iguais — o primeiro ganha, segundo pula
-          console.log(`[Webhook] CAPI dedup: skipping duplicate Purchase for ${orderId} on ${siteKey} (sibling ${sibling.site_key} already sent to pixel ${pixel_id})`);
-          shouldSendCapi = false;
+          if (siblingHasRichData && !currentHasRichData) {
+            log.info('CAPI dedup: skipping weaker Purchase', {
+              order_id: orderId,
+              site_key: siteKey,
+              sibling_site: sibling.site_key,
+            });
+            shouldSendCapi = false;
+          } else if (!siblingHasRichData && currentHasRichData) {
+            log.info('CAPI dedup: sending richer Purchase', {
+              order_id: orderId,
+              site_key: siteKey,
+            });
+          } else {
+            log.info('CAPI dedup: skipping duplicate Purchase', {
+              order_id: orderId,
+              site_key: siteKey,
+              sibling_site: sibling.site_key,
+            });
+            shouldSendCapi = false;
+          }
         }
+      } catch (err) {
+        log.error('CAPI dedup check error (proceeding with send)', { error: String(err) });
       }
-    } catch (err) {
-      console.error('[Webhook] CAPI dedup check error (proceeding with send):', err);
-    }
 
-    if (shouldSendCapi) {
-      if (isPending) {
-        console.log(`[Webhook] Pending payment → sending as InitiateCheckout (not Purchase) for ${orderId}`);
+      if (shouldSendCapi) {
+        if (isPending) {
+          log.info('Pending payment → sending as InitiateCheckout', { order_id: orderId });
+        }
+        sendCapiWithRetry(siteKey, capiPayload).catch(err => log.error('CAPI send error', { order_id: orderId, error: String(err) }));
       }
-      sendCapiWithRetry(siteKey, capiPayload).catch(err => console.error(`[Webhook] CAPI error for ${orderId}:`, err));
     }
   }
 

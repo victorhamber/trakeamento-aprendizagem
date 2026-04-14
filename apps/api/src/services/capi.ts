@@ -4,8 +4,21 @@ import { pool } from '../db/pool';
 import { decryptString } from '../lib/crypto';
 import { preserveMetaClickIds } from '../lib/meta-attribution';
 import { META_GRAPH_API_VERSION } from '../lib/meta-graph-version';
+import { createLogger } from '../lib/logger';
+
+const log = createLogger('CAPI');
 
 export type CapiCustomData = Record<string, unknown>;
+
+/**
+ * Data Processing Options para compliance LGPD/GDPR
+ * @see https://developers.facebook.com/docs/marketing-apis/data-processing-options
+ */
+export interface DataProcessingOptions {
+  data_processing_options: string[];
+  data_processing_options_country: number;
+  data_processing_options_state: number;
+}
 /**
  * Payload de um evento server-side para Graph `/{pixel-id}/events`.
  * @see https://developers.facebook.com/docs/marketing-api/conversions-api/parameters
@@ -160,7 +173,27 @@ export class CapiService {
     return out;
   }
 
-  private buildPayload(cfg: { pixelId: string; capiToken: string; testEventCode?: string | null }, event: CapiEvent) {
+  /**
+   * Retorna as opções de processamento de dados (LDU) para compliance LGPD/GDPR.
+   * Por padrão, não aplica restrições (array vazio). Pode ser sobrescrito por env var.
+   */
+  private static getDataProcessingOptions(): DataProcessingOptions {
+    const lduEnabled = process.env.CAPI_LDU_ENABLED === '1' || process.env.CAPI_LDU_ENABLED === 'true';
+    if (lduEnabled) {
+      return {
+        data_processing_options: ['LDU'],
+        data_processing_options_country: parseInt(process.env.CAPI_LDU_COUNTRY || '0', 10),
+        data_processing_options_state: parseInt(process.env.CAPI_LDU_STATE || '0', 10),
+      };
+    }
+    return {
+      data_processing_options: [],
+      data_processing_options_country: 0,
+      data_processing_options_state: 0,
+    };
+  }
+
+  private buildEventData(event: CapiEvent): Record<string, unknown> {
     const userDataIn = event.user_data ? ({ ...event.user_data } as Record<string, unknown>) : {};
     const fbcSafe = preserveMetaClickIds(userDataIn.fbc);
     const fbpSafe = preserveMetaClickIds(userDataIn.fbp);
@@ -187,30 +220,47 @@ export class CapiService {
       if (CapiService.isValidHttpEventSourceUrl(envUrl)) eventSourceUrl = envUrl;
     }
     if (!CapiService.isValidHttpEventSourceUrl(eventSourceUrl) && actionSource === 'website') {
-      console.warn(
-        '[CAPI] event_source_url inválido ou vazio para evento website; defina CAPI_FALLBACK_EVENT_SOURCE_URL ou corrija o ingest.',
-        { event_name: event.event_name, event_id: event.event_id }
-      );
+      log.warn('event_source_url inválido ou vazio para evento website', {
+        event_name: event.event_name,
+        event_id: event.event_id,
+      });
     }
 
     const refUrl = (event.referrer_url || '').trim();
     const includeReferrer = CapiService.isValidHttpEventSourceUrl(refUrl);
+    const dpo = CapiService.getDataProcessingOptions();
 
     return {
-      data: [
-        {
-          event_name: event.event_name,
-          event_time: event.event_time,
-          event_id: event.event_id,
-          ...(CapiService.isValidHttpEventSourceUrl(eventSourceUrl) ? { event_source_url: eventSourceUrl } : {}),
-          ...(includeReferrer ? { referrer_url: refUrl } : {}),
-          action_source: actionSource,
-          user_data: cleanedUserData,
-          ...(cleanedCustomData && Object.keys(cleanedCustomData).length > 0
-            ? { custom_data: cleanedCustomData }
-            : {}),
-        },
-      ],
+      event_name: event.event_name,
+      event_time: event.event_time,
+      event_id: event.event_id,
+      ...(CapiService.isValidHttpEventSourceUrl(eventSourceUrl) ? { event_source_url: eventSourceUrl } : {}),
+      ...(includeReferrer ? { referrer_url: refUrl } : {}),
+      action_source: actionSource,
+      user_data: cleanedUserData,
+      ...(cleanedCustomData && Object.keys(cleanedCustomData).length > 0
+        ? { custom_data: cleanedCustomData }
+        : {}),
+      ...dpo,
+    };
+  }
+
+  private buildPayload(cfg: { pixelId: string; capiToken: string; testEventCode?: string | null }, event: CapiEvent) {
+    return {
+      data: [this.buildEventData(event)],
+      access_token: cfg.capiToken,
+      ...(cfg.testEventCode || process.env.META_TEST_EVENT_CODE
+        ? { test_event_code: (cfg.testEventCode || process.env.META_TEST_EVENT_CODE) as string }
+        : {}),
+    };
+  }
+
+  private buildBatchPayload(
+    cfg: { pixelId: string; capiToken: string; testEventCode?: string | null },
+    events: CapiEvent[]
+  ) {
+    return {
+      data: events.map((e) => this.buildEventData(e)),
       access_token: cfg.capiToken,
       ...(cfg.testEventCode || process.env.META_TEST_EVENT_CODE
         ? { test_event_code: (cfg.testEventCode || process.env.META_TEST_EVENT_CODE) as string }
@@ -242,52 +292,212 @@ export class CapiService {
         [siteKey, JSON.stringify(event), errorStr]
       );
     } catch (e) {
-      console.error('Failed to save to capi_outbox:', e);
+      log.error('Failed to save to capi_outbox', { error: String(e) });
+    }
+  }
+
+  /**
+   * Move evento para dead letter table em vez de deletar permanentemente.
+   * Permite análise posterior de eventos que falharam persistentemente.
+   */
+  private async moveToDeadLetter(row: { id: number; site_key: string; payload: unknown; last_error: string; attempts: number }) {
+    try {
+      await pool.query(
+        `INSERT INTO capi_outbox_dead_letter (site_key, payload, last_error, attempts, original_created_at)
+         SELECT site_key, payload, last_error, attempts, created_at FROM capi_outbox WHERE id = $1`,
+        [row.id]
+      );
+      await pool.query('DELETE FROM capi_outbox WHERE id = $1', [row.id]);
+      log.info('Moved failed event to dead letter', { site_key: row.site_key, attempts: row.attempts });
+    } catch (e) {
+      await pool.query('DELETE FROM capi_outbox WHERE id = $1', [row.id]);
+      log.warn('Failed to move to dead letter, deleted instead', { error: String(e) });
     }
   }
 
   public async processOutbox() {
     try {
-      // 1. Limpa registros que já excederam o limite de tentativas ou são muito velhos (evita acúmulo infinito)
-      await pool.query(
-        "DELETE FROM capi_outbox WHERE attempts >= 5 OR created_at < NOW() - INTERVAL '7 days'"
+      // 1. Move registros que já excederam o limite de tentativas para dead letter
+      const { rows: expiredRows } = await pool.query(
+        `SELECT id, site_key, payload, last_error, attempts FROM capi_outbox 
+         WHERE attempts >= 5 OR created_at < NOW() - INTERVAL '7 days'`
       );
+      for (const row of expiredRows) {
+        await this.moveToDeadLetter(row);
+      }
 
-      // 2. Busca próximos eventos para re-tentar
+      // 2. Busca próximos eventos para re-tentar (agrupa por site_key para batching)
       const { rows } = await pool.query(
-        `SELECT id, site_key, payload, last_error FROM capi_outbox 
+        `SELECT id, site_key, payload, last_error, attempts FROM capi_outbox 
          WHERE next_attempt_at <= NOW() AND attempts < 5 
-         ORDER BY id ASC LIMIT 50`
+         ORDER BY site_key, id ASC LIMIT 100`
       );
 
+      // Agrupa por site_key para envio em batch
+      const bySite = new Map<string, typeof rows>();
       for (const row of rows) {
-        // ... (continua lógica de envio)
-        // Se o último erro foi token inválido, não adianta re-enviar — deletar para não poluir
-        if (row.last_error && row.last_error.includes('Token inválido')) {
-          await pool.query('DELETE FROM capi_outbox WHERE id = $1', [row.id]);
-          continue;
-        }
+        const arr = bySite.get(row.site_key) || [];
+        arr.push(row);
+        bySite.set(row.site_key, arr);
+      }
 
-        const event = row.payload as CapiEvent;
-        const result = await this.sendEventDetailed(row.site_key, event);
-        if (result.ok) {
-          await pool.query('DELETE FROM capi_outbox WHERE id = $1', [row.id]);
+      for (const [siteKey, siteRows] of bySite) {
+        // Filtra eventos com token inválido (não adianta re-enviar)
+        const validRows = siteRows.filter((r) => {
+          if (r.last_error && r.last_error.includes('Token inválido')) {
+            this.moveToDeadLetter(r);
+            return false;
+          }
+          return true;
+        });
+
+        if (validRows.length === 0) continue;
+
+        // Tenta envio em batch se tiver múltiplos eventos
+        if (validRows.length > 1) {
+          const events = validRows.map((r) => r.payload as CapiEvent);
+          const result = await this.sendEventsBatch(siteKey, events);
+          if (result.ok) {
+            for (const r of validRows) {
+              await pool.query('DELETE FROM capi_outbox WHERE id = $1', [r.id]);
+            }
+            log.info('Batch send success from outbox', { site_key: siteKey, count: validRows.length });
+          } else {
+            // Falha no batch — tenta individual
+            for (const r of validRows) {
+              const event = r.payload as CapiEvent;
+              const res = await this.sendEventDetailed(siteKey, event);
+              if (res.ok) {
+                await pool.query('DELETE FROM capi_outbox WHERE id = $1', [r.id]);
+              } else if (res.error?.includes('Token inválido')) {
+                await this.moveToDeadLetter(r);
+              } else {
+                await pool.query(
+                  `UPDATE capi_outbox 
+                   SET attempts = attempts + 1, last_error = $1, next_attempt_at = NOW() + (INTERVAL '1 minutes' * POWER(2, attempts))
+                   WHERE id = $2`,
+                  [res.error, r.id]
+                );
+              }
+            }
+          }
         } else {
-          // Se o erro é token inválido, deletar imediatamente (sem re-tentar)
-          if (result.error && result.error.includes('Token inválido')) {
-            await pool.query('DELETE FROM capi_outbox WHERE id = $1', [row.id]);
+          // Envio individual
+          const r = validRows[0];
+          const event = r.payload as CapiEvent;
+          const result = await this.sendEventDetailed(siteKey, event);
+          if (result.ok) {
+            await pool.query('DELETE FROM capi_outbox WHERE id = $1', [r.id]);
+          } else if (result.error?.includes('Token inválido')) {
+            await this.moveToDeadLetter(r);
           } else {
             await pool.query(
               `UPDATE capi_outbox 
                SET attempts = attempts + 1, last_error = $1, next_attempt_at = NOW() + (INTERVAL '1 minutes' * POWER(2, attempts))
                WHERE id = $2`,
-              [result.error, row.id]
+              [result.error, r.id]
             );
           }
         }
       }
     } catch (e) {
-      console.error('Error processing CAPI outbox', e);
+      log.error('Error processing CAPI outbox', { error: String(e) });
+    }
+  }
+
+  /**
+   * Verifica se o CAPI está saudável para um site (último status ok e não desabilitado)
+   */
+  public async isCapiHealthy(siteKey: string): Promise<boolean> {
+    const until = CapiService.disabledUntil.get(siteKey);
+    if (until && until > Date.now()) return false;
+
+    try {
+      const { rows } = await pool.query(
+        `SELECT last_capi_status, last_capi_attempt_at
+         FROM integrations_meta i
+         JOIN sites s ON s.id = i.site_id
+         WHERE s.site_key = $1`,
+        [siteKey]
+      );
+      if (!rows[0]) return false;
+      const status = rows[0].last_capi_status;
+      const lastAttempt = rows[0].last_capi_attempt_at;
+      
+      // Considera saudável se último status foi ok ou se nunca tentou
+      if (status === 'ok') return true;
+      if (!lastAttempt) return true;
+      
+      // Se erro persistente por mais de 1h, considera não saudável
+      const hourAgo = new Date(Date.now() - 60 * 60 * 1000);
+      if (status === 'error' && new Date(lastAttempt) < hourAgo) {
+        return false;
+      }
+      
+      return true;
+    } catch {
+      return true;
+    }
+  }
+
+  /**
+   * Envia múltiplos eventos em um único request (batch).
+   * Graph API suporta até 1000 eventos por request.
+   * Recomendado para outbox e processamento em massa.
+   */
+  public async sendEventsBatch(siteKey: string, events: CapiEvent[]): Promise<CapiSendResult> {
+    if (events.length === 0) {
+      return { ok: true, data: { events_received: 0 } };
+    }
+
+    const until = CapiService.disabledUntil.get(siteKey);
+    if (until && until > Date.now()) {
+      return { ok: false, error: 'CAPI desativado temporariamente (token inválido)' };
+    }
+    if (until && until <= Date.now()) CapiService.disabledUntil.delete(siteKey);
+
+    const cfg = await this.getSiteMetaConfig(siteKey);
+    if (!cfg) {
+      return { ok: false, error: 'CAPI não configurado para este site' };
+    }
+    if (!this.isProbablyValidToken(cfg.capiToken)) {
+      return { ok: false, error: 'Token CAPI inválido (formato)' };
+    }
+
+    // Limita a 1000 eventos por request (limite da API)
+    const chunk = events.slice(0, 1000);
+    const payload = this.buildBatchPayload(cfg, chunk);
+
+    try {
+      const response = await axios.post(
+        `https://graph.facebook.com/${META_GRAPH_API_VERSION}/${cfg.pixelId}/events`,
+        payload
+      );
+      log.info('Batch send success', {
+        site_key: siteKey,
+        count: chunk.length,
+        fbtrace_id: response.data?.fbtrace_id,
+      });
+      await this.updateLastStatus(siteKey, { ok: true, data: response.data });
+      return { ok: true, data: response.data };
+    } catch (error: unknown) {
+      if (axios.isAxiosError(error)) {
+        const code = (error.response?.data as { error?: { code?: number } } | undefined)?.error?.code;
+        const message = (error.response?.data as { error?: { message?: string } } | undefined)?.error?.message;
+        if (code === 190) {
+          CapiService.disabledUntil.set(siteKey, Date.now() + 60 * 60 * 1000);
+          log.error('Batch send failed - token invalid', { site_key: siteKey });
+          await this.updateLastStatus(siteKey, { ok: false, error: `Token inválido no Meta. ${message || ''}`.trim(), details: error.response?.data });
+          return { ok: false, error: `Token inválido no Meta. ${message || ''}`.trim(), details: error.response?.data };
+        }
+        log.error('Batch send failed', { site_key: siteKey, error: message });
+        await this.updateLastStatus(siteKey, { ok: false, error: message || 'Erro ao enviar para o Meta', details: error.response?.data });
+        return { ok: false, error: message || 'Erro ao enviar para o Meta', details: error.response?.data };
+      }
+      const errMsg = error instanceof Error ? error.message : 'Erro desconhecido';
+      log.error('Batch send failed', { site_key: siteKey, error: errMsg });
+      await this.updateLastStatus(siteKey, { ok: false, error: errMsg });
+      return { ok: false, error: errMsg };
     }
   }
 
@@ -355,7 +565,7 @@ export class CapiService {
     }
     if (!this.isProbablyValidToken(cfg.capiToken)) {
       await this.updateLastStatus(siteKey, { ok: false, error: 'Token CAPI inválido (formato)' });
-      console.error(`CAPI invalid token format for siteKey=${siteKey}`);
+      log.error('Invalid token format', { site_key: siteKey });
       return { ok: false, error: 'Token CAPI inválido (formato)' };
     }
 
@@ -366,7 +576,11 @@ export class CapiService {
         `https://graph.facebook.com/${META_GRAPH_API_VERSION}/${cfg.pixelId}/events`,
         payload
       );
-      console.log(`[CAPI] Success ${event.event_name} (ID: ${event.event_id}) - FB Trace: ${response.data?.fbtrace_id} - Messages: ${JSON.stringify(response.data?.messages || [])}`);
+      log.info(`Success ${event.event_name}`, {
+        event_id: event.event_id,
+        fbtrace_id: response.data?.fbtrace_id,
+        messages: response.data?.messages || [],
+      });
 
       await this.updateLastStatus(siteKey, { ok: true, data: response.data });
       return response.data;
@@ -376,18 +590,16 @@ export class CapiService {
         const message = (error.response?.data as { error?: { message?: string } } | undefined)?.error?.message;
         if (code === 190) {
           CapiService.disabledUntil.set(siteKey, Date.now() + 60 * 60 * 1000);
-          console.error(
-            `CAPI desativado temporariamente para siteKey=${siteKey} (token inválido). Atualize o CAPI Token no painel. ${message || ''}`.trim()
-          );
+          log.error('Token invalid, CAPI disabled temporarily', { site_key: siteKey, message });
           await this.updateLastStatus(siteKey, { ok: false, error: `Token inválido no Meta. ${message || ''}`.trim(), details: error.response?.data });
           return { ok: false, error: `Token inválido no Meta. ${message || ''}`.trim() };
         }
-        console.error(`CAPI Error for event_time=${event.event_time}:`, error.response?.data || error.message);
-
+        log.error('Send failed', { event_time: event.event_time, error: message });
         await this.updateLastStatus(siteKey, { ok: false, error: message || 'Erro ao enviar para o Meta', details: error.response?.data });
         return { ok: false, error: message || 'Erro ao enviar para o Meta' };
       } else {
-        console.error('CAPI Error:', error instanceof Error ? error.message : 'unknown_error');
+        const errMsg = error instanceof Error ? error.message : 'unknown_error';
+        log.error('Send failed', { error: errMsg });
         await this.updateLastStatus(siteKey, { ok: false, error: error instanceof Error ? error.message : 'Erro desconhecido' });
         return { ok: false, error: error instanceof Error ? error.message : 'Erro desconhecido' };
       }
