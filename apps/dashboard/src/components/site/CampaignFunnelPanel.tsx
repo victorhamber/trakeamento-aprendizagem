@@ -454,6 +454,7 @@ export function CampaignFunnelPanel({
   const [adsetFilter, setAdsetFilter] = useState('');
   const [rows, setRows] = useState<FunnelRow[]>([]);
   const [loading, setLoading] = useState(false);
+  const [metaError, setMetaError] = useState<string | null>(null);
   const [adsetOptions, setAdsetOptions] = useState<FunnelCampaignOption[]>([]);
   const [generatedAt, setGeneratedAt] = useState<string | null>(null);
   const [compareEnabled, setCompareEnabled] = useState(false);
@@ -822,6 +823,7 @@ export function CampaignFunnelPanel({
     if (metricsPreset === 'custom' && (!metricsSince || !metricsUntil)) return;
     setLoading(true);
     try {
+      setMetaError(null);
       const params: Record<string, string | number> = {
         ...dateParams(),
         campaign_id: campaignId,
@@ -833,6 +835,9 @@ export function CampaignFunnelPanel({
       }
       if (opts?.force) params.force = '1';
       const res = await api.get('/meta/campaigns/funnel-breakdown', { params });
+      if (typeof res.data?.meta_error === 'string' && res.data.meta_error.trim()) {
+        setMetaError(res.data.meta_error);
+      }
       let list = (res.data?.rows || []) as FunnelRow[];
       // Permite isolar um conjunto na visão "Por conjunto" sem precisar mudar o endpoint.
       if (level === 'adset' && adsetFilter) {
@@ -849,6 +854,7 @@ export function CampaignFunnelPanel({
       }
     } catch (e) {
       console.error(e);
+      setMetaError('Falha ao atualizar dados da Meta. Tente novamente em instantes.');
       setRows([]);
       setGeneratedAt(null);
       setCompareRows([]);
@@ -1101,6 +1107,11 @@ export function CampaignFunnelPanel({
         >
           {loading ? 'Carregando…' : 'Atualizar funil'}
         </button>
+        {metaError ? (
+          <div className="w-full text-[11px] text-amber-700 dark:text-amber-300">
+            Meta: {metaError}
+          </div>
+        ) : null}
       </div>
 
       <div className="p-4 space-y-4">

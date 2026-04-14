@@ -780,6 +780,7 @@ router.get('/campaigns/funnel-breakdown', requireAuth, async (req, res) => {
 
     const forceRefresh =
       req.query.force === '1' || req.query.force === 'true' || req.query.force === 'yes';
+    let meta_error: string | null = null;
     if (forceRefresh) {
       try {
         await metaMarketingService.syncDailyInsights(
@@ -788,7 +789,8 @@ router.get('/campaigns/funnel-breakdown', requireAuth, async (req, res) => {
           hasCustomRange ? { since: sinceRaw, until: untilRaw } : undefined
         );
       } catch (syncErr) {
-        console.warn('[funnel-breakdown] force syncDailyInsights failed:', summarizeMetaMarketingError(syncErr));
+        meta_error = summarizeMetaMarketingError(syncErr);
+        console.warn('[funnel-breakdown] force syncDailyInsights failed:', meta_error);
       }
     }
 
@@ -935,6 +937,7 @@ router.get('/campaigns/funnel-breakdown', requireAuth, async (req, res) => {
           );
           result = await pool.query(funnelSql, params);
         } catch (syncErr) {
+          if (!meta_error) meta_error = summarizeMetaMarketingError(syncErr);
           console.warn('[funnel-breakdown] syncDailyInsights failed:', summarizeMetaMarketingError(syncErr));
         }
       }
@@ -1032,6 +1035,7 @@ router.get('/campaigns/funnel-breakdown', requireAuth, async (req, res) => {
       preset,
       adset_id: adsetId || null,
       generated_at: new Date().toISOString(),
+      meta_error,
       rows,
       compare_rows,
       compare_label,
