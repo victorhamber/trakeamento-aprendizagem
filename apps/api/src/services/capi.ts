@@ -11,15 +11,6 @@ const log = createLogger('CAPI');
 export type CapiCustomData = Record<string, unknown>;
 
 /**
- * Data Processing Options para compliance LGPD/GDPR
- * @see https://developers.facebook.com/docs/marketing-apis/data-processing-options
- */
-export interface DataProcessingOptions {
-  data_processing_options: string[];
-  data_processing_options_country: number;
-  data_processing_options_state: number;
-}
-/**
  * Payload de um evento server-side para Graph `/{pixel-id}/events`.
  * @see https://developers.facebook.com/docs/marketing-api/conversions-api/parameters
  * @see https://developers.facebook.com/docs/marketing-api/conversions-api/parameters/server-event
@@ -173,26 +164,6 @@ export class CapiService {
     return out;
   }
 
-  /**
-   * Retorna as opções de processamento de dados (LDU) para compliance LGPD/GDPR.
-   * Por padrão, não aplica restrições (array vazio). Pode ser sobrescrito por env var.
-   */
-  private static getDataProcessingOptions(): DataProcessingOptions {
-    const lduEnabled = process.env.CAPI_LDU_ENABLED === '1' || process.env.CAPI_LDU_ENABLED === 'true';
-    if (lduEnabled) {
-      return {
-        data_processing_options: ['LDU'],
-        data_processing_options_country: parseInt(process.env.CAPI_LDU_COUNTRY || '0', 10),
-        data_processing_options_state: parseInt(process.env.CAPI_LDU_STATE || '0', 10),
-      };
-    }
-    return {
-      data_processing_options: [],
-      data_processing_options_country: 0,
-      data_processing_options_state: 0,
-    };
-  }
-
   private buildEventData(event: CapiEvent): Record<string, unknown> {
     const userDataIn = event.user_data ? ({ ...event.user_data } as Record<string, unknown>) : {};
     const fbcSafe = preserveMetaClickIds(userDataIn.fbc);
@@ -228,8 +199,6 @@ export class CapiService {
 
     const refUrl = (event.referrer_url || '').trim();
     const includeReferrer = CapiService.isValidHttpEventSourceUrl(refUrl);
-    const dpo = CapiService.getDataProcessingOptions();
-
     return {
       event_name: event.event_name,
       event_time: event.event_time,
@@ -241,7 +210,6 @@ export class CapiService {
       ...(cleanedCustomData && Object.keys(cleanedCustomData).length > 0
         ? { custom_data: cleanedCustomData }
         : {}),
-      ...dpo,
     };
   }
 
