@@ -6,7 +6,14 @@ export const REQUIRED_ANALYSIS_SECTIONS = [
 
 /** Variantes aceitas para a mesma secao logica (prompt vs titulo exato no contrato). */
 const HEADING_EQUIVALENTS: Record<string, readonly string[]> = {
-  '## Plano de Acao': ['## Plano de Acao', '## Plano de Acao 100% Pratico'],
+  '## Diagnostico Executivo': ['## Diagnostico Executivo', '## Diagnóstico Executivo'],
+  '## Analise do Funil': ['## Analise do Funil', '## Análise do Funil'],
+  '## Plano de Acao': [
+    '## Plano de Acao',
+    '## Plano de Ação',
+    '## Plano de Acao 100% Pratico',
+    '## Plano de Ação 100% Prático',
+  ],
 };
 
 export type AnalysisValidationResult = {
@@ -22,6 +29,15 @@ function collectMarkdownHeadings(content: string): string[] {
   return Array.from(content.matchAll(/^##\s+.+$/gm)).map((match) => match[0].trim());
 }
 
+function normalizeHeading(input: string): string {
+  return String(input || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
 function headingVariants(canonical: string): readonly string[] {
   return HEADING_EQUIVALENTS[canonical] || [canonical];
 }
@@ -29,9 +45,10 @@ function headingVariants(canonical: string): readonly string[] {
 /** Primeira posicao no documento onde aparece qualquer variante do titulo obrigatorio. */
 function findSectionIndex(headings: string[], canonical: string): number {
   const variants = headingVariants(canonical);
+  const normalizedHeadings = headings.map(normalizeHeading);
   let best = -1;
   for (const v of variants) {
-    const i = headings.findIndex((h) => h === v);
+    const i = normalizedHeadings.findIndex((h) => h === normalizeHeading(v));
     if (i !== -1 && (best === -1 || i < best)) best = i;
   }
   return best;
