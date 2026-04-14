@@ -94,15 +94,6 @@
 
 /* ─── Scrollbar ───────────────────────────────────────────────────────────── */
 
-* {
-  scrollbar-width: thin;
-  scrollbar-color: theme('colors.zinc.800') transparent;
-}
-
-.light * {
-  scrollbar-color: theme('colors.zinc.300') transparent;
-}
-
 ::-webkit-scrollbar {
   width: 4px;
   height: 4px;

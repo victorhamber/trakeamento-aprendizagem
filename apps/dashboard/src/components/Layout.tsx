@@ -185,6 +185,8 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
                 type="button"
                 onClick={() => setMobileOpen((open) => !open)}
                 className={`lg:hidden h-9 w-9 rounded-xl border flex items-center justify-center ${isDark ? 'border-white/10 bg-white/5' : 'border-border bg-muted'}`}
+                aria-label={mobileOpen ? 'Fechar menu' : 'Abrir menu'}
+                title={mobileOpen ? 'Fechar menu' : 'Abrir menu'}
               >
                 <svg viewBox="0 0 24 24" fill="none" className="h-4.5 w-4.5">
                   <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
@@ -228,7 +230,13 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
 
                 {notifOpen && (
                   <>
-                    <button className="fixed inset-0 z-30" onClick={() => setNotifOpen(false)} />
+                    <button
+                      type="button"
+                      className="fixed inset-0 z-30"
+                      onClick={() => setNotifOpen(false)}
+                      aria-label="Fechar lista de notificações"
+                      title="Fechar"
+                    />
                     <div className={`absolute right-0 mt-2 w-80 max-h-96 overflow-y-auto rounded-2xl border shadow-2xl z-40 ${isDark
                       ? 'bg-zinc-900 border-zinc-800 shadow-black/50'
                       : 'bg-card border-border shadow-zinc-300/40'
@@ -285,7 +293,13 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
       {/* ── Mobile Sidebar ── */}
       {mobileOpen && (
         <div className="lg:hidden fixed inset-0 z-40">
-          <button type="button" onClick={() => setMobileOpen(false)} className="absolute inset-0 bg-black/70" />
+          <button
+            type="button"
+            onClick={() => setMobileOpen(false)}
+            className="absolute inset-0 bg-black/70"
+            aria-label="Fechar menu"
+            title="Fechar"
+          />
           <div className={`absolute inset-y-0 left-0 w-72 max-w-full p-4 flex flex-col ${isDark ? 'bg-[#0b0f17] border-r border-white/10' : 'bg-card border-r border-border'} select-none`}>
             <Link
               to="/dashboard"
@@ -328,6 +342,8 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
             type="button"
             className="absolute inset-0 bg-black/60 backdrop-blur-sm cursor-default"
             onClick={() => setSelectedNotification(null)}
+            aria-label="Fechar notificação"
+            title="Fechar"
           />
           <div
             className={`relative w-full max-w-lg rounded-3xl shadow-2xl p-6 sm:p-8 animate-in fade-in zoom-in-95 duration-200 ${isDark ? 'bg-zinc-900 border border-zinc-800' : 'bg-card border border-border'
@@ -346,6 +362,8 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
                 onClick={() => setSelectedNotification(null)}
                 className={`flex-shrink-0 h-10 w-10 flex items-center justify-center rounded-xl transition-colors ${isDark ? 'bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white' : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-500 hover:text-zinc-900'
                   }`}
+                aria-label="Fechar notificação"
+                title="Fechar"
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-5 w-5">
                   <path d="M18 6L6 18M6 6l12 12" />
