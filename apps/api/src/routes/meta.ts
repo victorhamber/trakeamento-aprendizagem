@@ -14,6 +14,17 @@ import {
 
 const router = Router();
 
+// Evita martelar o sync quando o DB está vazio (ex.: site sem campanhas no período).
+// Isso reduz rate-limit (429) e deixa a UI mais leve sem afetar aprendizado/otimização.
+const META_SYNC_COOLDOWN_MS = 5 * 60_000;
+const lastAutoSyncAttemptAt = new Map<string, number>();
+function canAttemptAutoSync(key: string, now = Date.now()): boolean {
+  const prev = lastAutoSyncAttemptAt.get(key) || 0;
+  if (now - prev < META_SYNC_COOLDOWN_MS) return false;
+  lastAutoSyncAttemptAt.set(key, now);
+  return true;
+}
+
 function toReportYmd(raw: string, tz: string): string | null {
   const t = raw.trim();
   const m = t.match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -317,21 +328,24 @@ router.get('/campaigns/metrics', requireAuth, async (req, res) => {
 
     // ── Sync from Meta if DB is empty ────────────────────────────────────────
     if (!forceSync && !(result.rowCount || 0)) {
-      try {
-        await metaMarketingService.syncDailyInsights(
-          siteId,
-          preset,
-          hasCustomRange ? { since: sinceRaw, until: untilRaw } : undefined
-        );
-      } catch (err: any) {
-        metaError =
-          err?.response?.data?.error?.message ||
-          err?.response?.data?.error?.error_user_msg ||
-          err?.response?.data?.error?.error_user_title ||
-          err?.message ||
-          'Falha ao sincronizar dados da Meta.';
+      const syncKey = `metrics:${siteId}:${preset}:${hasCustomRange ? `${sinceRaw}:${untilRaw}` : ''}:${level}:${parentId || ''}`;
+      if (canAttemptAutoSync(syncKey)) {
+        try {
+          await metaMarketingService.syncDailyInsights(
+            siteId,
+            preset,
+            hasCustomRange ? { since: sinceRaw, until: untilRaw } : undefined
+          );
+        } catch (err: any) {
+          metaError =
+            err?.response?.data?.error?.message ||
+            err?.response?.data?.error?.error_user_msg ||
+            err?.response?.data?.error?.error_user_title ||
+            err?.message ||
+            'Falha ao sincronizar dados da Meta.';
+        }
+        result = await queryMetrics();
       }
-      result = await queryMetrics();
     }
 
     // ── Fallback: live fetch for campaign level if still empty ───────────────
@@ -911,15 +925,18 @@ router.get('/campaigns/funnel-breakdown', requireAuth, async (req, res) => {
 
     /** Campanhas novas podem ainda não estar no DB; a lista de métricas só sincroniza se o resultado global estiver vazio. */
     if (!(result.rowCount || 0)) {
-      try {
-        await metaMarketingService.syncDailyInsights(
-          siteId,
-          preset,
-          hasCustomRange ? { since: sinceRaw, until: untilRaw } : undefined
-        );
-        result = await pool.query(funnelSql, params);
-      } catch (syncErr) {
-        console.warn('[funnel-breakdown] syncDailyInsights failed:', summarizeMetaMarketingError(syncErr));
+      const syncKey = `funnel:${siteId}:${preset}:${hasCustomRange ? `${sinceRaw}:${untilRaw}` : ''}:${campaignId}:${level}:${adsetId || ''}`;
+      if (canAttemptAutoSync(syncKey)) {
+        try {
+          await metaMarketingService.syncDailyInsights(
+            siteId,
+            preset,
+            hasCustomRange ? { since: sinceRaw, until: untilRaw } : undefined
+          );
+          result = await pool.query(funnelSql, params);
+        } catch (syncErr) {
+          console.warn('[funnel-breakdown] syncDailyInsights failed:', summarizeMetaMarketingError(syncErr));
+        }
       }
     }
 
