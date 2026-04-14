@@ -44,6 +44,35 @@ const PERIOD_LABELS: Record<string, string> = {
   'maximum': 'Máximo'
 };
 
+function displayRegionNamePtBr(iso2: string): string | null {
+  try {
+    // Intl.DisplayNames não existe em alguns ambientes mais antigos.
+    const AnyIntl = Intl as any;
+    if (!AnyIntl?.DisplayNames) return null;
+    const dn = new AnyIntl.DisplayNames('pt-BR', { type: 'region' });
+    const out = dn.of(iso2);
+    return typeof out === 'string' ? out : null;
+  } catch {
+    return null;
+  }
+}
+
+function formatLocationLabel(raw: string): { label: string; badge?: 'pixel' | 'ip' } {
+  const trimmed = String(raw || '').trim();
+  if (!trimmed) return { label: '—' };
+
+  const hasPixelBadge = /\s*·\s*pixel\s*$/i.test(trimmed);
+  const base = hasPixelBadge ? trimmed.replace(/\s*·\s*pixel\s*$/i, '').trim() : trimmed;
+
+  // Se vier apenas o ISO2 (ex.: "MX"), mostrar nome + ISO.
+  if (/^[A-Z]{2}$/.test(base)) {
+    const name = displayRegionNamePtBr(base);
+    return { label: name ? `${name} (${base})` : base, badge: hasPixelBadge ? 'pixel' : undefined };
+  }
+
+  return { label: base, badge: hasPixelBadge ? 'pixel' : undefined };
+}
+
 function formatSource(rawSource: string) {
   if (!rawSource || rawSource.toLowerCase().includes('direct') || rawSource.toLowerCase().includes('unknown')) return 'Direto / Orgânico';
 
@@ -170,9 +199,16 @@ const Card = ({ title, data, color, textColor }: { title: string; data: PeakData
               <div className="space-y-1.5">
                 {data.top_locations.map((loc, idx) => (
                   <div key={idx} className="flex items-center justify-between text-xs">
-                    <span className="text-zinc-600 dark:text-zinc-400 truncate max-w-[70%]">
-                      {loc.location}
-                    </span>
+                    <div className="min-w-0 max-w-[70%] flex items-center gap-2">
+                      <span className="text-zinc-600 dark:text-zinc-400 truncate">
+                        {formatLocationLabel(loc.location).label}
+                      </span>
+                      {formatLocationLabel(loc.location).badge === 'pixel' && (
+                        <span className="shrink-0 text-[9px] px-1.5 py-0.5 rounded border border-blue-500/20 bg-blue-500/10 text-blue-700 dark:text-blue-300">
+                          pixel
+                        </span>
+                      )}
+                    </div>
                     <span className="text-zinc-900 dark:text-zinc-100 font-medium tabular-nums">
                       {loc.count}
                     </span>
