@@ -4607,7 +4607,7 @@ ${scriptContent}
                           <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{section.title}</h3>
                         </div>
                         {section.body && (
-                          <div className="px-5 py-4 prose prose-invert max-w-none text-sm prose-headings:tracking-tight prose-h1:text-xl prose-h2:text-lg prose-h3:text-sm prose-p:text-zinc-600 dark:text-zinc-400 prose-p:leading-relaxed prose-strong:text-zinc-800 dark:text-zinc-200 prose-a:text-blue-400 prose-a:no-underline hover:prose-a:text-blue-300">
+                          <div className="px-5 py-4 prose dark:prose-invert max-w-none text-sm prose-headings:tracking-tight prose-h1:text-xl prose-h2:text-lg prose-h3:text-sm prose-p:text-zinc-600 dark:prose-p:text-zinc-400 prose-p:leading-relaxed prose-strong:text-zinc-800 dark:prose-strong:text-zinc-200 prose-a:text-blue-500 dark:prose-a:text-blue-400 prose-a:no-underline hover:prose-a:text-blue-400 dark:hover:prose-a:text-blue-300">
                             <ReactMarkdown remarkPlugins={[remarkGfm]} components={reportMarkdownComponents}>
                               {section.body}
                             </ReactMarkdown>

@@ -59,8 +59,8 @@ const NavItem = ({ to, label, icon: IconComp }: { to: string; label: string; ico
     to={to}
     className={({ isActive }) =>
       `group relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all duration-200 ${isActive
-        ? 'bg-zinc-100 dark:bg-white/10 text-zinc-900 dark:text-white font-medium border border-transparent dark:border-white/10 shadow-sm dark:shadow-[0_10px_30px_rgba(0,0,0,0.35)]'
-        : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-white/5 border border-transparent'
+        ? 'bg-blue-50 dark:bg-white/10 text-blue-600 dark:text-white font-medium border border-blue-100 dark:border-white/10 shadow-sm dark:shadow-[0_10px_30px_rgba(0,0,0,0.35)]'
+        : 'text-muted-foreground hover:text-foreground dark:hover:text-white hover:bg-muted dark:hover:bg-white/5 border border-transparent'
       }`
     }
   >
@@ -127,10 +127,10 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
   const isDark = theme === 'dark';
 
   return (
-    <div className="min-h-screen transition-colors duration-300 bg-slate-50 dark:bg-[#05070a] text-zinc-900 dark:text-zinc-100 grid grid-cols-1 lg:grid-cols-[260px_1fr]">
+    <div className="min-h-screen transition-colors duration-300 bg-background text-foreground grid grid-cols-1 lg:grid-cols-[260px_1fr]">
 
       {/* ── Desktop Sidebar ── */}
-      <aside className="hidden lg:flex flex-col bg-white dark:bg-[#080a0f] border-r border-zinc-200/60 dark:border-white/5 p-5 transition-colors duration-300 select-none">
+      <aside className="hidden lg:flex flex-col bg-card dark:bg-[#080a0f] border-r border-border p-5 transition-colors duration-300 select-none">
         <Link to="/dashboard" className="flex items-center gap-3 px-2 mb-7 select-none">
           <img src="/logo-icon.png?v=2" alt="Trajettu" className="h-12 w-12 object-contain pointer-events-none" />
           <div className="leading-tight">
@@ -154,8 +154,8 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
           </div>
         </nav>
 
-        <div className={`pt-5 border-t ${isDark ? 'border-white/5' : 'border-zinc-200'}`}>
-          <div className={`flex items-center gap-3 px-3 py-3 rounded-2xl ${isDark ? 'bg-white/[0.02] border border-white/5' : 'bg-zinc-50 border border-zinc-200'}`}>
+        <div className={`pt-5 border-t ${isDark ? 'border-white/5' : 'border-border'}`}>
+          <div className={`flex items-center gap-3 px-3 py-3 rounded-2xl ${isDark ? 'bg-white/[0.02] border border-white/5' : 'bg-background border border-border'}`}>
             <div className="h-8 w-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-xs font-bold text-white shadow-sm">
               {auth.user?.email?.charAt(0).toUpperCase()}
             </div>
@@ -168,7 +168,7 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
             onClick={() => auth.logout()}
             className={`mt-3 w-full text-xs font-semibold rounded-xl px-3 py-2.5 transition-all ${isDark
               ? 'text-zinc-400 hover:text-white hover:bg-white/5 border border-white/5'
-              : 'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 border border-zinc-200'
+              : 'text-muted-foreground hover:text-foreground hover:bg-muted border border-border'
               }`}
           >
             Sair da conta
@@ -178,13 +178,13 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
 
       {/* ── Main ── */}
       <main className="flex flex-col min-w-0">
-        <header className={`sticky top-0 z-10 backdrop-blur-xl border-b ${isDark ? 'bg-[#05070a]/80 border-white/5' : 'bg-white/80 border-zinc-200/60'} select-none`}>
+        <header className={`sticky top-0 z-10 backdrop-blur-xl border-b border-border ${isDark ? 'bg-[#05070a]/80' : 'bg-card/80'} select-none`}>
           <div className="w-full px-4 sm:px-8 py-3 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <button
                 type="button"
                 onClick={() => setMobileOpen((open) => !open)}
-                className={`lg:hidden h-9 w-9 rounded-xl border flex items-center justify-center ${isDark ? 'border-white/10 bg-white/5' : 'border-zinc-200 bg-zinc-50'}`}
+                className={`lg:hidden h-9 w-9 rounded-xl border flex items-center justify-center ${isDark ? 'border-white/10 bg-white/5' : 'border-border bg-muted'}`}
               >
                 <svg viewBox="0 0 24 24" fill="none" className="h-4.5 w-4.5">
                   <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
@@ -199,7 +199,7 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
                 onClick={toggleTheme}
                 className={`h-9 w-9 rounded-xl border flex items-center justify-center transition-all hover:scale-105 ${isDark
                   ? 'border-white/10 bg-white/5 text-zinc-400 hover:text-amber-300 hover:bg-amber-500/10'
-                  : 'border-zinc-200 bg-zinc-50 text-zinc-500 hover:text-indigo-500 hover:bg-indigo-50'
+                  : 'border-border bg-muted text-muted-foreground hover:text-primary hover:bg-blue-50'
                   }`}
                 title={isDark ? 'Mudar para tema claro' : 'Mudar para tema escuro'}
               >
@@ -214,7 +214,7 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
                   onClick={() => setNotifOpen(!notifOpen)}
                   className={`h-9 w-9 rounded-xl border flex items-center justify-center transition-all hover:scale-105 ${isDark
                     ? 'border-white/10 bg-white/5 text-zinc-400 hover:text-white hover:bg-white/10'
-                    : 'border-zinc-200 bg-zinc-50 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100'
+                    : 'border-border bg-muted text-muted-foreground hover:text-foreground hover:bg-zinc-200'
                     }`}
                   title="Notificações"
                 >
@@ -231,9 +231,9 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
                     <button className="fixed inset-0 z-30" onClick={() => setNotifOpen(false)} />
                     <div className={`absolute right-0 mt-2 w-80 max-h-96 overflow-y-auto rounded-2xl border shadow-2xl z-40 ${isDark
                       ? 'bg-zinc-900 border-zinc-800 shadow-black/50'
-                      : 'bg-white border-zinc-200 shadow-zinc-300/40'
+                      : 'bg-card border-border shadow-zinc-300/40'
                       }`}>
-                      <div className={`px-4 py-3 border-b text-sm font-semibold ${isDark ? 'text-zinc-200 border-zinc-800' : 'text-zinc-800 border-zinc-100'}`}>
+                      <div className={`px-4 py-3 border-b text-sm font-semibold ${isDark ? 'text-zinc-200 border-zinc-800' : 'text-foreground border-border'}`}>
                         Notificações
                       </div>
                       {notifications.length === 0 ? (
@@ -286,11 +286,11 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
       {mobileOpen && (
         <div className="lg:hidden fixed inset-0 z-40">
           <button type="button" onClick={() => setMobileOpen(false)} className="absolute inset-0 bg-black/70" />
-          <div className={`absolute inset-y-0 left-0 w-72 max-w-full p-4 flex flex-col ${isDark ? 'bg-[#0b0f17] border-r border-white/10' : 'bg-white border-r border-zinc-200'} select-none`}>
+          <div className={`absolute inset-y-0 left-0 w-72 max-w-full p-4 flex flex-col ${isDark ? 'bg-[#0b0f17] border-r border-white/10' : 'bg-card border-r border-border'} select-none`}>
             <Link
               to="/dashboard"
               onClick={() => setMobileOpen(false)}
-              className={`flex items-center gap-3 px-3 py-3 rounded-2xl border ${isDark ? 'bg-white/[0.02] border-white/5' : 'bg-zinc-50 border-zinc-200'}`}
+              className={`flex items-center gap-3 px-3 py-3 rounded-2xl border ${isDark ? 'bg-white/[0.02] border-white/5' : 'bg-background border-border'}`}
             >
               <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
                 <div className="h-2 w-2 rounded-full bg-white animate-pulse" />
@@ -307,12 +307,12 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
               <NavItem to="/ai" label="Inteligência IA" icon={IconBrain} />
             </nav>
 
-            <div className={`mt-auto pt-4 border-t ${isDark ? 'border-white/5' : 'border-zinc-200'}`}>
+            <div className={`mt-auto pt-4 border-t ${isDark ? 'border-white/5' : 'border-border'}`}>
               <div className={`text-xs ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>Conta</div>
               <div className={`text-sm truncate ${isDark ? 'text-zinc-200' : 'text-zinc-800'}`}>{auth.user?.email}</div>
               <button
                 onClick={() => { setMobileOpen(false); auth.logout(); }}
-                className={`mt-3 w-full text-sm rounded-xl px-3 py-2 transition-colors ${isDark ? 'bg-white/5 hover:bg-white/10 border border-white/10' : 'bg-zinc-100 hover:bg-zinc-200 border border-zinc-200'}`}
+                className={`mt-3 w-full text-sm rounded-xl px-3 py-2 transition-colors ${isDark ? 'bg-white/5 hover:bg-white/10 border border-white/10' : 'bg-muted hover:bg-zinc-200 border border-border'}`}
               >
                 Sair
               </button>
@@ -330,7 +330,7 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
             onClick={() => setSelectedNotification(null)}
           />
           <div
-            className={`relative w-full max-w-lg rounded-3xl shadow-2xl p-6 sm:p-8 animate-in fade-in zoom-in-95 duration-200 ${isDark ? 'bg-zinc-900 border border-zinc-800' : 'bg-white border border-zinc-200'
+            className={`relative w-full max-w-lg rounded-3xl shadow-2xl p-6 sm:p-8 animate-in fade-in zoom-in-95 duration-200 ${isDark ? 'bg-zinc-900 border border-zinc-800' : 'bg-card border border-border'
               }`}
           >
             <div className="flex items-start justify-between gap-4 mb-6">
@@ -369,7 +369,7 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
                 </div>
               )}
 
-              <div className={`prose prose-sm sm:prose-base max-w-none ${isDark ? 'prose-invert text-zinc-300' : 'text-zinc-700'}`}>
+              <div className={`prose prose-sm sm:prose-base max-w-none ${isDark ? 'prose-invert text-zinc-300' : 'prose-zinc text-zinc-700'}`}>
                 {selectedNotification.message.split('\n').map((paragraph, idx) => (
                   <p key={idx} className="mb-4 last:mb-0 leading-relaxed">
                     {paragraph}

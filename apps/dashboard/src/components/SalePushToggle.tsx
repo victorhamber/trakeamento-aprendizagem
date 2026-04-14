@@ -54,7 +54,7 @@ export function SalePushToggle() {
               : 'border-emerald-500/40 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
             : isDark
               ? 'border-white/10 bg-white/5 text-zinc-400 hover:text-emerald-400 hover:bg-emerald-500/10'
-              : 'border-zinc-200 bg-zinc-50 text-zinc-500 hover:text-emerald-700 hover:bg-emerald-50'
+              : 'border-border bg-muted text-muted-foreground hover:text-emerald-700 hover:bg-emerald-50'
         }`}
       >
         <IconSaleAlert />
