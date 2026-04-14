@@ -1,17 +1,36 @@
 import { describe, expect, it } from 'vitest';
 import {
-  buildMentorConversionMasterPrompt,
+  buildMentorSystemPrompt,
   MENTOR_CONVERSION_MASTER_VERSION,
 } from './mentor-conversion-master-prompt';
+import { MENTOR_SKILLS } from '../mentor-skills';
 
-describe('mentor-conversion-master-prompt', () => {
-  it('expoe versao e gera prompt com blocos essenciais', () => {
-    expect(MENTOR_CONVERSION_MASTER_VERSION).toMatch(/^4\.0/);
-    const p = buildMentorConversionMasterPrompt();
-    expect(p.length).toBeGreaterThan(500);
-    expect(p).toContain('PROTOCOLO DE INTEGRIDADE');
-    expect(p).toContain('INTELIGENCIA DE TICKET');
-    expect(p).toContain('## Onde voce esta');
-    expect(p).toContain('Trajettu');
+describe('mentor-conversion-master-prompt v5 (Fink)', () => {
+  it('exposes version 5.x', () => {
+    expect(MENTOR_CONVERSION_MASTER_VERSION).toMatch(/^5\.0/);
+  });
+
+  it('builds prompt with skills and Fink framework', () => {
+    const skills = MENTOR_SKILLS.slice(0, 2);
+    const prompt = buildMentorSystemPrompt(skills, false);
+    expect(prompt.length).toBeGreaterThan(500);
+    expect(prompt).toContain('TAXONOMIA DE FINK');
+    expect(prompt).toContain('ANTI-ALUCINACAO');
+    expect(prompt).toContain('INTELIGENCIA DE TICKET');
+    expect(prompt).toContain('SKILL ATIVA');
+    expect(prompt).toContain('Trajettu');
+  });
+
+  it('uses conversational format when user message is present', () => {
+    const skills = [MENTOR_SKILLS[0]];
+    const prompt = buildMentorSystemPrompt(skills, true);
+    expect(prompt).toContain('CONVERSACIONAL');
+    expect(prompt).not.toContain('## Onde voce esta');
+  });
+
+  it('uses structured format when no user message', () => {
+    const skills = [MENTOR_SKILLS[0]];
+    const prompt = buildMentorSystemPrompt(skills, false);
+    expect(prompt).toContain('## Onde voce esta');
   });
 });

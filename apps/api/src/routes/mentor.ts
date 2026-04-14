@@ -7,6 +7,11 @@ import { pool } from '../db/pool';
 import { findOwnedSiteByKey } from '../lib/site-access';
 import { llmService } from '../services/llm';
 import { mentorCoachInputSchema } from '../services/agent-tools';
+import { z } from 'zod';
+
+const mentorChatInputSchema = mentorCoachInputSchema.extend({
+  message: z.string().trim().max(2000).optional(),
+});
 
 type MentorItem = { id: string; text: string; hints?: string[] };
 type MentorPhase = { id: string; order: number; title: string; badge?: string; note?: string; items: MentorItem[] };
@@ -84,13 +89,14 @@ router.get('/checklist', requireAuth, (_req, res) => {
 router.post('/coach', requireAuth, async (req, res) => {
   const auth = req.auth!;
   const body = req.body || {};
-  const parsedInput = mentorCoachInputSchema.safeParse({
+  const parsedInput = mentorChatInputSchema.safeParse({
     siteKey: typeof body.site_key === 'string' ? body.site_key : '',
     focusPhaseId: typeof body.focus_phase_id === 'string' ? body.focus_phase_id : undefined,
     completedItemIds: Array.isArray(body.completed_item_ids)
       ? body.completed_item_ids.filter((x: unknown): x is string => typeof x === 'string')
       : [],
     campaignId: typeof body.campaign_id === 'string' ? body.campaign_id : undefined,
+    message: typeof body.message === 'string' ? body.message : undefined,
   });
 
   if (!parsedInput.success) {
@@ -101,6 +107,7 @@ router.post('/coach', requireAuth, async (req, res) => {
   }
 
   const input = parsedInput.data;
+  const userMessage = input.message || undefined;
   const site = await findOwnedSiteByKey(auth.accountId, input.siteKey);
   if (!site) return res.status(404).json({ error: 'Site not found' });
 
@@ -280,27 +287,30 @@ router.post('/coach', requireAuth, async (req, res) => {
   };
 
   try {
-    const markdown = await llmService.generateMentorGuidance(siteKey, mentorContext);
-    
-    // Salva no histórico (mensagem do sistema com contexto resumido + resposta)
-    const contextSummary = `Contexto: fase=${focus_phase?.id || 'auto'}, itens_completos=${completedIds.length}, metricas=${metricsAgg ? 'sim' : 'nao'}`;
-    await pool.query(
-      `INSERT INTO mentor_chat_history (account_id, site_key, role, content) VALUES ($1, $2, 'user', $3)`,
-      [auth.accountId, siteKey, contextSummary]
-    ).catch(() => {});
+    const markdown = await llmService.generateMentorGuidance(siteKey, mentorContext, {
+      userMessage,
+    });
+
+    // Save real conversation turns to history
+    if (userMessage) {
+      await pool.query(
+        `INSERT INTO mentor_chat_history (account_id, site_key, role, content) VALUES ($1, $2, 'user', $3)`,
+        [auth.accountId, siteKey, userMessage.slice(0, 4000)]
+      ).catch(() => {});
+    }
     await pool.query(
       `INSERT INTO mentor_chat_history (account_id, site_key, role, content) VALUES ($1, $2, 'assistant', $3)`,
       [auth.accountId, siteKey, markdown.slice(0, 4000)]
     ).catch(() => {});
 
-    // Limpa histórico antigo (mantém só últimas 20 mensagens por site)
+    // Keep only last 30 messages per site (15 turns of conversation)
     await pool.query(
-      `DELETE FROM mentor_chat_history 
-       WHERE account_id = $1 AND site_key = $2 
+      `DELETE FROM mentor_chat_history
+       WHERE account_id = $1 AND site_key = $2
        AND id NOT IN (
-         SELECT id FROM mentor_chat_history 
-         WHERE account_id = $1 AND site_key = $2 
-         ORDER BY created_at DESC LIMIT 20
+         SELECT id FROM mentor_chat_history
+         WHERE account_id = $1 AND site_key = $2
+         ORDER BY created_at DESC LIMIT 30
        )`,
       [auth.accountId, siteKey]
     ).catch(() => {});

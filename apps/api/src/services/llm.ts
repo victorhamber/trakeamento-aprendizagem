@@ -7,7 +7,8 @@ import {
   type AnalysisProfile,
 } from './prompts/analysis-profiles';
 import { buildAnalysisSystemPrompt } from './prompts/analysis-system-prompt';
-import { buildMentorConversionMasterPrompt } from './prompts/mentor-conversion-master-prompt';
+import { buildMentorSystemPrompt } from './prompts/mentor-conversion-master-prompt';
+import { routeSkills, type MentorSkill } from './mentor-skills';
 
 interface LlmConfig {
   apiKey: string;
@@ -290,9 +291,14 @@ export class LlmService {
   }
 
   /**
-   * Orientação do mentor Trilha Meta (Markdown). Usa OpenAI quando houver chave; senão fallback estruturado.
+   * Mentor Trajettu v5 — Fink Taxonomy + Skills routing.
+   * Supports real chat (user message + history) and one-shot guidance.
    */
-  public async generateMentorGuidance(siteKey: string, mentorContext: Record<string, unknown>): Promise<string> {
+  public async generateMentorGuidance(
+    siteKey: string,
+    mentorContext: Record<string, unknown>,
+    options?: { userMessage?: string }
+  ): Promise<string> {
     const cfg = await this.getKeyForSite(siteKey);
     const apiKey = cfg?.apiKey || process.env.OPENAI_API_KEY || '';
     const model = cfg?.model || DEFAULT_MODEL;
@@ -300,25 +306,111 @@ export class LlmService {
       this.log('warn', 'No OpenAI key — mentor fallback');
       return this.fallbackMentorGuidance(mentorContext);
     }
-    const systemPrompt = this.buildMentorSystemPrompt();
-    const userContent = `Contexto (JSON). Nao invente dados que nao estejam no JSON. Responda apenas em Markdown conforme o system prompt.\n\n${JSON.stringify(mentorContext, null, 2)}`;
+
+    const userMessage = options?.userMessage;
+    const focusPhase = mentorContext.focus_phase as Record<string, unknown> | null;
+    const focusPhaseId = focusPhase?.id ? String(focusPhase.id) : null;
+
+    // Determine which data is available for skill routing
+    const availableDataKeys: string[] = [];
+    if (mentorContext.metrics_aggregate) availableDataKeys.push('metrics_aggregate');
+    if (mentorContext.site_signals) availableDataKeys.push('site_signals');
+    if (mentorContext.landing_page) {
+      const lp = mentorContext.landing_page as Record<string, unknown>;
+      if (typeof lp.content === 'string' && lp.content.length > 50) {
+        availableDataKeys.push('landing_page');
+      }
+    }
+
+    const chatHistory = Array.isArray(mentorContext.chat_history)
+      ? (mentorContext.chat_history as Array<{ role: string; content: string }>)
+      : [];
+
+    // Route to the most relevant skills
+    const activeSkills = routeSkills(userMessage, focusPhaseId, availableDataKeys, chatHistory);
+    this.log('info', `Mentor skills routed: ${activeSkills.map(s => s.id).join(', ')}`);
+
+    const systemPrompt = buildMentorSystemPrompt(activeSkills, !!userMessage);
+
+    // Build messages array for multi-turn conversation
+    const messages: Array<{ role: string; content: string }> = [
+      { role: 'system', content: systemPrompt },
+    ];
+
+    // Inject context as a system-level data message
+    const contextJson = JSON.stringify(mentorContext, null, 2);
+    messages.push({
+      role: 'user',
+      content: `[CONTEXTO DO SISTEMA — dados reais do Trajettu, NAO inventar nada alem disso]\n\n${contextJson}`,
+    });
+    messages.push({
+      role: 'assistant',
+      content: 'Entendi o contexto. Vou analisar com base apenas nesses dados.',
+    });
+
+    // Inject chat history (real previous turns)
+    for (const turn of chatHistory) {
+      messages.push({ role: turn.role, content: turn.content });
+    }
+
+    // Current user message or default request
+    if (userMessage) {
+      messages.push({ role: 'user', content: userMessage });
+    } else {
+      messages.push({
+        role: 'user',
+        content: 'Analise minha situacao atual com base nos dados e me oriente. Seja direto e especifico.',
+      });
+    }
+
     try {
-      return await this.callOpenAI(apiKey, model, systemPrompt, userContent, 1, MENTOR_MAX_TOKENS);
+      return await this.callOpenAIMessages(apiKey, model, messages, MENTOR_MAX_TOKENS);
     } catch {
       this.log('warn', 'Mentor OpenAI failed — fallback');
       return this.fallbackMentorGuidance(mentorContext);
     }
   }
 
-  private buildMentorSystemPrompt(): string {
-    return [
-      '=== BASE TRAJETTU (MENTOR /coach) ===',
-      'Voce e o mentor Meta Ads da plataforma Trajettu. Idioma: portugues do Brasil.',
-      'Entrada: um unico JSON (checklist, fase em foco, sinais de integracao, metricas agregadas opcionais). Nao invente chaves que nao existam no JSON.',
-      'Integre a trilha de 8 fases com o playbook Conversion Master abaixo; o formato final da resposta continua obrigatorio (quatro ##).',
-      '',
-      buildMentorConversionMasterPrompt(),
-    ].join('\n');
+  /**
+   * Multi-turn chat completion (supports full message array).
+   */
+  private async callOpenAIMessages(
+    apiKey: string,
+    model: string,
+    messages: Array<{ role: string; content: string }>,
+    maxTokens: number,
+    attempt = 1
+  ): Promise<string> {
+    try {
+      this.log('info', `Calling OpenAI [model=${model}, msgs=${messages.length}, attempt=${attempt}]`);
+      const response = await axios.post(
+        'https://api.openai.com/v1/chat/completions',
+        {
+          model,
+          temperature: DEFAULT_TEMPERATURE,
+          max_tokens: maxTokens,
+          messages,
+        },
+        {
+          headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+          timeout: REQUEST_TIMEOUT_MS,
+        }
+      );
+      const content = response.data?.choices?.[0]?.message?.content;
+      if (!content || typeof content !== 'string') throw new Error('Resposta invalida da OpenAI — content vazio.');
+      this.log('info', `OpenAI OK (${content.length} chars)`);
+      return content;
+    } catch (error) {
+      const isRetryable = axios.isAxiosError(error) &&
+        (!error.response || error.response.status === 429 || error.response.status >= 500);
+      if (isRetryable && attempt < MAX_RETRY_ATTEMPTS) {
+        const delay = attempt * 2000;
+        this.log('warn', `Retrying in ${delay}ms (attempt ${attempt})...`);
+        await new Promise(res => setTimeout(res, delay));
+        return this.callOpenAIMessages(apiKey, model, messages, maxTokens, attempt + 1);
+      }
+      throw error;
+    }
   }
 
   private fallbackMentorGuidance(ctx: Record<string, unknown>): string {
