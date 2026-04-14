@@ -13,6 +13,7 @@ import { preserveMetaClickIds } from '../lib/meta-attribution';
 import { mergeUserDataWithMetaParamBuilder } from '../lib/meta-param-builder-ingest';
 import { normalizeMetaCurrencyCode } from '../lib/meta-currency';
 import { buildVisitorTrafficSourceString } from '../lib/visitorTrafficSource';
+import { checkEventQuota } from '../lib/quota';
 
 const LRUCache = require('lru-cache').LRUCache || require('lru-cache');
 
@@ -727,6 +728,15 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
     return res.status(202).json({ status: 'ignored_duplicate' });
   }
 
+  // ─── 1b. Quota check (plan-based monthly event limit) ────────────
+  const quota = await checkEventQuota(siteKey);
+  if (!quota.allowed) {
+    return res.status(429).json({
+      error: 'event_limit_reached',
+      message: `Monthly event limit reached (${quota.used}/${quota.limit}). Upgrade your plan.`,
+    });
+  }
+
   // DB dedup is handled by ON CONFLICT — no need for a separate SELECT query
   try {
     const eventSourceUrl = await resolveEventSourceUrlForIngest(event, req, siteKey);
@@ -918,6 +928,15 @@ router.post('/batch', cors(), ingestLimiter, async (req, res) => {
 
   if (!Array.isArray(body)) {
     return res.status(400).json({ error: 'Expected an array of events' });
+  }
+
+  // ── Quota check (plan-based monthly event limit) ──
+  const batchQuota = await checkEventQuota(siteKey);
+  if (!batchQuota.allowed) {
+    return res.status(429).json({
+      error: 'event_limit_reached',
+      message: `Monthly event limit reached (${batchQuota.used}/${batchQuota.limit}). Upgrade your plan.`,
+    });
   }
 
   // ── Phase 1: Validate, dedup in-memory, and prepare all events ──

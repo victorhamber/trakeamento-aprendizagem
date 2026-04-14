@@ -407,14 +407,42 @@ const schemaSql = `
 export const ensureSchema = async (pool: Pool) => {
   await pool.query(schemaSql);
 
-  try {
+  // ── Migration tracking: skip already-applied ALTER/CREATE migrations ────
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS _schema_migrations (
+      key VARCHAR(120) PRIMARY KEY,
+      applied_at TIMESTAMP DEFAULT NOW()
+    )
+  `);
+
+  const { rows: appliedRows } = await pool.query('SELECT key FROM _schema_migrations');
+  const applied = new Set(appliedRows.map((r: { key: string }) => r.key));
+
+  /** Run a migration only once; idempotent via _schema_migrations table. */
+  async function migrate(key: string, fn: () => Promise<void>) {
+    if (applied.has(key)) return;
+    try {
+      await fn();
+      await pool.query('INSERT INTO _schema_migrations (key) VALUES ($1) ON CONFLICT DO NOTHING', [key]);
+    } catch (err) {
+      console.warn(`Migration '${key}' skipped:`, err);
+    }
+  }
+
+  // ── One-time migrations (each key runs exactly once) ─────────────────
+  await migrate('password_resets_table', async () => {
     await pool.query('CREATE TABLE IF NOT EXISTS password_resets (id SERIAL PRIMARY KEY, email VARCHAR(190) NOT NULL, token VARCHAR(100) NOT NULL UNIQUE, expires_at TIMESTAMP NOT NULL, created_at TIMESTAMP DEFAULT NOW())');
     await pool.query('CREATE INDEX IF NOT EXISTS idx_password_resets_token ON password_resets(token)');
     await pool.query('CREATE INDEX IF NOT EXISTS idx_password_resets_email ON password_resets(email)');
+  });
 
+  await migrate('sites_extra_cols', async () => {
     await pool.query('ALTER TABLE sites ADD COLUMN IF NOT EXISTS tracking_domain VARCHAR(255)');
     await pool.query('ALTER TABLE sites ADD COLUMN IF NOT EXISTS inject_head_html TEXT');
     await pool.query('ALTER TABLE sites ADD COLUMN IF NOT EXISTS inject_body_html TEXT');
+  });
+
+  await migrate('site_injected_snippets_table', async () => {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS site_injected_snippets (
         id SERIAL PRIMARY KEY,
@@ -429,14 +457,17 @@ export const ensureSchema = async (pool: Pool) => {
       )
     `);
     await pool.query('CREATE INDEX IF NOT EXISTS idx_site_injected_snippets_site ON site_injected_snippets(site_id, sort_order, id)');
+  });
+
+  await migrate('custom_webhooks_site_key', async () => {
     await pool.query('ALTER TABLE custom_webhooks ADD COLUMN IF NOT EXISTS site_key VARCHAR(100)');
+  });
+
+  await migrate('integrations_meta_extra', async () => {
     await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS enabled BOOLEAN DEFAULT TRUE');
     await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS capi_test_event_code VARCHAR(100)');
     await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS last_capi_status VARCHAR(20)');
     await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS last_capi_error TEXT');
-    await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS objective VARCHAR(100)');
-    await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS results INTEGER');
-    await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS result_rate NUMERIC');
     await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS last_capi_response JSONB');
     await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS last_capi_attempt_at TIMESTAMP');
     await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS last_ingest_at TIMESTAMP');
@@ -446,63 +477,25 @@ export const ensureSchema = async (pool: Pool) => {
     await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS fb_user_id VARCHAR(50)');
     await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS fb_user_token_enc TEXT');
     await pool.query('ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS fb_token_expires_at TIMESTAMP');
+  });
+
+  await migrate('integrations_ga_enabled', async () => {
     await pool.query('ALTER TABLE integrations_ga ADD COLUMN IF NOT EXISTS enabled BOOLEAN DEFAULT TRUE');
+  });
+
+  await migrate('account_settings_model', async () => {
     await pool.query('ALTER TABLE account_settings ADD COLUMN IF NOT EXISTS openai_model VARCHAR(50)');
+  });
+
+  await migrate('site_url_rules_extra', async () => {
     await pool.query('ALTER TABLE site_url_rules ADD COLUMN IF NOT EXISTS match_text TEXT');
     await pool.query('ALTER TABLE site_url_rules ADD COLUMN IF NOT EXISTS parameters JSONB DEFAULT \'{}\'::jsonb');
+  });
 
-    // Cache columns for recommendation_reports
-    await pool.query('ALTER TABLE recommendation_reports ADD COLUMN IF NOT EXISTS campaign_id VARCHAR(50)');
-    await pool.query('ALTER TABLE recommendation_reports ADD COLUMN IF NOT EXISTS date_preset VARCHAR(50)');
-    await pool.query('ALTER TABLE recommendation_reports ADD COLUMN IF NOT EXISTS _ck_campaign VARCHAR(50) NOT NULL DEFAULT \'\'');
-    await pool.query('ALTER TABLE recommendation_reports ADD COLUMN IF NOT EXISTS _ck_preset VARCHAR(50) NOT NULL DEFAULT \'\'');
-
-    // recommendation_reports: one row per (site_key, campaign_id, date_preset) — backfill and dedupe before adding unique
-    try {
-      await pool.query(`
-        UPDATE recommendation_reports
-        SET _ck_campaign = COALESCE(campaign_id, ''), _ck_preset = COALESCE(date_preset, '')
-        WHERE _ck_campaign IS DISTINCT FROM COALESCE(campaign_id, '') OR _ck_preset IS DISTINCT FROM COALESCE(date_preset, '')
-      `);
-      await pool.query(`
-        DELETE FROM recommendation_reports a
-        USING recommendation_reports b
-        WHERE a.site_key = b.site_key AND a._ck_campaign = b._ck_campaign AND a._ck_preset = b._ck_preset AND a.id < b.id
-      `);
-      await pool.query(`
-        ALTER TABLE recommendation_reports DROP CONSTRAINT IF EXISTS recommendation_reports_site_key_ck_campaign_ck_preset_key;
-      `);
-      await pool.query(`
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_recommendation_reports_unique_context
-        ON recommendation_reports (site_key, _ck_campaign, _ck_preset);
-      `);
-    } catch (recErr) {
-      console.warn('recommendation_reports UPSERT migration skipped:', recErr);
-    }
-
-    // Drop raw_payload from web_events — data is already in user_data/custom_data/telemetry columns
-    try {
-      await pool.query('ALTER TABLE web_events DROP COLUMN IF EXISTS raw_payload');
-    } catch (rawErr) {
-      console.warn('web_events raw_payload drop skipped:', rawErr);
-    }
-
-    // Widen purchases fbp/fbc from VARCHAR(100) to VARCHAR(255) to match site_visitors
-    try {
-      await pool.query('ALTER TABLE purchases ALTER COLUMN fbp TYPE VARCHAR(255)');
-      await pool.query('ALTER TABLE purchases ALTER COLUMN fbc TYPE VARCHAR(255)');
-    } catch { /* already correct size or column doesn't exist */ }
-
-    // fbc pode exceder 255 chars (fbclid longo); truncar quebra o diagnóstico da Meta CAPI.
-    try {
-      await pool.query('ALTER TABLE site_visitors ALTER COLUMN fbp TYPE TEXT');
-      await pool.query('ALTER TABLE site_visitors ALTER COLUMN fbc TYPE TEXT');
-      await pool.query('ALTER TABLE purchases ALTER COLUMN fbp TYPE TEXT');
-      await pool.query('ALTER TABLE purchases ALTER COLUMN fbc TYPE TEXT');
-    } catch (fbcTextErr) {
-      console.warn('fbp/fbc TEXT migration skipped:', fbcTextErr);
-    }
-
+  await migrate('meta_insights_extra_cols', async () => {
+    await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS objective VARCHAR(100)');
+    await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS results INTEGER');
+    await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS result_rate NUMERIC');
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS unique_clicks INTEGER');
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS link_clicks INTEGER');
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS unique_link_clicks INTEGER');
@@ -525,28 +518,56 @@ export const ensureSchema = async (pool: Pool) => {
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS custom_event_count INTEGER');
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS optimization_goal VARCHAR(120)');
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS optimized_event_name VARCHAR(120)');
+  });
 
-    // Add missing FK constraints for orphaned data prevention
-    try {
-      await pool.query(`
-        DO $$
-        BEGIN
-          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_web_events_site_key') THEN
-            ALTER TABLE web_events ADD CONSTRAINT fk_web_events_site_key FOREIGN KEY (site_key) REFERENCES sites(site_key) ON DELETE CASCADE;
-          END IF;
-          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_purchases_site_key') THEN
-            ALTER TABLE purchases ADD CONSTRAINT fk_purchases_site_key FOREIGN KEY (site_key) REFERENCES sites(site_key) ON DELETE CASCADE;
-          END IF;
-          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_capi_outbox_site_key') THEN
-            ALTER TABLE capi_outbox ADD CONSTRAINT fk_capi_outbox_site_key FOREIGN KEY (site_key) REFERENCES sites(site_key) ON DELETE CASCADE;
-          END IF;
-        END $$;
-      `);
-    } catch (fkErr) {
-      console.warn('Foreign key constraints update skipped:', fkErr);
-    }
+  await migrate('recommendation_reports_upsert', async () => {
+    await pool.query('ALTER TABLE recommendation_reports ADD COLUMN IF NOT EXISTS campaign_id VARCHAR(50)');
+    await pool.query('ALTER TABLE recommendation_reports ADD COLUMN IF NOT EXISTS date_preset VARCHAR(50)');
+    await pool.query('ALTER TABLE recommendation_reports ADD COLUMN IF NOT EXISTS _ck_campaign VARCHAR(50) NOT NULL DEFAULT \'\'');
+    await pool.query('ALTER TABLE recommendation_reports ADD COLUMN IF NOT EXISTS _ck_preset VARCHAR(50) NOT NULL DEFAULT \'\'');
+    await pool.query(`
+      UPDATE recommendation_reports
+      SET _ck_campaign = COALESCE(campaign_id, ''), _ck_preset = COALESCE(date_preset, '')
+      WHERE _ck_campaign IS DISTINCT FROM COALESCE(campaign_id, '') OR _ck_preset IS DISTINCT FROM COALESCE(date_preset, '')
+    `);
+    await pool.query(`
+      DELETE FROM recommendation_reports a
+      USING recommendation_reports b
+      WHERE a.site_key = b.site_key AND a._ck_campaign = b._ck_campaign AND a._ck_preset = b._ck_preset AND a.id < b.id
+    `);
+    await pool.query('ALTER TABLE recommendation_reports DROP CONSTRAINT IF EXISTS recommendation_reports_site_key_ck_campaign_ck_preset_key');
+    await pool.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_recommendation_reports_unique_context ON recommendation_reports (site_key, _ck_campaign, _ck_preset)');
+  });
 
-    // Create custom webhooks table dynamically if it doesn't exist (for existing users)
+  await migrate('web_events_drop_raw_payload', async () => {
+    await pool.query('ALTER TABLE web_events DROP COLUMN IF EXISTS raw_payload');
+  });
+
+  await migrate('fbp_fbc_text_type', async () => {
+    await pool.query('ALTER TABLE site_visitors ALTER COLUMN fbp TYPE TEXT');
+    await pool.query('ALTER TABLE site_visitors ALTER COLUMN fbc TYPE TEXT');
+    await pool.query('ALTER TABLE purchases ALTER COLUMN fbp TYPE TEXT');
+    await pool.query('ALTER TABLE purchases ALTER COLUMN fbc TYPE TEXT');
+  });
+
+  await migrate('fk_cascade_events', async () => {
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_web_events_site_key') THEN
+          ALTER TABLE web_events ADD CONSTRAINT fk_web_events_site_key FOREIGN KEY (site_key) REFERENCES sites(site_key) ON DELETE CASCADE;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_purchases_site_key') THEN
+          ALTER TABLE purchases ADD CONSTRAINT fk_purchases_site_key FOREIGN KEY (site_key) REFERENCES sites(site_key) ON DELETE CASCADE;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_capi_outbox_site_key') THEN
+          ALTER TABLE capi_outbox ADD CONSTRAINT fk_capi_outbox_site_key FOREIGN KEY (site_key) REFERENCES sites(site_key) ON DELETE CASCADE;
+        END IF;
+      END $$;
+    `);
+  });
+
+  await migrate('custom_webhooks_table_v2', async () => {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS custom_webhooks (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -560,108 +581,66 @@ export const ensureSchema = async (pool: Pool) => {
         updated_at TIMESTAMP DEFAULT NOW()
       );
     `);
+  });
 
-    // Migração para flexibilizar a constraint UNIQUE de meta_insights_daily
-    try {
-      // 1. Remover NOT NULL da coluna ad_id
-      await pool.query('ALTER TABLE meta_insights_daily ALTER COLUMN ad_id DROP NOT NULL');
+  await migrate('meta_insights_flexible_unique', async () => {
+    await pool.query('ALTER TABLE meta_insights_daily ALTER COLUMN ad_id DROP NOT NULL');
+    await pool.query('ALTER TABLE meta_insights_daily DROP CONSTRAINT IF EXISTS unique_meta_insights_daily');
+    await pool.query('ALTER TABLE meta_insights_daily DROP CONSTRAINT IF EXISTS meta_insights_daily_site_id_ad_id_date_start_key');
+    await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_meta_insights_daily_ad ON meta_insights_daily (site_id, ad_id, date_start) WHERE ad_id IS NOT NULL`);
+    await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_meta_insights_daily_adset ON meta_insights_daily (site_id, adset_id, date_start) WHERE adset_id IS NOT NULL AND ad_id IS NULL`);
+    await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_meta_insights_daily_campaign ON meta_insights_daily (site_id, campaign_id, date_start) WHERE campaign_id IS NOT NULL AND adset_id IS NULL`);
+  });
 
-      // 2. Remover constraints antigas se existirem
-      await pool.query('ALTER TABLE meta_insights_daily DROP CONSTRAINT IF EXISTS unique_meta_insights_daily');
-      await pool.query('ALTER TABLE meta_insights_daily DROP CONSTRAINT IF EXISTS meta_insights_daily_site_id_ad_id_date_start_key');
+  await migrate('v2_features', async () => {
+    await pool.query('ALTER TABLE plans ADD COLUMN IF NOT EXISTS offer_codes TEXT');
+    await pool.query('ALTER TABLE accounts ADD COLUMN IF NOT EXISTS active_plan_id INTEGER REFERENCES plans(id)');
+    await pool.query('ALTER TABLE accounts ADD COLUMN IF NOT EXISTS bonus_site_limit INTEGER DEFAULT 0');
+    await pool.query('ALTER TABLE global_notifications ADD COLUMN IF NOT EXISTS image_url TEXT');
+    await pool.query('ALTER TABLE global_notifications ADD COLUMN IF NOT EXISTS image_link TEXT');
+    await pool.query('ALTER TABLE global_notifications ADD COLUMN IF NOT EXISTS action_text VARCHAR(100)');
+    await pool.query('ALTER TABLE global_notifications ADD COLUMN IF NOT EXISTS action_url TEXT');
+  });
 
-      // 3. Criar índices parciais únicos para cada nível (Ad, AdSet, Campaign)
-      // Nível Anúncio
-      await pool.query(`
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_meta_insights_daily_ad 
-        ON meta_insights_daily (site_id, ad_id, date_start) 
-        WHERE ad_id IS NOT NULL
-      `);
+  await migrate('saas_accounts', async () => {
+    await pool.query('ALTER TABLE site_visitors ADD COLUMN IF NOT EXISTS last_ip VARCHAR(45)');
+    await pool.query('ALTER TABLE site_visitors ADD COLUMN IF NOT EXISTS last_user_agent TEXT');
+    await pool.query('ALTER TABLE accounts ADD COLUMN IF NOT EXISTS active_plan_id INTEGER REFERENCES plans(id)');
+    await pool.query('ALTER TABLE accounts ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true');
+    await pool.query('ALTER TABLE accounts ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP');
+    await pool.query('ALTER TABLE accounts ADD COLUMN IF NOT EXISTS bonus_site_limit INTEGER DEFAULT 0');
+    await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS is_super_admin BOOLEAN DEFAULT false');
+  });
 
-      // Nível Conjunto de Anúncios (ad_id NULL, adset_id NOT NULL)
-      await pool.query(`
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_meta_insights_daily_adset 
-        ON meta_insights_daily (site_id, adset_id, date_start) 
-        WHERE adset_id IS NOT NULL AND ad_id IS NULL
-      `);
+  await migrate('performance_indexes', async () => {
+    await pool.query('CREATE INDEX IF NOT EXISTS idx_web_events_site_key_time ON web_events(site_key, event_time)');
+    await pool.query('CREATE INDEX IF NOT EXISTS idx_web_events_site_key_name_time ON web_events(site_key, event_name, event_time)');
+    await pool.query('CREATE INDEX IF NOT EXISTS idx_purchases_site_status_time ON purchases(site_key, status, created_at)');
+    await pool.query('CREATE INDEX IF NOT EXISTS idx_site_visitors_email ON site_visitors(site_key, email_hash) WHERE email_hash IS NOT NULL');
+    await pool.query('CREATE INDEX IF NOT EXISTS idx_site_visitors_fbp ON site_visitors(site_key, fbp) WHERE fbp IS NOT NULL');
+    await pool.query('CREATE INDEX IF NOT EXISTS idx_site_visitors_fbc ON site_visitors(site_key, fbc) WHERE fbc IS NOT NULL');
+    await pool.query('CREATE INDEX IF NOT EXISTS idx_recommendation_reports_site_time ON recommendation_reports(site_key, created_at)');
+  });
 
-      // Nível Campanha (adset_id NULL, campaign_id NOT NULL)
-      await pool.query(`
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_meta_insights_daily_campaign 
-        ON meta_insights_daily (site_id, campaign_id, date_start) 
-        WHERE campaign_id IS NOT NULL AND adset_id IS NULL
-      `);
-    } catch (migErr) {
-      console.warn('Migration for flexible meta insights skipped/failed:', migErr);
-    }
+  await migrate('web_push_subscriptions_table', async () => {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS web_push_subscriptions (
+        id SERIAL PRIMARY KEY,
+        account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        endpoint TEXT NOT NULL,
+        p256dh TEXT NOT NULL,
+        auth_key TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW(),
+        UNIQUE(account_id, endpoint)
+      )
+    `);
+    await pool.query('CREATE INDEX IF NOT EXISTS idx_web_push_account ON web_push_subscriptions(account_id)');
+  });
 
-    // --- Dynamic Schema Migrations for V2 Features ---
-    try {
-      await pool.query(`ALTER TABLE plans ADD COLUMN IF NOT EXISTS offer_codes TEXT`);
-      await pool.query(`ALTER TABLE accounts ADD COLUMN IF NOT EXISTS active_plan_id INTEGER REFERENCES plans(id)`);
-      await pool.query(`ALTER TABLE accounts ADD COLUMN IF NOT EXISTS bonus_site_limit INTEGER DEFAULT 0`);
-
-      // Global Notifications Image/Button additions
-      await pool.query(`ALTER TABLE global_notifications ADD COLUMN IF NOT EXISTS image_url TEXT`);
-      await pool.query(`ALTER TABLE global_notifications ADD COLUMN IF NOT EXISTS image_link TEXT`);
-      await pool.query(`ALTER TABLE global_notifications ADD COLUMN IF NOT EXISTS action_text VARCHAR(100)`);
-      await pool.query(`ALTER TABLE global_notifications ADD COLUMN IF NOT EXISTS action_url TEXT`);
-    } catch (migErr) {
-      console.warn('V2 Features migration skipped/failed:', migErr);
-    }
-
-    // Migracao SaaS
-    try {
-      await pool.query('ALTER TABLE site_visitors ADD COLUMN IF NOT EXISTS last_ip VARCHAR(45)');
-      await pool.query('ALTER TABLE site_visitors ADD COLUMN IF NOT EXISTS last_user_agent TEXT');
-
-      await pool.query('ALTER TABLE accounts ADD COLUMN IF NOT EXISTS active_plan_id INTEGER REFERENCES plans(id)');
-      await pool.query('ALTER TABLE accounts ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true');
-      await pool.query('ALTER TABLE accounts ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP');
-      await pool.query('ALTER TABLE accounts ADD COLUMN IF NOT EXISTS bonus_site_limit INTEGER DEFAULT 0');
-
-      await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS is_super_admin BOOLEAN DEFAULT false');
-    } catch (saasErr) {
-      console.warn('SaaS migration for accounts/users skipped/failed:', saasErr);
-    }
-
-    // Performance indexes — composite and partial indexes for dashboard/stats/attribution queries
-    try {
-      await pool.query(`CREATE INDEX IF NOT EXISTS idx_web_events_site_key_time ON web_events(site_key, event_time)`);
-      await pool.query(`CREATE INDEX IF NOT EXISTS idx_web_events_site_key_name_time ON web_events(site_key, event_name, event_time)`);
-      await pool.query(`CREATE INDEX IF NOT EXISTS idx_purchases_site_status_time ON purchases(site_key, status, created_at)`);
-      await pool.query(`CREATE INDEX IF NOT EXISTS idx_site_visitors_email ON site_visitors(site_key, email_hash) WHERE email_hash IS NOT NULL`);
-      await pool.query(`CREATE INDEX IF NOT EXISTS idx_site_visitors_fbp ON site_visitors(site_key, fbp) WHERE fbp IS NOT NULL`);
-      await pool.query(`CREATE INDEX IF NOT EXISTS idx_site_visitors_fbc ON site_visitors(site_key, fbc) WHERE fbc IS NOT NULL`);
-      await pool.query(`CREATE INDEX IF NOT EXISTS idx_recommendation_reports_site_time ON recommendation_reports(site_key, created_at)`);
-    } catch (idxErr) {
-      console.warn('Performance index migration skipped:', idxErr);
-    }
-
-    try {
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS web_push_subscriptions (
-          id SERIAL PRIMARY KEY,
-          account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
-          endpoint TEXT NOT NULL,
-          p256dh TEXT NOT NULL,
-          auth_key TEXT NOT NULL,
-          created_at TIMESTAMP DEFAULT NOW(),
-          UNIQUE(account_id, endpoint)
-        )
-      `);
-      await pool.query(
-        `CREATE INDEX IF NOT EXISTS idx_web_push_account ON web_push_subscriptions(account_id)`
-      );
-    } catch (wpErr) {
-      console.warn('web_push_subscriptions migration skipped/failed:', wpErr);
-    }
-    // Fix site_key lengths and add platform_at
-    try {
-      await pool.query('ALTER TABLE web_events ALTER COLUMN site_key TYPE VARCHAR(100)');
+  await migrate('site_key_lengths_and_purchase_cols', async () => {
+    await pool.query('ALTER TABLE web_events ALTER COLUMN site_key TYPE VARCHAR(100)');
     await pool.query('ALTER TABLE purchases ALTER COLUMN site_key TYPE VARCHAR(100)');
     await pool.query('ALTER TABLE purchases ADD COLUMN IF NOT EXISTS platform_date TIMESTAMP');
-    // Webhooks / processPurchaseWebhook — alinhar com routes/webhooks.ts
     await pool.query('ALTER TABLE site_visitors ADD COLUMN IF NOT EXISTS city VARCHAR(255)');
     await pool.query('ALTER TABLE site_visitors ADD COLUMN IF NOT EXISTS state VARCHAR(255)');
     await pool.query('ALTER TABLE site_visitors ADD COLUMN IF NOT EXISTS first_traffic_source TEXT');
@@ -675,57 +654,42 @@ export const ensureSchema = async (pool: Pool) => {
     await pool.query('ALTER TABLE purchases ADD COLUMN IF NOT EXISTS user_data JSONB');
     await pool.query('ALTER TABLE purchases ADD COLUMN IF NOT EXISTS custom_data JSONB');
     await pool.query('ALTER TABLE purchases ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP');
-    await pool.query(
-      "UPDATE purchases SET updated_at = COALESCE(updated_at, created_at) WHERE updated_at IS NULL"
-    );
-    await pool.query(
-      'ALTER TABLE purchases ALTER COLUMN updated_at SET DEFAULT NOW()'
-    ).catch(() => {});
-      await pool.query('ALTER TABLE recommendation_reports ALTER COLUMN site_key TYPE VARCHAR(100)');
-      await pool.query('ALTER TABLE capi_outbox ALTER COLUMN site_key TYPE VARCHAR(100)');
-      await pool.query('ALTER TABLE site_visitors ALTER COLUMN site_key TYPE VARCHAR(100)');
-    } catch (sizeErr) {
-      console.warn('Schema size/column migration skipped:', sizeErr);
-    }
+    await pool.query("UPDATE purchases SET updated_at = COALESCE(updated_at, created_at) WHERE updated_at IS NULL");
+    await pool.query('ALTER TABLE purchases ALTER COLUMN updated_at SET DEFAULT NOW()').catch(() => {});
+    await pool.query('ALTER TABLE recommendation_reports ALTER COLUMN site_key TYPE VARCHAR(100)');
+    await pool.query('ALTER TABLE capi_outbox ALTER COLUMN site_key TYPE VARCHAR(100)');
+    await pool.query('ALTER TABLE site_visitors ALTER COLUMN site_key TYPE VARCHAR(100)');
+  });
 
-    // Dead letter table for failed CAPI events
-    try {
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS capi_outbox_dead_letter (
-          id SERIAL PRIMARY KEY,
-          site_key VARCHAR(100) NOT NULL,
-          payload JSONB NOT NULL,
-          attempts INTEGER DEFAULT 0,
-          last_error TEXT,
-          original_created_at TIMESTAMP,
-          created_at TIMESTAMP DEFAULT NOW()
-        )
-      `);
-      await pool.query(`CREATE INDEX IF NOT EXISTS idx_capi_dead_letter_site ON capi_outbox_dead_letter(site_key)`);
-      await pool.query(`CREATE INDEX IF NOT EXISTS idx_capi_dead_letter_created ON capi_outbox_dead_letter(created_at)`);
-    } catch (dlErr) {
-      console.warn('Dead letter table migration skipped:', dlErr);
-    }
+  await migrate('dead_letter_table', async () => {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS capi_outbox_dead_letter (
+        id SERIAL PRIMARY KEY,
+        site_key VARCHAR(100) NOT NULL,
+        payload JSONB NOT NULL,
+        attempts INTEGER DEFAULT 0,
+        last_error TEXT,
+        original_created_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    await pool.query('CREATE INDEX IF NOT EXISTS idx_capi_dead_letter_site ON capi_outbox_dead_letter(site_key)');
+    await pool.query('CREATE INDEX IF NOT EXISTS idx_capi_dead_letter_created ON capi_outbox_dead_letter(created_at)');
+  });
 
-    // Mentor chat history for conversation memory
-    try {
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS mentor_chat_history (
-          id SERIAL PRIMARY KEY,
-          account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
-          site_key VARCHAR(100) NOT NULL,
-          role VARCHAR(20) NOT NULL,
-          content TEXT NOT NULL,
-          created_at TIMESTAMP DEFAULT NOW()
-        )
-      `);
-      await pool.query(`CREATE INDEX IF NOT EXISTS idx_mentor_chat_account_site ON mentor_chat_history(account_id, site_key, created_at DESC)`);
-    } catch (mcErr) {
-      console.warn('Mentor chat history migration skipped:', mcErr);
-    }
-  } catch (err) {
-    console.warn('Schema extension skipped:', err);
-  }
+  await migrate('mentor_chat_table', async () => {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS mentor_chat_history (
+        id SERIAL PRIMARY KEY,
+        account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        site_key VARCHAR(100) NOT NULL,
+        role VARCHAR(20) NOT NULL,
+        content TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    await pool.query('CREATE INDEX IF NOT EXISTS idx_mentor_chat_account_site ON mentor_chat_history(account_id, site_key, created_at DESC)');
+  });
 
   if (!process.env.DATABASE_URL) {
     const existing = await pool.query('SELECT id FROM users LIMIT 1');

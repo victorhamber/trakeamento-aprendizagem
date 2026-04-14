@@ -126,61 +126,89 @@ app.get('/health', async (req, res) => {
 });
 
 // ─── Data Retention Garbage Collector ────────────────────────────────────────
-// Policy (storage optimization, 30-day analytical window, no strict regulatory requirements):
-//   web_events             → 30 days   (high volume)
-//   capi_outbox            → 7 days    + remove permanently failed (attempts >= 5)
-//   recommendation_reports → no age delete; one row per (site_key, campaign_id, date_preset) via UPSERT
-//   purchases              → 12 months (commercial/financial history)
+// Retention policy (SaaS-optimized — keeps DB lean for multi-tenant scale):
+//   web_events              → 30 days   (high volume, event_time based)
+//   capi_outbox             → 7 days    + remove permanently failed (attempts >= 5)
+//   capi_outbox_dead_letter → 30 days   (audit trail, then discard)
+//   purchases               → 12 months (commercial/financial history)
+//   purchases.raw_payload   → NULL after 7 days (data already in typed columns)
 //   meta_insights_daily     → 90 days   (aggregated metrics)
-//   site_visitors          → 90 days   (last_seen_at; limits growth)
-//   password_resets        → delete expired tokens
-//   notifications          → delete read notifications older than 90 days
-//   global_notifications   → delete expired (expires_at < NOW())
+//   meta_insights.raw_payload → NULL after 30 days (metrics already in typed columns)
+//   site_visitors           → 90 days   (last_seen_at)
+//   mentor_chat_history     → 60 days   (AI conversation memory)
+//   custom_webhooks.last_payload → NULL after 30 days (debug only)
+//   notifications           → read + older than 90 days
+//   password_resets         → delete expired tokens
+//   global_notifications    → delete expired (expires_at < NOW())
+//   recommendation_reports  → no age delete; one row per context via UPSERT
 async function runDataRetentionCleanup() {
   try {
     console.log('[GarbageCollector] Started retention cleanup routine...');
+    const stats: Record<string, number> = {};
 
-    const resultEvents = await pool.query(
-      `DELETE FROM web_events WHERE event_time < NOW() - INTERVAL '30 days'`
-    );
+    // ── DELETE operations (remove entire rows) ──────────────────────────
+    const deleteTasks: { label: string; sql: string }[] = [
+      { label: 'web_events', sql: `DELETE FROM web_events WHERE event_time < NOW() - INTERVAL '30 days'` },
+      { label: 'capi_outbox', sql: `DELETE FROM capi_outbox WHERE attempts >= 5 OR created_at < NOW() - INTERVAL '7 days'` },
+      { label: 'capi_dead_letter', sql: `DELETE FROM capi_outbox_dead_letter WHERE created_at < NOW() - INTERVAL '30 days'` },
+      { label: 'purchases', sql: `DELETE FROM purchases WHERE created_at < NOW() - INTERVAL '12 months'` },
+      { label: 'meta_insights_daily', sql: `DELETE FROM meta_insights_daily WHERE date_start < CURRENT_DATE - INTERVAL '90 days'` },
+      { label: 'site_visitors', sql: `DELETE FROM site_visitors WHERE last_seen_at < NOW() - INTERVAL '90 days'` },
+      { label: 'mentor_chat', sql: `DELETE FROM mentor_chat_history WHERE created_at < NOW() - INTERVAL '60 days'` },
+      { label: 'password_resets', sql: `DELETE FROM password_resets WHERE expires_at < NOW()` },
+      { label: 'notifications', sql: `DELETE FROM notifications WHERE is_read = true AND created_at < NOW() - INTERVAL '90 days'` },
+      { label: 'global_notifications', sql: `DELETE FROM global_notifications WHERE expires_at IS NOT NULL AND expires_at < NOW()` },
+    ];
 
-    const resultOutbox = await pool.query(
-      `DELETE FROM capi_outbox WHERE attempts >= 5 OR created_at < NOW() - INTERVAL '7 days'`
-    );
+    for (const task of deleteTasks) {
+      try {
+        const r = await pool.query(task.sql);
+        stats[task.label] = r.rowCount ?? 0;
+      } catch (err) {
+        console.error(`[GarbageCollector] Failed ${task.label}:`, err);
+        stats[task.label] = -1;
+      }
+    }
 
-    const resultPurchases = await pool.query(
-      `DELETE FROM purchases WHERE created_at < NOW() - INTERVAL '12 months'`
-    );
+    // ── STRIP operations (NULL out heavy JSONB columns, keep the row) ──
+    const stripTasks: { label: string; sql: string }[] = [
+      {
+        label: 'purchases_raw_payload',
+        sql: `UPDATE purchases SET raw_payload = NULL WHERE raw_payload IS NOT NULL AND created_at < NOW() - INTERVAL '7 days'`,
+      },
+      {
+        label: 'insights_raw_payload',
+        sql: `UPDATE meta_insights_daily SET raw_payload = NULL WHERE raw_payload IS NOT NULL AND date_start < CURRENT_DATE - INTERVAL '30 days'`,
+      },
+      {
+        label: 'webhooks_last_payload',
+        sql: `UPDATE custom_webhooks SET last_payload = NULL WHERE last_payload IS NOT NULL AND updated_at < NOW() - INTERVAL '30 days'`,
+      },
+    ];
 
-    const resultInsights = await pool.query(
-      `DELETE FROM meta_insights_daily WHERE date_start < CURRENT_DATE - INTERVAL '90 days'`
-    );
+    for (const task of stripTasks) {
+      try {
+        const r = await pool.query(task.sql);
+        if ((r.rowCount ?? 0) > 0) stats[task.label] = r.rowCount ?? 0;
+      } catch (err) {
+        console.error(`[GarbageCollector] Failed ${task.label}:`, err);
+      }
+    }
 
-    const resultVisitors = await pool.query(
-      `DELETE FROM site_visitors WHERE last_seen_at < NOW() - INTERVAL '90 days'`
-    );
+    // ── VACUUM ANALYZE on high-churn tables (reclaims disk space) ────────
+    const vacuumTables = ['web_events', 'capi_outbox', 'site_visitors', 'purchases', 'meta_insights_daily'];
+    for (const table of vacuumTables) {
+      try {
+        await pool.query(`VACUUM ANALYZE ${table}`);
+      } catch {
+        // VACUUM can fail inside transactions or on managed DBs — non-fatal
+      }
+    }
 
-    const resultPasswordResets = await pool.query(
-      `DELETE FROM password_resets WHERE expires_at < NOW()`
-    );
-
-    const resultNotifications = await pool.query(
-      `DELETE FROM notifications WHERE is_read = true AND created_at < NOW() - INTERVAL '90 days'`
-    );
-
-    const resultGlobalNotif = await pool.query(
-      `DELETE FROM global_notifications WHERE expires_at IS NOT NULL AND expires_at < NOW()`
-    );
-
-    console.log(
-      `[GarbageCollector] Cleanup finished. ` +
-      `web_events=${resultEvents.rowCount} capi_outbox=${resultOutbox.rowCount} ` +
-      `purchases=${resultPurchases.rowCount} meta_insights_daily=${resultInsights.rowCount} ` +
-      `site_visitors=${resultVisitors.rowCount} password_resets=${resultPasswordResets.rowCount} ` +
-      `notifications=${resultNotifications.rowCount} global_notifications=${resultGlobalNotif.rowCount}`
-    );
+    const summary = Object.entries(stats).map(([k, v]) => `${k}=${v}`).join(' ');
+    console.log(`[GarbageCollector] Cleanup finished. ${summary}`);
   } catch (e) {
-    console.error('[GarbageCollector] Failed to execute cleanup query:', e);
+    console.error('[GarbageCollector] Failed to execute cleanup:', e);
   }
 }
 

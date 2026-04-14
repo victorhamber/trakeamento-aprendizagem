@@ -39,13 +39,17 @@ if (databaseUrl) {
 }
 console.log('---------------------------');
 
+const poolMax = parseInt(process.env.DB_POOL_MAX || '20', 10);
+
 export const pool: Pool = databaseUrl
   ? new Pool({
     connectionString: databaseUrl,
-    max: 20,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 5000,
-    statement_timeout: 30000,
+    max: poolMax,
+    min: Math.max(2, Math.floor(poolMax / 4)),
+    idleTimeoutMillis: 30_000,
+    connectionTimeoutMillis: 5_000,
+    statement_timeout: 30_000,
+    allowExitOnIdle: true,
   })
   : (() => {
     const db = newDb();
