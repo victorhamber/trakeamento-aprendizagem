@@ -1601,8 +1601,14 @@ router.get('/tracker.js', async (req, res) => {
         if (rule.rule_type !== 'button_click') continue;
 
         var ruleUrl = (rule.match_value || '').toLowerCase().trim();
-        if (!(ruleUrl === '/' || ruleUrl === '' || currentPath.indexOf(ruleUrl) >= 0 || fullUrl.indexOf(ruleUrl) >= 0)) {
-          continue;
+        // Regra especial: "/" significa "só Home" (pathname raiz).
+        // Antes, "/" casava com todas as rotas (porque toda URL tem "/").
+        if (ruleUrl === '/') {
+          var pnRoot = (location.pathname || '/').toLowerCase();
+          if (pnRoot !== '/' && pnRoot !== '') continue;
+        } else {
+          if (!ruleUrl) continue;
+          if (!(currentPath.indexOf(ruleUrl) >= 0 || fullUrl.indexOf(ruleUrl) >= 0)) continue;
         }
 
         var params = (rule.parameters && typeof rule.parameters === 'object') ? rule.parameters : {};

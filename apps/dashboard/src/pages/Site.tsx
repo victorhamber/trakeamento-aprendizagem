@@ -869,14 +869,35 @@ export const SitePage = () => {
     }
   }, [id]);
 
+  const normalizeRuleMatchValue = useCallback((raw: string, opts?: { defaultValue?: string }) => {
+    const fallback = opts?.defaultValue ?? '';
+    const trimmed = (raw ?? '').toString().trim();
+    const v = trimmed || fallback;
+    if (!v) return '';
+    if (v.startsWith('http://') || v.startsWith('https://')) {
+      try {
+        const u = new URL(v);
+        return `${u.pathname || '/'}${u.search || ''}`;
+      } catch {
+        return v;
+      }
+    }
+    return v;
+  }, []);
+
   const handleAddUrlRule = async () => {
-    if (urlRuleUrlMatchKind !== 'home' && !urlRuleValue.trim()) {
+    const urlMatch = urlRuleUrlMatchKind === 'home' ? '/' : normalizeRuleMatchValue(urlRuleValue);
+    if (urlRuleUrlMatchKind !== 'home' && !urlMatch.trim()) {
       showFlash('Preencha o trecho da URL', 'error');
       return;
     }
     const evtName = urlRuleEventType === 'Custom' ? urlRuleCustomName : urlRuleEventType;
     if (!evtName) {
       showFlash('Defina o nome do evento', 'error');
+      return;
+    }
+    if (urlRuleUrlMatchKind !== 'home' && urlMatch.length > 512) {
+      showFlash('URL/trecho muito grande. Cole só o caminho (ex.: /obrigado) — limite: 512 caracteres.', 'error');
       return;
     }
 
@@ -904,7 +925,7 @@ export const SitePage = () => {
     try {
       const payload: any = {
         rule_type: urlRuleUrlMatchKind === 'home' ? 'path_is_root' : 'url_contains',
-        match_value: urlRuleUrlMatchKind === 'home' ? '/' : urlRuleValue.trim(),
+        match_value: urlMatch,
         event_name: evtName,
         event_type: urlRuleEventType === 'Custom' ? 'custom' : 'standard',
         parameters: {}
@@ -945,9 +966,10 @@ export const SitePage = () => {
     const hasHref = !!buttonRuleHrefContains.trim();
     const hasClass = !!buttonRuleClassContains.trim();
     const hasCss = !!buttonRuleCss.trim();
-    if (!buttonRuleUrl || (!hasText && !hasHref && !hasClass && !hasCss)) {
+    const buttonMatch = normalizeRuleMatchValue(buttonRuleUrl, { defaultValue: '/' });
+    if (!buttonMatch || (!hasText && !hasHref && !hasClass && !hasCss)) {
       showFlash(
-        'Preencha a URL da página e pelo menos um critério: texto do botão, destino (href), classe ou seletor CSS.',
+        'Preencha a URL (ou deixe vazio para Home "/") e pelo menos um critério: texto do botão, destino (href), classe ou seletor CSS.',
         'error'
       );
       return;
@@ -955,6 +977,10 @@ export const SitePage = () => {
     const evtName = buttonRuleEventType === 'Custom' ? buttonRuleCustomName : buttonRuleEventType;
     if (!evtName) {
       showFlash('Defina o nome do evento', 'error');
+      return;
+    }
+    if (buttonMatch.length > 512) {
+      showFlash('URL/trecho muito grande. Cole só o caminho (ex.: /checkout) — limite: 512 caracteres.', 'error');
       return;
     }
 
@@ -982,7 +1008,7 @@ export const SitePage = () => {
     try {
       const payload: any = {
         rule_type: 'button_click',
-        match_value: buttonRuleUrl,
+        match_value: buttonMatch,
         match_text: hasText ? buttonRuleText.trim() : '',
         event_name: evtName,
         event_type: buttonRuleEventType === 'Custom' ? 'custom' : 'standard',
@@ -3366,13 +3392,13 @@ ${scriptContent}
 
                   {eventRules.length > 0 && (
                     <div className="border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
-                      <table className="w-full text-left text-sm text-zinc-600 dark:text-zinc-400">
+                      <table className="w-full table-fixed text-left text-sm text-zinc-600 dark:text-zinc-400">
                         <thead className="bg-zinc-50 dark:bg-zinc-900/60 text-xs uppercase font-medium text-zinc-600 dark:text-zinc-500 dark:text-zinc-400">
                           <tr>
-                            <th className="px-4 py-3">Regra</th>
+                            <th className="px-4 py-3 w-[160px]">Regra</th>
                             <th className="px-4 py-3">Valor</th>
                             <th className="px-4 py-3">Evento Disparado</th>
-                            <th className="px-4 py-3 text-right">Ações</th>
+                            <th className="px-4 py-3 text-right w-[140px]">Ações</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-zinc-800/60">
@@ -3394,26 +3420,34 @@ ${scriptContent}
                                     : 'URL contém'}
                               </td>
                               <td className="px-4 py-3 font-mono text-zinc-700 dark:text-zinc-300">
-                                {rule.rule_type === 'path_is_root' ? '—' : rule.match_value}
+                                {rule.rule_type === 'path_is_root' ? (
+                                  '—'
+                                ) : (
+                                  <div className="max-w-[520px] truncate" title={String(rule.match_value || '')}>
+                                    {String(rule.match_value || '')}
+                                  </div>
+                                )}
                               </td>
                               <td className="px-4 py-3">
                                 <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-500/10 text-blue-300 border border-blue-500/20">
                                   {rule.event_name}
                                 </span>
                               </td>
-                              <td className="px-4 py-3 text-right flex justify-end gap-3">
-                                <button
-                                  onClick={() => handleEditRule(rule)}
-                                  className="text-zinc-600 dark:text-zinc-400 hover:text-blue-400 text-xs transition-colors"
-                                >
-                                  Editar
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteRule(rule.id)}
-                                  className="text-red-400 hover:text-red-300 text-xs transition-colors"
-                                >
-                                  Remover
-                                </button>
+                              <td className="px-4 py-3 text-right whitespace-nowrap">
+                                <div className="flex justify-end gap-3">
+                                  <button
+                                    onClick={() => handleEditRule(rule)}
+                                    className="text-zinc-600 dark:text-zinc-400 hover:text-blue-400 text-xs transition-colors"
+                                  >
+                                    Editar
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteRule(rule.id)}
+                                    className="text-red-400 hover:text-red-300 text-xs transition-colors"
+                                  >
+                                    Remover
+                                  </button>
+                                </div>
                               </td>
                             </tr>
                           ))}
@@ -3512,7 +3546,7 @@ ${scriptContent}
                         id="dash-site-btn-rule-url"
                         value={buttonRuleUrl}
                         onChange={(e) => setButtonRuleUrl(e.target.value)}
-                        placeholder="Ex: /higado-vital/ (trecho do caminho, não a URL inteira)"
+                        placeholder='Ex: /higado-vital/ (ou "/" para Home)'
                         className={inputCls}
                       />
                     </div>
@@ -3675,21 +3709,25 @@ ${scriptContent}
 
                   {eventRules.filter(r => r.rule_type === 'button_click').length > 0 && (
                     <div className="border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
-                      <table className="w-full text-left text-sm text-zinc-600 dark:text-zinc-400">
+                      <table className="w-full table-fixed text-left text-sm text-zinc-600 dark:text-zinc-400">
                         <thead className="bg-zinc-50 dark:bg-zinc-900/60 text-xs uppercase font-medium text-zinc-600 dark:text-zinc-500 dark:text-zinc-400">
                           <tr>
-                            <th className="px-4 py-3">Página (URL)</th>
+                            <th className="px-4 py-3 w-[220px]">Página (URL)</th>
                             <th className="px-4 py-3">Critérios</th>
                             <th className="px-4 py-3">Evento Disparado</th>
-                            <th className="px-4 py-3 text-right">Ações</th>
+                            <th className="px-4 py-3 text-right w-[140px]">Ações</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-zinc-800/60">
                           {eventRules.filter(r => r.rule_type === 'button_click').map((rule) => (
                             <tr key={rule.id} className="hover:bg-zinc-50 dark:bg-zinc-900/20">
-                              <td className="px-4 py-3 font-mono text-zinc-700 dark:text-zinc-300">{rule.match_value}</td>
+                              <td className="px-4 py-3 font-mono text-zinc-700 dark:text-zinc-300">
+                                <div className="truncate" title={String(rule.match_value || '')}>
+                                  {String(rule.match_value || '')}
+                                </div>
+                              </td>
                               <td className="px-4 py-3 text-zinc-700 dark:text-zinc-300 text-xs">
-                                {[
+                                <div className="max-w-[680px] truncate" title={[
                                   rule.match_text ? `texto: ${rule.match_text}` : null,
                                   rule.parameters?.match_href_contains
                                     ? `href: ${rule.parameters.match_href_contains}`
@@ -3700,26 +3738,41 @@ ${scriptContent}
                                   rule.parameters?.match_css ? `css: ${rule.parameters.match_css}` : null,
                                 ]
                                   .filter(Boolean)
-                                  .join(' · ') || '—'}
+                                  .join(' · ') || '—'}>
+                                  {[
+                                    rule.match_text ? `texto: ${rule.match_text}` : null,
+                                    rule.parameters?.match_href_contains
+                                      ? `href: ${rule.parameters.match_href_contains}`
+                                      : null,
+                                    rule.parameters?.match_class_contains
+                                      ? `classe: ${rule.parameters.match_class_contains}`
+                                      : null,
+                                    rule.parameters?.match_css ? `css: ${rule.parameters.match_css}` : null,
+                                  ]
+                                    .filter(Boolean)
+                                    .join(' · ') || '—'}
+                                </div>
                               </td>
                               <td className="px-4 py-3">
                                 <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-500/10 text-blue-300 border border-blue-500/20">
                                   {rule.event_name}
                                 </span>
                               </td>
-                              <td className="px-4 py-3 text-right flex justify-end gap-3">
-                                <button
-                                  onClick={() => handleEditRule(rule)}
-                                  className="text-zinc-600 dark:text-zinc-400 hover:text-blue-400 text-xs transition-colors"
-                                >
-                                  Editar
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteRule(rule.id)}
-                                  className="text-red-400 hover:text-red-300 text-xs transition-colors"
-                                >
-                                  Remover
-                                </button>
+                              <td className="px-4 py-3 text-right whitespace-nowrap">
+                                <div className="flex justify-end gap-3">
+                                  <button
+                                    onClick={() => handleEditRule(rule)}
+                                    className="text-zinc-600 dark:text-zinc-400 hover:text-blue-400 text-xs transition-colors"
+                                  >
+                                    Editar
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteRule(rule.id)}
+                                    className="text-red-400 hover:text-red-300 text-xs transition-colors"
+                                  >
+                                    Remover
+                                  </button>
+                                </div>
                               </td>
                             </tr>
                           ))}
