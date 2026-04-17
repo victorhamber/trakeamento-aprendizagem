@@ -45,6 +45,12 @@ router.get('/revenue', async (req, res) => {
 
 const APPROVED_PURCHASE_STATUSES = `('approved', 'paid', 'completed', 'active')`;
 
+type RevenueByCurrencyRow = {
+  currency: string;
+  revenue: number;
+  sales: number;
+};
+
 function parseYmdLocal(s: string): { y: number; m: number; d: number } | null {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s).trim());
   if (!m) return null;
@@ -120,6 +126,12 @@ function siteIdFilterParam(siteIds: number[]): number[] | null {
   return siteIds.length > 0 ? siteIds : null;
 }
 
+function parseCurrencyFilter(raw: unknown): string | null {
+  const value = String(raw || '').trim().toUpperCase();
+  if (!value || value === 'ALL' || value === 'TODAS') return null;
+  return /^[A-Z]{3}$/.test(value) ? value : null;
+}
+
 /** Mobile app: KPI do período, gráfico diário, últimas vendas — filtros ?period=&sites=1,2 */
 router.get('/mobile-summary', async (req, res) => {
   const auth = req.auth!;
@@ -128,6 +140,7 @@ router.get('/mobile-summary', async (req, res) => {
   const until = typeof req.query.until === 'string' ? req.query.until.trim() : undefined;
   const siteIds = parseSiteIds(req.query.sites);
   const siteFilter = siteIdFilterParam(siteIds);
+  const currencyFilter = parseCurrencyFilter(req.query.currency);
   const bounds = resolveMobilePeriod(period, since, until);
   if ('error' in bounds) {
     return res.status(400).json({ error: bounds.error });
@@ -135,7 +148,7 @@ router.get('/mobile-summary', async (req, res) => {
   const { start, end } = bounds;
 
   try {
-    const [aggRes, chartRes, recentRes, sitesRes] = await Promise.all([
+    const [aggRes, chartRes, recentRes, sitesRes, revenueByCurrencyRes] = await Promise.all([
       pool.query(
         `SELECT
           COUNT(*)::int as sales,
@@ -148,8 +161,9 @@ router.get('/mobile-summary', async (req, res) => {
          )
            AND COALESCE(p.platform_date, p.created_at) <= $3::timestamptz
            AND ($2::timestamptz IS NULL OR COALESCE(p.platform_date, p.created_at) >= $2::timestamptz)
+           AND ($5::text IS NULL OR COALESCE(NULLIF(UPPER(TRIM(p.currency)), ''), 'BRL') = $5::text)
            AND p.status IN ${APPROVED_PURCHASE_STATUSES}`,
-        [auth.accountId, start, end, siteFilter]
+        [auth.accountId, start, end, siteFilter, currencyFilter]
       ),
       pool.query(
         `SELECT
@@ -164,10 +178,11 @@ router.get('/mobile-summary', async (req, res) => {
          )
            AND COALESCE(p.platform_date, p.created_at) <= $3::timestamptz
            AND ($2::timestamptz IS NULL OR COALESCE(p.platform_date, p.created_at) >= $2::timestamptz)
+           AND ($5::text IS NULL OR COALESCE(NULLIF(UPPER(TRIM(p.currency)), ''), 'BRL') = $5::text)
            AND p.status IN ${APPROVED_PURCHASE_STATUSES}
          GROUP BY 1
          ORDER BY 1 ASC`,
-        [auth.accountId, start, end, siteFilter]
+        [auth.accountId, start, end, siteFilter, currencyFilter]
       ),
       pool.query(
         `SELECT p.id, p.order_id, p.platform, p.amount, p.currency, COALESCE(p.platform_date, p.created_at) as created_at, s.name as site_name
@@ -177,11 +192,27 @@ router.get('/mobile-summary', async (req, res) => {
            AND COALESCE(p.platform_date, p.created_at) <= $3::timestamptz
            AND ($2::timestamptz IS NULL OR COALESCE(p.platform_date, p.created_at) >= $2::timestamptz)
            AND ($4::int[] IS NULL OR s.id = ANY($4))
+           AND ($5::text IS NULL OR COALESCE(NULLIF(UPPER(TRIM(p.currency)), ''), 'BRL') = $5::text)
          ORDER BY COALESCE(p.platform_date, p.created_at) DESC
          LIMIT 20`,
-        [auth.accountId, start, end, siteFilter]
+        [auth.accountId, start, end, siteFilter, currencyFilter]
       ),
       pool.query(`SELECT COUNT(*)::int as c FROM sites WHERE account_id = $1`, [auth.accountId]),
+      pool.query(
+        `SELECT
+           COALESCE(NULLIF(UPPER(TRIM(p.currency)), ''), 'BRL') AS currency,
+           COALESCE(SUM(p.amount), 0)::float AS revenue,
+           COUNT(*)::int AS sales
+         FROM purchases p
+         JOIN sites s ON s.site_key = p.site_key AND s.account_id = $1
+         WHERE p.status IN ${APPROVED_PURCHASE_STATUSES}
+           AND COALESCE(p.platform_date, p.created_at) <= $3::timestamptz
+           AND ($2::timestamptz IS NULL OR COALESCE(p.platform_date, p.created_at) >= $2::timestamptz)
+           AND ($4::int[] IS NULL OR s.id = ANY($4))
+         GROUP BY 1
+         ORDER BY COUNT(*) DESC, COALESCE(SUM(p.amount), 0) DESC, 1 ASC`,
+        [auth.accountId, start, end, siteFilter]
+      ),
     ]);
 
     const agg = aggRes.rows[0] || { sales: 0, revenue: 0 };
@@ -199,12 +230,19 @@ router.get('/mobile-summary', async (req, res) => {
       createdAt: r.created_at,
       siteName: r.site_name,
     }));
+    const revenueByCurrency: RevenueByCurrencyRow[] = (revenueByCurrencyRes.rows || []).map((r: any) => ({
+      currency: String(r.currency || 'BRL').toUpperCase(),
+      revenue: Number(r.revenue || 0),
+      sales: Number(r.sales || 0),
+    }));
 
     res.json({
       period,
+      currency: currencyFilter,
       periodSales: Number(agg.sales || 0),
       periodRevenue: Number(agg.revenue || 0),
       sitesCount: Number(sitesRes.rows[0]?.c || 0),
+      revenueByCurrency,
       chart,
       recentPurchases: recent,
     });

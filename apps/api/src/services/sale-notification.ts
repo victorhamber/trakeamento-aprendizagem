@@ -19,8 +19,10 @@ export type SaleNotifyOpts = {
 };
 
 export function buildSaleNotification(opts: SaleNotifyOpts) {
-  const { amount, currency, orderId, platform, productName, notifyKind = 'sale', pendingPaymentKind = null } = opts;
+  const { amount, currency, orderId, platform, notifyKind = 'sale', pendingPaymentKind = null } = opts;
   const isPending = notifyKind === 'pending_payment';
+
+  const productName = opts.productName ? opts.productName.replace(/📦\s*/g, '').trim() : undefined;
 
   const valueStr =
     amount != null && currency
@@ -30,23 +32,35 @@ export function buildSaleNotification(opts: SaleNotifyOpts) {
         }).format(Number(amount))
       : 'Nova venda';
 
-  const title = !isPending
-    ? '💰 Venda recebida'
-    : pendingPaymentKind === 'pix'
-      ? '💳 PIX gerado'
-      : pendingPaymentKind === 'boleto'
-        ? '📄 Boleto gerado'
-        : '⏳ Pagamento pendente';
+  const title = 'Trajettu';
 
-  const body =
-    amount != null && currency
-      ? `${valueStr}${productName ? `\n📦 ${productName}` : platform ? ` (${platform})` : ''}`
-      : orderId
-        ? `Pedido ${orderId}${productName ? `\n📦 ${productName}` : platform ? ` · ${platform}` : ''}`
-        : 'Confira no painel.';
+  const primaryLine = !isPending
+    ? amount != null && currency
+      ? `Nova venda aprovada • ${valueStr}`
+      : 'Nova venda aprovada'
+    : pendingPaymentKind === 'pix'
+      ? amount != null && currency
+        ? `PIX gerado • ${valueStr}`
+        : 'PIX gerado'
+      : pendingPaymentKind === 'boleto'
+        ? amount != null && currency
+          ? `Boleto gerado • ${valueStr}`
+          : 'Boleto gerado'
+        : amount != null && currency
+          ? `Pagamento pendente • ${valueStr}`
+          : 'Pagamento pendente';
+
+  const secondaryLine = productName
+    ? productName
+    : orderId
+      ? `Pedido ${orderId}${platform ? ` • ${platform}` : ''}`
+      : platform || 'Abra o app para ver os detalhes';
+
+  const body = [primaryLine, secondaryLine].filter(Boolean).join('\n');
 
   const data: Record<string, unknown> = {
     type: isPending ? 'pending_payment' : 'sale',
+    notificationId: `${isPending ? 'pending' : 'sale'}:${orderId ?? Date.now()}`,
     orderId: orderId ?? null,
     amount: amount ?? null,
     currency: currency ?? null,

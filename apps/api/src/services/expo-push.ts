@@ -18,6 +18,8 @@ export type ExpoMessage = {
   sound?: string | null;
   channelId?: string;
   priority?: 'default' | 'normal' | 'high';
+  collapseId?: string;
+  tag?: string;
 };
 
 type ExpoPushTicket =
@@ -105,6 +107,10 @@ export type ExpoPushTokenRow = { push_token: string; platform?: string | null };
  */
 export async function notifyAccountNewSale(rows: ExpoPushTokenRow[], opts: SaleNotifyOpts): Promise<void> {
   const { title, body, data } = buildSaleNotification(opts);
+  const notificationId =
+    typeof data?.notificationId === 'string' && data.notificationId.trim()
+      ? data.notificationId.trim()
+      : `${data?.type === 'pending_payment' ? 'pending' : 'sale'}:${opts.orderId ?? Date.now()}`;
 
   const messages: ExpoMessage[] = rows.map((row) => {
     const plat = (row.platform || '').toLowerCase();
@@ -114,6 +120,8 @@ export async function notifyAccountNewSale(rows: ExpoPushTokenRow[], opts: SaleN
       body,
       data,
       priority: 'high',
+      collapseId: notificationId,
+      tag: notificationId,
     };
     if (plat === 'android') {
       return { ...base, channelId: 'sales' };

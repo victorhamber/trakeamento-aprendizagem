@@ -199,6 +199,54 @@ function coerceWebhookStr(v: unknown): string {
   return '';
 }
 
+function normalizeCurrencyCode(raw: unknown): string {
+  const code = coerceWebhookStr(raw).toUpperCase();
+  return /^[A-Z]{3}$/.test(code) ? code : '';
+}
+
+function extractCurrencyFromPayload(payload: Record<string, unknown> | null | undefined): string {
+  if (!payload || typeof payload !== 'object') return '';
+  const p = payload;
+  const d = recordOf(p.data);
+  const purchase = recordOf(d.purchase ?? p.purchase);
+  const order = recordOf(p.order);
+  const payment = recordOf(order.payment ?? purchase.payment ?? d.payment);
+  const price = recordOf(purchase.price);
+  const fullPrice = recordOf(purchase.full_price);
+  const offer = recordOf(purchase.offer ?? d.offer);
+  const customData = recordOf(p.custom_data ?? p.custom_args);
+  const tracking = recordOf(d.tracking ?? p.tracking);
+
+  const candidates: unknown[] = [
+    p.currency,
+    (p as { currency_code?: unknown }).currency_code,
+    (p as { currencyCode?: unknown }).currencyCode,
+    d.currency,
+    (d as { currency_code?: unknown }).currency_code,
+    purchase.currency,
+    (purchase as { currency_code?: unknown }).currency_code,
+    payment.currency,
+    (payment as { currency_code?: unknown }).currency_code,
+    order.currency,
+    (order as { currency_code?: unknown }).currency_code,
+    price.currency,
+    (price as { currency_value?: unknown }).currency_value,
+    fullPrice.currency,
+    (fullPrice as { currency_value?: unknown }).currency_value,
+    offer.currency,
+    (offer as { currency_code?: unknown }).currency_code,
+    customData.currency,
+    tracking.currency,
+  ];
+
+  for (const candidate of candidates) {
+    const normalized = normalizeCurrencyCode(candidate);
+    if (normalized) return normalized;
+  }
+
+  return '';
+}
+
 /** Lê método de pagamento em payloads Hotmart, Kiwify e formatos genéricos. */
 function extractPaymentMethodRaw(payload: Record<string, unknown> | null | undefined): string {
   if (!payload || typeof payload !== 'object') return '';
@@ -741,6 +789,7 @@ async function processPurchaseWebhook({
   contentId,
 }: any) {
   const { finalStatus, sendToCapi } = normalizeStatus(status);
+  const resolvedCurrency = normalizeCurrencyCode(currency) || extractCurrencyFromPayload(payload as Record<string, unknown>) || 'BRL';
   
   let platformDate = purchaseTimestamp ? new Date(purchaseTimestamp) : null;
   const nowMs = Date.now();
@@ -753,7 +802,7 @@ async function processPurchaseWebhook({
     platformDate = new Date(nowMs);
   }
 
-  console.log(`[Webhook] processPurchaseWebhook called: value=${value} currency=${currency} status=${finalStatus} orderId=${orderId} platform=${platform} siteKey=${siteKey}`);
+  console.log(`[Webhook] processPurchaseWebhook called: value=${value} currency=${resolvedCurrency} status=${finalStatus} orderId=${orderId} platform=${platform} siteKey=${siteKey}`);
 
   const displayContentName =
     saleLineLabel && contentName
@@ -892,7 +941,7 @@ async function processPurchaseWebhook({
       const ex = prevRow.rows[0];
       const sameMoney =
         Math.abs(Number(ex.amount) - Number(value)) < 0.0001 &&
-        String(ex.currency || '').toUpperCase() === String(currency || '').toUpperCase();
+        String(ex.currency || '').toUpperCase() === resolvedCurrency;
       const sameStatus =
         String(ex.status || '').toLowerCase().trim() === String(finalStatus || '').toLowerCase().trim();
       const ageMs = Date.now() - new Date(ex.updated_at as string).getTime();
@@ -989,7 +1038,7 @@ async function processPurchaseWebhook({
     },
     custom_data: {
       value: Number(value) || 0,
-      currency: (currency || 'BRL').toUpperCase(),
+      currency: resolvedCurrency,
       content_name: displayContentName || undefined,
       content_type: 'product',
       content_ids: contentId ? [String(contentId)] : undefined,
@@ -1081,7 +1130,7 @@ async function processPurchaseWebhook({
       buyer_email_hash = COALESCE(EXCLUDED.buyer_email_hash, purchases.buyer_email_hash),
       updated_at = NOW()
   `, [
-    siteKey, orderId, platform, value, currency, finalStatus,
+    siteKey, orderId, platform, value, resolvedCurrency, finalStatus,
     email, phone, `${firstName || ''} ${lastName || ''}`.trim(),
     mergedFbcSafe, mergedFbpSafe, mergedExternalId, utmSource, utmMedium, utmCampaign,
     platformDate, JSON.stringify(capiPayload.user_data), JSON.stringify(capiPayload.custom_data),
@@ -1161,7 +1210,7 @@ async function processPurchaseWebhook({
       finalStatus === 'pending_payment' ? 'pending_payment' : 'sale';
     const notifyOpts = {
       amount: value,
-      currency,
+      currency: resolvedCurrency,
       orderId,
       platform,
       productName: displayContentName,
