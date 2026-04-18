@@ -27,9 +27,15 @@ export type ChartPoint = {
 
 export type MobileSummary = {
   period: string;
+  currency: string | null;
   periodSales: number;
   periodRevenue: number;
   sitesCount: number;
+  revenueByCurrency: Array<{
+    currency: string;
+    revenue: number;
+    sales: number;
+  }>;
   chart: ChartPoint[];
   recentPurchases: Array<{
     id: number;
@@ -61,9 +67,15 @@ export function normalizeMobileSummary(raw: any): MobileSummary {
   const sitesCountRaw = raw?.sitesCount ?? raw?.sites_count ?? raw?.site_count;
   return {
     period: String(raw?.period ?? 'today'),
+    currency: raw?.currency ? String(raw.currency).toUpperCase() : null,
     periodSales: Math.round(num(raw?.periodSales ?? raw?.period_sales ?? raw?.todaySales)),
     periodRevenue: num(raw?.periodRevenue ?? raw?.period_revenue ?? raw?.todayRevenue),
     sitesCount: Math.round(num(sitesCountRaw)),
+    revenueByCurrency: (Array.isArray(raw?.revenueByCurrency) ? raw.revenueByCurrency : []).map((entry: any) => ({
+      currency: String(entry?.currency ?? 'BRL').toUpperCase(),
+      revenue: num(entry?.revenue),
+      sales: Math.round(num(entry?.sales)),
+    })),
     chart: chartRaw.map((c: any) => ({
       date: String(c?.date ?? ''),
       revenue: num(c?.revenue),
@@ -142,6 +154,7 @@ async function requireOk(res: Response): Promise<void> {
 export type MobileSummaryParams = {
   period?: string;
   siteIds?: number[];
+  currency?: string | null;
   /** Obrigatórios quando `period` é `custom` (YYYY-MM-DD) */
   since?: string;
   until?: string;
@@ -155,6 +168,7 @@ export async function getMobileSummary(params?: MobileSummaryParams): Promise<Mo
     q.set('until', params.until);
   }
   if (params?.siteIds?.length) q.set('sites', params.siteIds.join(','));
+  if (params?.currency) q.set('currency', params.currency.trim().toUpperCase());
   const qs = q.toString();
   const url = `${API_BASE}/dashboard/mobile-summary?${qs}`;
   const res = await fetch(url, {
@@ -164,6 +178,39 @@ export async function getMobileSummary(params?: MobileSummaryParams): Promise<Mo
   await requireOk(res);
   const raw = await res.json();
   return normalizeMobileSummary(raw);
+}
+
+export type PurchaseRow = MobileSummary['recentPurchases'][0];
+
+export async function getMobilePurchases(
+  params: MobileSummaryParams & { page: number }
+): Promise<PurchaseRow[]> {
+  const q = new URLSearchParams();
+  q.set('period', (params?.period || 'today').trim().toLowerCase());
+  if (params?.period === 'custom' && params.since && params.until) {
+    q.set('since', params.since);
+    q.set('until', params.until);
+  }
+  if (params?.siteIds?.length) q.set('sites', params.siteIds.join(','));
+  if (params?.currency) q.set('currency', params.currency.trim().toUpperCase());
+  q.set('page', String(params.page));
+  
+  const qs = q.toString();
+  const url = `${API_BASE}/dashboard/mobile-purchases?${qs}`;
+  const res = await fetch(url, { headers: authHeaders(), cache: 'no-store' });
+  await requireOk(res);
+  const data = await res.json();
+  
+  const purchases = Array.isArray(data?.purchases) ? data.purchases : [];
+  return purchases.map((p: any) => ({
+    id: Number(p?.id || 0),
+    orderId: String(p?.orderId ?? p?.order_id ?? ''),
+    platform: p?.platform ?? null,
+    amount: p?.amount != null ? Number(p.amount) : null,
+    currency: p?.currency ?? null,
+    createdAt: String(p?.createdAt ?? p?.created_at ?? ''),
+    siteName: String(p?.siteName ?? p?.site_name ?? ''),
+  }));
 }
 
 export async function getSites(): Promise<SiteRow[]> {

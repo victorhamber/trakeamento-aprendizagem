@@ -11,9 +11,9 @@ export const SALE_SOUND_FILE = 'sale_kaching.mp3';
 export async function setupAndroidSalesChannel(): Promise<void> {
   if (Platform.OS !== 'android') return;
   await Notifications.setNotificationChannelAsync('sales', {
-    name: 'Alertas de venda',
+    name: 'Trajettu Vendas',
     importance: Notifications.AndroidImportance.HIGH,
-    vibrationPattern: [0, 200, 120, 200],
+    vibrationPattern: [0, 140, 70, 160],
     sound: 'sale_kaching',
     enableVibrate: true,
   });

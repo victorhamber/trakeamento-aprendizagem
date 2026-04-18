@@ -40,8 +40,8 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/icon.png",
-          "color": "#0a7ea4",
+          "icon": "./assets/android-icon-monochrome.png",
+          "color": "#0b0f14",
           "defaultChannel": "sales",
           "sounds": [
             "./assets/sounds/sale_kaching.mp3"

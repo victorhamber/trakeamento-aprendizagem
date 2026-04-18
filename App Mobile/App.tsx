@@ -45,7 +45,6 @@ import { setupAndroidSalesChannel } from './setupNotificationChannels';
 import { getExpoPushTokenString } from './expoPush';
 import Svg, { Circle, Line, Polyline } from 'react-native-svg';
 import DateTimePicker from '@react-native-community/datetimepicker';
-
 const TOKEN_KEY = '@trajettu_token';
 const USER_EMAIL_KEY = '@trajettu_user_email';
 
@@ -110,14 +109,14 @@ const C = {
   surface: '#111827',
   surface2: '#151d2e',
   border: 'rgba(148, 163, 184, 0.12)',
-  borderStrong: 'rgba(56, 189, 248, 0.35)',
+  borderStrong: 'rgba(56, 189, 248, 0.38)',
   text: '#f8fafc',
   textMuted: '#94a3b8',
   textDim: '#64748b',
-  accent: '#22d3ee',
-  accentDeep: '#0e7490',
-  accentSoft: 'rgba(34, 211, 238, 0.14)',
-  purple: '#a78bfa',
+  accent: '#38bdf8',
+  accentDeep: '#0284c7',
+  accentSoft: 'rgba(56, 189, 248, 0.16)',
+  purple: '#8b5cf6',
 };
 
 Notifications.setNotificationHandler({
@@ -143,6 +142,14 @@ function formatPlatform(p: string | null): string {
   return m[p.toLowerCase()] || p;
 }
 
+function formatCurrencyLabel(code: string | null): string {
+  const value = (code || '').toUpperCase();
+  if (value === 'BRL') return 'Real brasileiro';
+  if (value === 'USD') return 'Dólar americano';
+  if (!value) return 'Todas as moedas';
+  return value;
+}
+
 function formatCurrencySafe(value: unknown, currency: string | null): string {
   const n = typeof value === 'number' ? value : Number(value);
   if (!Number.isFinite(n)) return '—';
@@ -151,6 +158,12 @@ function formatCurrencySafe(value: unknown, currency: string | null): string {
 }
 
 /** Evita SVG com dezenas de milhares de px (período máximo) — mantém forma da série */
+function formatNumberSafe(value: unknown): string {
+  const n = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(n)) return 'â€”';
+  return new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 }).format(n);
+}
+
 function bucketChartPointsByCount(points: ChartPoint[], max: number): ChartPoint[] {
   if (points.length <= max || points.length === 0) return points;
   const out: ChartPoint[] = [];
@@ -180,7 +193,8 @@ function formatChartAxisDate(dateStr: string): string {
 }
 
 /** Mesmo critério do RevenueChart web (Recharts): moeda compacta no eixo Y */
-function formatCurrencyCompact(value: number, currency: string): string {
+function formatCurrencyCompact(value: number, currency: string | null): string {
+  if (!currency) return formatNumberSafe(value);
   try {
     return new Intl.NumberFormat(currency === 'BRL' ? 'pt-BR' : 'en-US', {
       style: 'currency',
@@ -194,7 +208,7 @@ function formatCurrencyCompact(value: number, currency: string): string {
 }
 
 /** Gráfico de linha alinhado ao dashboard web (`RevenueChart.tsx`): linha verde, grade horizontal, eixos */
-function SalesChart({ points, currency = 'BRL' }: { points: ChartPoint[]; currency?: string }) {
+function SalesChart({ points, currency = 'BRL' }: { points: ChartPoint[]; currency?: string | null }) {
   const PLOT_H = 208;
   const Y_AXIS_W = 56;
   const MIN_PT = 34;
@@ -338,6 +352,73 @@ function SalesChart({ points, currency = 'BRL' }: { points: ChartPoint[]; curren
   );
 }
 
+function DropdownPicker({
+  label, value, options, onChange, icon, allowClear, clearLabel
+}: {
+  label: string; value: string | null; options: {key: string; label: string}[];
+  onChange: (k: string | null) => void; icon: any; allowClear?: boolean; clearLabel?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const insets = useSafeAreaInsets();
+  const selectedLabel = value ? options.find(o => o.key === value)?.label : (clearLabel || 'Selecione');
+  return (
+    <>
+      <TouchableOpacity style={dropdownStyles.trigger} onPress={() => setOpen(true)} activeOpacity={0.88}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <View style={dropdownStyles.iconBg}>
+            <Ionicons name={icon} size={18} color={C.accent} />
+          </View>
+          <View>
+            <Text style={dropdownStyles.label}>{label}</Text>
+            <Text style={dropdownStyles.val} numberOfLines={1}>{selectedLabel}</Text>
+          </View>
+        </View>
+        <Ionicons name="chevron-down" size={20} color={C.textMuted} />
+      </TouchableOpacity>
+      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
+        <View style={dropdownStyles.modalRoot}>
+          <Pressable style={dropdownStyles.modalBackdrop} onPress={() => setOpen(false)} />
+          <View style={[dropdownStyles.modalSheet, { paddingBottom: Math.max(insets.bottom, 16) + 16 }]}>
+            <Text style={dropdownStyles.modalTitle}>{label}</Text>
+            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 360 }} contentContainerStyle={{ paddingBottom: 16 }}>
+              {allowClear && (
+                <TouchableOpacity style={[dropdownStyles.row, value === null && dropdownStyles.rowActive]} onPress={() => {onChange(null); setOpen(false);}} activeOpacity={0.85}>
+                  <Text style={[dropdownStyles.rowText, value === null && dropdownStyles.rowTextActive]}>{clearLabel}</Text>
+                </TouchableOpacity>
+              )}
+              {options.map((o) => (
+                <TouchableOpacity key={o.key} style={[dropdownStyles.row, value === o.key && dropdownStyles.rowActive]} onPress={() => {onChange(o.key); setOpen(false);}} activeOpacity={0.85}>
+                  <Text style={[dropdownStyles.rowText, value === o.key && dropdownStyles.rowTextActive]}>{o.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+    </>
+  );
+}
+
+const dropdownStyles = StyleSheet.create({
+  trigger: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: 'rgba(17, 24, 39, 0.88)', borderWidth: 1, borderColor: C.border, borderRadius: 16,
+    paddingHorizontal: 14, paddingVertical: 12, marginBottom: 14,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 3,
+  },
+  iconBg: { width: 36, height: 36, borderRadius: 10, backgroundColor: 'rgba(56,189,248,0.1)', alignItems: 'center', justifyContent: 'center' },
+  label: { fontSize: 11, color: C.textDim, textTransform: 'uppercase', fontWeight: '800', marginBottom: 2, letterSpacing: 0.5 },
+  val: { fontSize: 15, color: C.text, fontWeight: '700' },
+  modalRoot: { flex: 1, justifyContent: 'flex-end' },
+  modalBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.55)' },
+  modalSheet: { backgroundColor: C.surface, borderTopLeftRadius: 18, borderTopRightRadius: 18, paddingTop: 18, paddingHorizontal: 16, maxHeight: '70%', borderWidth: 1, borderColor: C.border },
+  modalTitle: { fontSize: 13, fontWeight: '800', color: C.textMuted, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 16 },
+  row: { paddingVertical: 14, paddingHorizontal: 12, borderRadius: 10, marginBottom: 4, borderWidth: 1, borderColor: 'transparent' },
+  rowActive: { backgroundColor: PERIOD_ROW_SELECTED, borderColor: 'rgba(255,255,255,0.12)' },
+  rowText: { fontSize: 16, fontWeight: '600', color: C.text },
+  rowTextActive: { color: '#fff' }
+});
+
 export default function App() {
   const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(true);
@@ -360,7 +441,11 @@ export default function App() {
   const [customSince, setCustomSince] = useState(() => defaultCustomRange().since);
   const [customUntil, setCustomUntil] = useState(() => defaultCustomRange().until);
   const [selectedSiteIds, setSelectedSiteIds] = useState<number[]>([]);
-
+  const [exchangeRates, setExchangeRates] = useState<Record<string, number>>({});
+  const [activeCarouselIndex, setActiveCarouselIndex] = useState(0);
+  const [purchasesPage, setPurchasesPage] = useState(1);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMorePurchases, setHasMorePurchases] = useState(false);
   const siteKey = useMemo(
     () =>
       selectedSiteIds
@@ -423,6 +508,17 @@ export default function App() {
     loadToken();
   }, [loadToken]);
 
+  useEffect(() => {
+    fetch('https://open.er-api.com/v6/latest/USD')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data && data.rates) {
+          setExchangeRates(data.rates);
+        }
+      })
+      .catch((err) => console.log('Failed to fetch exchange rates:', err));
+  }, []);
+
   const registerForPush = useCallback(async () => {
     if (!Device.isDevice) return;
     await setupAndroidSalesChannel();
@@ -445,6 +541,7 @@ export default function App() {
         getMobileSummary({
           period: periodKey,
           siteIds: selectedSiteIds,
+          currency: null,
           ...(periodKey === 'custom' && customRangeForApi
             ? { since: customRangeForApi.since, until: customRangeForApi.until }
             : {}),
@@ -453,6 +550,8 @@ export default function App() {
       ]);
       setSummary(sum);
       setSites(siteList);
+      setPurchasesPage(1);
+      setHasMorePurchases(sum.recentPurchases.length >= 50);
     } catch (e: unknown) {
       if (e instanceof AuthExpiredError) {
         await handleAuthFailure();
@@ -493,6 +592,41 @@ export default function App() {
     const sub = AppState.addEventListener('change', onChange);
     return () => sub.remove();
   }, [authToken, fetchDashboard, registerForPush]);
+
+  const loadMorePurchases = useCallback(async () => {
+    if (loadingMore || !hasMorePurchases) return;
+    setLoadingMore(true);
+    try {
+      const next = purchasesPage + 1;
+      const { getMobilePurchases } = await import('./api');
+      const newList = await getMobilePurchases({
+        period: periodKey,
+        siteIds: selectedSiteIds,
+        currency: null,
+        ...(periodKey === 'custom' && customRangeForApi
+          ? { since: customRangeForApi.since, until: customRangeForApi.until }
+          : {}),
+        page: next,
+      });
+
+      if (newList.length < 50) setHasMorePurchases(false);
+      
+      setSummary((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          recentPurchases: [...prev.recentPurchases, ...newList],
+        };
+      });
+      setPurchasesPage(next);
+    } catch (e) {
+      console.log('Failed to load more purchases', e);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [loadingMore, hasMorePurchases, purchasesPage, periodKey, selectedSiteIds, customRangeForApi]);
+
+
 
   const onLogin = async () => {
     setLoginError('');
@@ -591,6 +725,33 @@ export default function App() {
 
   /** Espaço inferior do sheet: barra de navegação + folga para tocar sem acionar gestos do sistema */
   const periodSheetBottomPad = Math.max(insets.bottom, 18) + 22;
+  
+  const chartSectionLabel = activeCarouselIndex === 0 ? 'Receita por dia · BRL' : 'Receita por dia · USD (Convertido)';
+
+  const brlSales = summary?.revenueByCurrency.find(c => c.currency === 'BRL')?.sales ?? 0;
+  const brlRevenue = summary?.revenueByCurrency.find(c => c.currency === 'BRL')?.revenue ?? 0;
+
+  const usdStats = useMemo(() => {
+    let sales = 0;
+    let rev = 0;
+    if (summary?.revenueByCurrency) {
+      summary.revenueByCurrency.filter(c => c.currency !== 'BRL').forEach(c => {
+        sales += c.sales;
+        if (c.currency === 'USD') {
+          rev += c.revenue;
+        } else {
+          const rate = exchangeRates[c.currency] || null;
+          if (rate) {
+            rev += (c.revenue / rate);
+          }
+        }
+      });
+    }
+    return { sales, revenue: rev };
+  }, [summary, exchangeRates]);
+
+  let carouselWidth = Dimensions.get('window').width - 36;
+  if (carouselWidth < 200) carouselWidth = 300;
 
   if (loading) {
     return (
@@ -618,7 +779,7 @@ export default function App() {
               <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.loginScroll}>
                 <View style={styles.loginCard}>
                   <LinearGradient
-                    colors={['rgba(34,211,238,0.35)', 'rgba(99,102,241,0.2)', 'transparent']}
+                    colors={['rgba(56,189,248,0.25)', 'rgba(59,130,246,0.15)', 'transparent']}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
                     style={styles.loginCardGlow}
@@ -644,7 +805,7 @@ export default function App() {
             autoCapitalize="none"
             keyboardType="email-address"
                       autoComplete="email"
-                      selectionColor="#22d3ee"
+                      selectionColor={C.accent}
           />
                   </View>
 
@@ -659,7 +820,7 @@ export default function App() {
             onChangeText={setPassword}
             secureTextEntry
                       autoComplete="password"
-                      selectionColor="#22d3ee"
+                      selectionColor={C.accent}
           />
                   </View>
 
@@ -672,7 +833,7 @@ export default function App() {
                     activeOpacity={0.85}
                   >
                     <LinearGradient
-                      colors={[C.accentDeep, '#6366f1', '#7c3aed']}
+                      colors={[C.accentDeep, '#2563eb', '#38bdf8']}
                       start={{ x: 0, y: 0.5 }}
                       end={{ x: 1, y: 0.5 }}
                       style={styles.gradientBtn}
@@ -710,7 +871,8 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <LinearGradient colors={[C.bg, '#0a101c', C.bg]} style={styles.appGradient}>
+      <View style={styles.appGradient}>
+
         <SafeAreaView style={styles.container} edges={['top']}>
           <StatusBar style="light" />
       <View style={styles.header}>
@@ -720,9 +882,13 @@ export default function App() {
               </View>
               <View style={styles.headerTextCol}>
                 <Text style={styles.brandSmall}>Trajettu</Text>
+                <Text style={styles.brandSub} numberOfLines={1}>
+                  Painel mobile de vendas em tempo real
+                </Text>
               </View>
             </View>
             <TouchableOpacity onPress={onLogout} style={styles.logoutPill} activeOpacity={0.8} hitSlop={8}>
+          <Ionicons name="exit-outline" size={15} color={C.accent} />
           <Text style={styles.logoutText}>Sair</Text>
         </TouchableOpacity>
       </View>
@@ -738,7 +904,7 @@ export default function App() {
 
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(insets.bottom, 16) + 64 }]}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -923,24 +1089,70 @@ export default function App() {
                 <Ionicons name="stats-chart-outline" size={17} color={C.accent} />
                 <Text style={styles.sectionLabel}>Resumo · {periodSummaryLabel}</Text>
               </View>
-              <View style={styles.statRow}>
-                <View style={[styles.statBox, styles.statBoxAccent]}>
-                  <View style={styles.statBoxTop}>
-                    <View style={styles.statIconBg}>
-                      <Ionicons name="bag-handle-outline" size={20} color={C.accent} />
-              </View>
-                    <Text style={styles.statLabel}>Vendas</Text>
-            </View>
-                  <Text style={styles.statValue}>{summary.periodSales}</Text>
-                </View>
-                <View style={[styles.statBox, styles.statBoxAccentPurple]}>
-                  <View style={styles.statBoxTop}>
-                    <View style={[styles.statIconBg, styles.statIconBgPurple]}>
-                      <Ionicons name="cash-outline" size={20} color={C.purple} />
+              
+              <View style={{ marginBottom: 16 }}>
+                <ScrollView
+                  horizontal
+                  pagingEnabled
+                  showsHorizontalScrollIndicator={false}
+                  onMomentumScrollEnd={(e) => {
+                    const offset = e.nativeEvent.contentOffset.x;
+                    const index = Math.round(offset / carouselWidth);
+                    setActiveCarouselIndex(index);
+                  }}
+                >
+                  <View style={{ width: carouselWidth, paddingHorizontal: 4 }}>
+                    <View style={styles.unifiedCard}>
+                      <View style={styles.unifiedCardSection}>
+                        <View style={styles.unifiedCardTop}>
+                          <View style={styles.statIconBg}>
+                            <Ionicons name="bag-handle-outline" size={18} color={C.accent} />
+                          </View>
+                          <Text style={styles.statLabel}>Vendas (BRL)</Text>
+                        </View>
+                        <Text style={styles.statValue}>{brlSales}</Text>
+                      </View>
+                      <View style={styles.unifiedCardDivider} />
+                      <View style={styles.unifiedCardSection}>
+                        <View style={styles.unifiedCardTop}>
+                          <View style={[styles.statIconBg, styles.statIconBgPurple]}>
+                            <Ionicons name="cash-outline" size={18} color={C.purple} />
+                          </View>
+                          <Text style={styles.statLabel}>Receita (BRL)</Text>
+                        </View>
+                        <Text style={styles.statValue}>{formatCurrencySafe(brlRevenue, 'BRL')}</Text>
+                      </View>
                     </View>
-                    <Text style={styles.statLabel}>Receita</Text>
                   </View>
-                  <Text style={styles.statValue}>{formatCurrencySafe(summary.periodRevenue, 'BRL')}</Text>
+
+                  <View style={{ width: carouselWidth, paddingHorizontal: 4 }}>
+                    <View style={styles.unifiedCard}>
+                      <View style={styles.unifiedCardSection}>
+                        <View style={styles.unifiedCardTop}>
+                          <View style={styles.statIconBg}>
+                            <Ionicons name="bag-handle-outline" size={18} color={C.accent} />
+                          </View>
+                          <Text style={styles.statLabel}>Vendas (USD + Outras)</Text>
+                        </View>
+                        <Text style={styles.statValue}>{usdStats.sales}</Text>
+                      </View>
+                      <View style={styles.unifiedCardDivider} />
+                      <View style={styles.unifiedCardSection}>
+                        <View style={styles.unifiedCardTop}>
+                          <View style={[styles.statIconBg, styles.statIconBgPurple]}>
+                            <Ionicons name="cash-outline" size={18} color={C.purple} />
+                          </View>
+                          <Text style={styles.statLabel}>Receita Conversão (USD)</Text>
+                        </View>
+                        <Text style={styles.statValue}>{formatCurrencySafe(usdStats.revenue, 'USD')}</Text>
+                      </View>
+                    </View>
+                  </View>
+                </ScrollView>
+
+                <View style={styles.carouselDots}>
+                  <View style={[styles.carouselDot, activeCarouselIndex === 0 && styles.carouselDotActive]} />
+                  <View style={[styles.carouselDot, activeCarouselIndex === 1 && styles.carouselDotActive]} />
                 </View>
               </View>
 
@@ -954,57 +1166,30 @@ export default function App() {
 
               <View style={styles.sectionHeaderRow}>
                 <Ionicons name="trending-up-outline" size={17} color={C.accent} />
-                <Text style={styles.sectionLabel}>Receita por dia</Text>
+                <Text style={styles.sectionLabel}>{chartSectionLabel}</Text>
               </View>
               <View style={styles.chartCard}>
                 <SalesChart
                   points={summary.chart}
-                  currency={
-                    summary.recentPurchases.map((p) => p.currency).find((c): c is string => Boolean(c)) ?? 'BRL'
-                  }
+                  currency={activeCarouselIndex === 0 ? 'BRL' : 'USD'}
                 />
               </View>
 
               {sites.length > 0 ? (
-                <>
-                  <View style={styles.sectionHeaderRow}>
-                    <Ionicons name="globe-outline" size={17} color={C.accent} />
-                    <Text style={styles.sectionLabel}>Sites</Text>
-                  </View>
-                  <Text style={styles.filterHint}>Toque em &quot;Todos&quot; ou combine um ou mais sites.</Text>
-                  <View style={styles.siteChips}>
-                    <TouchableOpacity
-                      style={[styles.siteChip, selectedSiteIds.length === 0 && styles.siteChipActive]}
-                      onPress={selectAllSites}
-                    >
-                      <Text
-                        style={[styles.siteChipName, selectedSiteIds.length === 0 && styles.siteChipNameActive]}
-                      >
-                        Todos
-                      </Text>
-                    </TouchableOpacity>
-                    {sites.map((s) => {
-                      const active =
-                        selectedSiteIds.length === 0 ? false : selectedSiteIds.includes(s.id);
-                      return (
-                        <TouchableOpacity
-                          key={s.id}
-                          style={[styles.siteChip, active && styles.siteChipActive]}
-                          onPress={() => toggleSite(s.id)}
-                        >
-                          <Text style={[styles.siteChipName, active && styles.siteChipNameActive]} numberOfLines={1}>
-                            {s.name}
-                          </Text>
-                          {s.domain ? (
-                            <Text style={styles.siteChipDomain} numberOfLines={1}>
-                              {s.domain}
-                            </Text>
-                          ) : null}
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                </>
+                <View style={{ marginTop: 8 }}>
+                  <DropdownPicker
+                    label="Site"
+                    icon="globe-outline"
+                    value={selectedSiteIds.length === 1 ? String(selectedSiteIds[0]) : null}
+                    allowClear={true}
+                    clearLabel="Todos os sites"
+                    options={sites.map(s => ({ key: String(s.id), label: s.name }))}
+                    onChange={(val) => {
+                      if (val === null) setSelectedSiteIds([]);
+                      else setSelectedSiteIds([Number(val)]);
+                    }}
+                  />
+                </View>
               ) : null}
 
               <View style={styles.sectionHeaderRow}>
@@ -1016,23 +1201,66 @@ export default function App() {
                   Nenhuma venda neste período com os filtros atuais.
                 </Text>
             ) : (
-              summary.recentPurchases.map((p) => (
-                <View key={p.id} style={styles.row}>
-                  <View style={styles.rowLeft}>
-                      <View style={styles.rowTop}>
-                    <Text style={styles.rowOrder}>#{p.orderId}</Text>
-                        <View style={styles.badge}>
-                          <Text style={styles.badgeText}>{formatPlatform(p.platform)}</Text>
+              <View>
+                {summary.recentPurchases.map((p, idx) => (
+                  <View key={`${p.id}-${idx}`} style={styles.row}>
+                    <View style={styles.rowLeading}>
+                      <Ionicons name="flash-outline" size={18} color={C.accent} />
+                    </View>
+                    <View style={styles.rowLeft}>
+                        <View style={styles.rowTop}>
+                      <Text style={styles.rowOrder}>#{p.orderId}</Text>
+                        {(() => {
+                          const pf = (p.platform || '').toLowerCase();
+                          let bg = 'rgba(56, 189, 248, 0.1)';
+                          let border = 'rgba(56, 189, 248, 0.24)';
+                          let text = C.accent;
+                          if (pf === 'hotmart') {
+                            bg = 'rgba(249, 115, 22, 0.1)';
+                            border = 'rgba(249, 115, 22, 0.24)';
+                            text = '#fdba74';
+                          } else if (pf === 'kiwify') {
+                            bg = 'rgba(59, 130, 246, 0.1)';
+                            border = 'rgba(59, 130, 246, 0.24)';
+                            text = '#93c5fd';
+                          } else if (pf === 'eduzz') {
+                            bg = 'rgba(234, 179, 8, 0.1)';
+                            border = 'rgba(234, 179, 8, 0.24)';
+                            text = '#fde047';
+                          }
+                          return (
+                            <View style={[styles.badge, { backgroundColor: bg, borderColor: border }]}>
+                              <Text style={[styles.badgeText, { color: text }]}>{formatPlatform(p.platform)}</Text>
+                            </View>
+                          );
+                        })()}
                         </View>
-                      </View>
-                    <Text style={styles.rowSite}>{p.siteName}</Text>
-                    <Text style={styles.rowDate}>{formatDate(p.createdAt)}</Text>
+                      <Text style={styles.rowSite}>{p.siteName}</Text>
+                      <Text style={styles.rowDate}>{formatDate(p.createdAt)}</Text>
+                    </View>
+                    <View style={styles.rowAmountWrap}>
+                      <Text style={styles.rowAmount}>
+                        {p.amount != null ? formatCurrencySafe(p.amount, p.currency) : '—'}
+                      </Text>
+                      <Text style={styles.rowCurrency}>{formatCurrencyLabel(p.currency)}</Text>
+                    </View>
                   </View>
-                  <Text style={styles.rowAmount}>
-                      {p.amount != null ? formatCurrencySafe(p.amount, p.currency) : '—'}
-                  </Text>
-                </View>
-              ))
+                ))}
+                
+                {hasMorePurchases && (
+                  <TouchableOpacity
+                    style={styles.loadMoreBtn}
+                    onPress={loadMorePurchases}
+                    disabled={loadingMore}
+                  >
+                    {loadingMore ? (
+                      <ActivityIndicator color={C.accent} />
+                    ) : (
+                      <Text style={styles.loadMoreBtnText}>Carregar mais</Text>
+                    )}
+                  </TouchableOpacity>
+                )}
+              </View>
             )}
           </>
         ) : (
@@ -1040,7 +1268,7 @@ export default function App() {
         )}
       </ScrollView>
         </SafeAreaView>
-      </LinearGradient>
+      </View>
     </SafeAreaProvider>
   );
 }
@@ -1089,7 +1317,7 @@ const chartStyles = StyleSheet.create({
 });
 
 const styles = StyleSheet.create({
-  appGradient: { flex: 1 },
+  appGradient: { flex: 1, backgroundColor: '#020617' }, // Slate 950 base
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   loginGradient: { flex: 1 },
   loginBlob1: {
@@ -1173,17 +1401,18 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 18,
-    paddingVertical: 14,
-    backgroundColor: 'rgba(8, 11, 18, 0.92)',
+    paddingTop: 12,
+    paddingBottom: 16,
+    backgroundColor: 'rgba(6, 10, 18, 0.92)',
     borderBottomWidth: 1,
-    borderBottomColor: C.border,
+    borderBottomColor: 'rgba(148, 163, 184, 0.08)',
   },
   headerLeft: { flex: 1, marginRight: 12, flexDirection: 'row', alignItems: 'center' },
   headerLogoRing: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
-    backgroundColor: C.accentSoft,
+    width: 52,
+    height: 52,
+    borderRadius: 18,
+    backgroundColor: 'rgba(34, 211, 238, 0.1)',
     borderWidth: 1,
     borderColor: C.borderStrong,
     alignItems: 'center',
@@ -1193,13 +1422,17 @@ const styles = StyleSheet.create({
   headerLogo: { width: 30, height: 30 },
   headerTextCol: { flex: 1, minWidth: 0, justifyContent: 'center' },
   brandSmall: { fontSize: 17, fontWeight: '800', color: C.text, letterSpacing: -0.2 },
+  brandSub: { marginTop: 2, fontSize: 12, color: C.textDim, fontWeight: '600' },
   logoutPill: {
     paddingHorizontal: 16,
     paddingVertical: 9,
     borderRadius: 999,
-    backgroundColor: C.accentSoft,
+    backgroundColor: 'rgba(34, 211, 238, 0.09)',
     borderWidth: 1,
     borderColor: C.borderStrong,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   logoutText: { fontSize: 14, color: C.accent, fontWeight: '700' },
   errorBanner: {
@@ -1221,7 +1454,7 @@ const styles = StyleSheet.create({
   scroll: { flex: 1 },
   scrollContent: { padding: 18, paddingBottom: 44 },
   loader: { marginTop: 48 },
-  sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12, marginTop: 8 },
+  sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12, marginTop: 10 },
   sectionLabel: {
     fontSize: 13,
     fontWeight: '800',
@@ -1234,16 +1467,68 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    marginBottom: 14,
-    borderRadius: 12,
-    backgroundColor: C.surface2,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    marginBottom: 16,
+    borderRadius: 18,
+    backgroundColor: 'rgba(17, 24, 39, 0.88)',
     borderWidth: 1,
     borderColor: C.border,
     gap: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.16,
+    shadowRadius: 20,
+    elevation: 6,
   },
-  periodTriggerText: { flex: 1, fontSize: 15, fontWeight: '600', color: C.text },
+  periodTriggerText: { flex: 1, fontSize: 15, fontWeight: '700', color: C.text, lineHeight: 22 },
+  heroCard: {
+    borderRadius: 24,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.12)',
+    marginBottom: 18,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.22,
+    shadowRadius: 26,
+    elevation: 8,
+  },
+  heroTopRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
+  heroEyebrow: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: C.accent,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: 6,
+  },
+  heroTitle: { fontSize: 22, fontWeight: '800', color: C.text, letterSpacing: -0.5, lineHeight: 28, maxWidth: 240 },
+  heroSubtitle: { marginTop: 12, fontSize: 14, lineHeight: 21, color: C.textMuted },
+  heroStatusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: 'rgba(2, 6, 23, 0.48)',
+    borderWidth: 1,
+    borderColor: 'rgba(34, 211, 238, 0.22)',
+  },
+  heroStatusText: { fontSize: 12, fontWeight: '800', color: C.accent },
+  heroMetaRow: { flexDirection: 'row', gap: 10, marginTop: 16 },
+  heroMetaCard: {
+    flex: 1,
+    backgroundColor: 'rgba(2, 6, 23, 0.34)',
+    borderRadius: 16,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.08)',
+  },
+  heroMetaLabel: { fontSize: 11, color: C.textDim, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 6, fontWeight: '800' },
+  heroMetaValue: { fontSize: 13, color: C.text, fontWeight: '700' },
   periodModalRoot: {
     flex: 1,
     justifyContent: 'flex-end',
@@ -1330,42 +1615,97 @@ const styles = StyleSheet.create({
   statRow: { flexDirection: 'row', gap: 12, marginBottom: 14 },
   statBox: {
     flex: 1,
-    backgroundColor: C.surface2,
-    borderRadius: 18,
-    padding: 16,
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+    borderRadius: 22,
+    padding: 18,
     borderWidth: 1,
     borderColor: C.border,
+    minHeight: 138,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.14,
+    shadowRadius: 24,
+    elevation: 6,
   },
-  statBoxAccent: { borderLeftWidth: 3, borderLeftColor: C.accent },
-  statBoxAccentPurple: { borderLeftWidth: 3, borderLeftColor: C.purple },
-  statBoxTop: { flexDirection: 'row', alignItems: 'center', marginBottom: 10, gap: 8 },
+  statBoxAccent: { borderLeftWidth: 0, borderColor: 'rgba(34, 211, 238, 0.28)' },
+  statBoxAccentPurple: { borderLeftWidth: 0, borderColor: 'rgba(167, 139, 250, 0.26)' },
+  statBoxTop: { flexDirection: 'row', alignItems: 'center', marginBottom: 12, gap: 10 },
   statIconBg: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: C.accentSoft,
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    backgroundColor: 'rgba(34, 211, 238, 0.14)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  statIconBgPurple: { backgroundColor: 'rgba(167, 139, 250, 0.15)' },
-  statLabel: { fontSize: 11, fontWeight: '700', color: C.textDim, textTransform: 'uppercase', letterSpacing: 0.5 },
-  statValue: { fontSize: 20, fontWeight: '800', color: C.text, letterSpacing: -0.5 },
-  inlineMeta: { flexDirection: 'row', alignItems: 'center', marginBottom: 18 },
-  inlineMetaText: { fontSize: 13, color: C.textDim },
-  chartCard: {
-    backgroundColor: C.surface2,
-    borderRadius: 18,
+  statIconBgPurple: { backgroundColor: 'rgba(167, 139, 250, 0.16)' },
+  statLabel: { fontSize: 10, fontWeight: '800', color: C.textDim, textTransform: 'uppercase', letterSpacing: 1.2 },
+  statValue: { fontSize: 24, fontWeight: '900', color: C.text, letterSpacing: -0.6, lineHeight: 28 },
+  statFootnote: { marginTop: 'auto', fontSize: 12, lineHeight: 18, color: C.textDim },
+  
+  unifiedCard: {
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+    borderRadius: 22,
     borderWidth: 1,
-    borderColor: C.border,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    paddingVertical: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.14,
+    shadowRadius: 24,
+    elevation: 6,
+  },
+  unifiedCardSection: {
+    padding: 18,
+  },
+  unifiedCardTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+    gap: 10,
+  },
+  unifiedCardDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    marginHorizontal: 16,
+  },
+  carouselDots: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 12,
+  },
+  carouselDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+  },
+  carouselDotActive: {
+    width: 24,
+    backgroundColor: C.accent,
+  },
+  inlineMeta: { flexDirection: 'row', alignItems: 'center', marginBottom: 18, backgroundColor: 'rgba(15, 23, 42, 0.35)', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.06)' },
+  inlineMetaText: { fontSize: 13, color: C.textMuted, fontWeight: '600' },
+  chartCard: {
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
     marginBottom: 18,
     overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.12,
+    shadowRadius: 24,
+    elevation: 6,
   },
   filterHint: { fontSize: 12, color: C.textDim, marginBottom: 10, lineHeight: 18 },
-  siteChips: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -4, marginBottom: 10 },
+  siteChips: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -4, marginBottom: 14 },
   siteChip: {
-    backgroundColor: C.surface2,
-    borderRadius: 14,
-    paddingVertical: 10,
+    backgroundColor: 'rgba(15, 23, 42, 0.40)',
+    borderRadius: 16,
+    paddingVertical: 11,
     paddingHorizontal: 14,
     margin: 4,
     borderWidth: 1,
@@ -1374,39 +1714,71 @@ const styles = StyleSheet.create({
   },
   siteChipActive: {
     borderColor: C.borderStrong,
-    backgroundColor: C.accentSoft,
+    backgroundColor: 'rgba(34, 211, 238, 0.12)',
   },
   siteChipName: { fontSize: 14, fontWeight: '700', color: C.text },
-  siteChipNameActive: { color: C.text },
-  siteChipDomain: { fontSize: 11, color: C.textDim, marginTop: 2 },
+  siteChipNameActive: { color: '#ecfeff' },
+  siteChipDomain: { fontSize: 11, color: C.textDim, marginTop: 4 },
   empty: { color: C.textMuted, fontSize: 14, lineHeight: 22 },
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    backgroundColor: C.surface2,
+    alignItems: 'center',
+    backgroundColor: 'rgba(15, 23, 42, 0.40)',
     padding: 16,
-    borderRadius: 16,
-    marginBottom: 10,
+    borderRadius: 20,
+    marginBottom: 12,
     borderWidth: 1,
-    borderColor: C.border,
-    borderLeftWidth: 4,
-    borderLeftColor: C.accentDeep,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.12,
+    shadowRadius: 18,
+    elevation: 4,
   },
-  rowLeft: { flex: 1, marginRight: 8 },
+  rowLeading: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    marginRight: 12,
+    backgroundColor: 'rgba(34, 211, 238, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(34, 211, 238, 0.22)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rowLeft: { flex: 1, marginRight: 10 },
   rowTop: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' },
-  rowOrder: { fontSize: 15, fontWeight: '800', color: C.text },
+  rowOrder: { fontSize: 15, fontWeight: '800', color: C.text, letterSpacing: -0.2 },
   badge: {
-    backgroundColor: C.accentSoft,
-    paddingHorizontal: 9,
-    paddingVertical: 3,
-    borderRadius: 8,
+    backgroundColor: 'rgba(34, 211, 238, 0.1)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
     marginLeft: 8,
     borderWidth: 1,
-    borderColor: C.borderStrong,
+    borderColor: 'rgba(34, 211, 238, 0.24)',
   },
   badgeText: { fontSize: 11, fontWeight: '700', color: C.accent },
-  rowSite: { fontSize: 13, color: C.textMuted, marginTop: 4 },
-  rowDate: { fontSize: 12, color: C.textDim, marginTop: 2 },
-  rowAmount: { fontSize: 17, fontWeight: '800', color: C.accent, letterSpacing: -0.3 },
+  rowSite: { fontSize: 13, color: C.textMuted, marginTop: 5, fontWeight: '700' },
+  rowDate: { fontSize: 12, color: C.textDim, marginTop: 3 },
+  rowAmountWrap: { alignItems: 'flex-end', justifyContent: 'center', maxWidth: 132 },
+  rowAmount: { fontSize: 17, fontWeight: '800', color: C.accent, letterSpacing: -0.3, textAlign: 'right' },
+  rowCurrency: { marginTop: 4, fontSize: 11, fontWeight: '700', color: C.textDim, textAlign: 'right' },
+  loadMoreBtn: {
+    padding: 16,
+    borderRadius: 16,
+    backgroundColor: 'rgba(56, 189, 248, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(56, 189, 248, 0.2)',
+  },
+  loadMoreBtnText: {
+    color: C.accent,
+    fontSize: 15,
+    fontWeight: '700',
+  },
 });
