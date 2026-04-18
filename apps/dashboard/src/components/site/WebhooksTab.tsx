@@ -33,7 +33,8 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
 
   const [customWebhooks, setCustomWebhooks] = useState<any[]>([]);
   const [editingWebhookId, setEditingWebhookId] = useState<string | null>(null);
-  const [mappingState, setMappingState] = useState<Record<string, string>>({});
+  /** Por hook id: caminhos JSON → campos Meta (email, value, …). */
+  const [mappingState, setMappingState] = useState<Record<string, Record<string, string>>>({});
   const [samplePayloadDraft, setSamplePayloadDraft] = useState<Record<string, string>>({});
   const [samplePayloadLoadingId, setSamplePayloadLoadingId] = useState<string | null>(null);
   /** Padrões quando o webhook (ex.: só boleto) não traz todos os campos — salvos em `mapping_config.defaults`. */
@@ -203,8 +204,12 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
     try {
       const targetHook = customWebhooks.find(h => h.id === hookId);
       if (!targetHook) return;
-      const rawCfg = targetHook.mapping_config || {};
-      const { defaults: _oldDef, ...pathKeysFromDb } = rawCfg as Record<string, unknown>;
+      const rawCfg = targetHook.mapping_config;
+      const cfgObj =
+        rawCfg && typeof rawCfg === 'object' && !Array.isArray(rawCfg)
+          ? (rawCfg as Record<string, unknown>)
+          : {};
+      const { defaults: _oldDef, ...pathKeysFromDb } = cfgObj;
       const paths = { ...pathKeysFromDb, ...(mappingState[hookId] || {}) } as Record<string, string>;
       const def = mappingDefaultsState[hookId] || {};
       const defaults: Record<string, string> = {};
@@ -787,8 +792,17 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
               const flatPayload = hasPayload ? flattenObject(hook.last_payload) : {};
               const availableKeys = Object.keys(flatPayload).sort();
 
-              const rawStored = mappingState[hook.id] ?? hook.mapping_config ?? {};
-              const { defaults: _omitDef, ...currentMap } = rawStored as Record<string, unknown>;
+              const cfgFromHook = hook.mapping_config;
+              const normalizedHookCfg =
+                cfgFromHook && typeof cfgFromHook === 'object' && !Array.isArray(cfgFromHook)
+                  ? (cfgFromHook as Record<string, unknown>)
+                  : {};
+              const rawStored: Record<string, unknown> = {
+                ...normalizedHookCfg,
+                ...(mappingState[hook.id] || {}),
+              };
+              const { defaults: _omitDef, ...currentMapUnknown } = rawStored;
+              const currentMap = currentMapUnknown as Record<string, string>;
 
               const mappingDefaultsRow =
                 mappingDefaultsState[hook.id] ??
@@ -1037,7 +1051,11 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
                                 </label>
                                 <select
                                   id={`dash-webhook-map-${hook.id}-${mapField.field}`}
-                                  value={currentMap[mapField.field] || ''}
+                                  value={
+                                    typeof currentMap[mapField.field] === 'string'
+                                      ? currentMap[mapField.field]
+                                      : ''
+                                  }
                                   onChange={e => setFieldMap(mapField.field, e.target.value)}
                                   className="w-full rounded bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 px-2 py-1.5 text-[11px] outline-none"
                                 >
