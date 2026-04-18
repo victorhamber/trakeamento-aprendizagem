@@ -200,6 +200,40 @@ input[type='date']::-webkit-calendar-picker-indicator {
   animation: float 6s ease-in-out infinite;
 }
 
+.animate-float-delay-3s {
+  animation-delay: 3s;
+}
+
+.animate-in.fade-in.animate-auth-fade-400 {
+  animation-duration: 400ms;
+}
+
+/* KPI do dashboard: entrada escalonada sem style inline */
+.animate-in.fade-in.kpi-enter-0 {
+  animation-delay: 0ms;
+  animation-duration: 400ms;
+}
+
+.animate-in.fade-in.kpi-enter-60 {
+  animation-delay: 60ms;
+  animation-duration: 400ms;
+}
+
+.animate-in.fade-in.kpi-enter-120 {
+  animation-delay: 120ms;
+  animation-duration: 400ms;
+}
+
+.animate-in.fade-in.kpi-enter-180 {
+  animation-delay: 180ms;
+  animation-duration: 400ms;
+}
+
+.animate-in.fade-in.kpi-enter-240 {
+  animation-delay: 240ms;
+  animation-duration: 400ms;
+}
+
 .animate-shimmer {
   background-size: 200% 100%;
   animation: shimmer 2s linear infinite;

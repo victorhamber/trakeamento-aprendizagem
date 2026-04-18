@@ -83,10 +83,17 @@ type KpiProps = {
   delay?: number;
 };
 
+const kpiStaggerClass = (delay: number) => {
+  if (delay === 60) return 'kpi-enter-60';
+  if (delay === 120) return 'kpi-enter-120';
+  if (delay === 180) return 'kpi-enter-180';
+  if (delay === 240) return 'kpi-enter-240';
+  return 'kpi-enter-0';
+};
+
 const KpiCard = ({ label, value, hint, icon, color, glow, delay = 0 }: KpiProps) => (
   <div
-    className="group relative rounded-2xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 p-4 sm:p-5 hover:border-zinc-400 dark:hover:border-zinc-700 transition-all duration-200 overflow-hidden animate-in fade-in shadow-sm dark:shadow-none select-none outline-none focus:outline-none"
-    style={{ animationDelay: `${delay}ms`, animationDuration: '400ms' }}
+    className={`group relative rounded-2xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 p-4 sm:p-5 hover:border-zinc-400 dark:hover:border-zinc-700 transition-all duration-200 overflow-hidden animate-in fade-in ${kpiStaggerClass(delay)} shadow-sm dark:shadow-none select-none outline-none focus:outline-none`}
   >
     <div className={`absolute -top-8 -right-8 w-24 h-24 rounded-full blur-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 ${glow}`} />
 

@@ -57,12 +57,12 @@ export const ResetPasswordPage = () => {
       {/* Ambient gradient blobs */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute -top-32 -left-32 w-96 h-96 rounded-full bg-indigo-600/15 blur-[100px] animate-float" />
-        <div className="absolute -bottom-32 -right-32 w-96 h-96 rounded-full bg-purple-600/15 blur-[100px] animate-float" style={{ animationDelay: '3s' }} />
+        <div className="absolute -bottom-32 -right-32 w-96 h-96 rounded-full bg-purple-600/15 blur-[100px] animate-float animate-float-delay-3s" />
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 rounded-full bg-blue-500/10 blur-[80px] animate-pulse-glow" />
       </div>
 
       {/* Card */}
-      <div className="relative w-full max-w-md animate-in fade-in" style={{ animationDuration: '400ms' }}>
+      <div className="relative w-full max-w-md animate-in fade-in animate-auth-fade-400">
         <div className="rounded-3xl border border-white/[0.08] bg-zinc-950/80 backdrop-blur-xl p-8 shadow-[0_25px_60px_rgba(0,0,0,0.5)]">
           {/* Logo */}
           <div className="flex flex-col items-center mb-2">
