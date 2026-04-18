@@ -1532,6 +1532,32 @@ router.post('/kiwify', async (req, res) => {
   return res.json({ received: true });
 });
 
+/** Quando não há campo textual de método, chaves como `boleto` / `pix` no JSON indicam o meio. */
+function inferCustomPaymentMethodFromPayload(payload: unknown): string | undefined {
+  if (payload == null || typeof payload !== 'object') return undefined;
+  const scanKeys = (obj: unknown, depth: number): 'boleto' | 'pix' | null => {
+    if (depth > 14 || !obj || typeof obj !== 'object') return null;
+    for (const k of Object.keys(obj as Record<string, unknown>)) {
+      const low = k.toLowerCase();
+      if (low === 'boleto' || low.includes('billet') || low.includes('bank_slip') || low === 'bankslip') return 'boleto';
+      if (low === 'pix' || low.endsWith('_pix') || low.startsWith('pix_')) return 'pix';
+      const inner = scanKeys((obj as Record<string, unknown>)[k], depth + 1);
+      if (inner) return inner;
+    }
+    return null;
+  };
+  const found = scanKeys(payload, 0);
+  if (found === 'boleto') return 'BOLETO';
+  if (found === 'pix') return 'PIX';
+  return undefined;
+}
+
+function strOrUndef(v: unknown): string | undefined {
+  if (v == null) return undefined;
+  const s = String(v).trim();
+  return s === '' ? undefined : s;
+}
+
 router.post('/custom/:id', async (req, res) => {
   const webhookId = req.params.id;
   const payload = req.body;
@@ -1543,15 +1569,60 @@ router.post('/custom/:id', async (req, res) => {
 
   const getNested = (obj: any, path: string) => path ? path.split('.').reduce((acc, part) => acc && acc[part], obj) : undefined;
   const config = hook.mapping_config || {};
+  const defaults =
+    config.defaults && typeof config.defaults === 'object' && !Array.isArray(config.defaults)
+      ? (config.defaults as Record<string, unknown>)
+      : {};
 
-  const mappedMethod = getNested(payload, config.payment_method);
+  const pick = (pathKey: string, defaultKey: string) => {
+    const p = config[pathKey];
+    if (typeof p === 'string' && p.trim()) {
+      const from = strOrUndef(getNested(payload, p.trim()));
+      if (from !== undefined) return from;
+    }
+    return strOrUndef(defaults[defaultKey]);
+  };
+
+  const email = typeof config.email === 'string' && config.email.trim() ? strOrUndef(getNested(payload, config.email.trim())) : undefined;
+  const phone = pick('phone', 'phone');
+  const firstName = pick('first_name', 'first_name');
+  const lastName = pick('last_name', 'last_name');
+
+  const amountPath = (config as { amount?: string; value?: string }).amount || (config as { value?: string }).value;
+  const rawAmount = amountPath ? getNested(payload, amountPath) : undefined;
+  const parsedValue =
+    rawAmount != null && rawAmount !== '' && !Number.isNaN(Number(rawAmount)) ? Number(rawAmount) : 0;
+
+  const currency = pick('currency', 'currency') || 'BRL';
+  const status = pick('status', 'status');
+  const orderFromPath =
+    typeof config.order_id === 'string' && config.order_id.trim()
+      ? strOrUndef(getNested(payload, config.order_id.trim()))
+      : undefined;
+  const orderId = orderFromPath || `c_${Date.now()}`;
+
+  let paymentMethodRaw: string | undefined;
+  if (typeof config.payment_method === 'string' && config.payment_method.trim()) {
+    paymentMethodRaw = strOrUndef(getNested(payload, config.payment_method.trim()));
+  }
+  if (!paymentMethodRaw) paymentMethodRaw = strOrUndef(defaults.payment_method);
+  if (!paymentMethodRaw) paymentMethodRaw = inferCustomPaymentMethodFromPayload(payload);
+
   const result = await processPurchaseWebhook({
-    siteKey: hook.site_key, payload, email: getNested(payload, config.email), phone: getNested(payload, config.phone),
-    firstName: getNested(payload, config.first_name), lastName: getNested(payload, config.last_name),
-    city: getNested(payload, config.city), state: getNested(payload, config.state),
-    value: getNested(payload, config.amount) || 0, currency: getNested(payload, config.currency) || 'BRL',
-    status: getNested(payload, config.status), orderId: getNested(payload, config.order_id) || `c_${Date.now()}`, platform: 'custom',
-    paymentMethodRaw: mappedMethod != null && mappedMethod !== '' ? String(mappedMethod) : undefined,
+    siteKey: hook.site_key,
+    payload,
+    email,
+    phone,
+    firstName,
+    lastName,
+    city: getNested(payload, config.city),
+    state: getNested(payload, config.state),
+    value: parsedValue,
+    currency,
+    status,
+    orderId,
+    platform: 'custom',
+    paymentMethodRaw,
   });
   return res.json({ received: true });
 });

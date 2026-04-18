@@ -10,11 +10,36 @@ interface WebhooksTabProps {
   showFlash: (msg: string, type?: 'success' | 'error') => void;
 }
 
+/** Exemplo com estrutura aninhada (PIX/boleto pendente) para mapear sem esperar o evento real. */
+const CUSTOM_WEBHOOK_SAMPLE_JSON = `{
+  "customer": {
+    "email": "comprador@exemplo.com",
+    "phone": "5511999999999",
+    "first_name": "Ana",
+    "last_name": "Costa"
+  },
+  "order": {
+    "id": "ord-pix-001",
+    "status": "waiting_payment",
+    "total": 149.9,
+    "currency": "BRL",
+    "payment": {
+      "method": "PIX"
+    }
+  }
+}`;
+
 const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhookSecret, showFlash }) => {
 
   const [customWebhooks, setCustomWebhooks] = useState<any[]>([]);
   const [editingWebhookId, setEditingWebhookId] = useState<string | null>(null);
   const [mappingState, setMappingState] = useState<Record<string, string>>({});
+  const [samplePayloadDraft, setSamplePayloadDraft] = useState<Record<string, string>>({});
+  const [samplePayloadLoadingId, setSamplePayloadLoadingId] = useState<string | null>(null);
+  /** Padrões quando o webhook (ex.: só boleto) não traz todos os campos — salvos em `mapping_config.defaults`. */
+  const [mappingDefaultsState, setMappingDefaultsState] = useState<
+    Record<string, Partial<Record<'currency' | 'status' | 'payment_method' | 'phone' | 'first_name' | 'last_name', string>>>
+  >({});
 
   // Checkout Simulator State
   const [checkoutUrl, setCheckoutUrl] = useState('');
@@ -178,10 +203,21 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
     try {
       const targetHook = customWebhooks.find(h => h.id === hookId);
       if (!targetHook) return;
+      const rawCfg = targetHook.mapping_config || {};
+      const { defaults: _oldDef, ...pathKeysFromDb } = rawCfg as Record<string, unknown>;
+      const paths = { ...pathKeysFromDb, ...(mappingState[hookId] || {}) } as Record<string, string>;
+      const def = mappingDefaultsState[hookId] || {};
+      const defaults: Record<string, string> = {};
+      (['currency', 'status', 'payment_method', 'phone', 'first_name', 'last_name'] as const).forEach(k => {
+        const v = def[k]?.trim();
+        if (v) defaults[k] = v;
+      });
+      const mapping_config =
+        Object.keys(defaults).length > 0 ? { ...paths, defaults } : { ...paths };
       await api.put(`/sites/${id}/custom-webhooks/${hookId}`, {
         name: targetHook.name,
         is_active: true,
-        mapping_config: mappingState[hookId] || targetHook.mapping_config
+        mapping_config
       });
       showFlash('Mapeamento salvo e ativado!');
       loadCustomWebhooks();
@@ -202,6 +238,32 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
     } catch (err) {
       console.error(err);
       showFlash('Erro ao excluir webhook', 'error');
+    }
+  };
+
+  const handleLoadSamplePayload = async (hookId: string) => {
+    const text = samplePayloadDraft[hookId] ?? '';
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      showFlash('JSON inválido. Confira vírgulas, aspas e chaves.', 'error');
+      return;
+    }
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      showFlash('A raiz precisa ser um objeto JSON { ... }, não array ou texto.', 'error');
+      return;
+    }
+    setSamplePayloadLoadingId(hookId);
+    try {
+      await api.post(`/sites/${id}/custom-webhooks/${hookId}/sample-payload`, { payload: parsed });
+      showFlash('Payload de exemplo carregado. Ajuste o mapeamento à direita.');
+      await loadCustomWebhooks();
+    } catch (err) {
+      console.error(err);
+      showFlash('Erro ao carregar o exemplo.', 'error');
+    } finally {
+      setSamplePayloadLoadingId(null);
     }
   };
 
@@ -686,7 +748,9 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 uppercase tracking-wider">Integrações Personalizadas</h3>
-            <p className="text-xs text-zinc-600 dark:text-zinc-500 mt-1">Gere webhooks para plataformas não listadas (ex: Braip, Ticto) e mapeie os dados manualmente.</p>
+            <p className="text-xs text-zinc-600 dark:text-zinc-500 mt-1">
+              Para Monetizze, Kiwify, Ticto, Caketo, Braip e outras: a URL grava o <strong className="text-zinc-600 dark:text-zinc-400">JSON inteiro</strong> do último POST. Use o corpo bruto para achar as chaves e preencher o mapeamento à direita.
+            </p>
           </div>
           <button
             onClick={handleCreateCustomWebhook}
@@ -723,12 +787,37 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
               const flatPayload = hasPayload ? flattenObject(hook.last_payload) : {};
               const availableKeys = Object.keys(flatPayload).sort();
 
-              const currentMap = mappingState[hook.id] || hook.mapping_config || {};
+              const rawStored = mappingState[hook.id] ?? hook.mapping_config ?? {};
+              const { defaults: _omitDef, ...currentMap } = rawStored as Record<string, unknown>;
+
+              const mappingDefaultsRow =
+                mappingDefaultsState[hook.id] ??
+                (() => {
+                  const d = (hook.mapping_config as { defaults?: Record<string, string> } | undefined)?.defaults;
+                  return {
+                    currency: d?.currency?.trim() || 'BRL',
+                    status: d?.status?.trim() || '',
+                    payment_method: d?.payment_method?.trim() || '',
+                    phone: d?.phone?.trim() || '',
+                    first_name: d?.first_name?.trim() || '',
+                    last_name: d?.last_name?.trim() || '',
+                  };
+                })();
 
               const setFieldMap = (field: string, val: string) => {
-                setMappingState(prev => ({
+                setMappingState(prev => {
+                  const cfg = hook.mapping_config || {};
+                  const { defaults: _, ...restFromHook } = cfg as Record<string, unknown>;
+                  const prevPaths = (prev[hook.id] || {}) as Record<string, unknown>;
+                  const { defaults: __, ...restFromPrev } = prevPaths;
+                  return { ...prev, [hook.id]: { ...restFromHook, ...restFromPrev, [field]: val } as Record<string, string> };
+                });
+              };
+
+              const setDefaultField = (key: keyof typeof mappingDefaultsRow, val: string) => {
+                setMappingDefaultsState(prev => ({
                   ...prev,
-                  [hook.id]: { ...(prev[hook.id] || hook.mapping_config || {}), [field]: val }
+                  [hook.id]: { ...mappingDefaultsRow, ...prev[hook.id], [key]: val },
                 }));
               };
 
@@ -736,6 +825,8 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
                 if (typeof val === 'object' && val !== null) return JSON.stringify(val);
                 return String(val);
               };
+
+              const fullPayloadJson = hasPayload ? JSON.stringify(hook.last_payload, null, 2) : '';
 
               return (
                 <div key={hook.id} className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 overflow-hidden">
@@ -779,7 +870,38 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6L17.14 19.89A2 2 0 0 1 15.15 21H8.85a2 2 0 0 1-1.99-1.11L5 6m4 0V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M10 11v6M14 11v6" /></svg>
                       </button>
                       <button
-                        onClick={() => setEditingWebhookId(isEditing ? null : hook.id)}
+                        onClick={() => {
+                          if (isEditing) {
+                            setEditingWebhookId(null);
+                          } else {
+                            setEditingWebhookId(hook.id);
+                            const cfg = hook.mapping_config || {};
+                            const { defaults, ...pathsOnly } = cfg as Record<string, unknown> & {
+                              defaults?: Partial<
+                                Record<'currency' | 'status' | 'payment_method' | 'phone' | 'first_name' | 'last_name', string>
+                              >;
+                            };
+                            setMappingState(prev => ({ ...prev, [hook.id]: pathsOnly as Record<string, string> }));
+                            setMappingDefaultsState(prev => ({
+                              ...prev,
+                              [hook.id]: {
+                                currency: defaults?.currency?.trim() || 'BRL',
+                                status: defaults?.status?.trim() || '',
+                                payment_method: defaults?.payment_method?.trim() || '',
+                                phone: defaults?.phone?.trim() || '',
+                                first_name: defaults?.first_name?.trim() || '',
+                                last_name: defaults?.last_name?.trim() || '',
+                              },
+                            }));
+                            setSamplePayloadDraft(prev => ({
+                              ...prev,
+                              [hook.id]:
+                                hook.last_payload && Object.keys(hook.last_payload).length > 0
+                                  ? JSON.stringify(hook.last_payload, null, 2)
+                                  : CUSTOM_WEBHOOK_SAMPLE_JSON,
+                            }));
+                          }
+                        }}
                         className="text-xs text-blue-400 hover:text-blue-300 font-medium whitespace-nowrap"
                       >
                         {isEditing ? 'Fechar Mapeamento' : (hasPayload ? 'Editar Mapeamento' : 'Configurar')}
@@ -787,37 +909,116 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
                     </div>
                   </div>
 
+                  {hasPayload && !isEditing && (
+                    <details className="group border-b border-zinc-200 dark:border-zinc-800 bg-zinc-100/50 dark:bg-zinc-950/40">
+                      <summary className="px-4 py-2.5 text-[11px] font-medium text-zinc-600 dark:text-zinc-400 cursor-pointer list-none flex items-center gap-2 [&::-webkit-details-marker]:hidden">
+                        <span className="text-zinc-400 group-open:rotate-90 transition-transform">▸</span>
+                        Ver corpo completo do último POST (JSON bruto — qualquer plataforma)
+                      </summary>
+                      <div className="px-4 pb-3 space-y-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void navigator.clipboard.writeText(fullPayloadJson);
+                            showFlash('JSON completo copiado.');
+                          }}
+                          className="text-[10px] px-2 py-1 rounded border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-800"
+                        >
+                          Copiar JSON inteiro
+                        </button>
+                        <pre className="text-[10px] leading-relaxed text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap break-words font-mono bg-white dark:bg-zinc-950 p-3 rounded border border-zinc-200 dark:border-zinc-800 max-h-[min(70vh,560px)] overflow-auto">
+                          {fullPayloadJson}
+                        </pre>
+                      </div>
+                    </details>
+                  )}
+
                   {/* Builder Area */}
                   {isEditing && (
                     <div className="p-4 bg-white dark:bg-zinc-950">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                         <div>
-                          <h5 className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 mb-3">Campos detectados no último envio</h5>
+                          <h5 className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 mb-1">Corpo completo recebido (JSON bruto)</h5>
+                          <p className="text-[10px] text-zinc-500 mb-2">
+                            É exatamente o que a plataforma enviou (Monetizze, Kiwify, Ticto, etc.). Use Ctrl+F e copie o caminho com pontos (ex.: <code className="text-zinc-600 dark:text-zinc-400">data.buyer.email</code>) nos selects à direita.
+                          </p>
                           {availableKeys.length === 0 ? (
-                            <div className="p-3 bg-zinc-50 dark:bg-zinc-900 rounded text-center text-[10px] text-zinc-500">
-                              Nenhum dado detectado. Envie um webhook de teste primeiro.
+                            <div className="p-3 bg-zinc-50 dark:bg-zinc-900 rounded text-[10px] text-zinc-500 space-y-2">
+                              <p>Nenhum POST recebido ainda na URL do webhook.</p>
+                              <p className="text-zinc-600 dark:text-zinc-400">
+                                Cole um JSON real abaixo (log da plataforma, doc ou teste) e carregue — o painel passa a mostrar o corpo completo aqui.
+                              </p>
                             </div>
                           ) : (
-                            <div className="space-y-1 max-h-[300px] overflow-y-auto">
-                              {availableKeys.map(key => (
-                                <div key={key} className="flex flex-col gap-1 text-[10px] p-2 hover:bg-zinc-50 dark:hover:bg-zinc-900 rounded border border-transparent hover:border-zinc-100 dark:hover:border-zinc-800 transition-colors">
-                                  <div className="flex items-center justify-between gap-2">
-                                    <code className="text-zinc-700 dark:text-zinc-300 font-medium truncate shrink-0">{key}</code>
-                                    <span
-                                      className="text-zinc-400 truncate max-w-[150px] font-mono"
-                                      title={safeStringify(flatPayload[key])}
+                            <>
+                              <div className="flex flex-wrap gap-2 mb-2">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    void navigator.clipboard.writeText(fullPayloadJson);
+                                    showFlash('JSON completo copiado.');
+                                  }}
+                                  className="text-[10px] px-2 py-1 rounded border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-800"
+                                >
+                                  Copiar JSON inteiro
+                                </button>
+                              </div>
+                              <pre className="text-[10px] leading-relaxed text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap break-words font-mono bg-zinc-50 dark:bg-zinc-950 p-3 rounded border border-zinc-200 dark:border-zinc-800 max-h-[min(70vh,520px)] overflow-auto mb-4">
+                                {fullPayloadJson}
+                              </pre>
+                              <details className="rounded border border-zinc-200 dark:border-zinc-800 bg-zinc-50/80 dark:bg-zinc-900/40">
+                                <summary className="px-3 py-2 text-[10px] font-medium text-zinc-600 dark:text-zinc-400 cursor-pointer">
+                                  Lista achatada (atalho opcional — só chaves folha)
+                                </summary>
+                                <div className="px-3 pb-3 max-h-[220px] overflow-y-auto space-y-1">
+                                  {availableKeys.map(key => (
+                                    <div
+                                      key={key}
+                                      className="flex flex-col gap-0.5 text-[10px] p-1.5 rounded hover:bg-white dark:hover:bg-zinc-950"
                                     >
-                                      {safeStringify(flatPayload[key])}
-                                    </span>
-                                  </div>
+                                      <div className="flex items-center justify-between gap-2">
+                                        <code className="text-zinc-700 dark:text-zinc-300 font-medium truncate shrink-0">{key}</code>
+                                        <span
+                                          className="text-zinc-400 truncate max-w-[120px] font-mono"
+                                          title={safeStringify(flatPayload[key])}
+                                        >
+                                          {safeStringify(flatPayload[key])}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  ))}
                                 </div>
-                              ))}
-                            </div>
+                              </details>
+                            </>
                           )}
+                          <div className="mt-4 pt-3 border-t border-zinc-200 dark:border-zinc-800">
+                            <label htmlFor={`dash-sample-json-${hook.id}`} className="block text-[10px] font-medium text-zinc-500 mb-1">
+                              Colar JSON de exemplo (pendente ou aprovado)
+                            </label>
+                            <textarea
+                              id={`dash-sample-json-${hook.id}`}
+                              rows={10}
+                              value={samplePayloadDraft[hook.id] ?? ''}
+                              onChange={e => setSamplePayloadDraft(prev => ({ ...prev, [hook.id]: e.target.value }))}
+                              className="w-full rounded-md bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 px-2 py-1.5 text-[10px] font-mono text-zinc-700 dark:text-zinc-300 outline-none resize-y min-h-[120px]"
+                              spellCheck={false}
+                            />
+                            <button
+                              type="button"
+                              disabled={samplePayloadLoadingId === hook.id}
+                              onClick={() => handleLoadSamplePayload(hook.id)}
+                              className="mt-2 w-full bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 disabled:opacity-50 text-zinc-800 dark:text-zinc-200 py-2 rounded-lg text-xs font-medium transition-colors"
+                            >
+                              {samplePayloadLoadingId === hook.id ? 'Carregando…' : 'Carregar JSON para mapeamento'}
+                            </button>
+                          </div>
                         </div>
 
                         <div>
                           <h5 className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 mb-3">Mapeamento para API do Meta</h5>
+                          <p className="text-[10px] text-zinc-500 mb-3">
+                            Nos selects, use os caminhos que você encontrou no JSON à esquerda. Onde o POST não trouxer dado, use os <strong className="text-zinc-600 dark:text-zinc-400">padrões</strong> abaixo (moeda, status, método, telefone, nome).
+                          </p>
                           <div className="space-y-3">
                             {[
                               { label: 'E-mail do Cliente', field: 'email' },
@@ -840,7 +1041,7 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
                                   onChange={e => setFieldMap(mapField.field, e.target.value)}
                                   className="w-full rounded bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 px-2 py-1.5 text-[11px] outline-none"
                                 >
-                                  <option value="">-- Selecione o campo --</option>
+                                  <option value="">-- Selecione o campo (opcional) --</option>
                                   {availableKeys.map(k => (
                                     <option key={k} value={k}>
                                       {k} (Ex: {safeStringify(flatPayload[k]).slice(0, 20)}...)
@@ -849,6 +1050,74 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
                                 </select>
                               </div>
                             ))}
+                          </div>
+                          <div className="mt-4 p-3 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50/80 dark:bg-zinc-900/50 space-y-2">
+                            <h6 className="text-[10px] font-semibold text-zinc-700 dark:text-zinc-300 uppercase tracking-wide">
+                              Padrões se o JSON não trouxer o campo
+                            </h6>
+                            <p className="text-[9px] text-zinc-500">
+                              Útil em webhooks só de boleto/PIX gerado. E-mail não tem padrão (Meta precisa de dado real ou hash alternativo).
+                            </p>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              <div>
+                                <label className="block text-[9px] text-zinc-500 mb-0.5" htmlFor={`dash-def-cur-${hook.id}`}>Moeda</label>
+                                <input
+                                  id={`dash-def-cur-${hook.id}`}
+                                  value={mappingDefaultsRow.currency}
+                                  onChange={e => setDefaultField('currency', e.target.value)}
+                                  className="w-full rounded border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-2 py-1 text-[11px]"
+                                  placeholder="BRL"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[9px] text-zinc-500 mb-0.5" htmlFor={`dash-def-st-${hook.id}`}>Status</label>
+                                <input
+                                  id={`dash-def-st-${hook.id}`}
+                                  value={mappingDefaultsRow.status}
+                                  onChange={e => setDefaultField('status', e.target.value)}
+                                  className="w-full rounded border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-2 py-1 text-[11px]"
+                                  placeholder="waiting_payment"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[9px] text-zinc-500 mb-0.5" htmlFor={`dash-def-pm-${hook.id}`}>Método de pagamento</label>
+                                <input
+                                  id={`dash-def-pm-${hook.id}`}
+                                  value={mappingDefaultsRow.payment_method}
+                                  onChange={e => setDefaultField('payment_method', e.target.value)}
+                                  className="w-full rounded border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-2 py-1 text-[11px]"
+                                  placeholder="BOLETO"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[9px] text-zinc-500 mb-0.5" htmlFor={`dash-def-ph-${hook.id}`}>Telefone</label>
+                                <input
+                                  id={`dash-def-ph-${hook.id}`}
+                                  value={mappingDefaultsRow.phone}
+                                  onChange={e => setDefaultField('phone', e.target.value)}
+                                  className="w-full rounded border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-2 py-1 text-[11px]"
+                                  placeholder="5511999999999"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[9px] text-zinc-500 mb-0.5" htmlFor={`dash-def-fn-${hook.id}`}>Nome</label>
+                                <input
+                                  id={`dash-def-fn-${hook.id}`}
+                                  value={mappingDefaultsRow.first_name}
+                                  onChange={e => setDefaultField('first_name', e.target.value)}
+                                  className="w-full rounded border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-2 py-1 text-[11px]"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[9px] text-zinc-500 mb-0.5" htmlFor={`dash-def-ln-${hook.id}`}>Sobrenome</label>
+                                <input
+                                  id={`dash-def-ln-${hook.id}`}
+                                  value={mappingDefaultsRow.last_name}
+                                  onChange={e => setDefaultField('last_name', e.target.value)}
+                                  className="w-full rounded border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-2 py-1 text-[11px]"
+                                />
+                              </div>
+                            </div>
                           </div>
                           <div className="mt-4 pt-4 border-t border-zinc-100 dark:border-zinc-800">
                             <button

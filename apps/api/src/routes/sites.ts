@@ -1084,6 +1084,41 @@ router.put('/:siteId/custom-webhooks/:hookId', requireAuth, async (req, res) => 
   return res.json({ webhook: result.rows[0] });
 });
 
+/** Grava `last_payload` manualmente (ex.: colar JSON de PIX/boleto pendente quando a origem ainda não disparou o webhook). */
+router.post('/:siteId/custom-webhooks/:hookId/sample-payload', requireAuth, async (req, res) => {
+  const auth = req.auth!;
+  const siteId = Number(req.params.siteId);
+  const hookId = req.params.hookId;
+  if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
+
+  const site = await pool.query('SELECT id FROM sites WHERE id = $1 AND account_id = $2', [siteId, auth.accountId]);
+  if (!site.rowCount) return res.status(404).json({ error: 'Site not found' });
+
+  const body = req.body as Record<string, unknown> | null | undefined;
+  const sample =
+    body && typeof body === 'object' && !Array.isArray(body) && 'payload' in body && body.payload !== undefined
+      ? body.payload
+      : body;
+
+  if (sample === null || sample === undefined || typeof sample !== 'object' || Array.isArray(sample)) {
+    return res.status(400).json({
+      error: 'Envie um objeto JSON. Use o corpo { "payload": { ... } } ou apenas o objeto raiz.',
+    });
+  }
+
+  const serialized = JSON.stringify(sample);
+  if (serialized.length > 262144) {
+    return res.status(400).json({ error: 'Payload muito grande (máximo 256 KB).' });
+  }
+
+  const result = await pool.query(
+    `UPDATE custom_webhooks SET last_payload = $1::jsonb, updated_at = NOW() WHERE id = $2 AND site_id = $3 RETURNING *`,
+    [serialized, hookId, siteId]
+  );
+  if (!result.rowCount) return res.status(404).json({ error: 'Webhook not found' });
+  return res.json({ webhook: result.rows[0] });
+});
+
 router.delete('/:siteId/custom-webhooks/:hookId', requireAuth, async (req, res) => {
   const auth = req.auth!;
   const siteId = Number(req.params.siteId);
