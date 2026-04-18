@@ -1030,7 +1030,10 @@ router.get('/:siteId/custom-webhooks', requireAuth, async (req, res) => {
   const site = await pool.query('SELECT site_key FROM sites WHERE id = $1 AND account_id = $2', [siteId, auth.accountId]);
   if (!site.rowCount) return res.status(404).json({ error: 'Site not found' });
 
-  const result = await pool.query('SELECT id, site_id, site_key, name, secret_key, mapping_config, is_active, created_at, updated_at FROM custom_webhooks WHERE site_id = $1 ORDER BY created_at DESC', [siteId]);
+  const result = await pool.query(
+    'SELECT id, site_id, site_key, name, secret_key, mapping_config, is_active, last_payload, created_at, updated_at FROM custom_webhooks WHERE site_id = $1 ORDER BY created_at DESC',
+    [siteId]
+  );
   return res.json({ webhooks: result.rows });
 });
 
