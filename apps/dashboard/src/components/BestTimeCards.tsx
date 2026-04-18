@@ -127,8 +127,8 @@ const Card = ({ title, data, color, textColor }: { title: string; data: PeakData
             <table className="w-full text-xs">
               <thead>
                 <tr className="border-b border-zinc-100 dark:border-zinc-800/50">
-                  <th className="text-left py-2 font-medium text-zinc-500">Dia</th>
-                  <th className="text-right py-2 font-medium text-zinc-500">Melhor Horário</th>
+                  <th className="text-left py-2 font-medium text-zinc-700 dark:text-zinc-400">Dia</th>
+                  <th className="text-right py-2 font-medium text-zinc-700 dark:text-zinc-400">Melhor Horário</th>
                 </tr>
               </thead>
               <tbody>
@@ -158,7 +158,7 @@ const Card = ({ title, data, color, textColor }: { title: string; data: PeakData
 
           {data.top_sources && data.top_sources.length > 0 && (
             <div className="mt-4 pt-4 border-t border-zinc-100 dark:border-zinc-800/50">
-              <h4 className="text-[10px] font-semibold tracking-wider uppercase text-zinc-500 mb-2">
+              <h4 className="text-[10px] font-semibold tracking-wider uppercase text-zinc-700 dark:text-zinc-400 mb-2">
                 Top Origens
               </h4>
               <div className="space-y-1.5">
@@ -187,10 +187,10 @@ const Card = ({ title, data, color, textColor }: { title: string; data: PeakData
 
           {data.top_locations && data.top_locations.length > 0 && (
             <div className="mt-4 pt-4 border-t border-zinc-100 dark:border-zinc-800/50">
-              <h4 className="text-[10px] font-semibold tracking-wider uppercase text-zinc-500 mb-1">
+              <h4 className="text-[10px] font-semibold tracking-wider uppercase text-zinc-700 dark:text-zinc-400 mb-1">
                 Top Regiões
               </h4>
-              <p className="text-[9px] text-zinc-500 dark:text-zinc-500 leading-snug mb-2">
+              <p className="text-[9px] text-zinc-600 dark:text-zinc-500 leading-snug mb-2">
                 País do <strong>pixel</strong> (Meta) é cruzado com o país do <strong>IP</strong>: se baterem,
                 mostramos cidade/estado do IP com &quot;· pixel&quot;. Se não baterem, ficamos só no país do
                 pixel para evitar cidade errada (VPN, CDN, datacenter). Sem país do pixel, segue só estimativa

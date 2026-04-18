@@ -1878,7 +1878,8 @@ ${scriptContent}
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     }).format(value);
-  const utmUrl = useMemo(() => {
+  /** URL com query codificada (RFC) — útil para testar no navegador; no Meta use `utmUrlForMeta`. */
+  const utmUrlEncoded = useMemo(() => {
     if (!utmBaseUrl) return '';
     try {
       const url = new URL(utmBaseUrl);
@@ -1915,8 +1916,23 @@ ${scriptContent}
     add('utm_content', utmContent);
     add('utm_term', utmTerm);
     add('click_id', utmClickId);
-    return parts.join('&');
+    return parts.filter(Boolean).join('&');
   }, [utmSource, utmMedium, utmCampaign, utmContent, utmTerm, utmClickId]);
+
+  /** URL completa com `{{ }}` literais (mesma regra dos parâmetros Meta) — é a versão correta para anúncios. */
+  const utmUrlForMeta = useMemo(() => {
+    if (!utmBaseUrl?.trim() || !metaAdsUrlParams) return '';
+    try {
+      const u = new URL(utmBaseUrl.trim());
+      const existing = u.search && u.search.length > 1 ? u.search.slice(1) : '';
+      u.search = '';
+      const base = u.toString();
+      if (existing) return `${base}?${existing}&${metaAdsUrlParams}`;
+      return `${base}?${metaAdsUrlParams}`;
+    } catch {
+      return '';
+    }
+  }, [utmBaseUrl, metaAdsUrlParams]);
 
   const getBreakdownCtr = (row: MetaBreakdownItem) => {
     if (row.ctr_calc_pct !== undefined) return row.ctr_calc_pct;
@@ -2130,11 +2146,11 @@ ${scriptContent}
   const selectedCampaign = selectedCampaignId ? campaigns.find((c) => c.id === selectedCampaignId) : null;
 
   const inputCls =
-    'w-full rounded-lg bg-zinc-100 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-200 outline-none focus:border-zinc-600 focus:ring-1 focus:ring-zinc-600/40 transition-all placeholder:text-zinc-600';
+    'w-full rounded-lg bg-white dark:bg-zinc-900/60 border border-zinc-300 dark:border-zinc-800 px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-200 outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500/35 transition-all placeholder:text-zinc-500';
   const selectClsCompact =
-    'rounded-lg bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 px-3 py-2 text-xs text-zinc-900 dark:text-zinc-200 outline-none focus:border-zinc-600 transition-colors';
+    'rounded-lg bg-white dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-800 px-3 py-2 text-xs text-zinc-900 dark:text-zinc-200 outline-none focus:border-zinc-500 transition-colors';
   const selectCls =
-    'w-full rounded-lg bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-200 outline-none focus:border-zinc-600 transition-colors';
+    'w-full rounded-lg bg-white dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-800 px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-200 outline-none focus:border-zinc-500 transition-colors';
 
   const periodSelector = (
     <div className="flex flex-wrap items-center gap-2">
@@ -2265,12 +2281,13 @@ ${scriptContent}
       )}
 
       {/* ── Tab Panel ── */}
-      <div className="mt-5 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-white dark:bg-zinc-950/60 overflow-hidden">
+      <div className="mt-5 rounded-2xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 overflow-hidden">
         {/* Tab bar */}
-        <div className="border-b border-zinc-200 dark:border-zinc-800 px-3 pt-3 pb-0 flex flex-wrap gap-1">
+        <div className="border-b border-zinc-300 dark:border-zinc-800 px-3 pt-3 pb-0 flex flex-wrap gap-1">
           {tabs.map((t) => (
             <button
               key={t.key}
+              type="button"
               onClick={() => {
                 setTab(t.key);
                 searchParams.set('tab', t.key);
@@ -2278,7 +2295,7 @@ ${scriptContent}
               }}
               className={`relative px-3.5 py-2 text-[13px] font-medium rounded-t-lg transition-all ${tab === t.key
                 ? 'text-zinc-900 dark:text-zinc-100 bg-zinc-100 dark:bg-zinc-900/80'
-                : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-900/40'
+                : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-900/40'
                 }`}
             >
               {t.label}
@@ -2299,8 +2316,8 @@ ${scriptContent}
                   onClick={() => setInstallSubTab('snippet')}
                   className={`text-xs px-3 py-1.5 rounded-lg border ${
                     installSubTab === 'snippet'
-                      ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
-                      : 'border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/40 text-zinc-600 dark:text-zinc-400'
+                      ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300'
+                      : 'border-zinc-300 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/40 text-zinc-700 dark:text-zinc-400'
                   }`}
                 >
                   Snippet
@@ -2310,8 +2327,8 @@ ${scriptContent}
                   onClick={() => setInstallSubTab('extras')}
                   className={`text-xs px-3 py-1.5 rounded-lg border ${
                     installSubTab === 'extras'
-                      ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
-                      : 'border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/40 text-zinc-600 dark:text-zinc-400'
+                      ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300'
+                      : 'border-zinc-300 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/40 text-zinc-700 dark:text-zinc-400'
                   }`}
                 >
                   Códigos extras
@@ -2572,7 +2589,7 @@ ${scriptContent}
                           <div className="mt-2 h-1.5 rounded-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden">
                             <MetricQualityBarFill pct={pct} toneClass={bg} />
                           </div>
-                          <div className="text-[9px] text-zinc-600 dark:text-zinc-500 mt-1">{m.desc}</div>
+                          <div className="text-[9px] text-zinc-700 dark:text-zinc-500 mt-1">{m.desc}</div>
                         </div>
                       );
                     })}
@@ -2584,7 +2601,7 @@ ${scriptContent}
                         const emoji = avg >= 80 ? '🟢' : avg >= 50 ? '🟡' : '🔴';
                         return <div className={`text-xl font-bold ${color} mt-1`}>{emoji} {avg}%</div>;
                       })()}
-                      <div className="text-[9px] text-zinc-600 dark:text-zinc-500 mt-3">Média dos indicadores</div>
+                      <div className="text-[9px] text-zinc-700 dark:text-zinc-500 mt-3">Média dos indicadores</div>
                     </div>
                   </div>
                 </div>
@@ -2892,7 +2909,7 @@ ${scriptContent}
                       className={inputCls}
                       placeholder={meta?.has_capi_token ? '•••••••• (configurado)' : 'Token de Acesso (EAA...)'}
                     />
-                    <p className="mt-1.5 text-[11px] text-zinc-600 dark:text-zinc-500">Rastreamento server-side (anti-adblock)</p>
+                    <p className="mt-1.5 text-[11px] text-zinc-700 dark:text-zinc-500">Rastreamento server-side (anti-adblock)</p>
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
@@ -2904,7 +2921,7 @@ ${scriptContent}
                       placeholder="Ex: TEST123"
                       className={inputCls}
                     />
-                    <p className="mt-1.5 text-[11px] text-zinc-600 dark:text-zinc-500">
+                    <p className="mt-1.5 text-[11px] text-zinc-700 dark:text-zinc-500">
                       Use o código de teste do Event Manager para validar eventos server-side.
                     </p>
                   </div>
@@ -3054,46 +3071,69 @@ ${scriptContent}
                       </button>
                     </div>
                   </div>
-                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mb-2">
+                  <p className="text-[11px] text-zinc-600 dark:text-zinc-400 mb-2">
                     Cole exatamente isto no Meta: os placeholders precisam aparecer como{' '}
                     <code className="text-[10px]">{'{{'}…{'}}'}</code>, não como <code className="text-[10px]">%7B%7B</code> — senão o Meta não substitui.
                   </p>
-                  <div className="text-xs text-zinc-800 dark:text-zinc-200 break-all font-mono bg-white dark:bg-black/20 p-3 rounded-lg border border-zinc-200 dark:border-zinc-800">
+                  <div className="text-xs text-zinc-800 dark:text-zinc-200 break-all font-mono bg-white dark:bg-black/20 p-3 rounded-lg border border-zinc-300 dark:border-zinc-800">
                     {metaAdsUrlParams || 'Preencha as UTMs para gerar os parâmetros.'}
                   </div>
                 </div>
 
                 <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/30 p-5 opacity-75 hover:opacity-100 transition-opacity">
                   <div className="flex items-center justify-between gap-3 mb-3">
-                    <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-600 dark:text-zinc-500">
-                      URL Final Completa
+                    <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-700 dark:text-zinc-400">
+                      URL final (Meta Ads)
                     </h4>
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
-                        disabled={!utmUrl}
+                        disabled={!utmUrlForMeta}
                         onClick={() => setShowSaveUtmModal(true)}
-                        className="text-[11px] border border-zinc-700 bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-400 dark:text-zinc-300 px-3 py-2 rounded-lg transition-colors disabled:opacity-40"
+                        className="text-[11px] border border-zinc-700 bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 px-3 py-2 rounded-lg transition-colors disabled:opacity-40"
                       >
                         Salvar
                       </button>
                       <button
                         type="button"
-                        disabled={!utmUrl}
+                        disabled={!utmUrlForMeta}
                         onClick={() => {
-                          if (!utmUrl) return;
-                          navigator.clipboard.writeText(utmUrl);
+                          if (!utmUrlForMeta) return;
+                          navigator.clipboard.writeText(utmUrlForMeta);
                           showFlash('URL copiada!');
                         }}
-                        className="text-[11px] border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/70 hover:bg-zinc-50 dark:hover:bg-zinc-900 text-zinc-600 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 px-3 py-2 rounded-lg transition-colors disabled:opacity-40"
+                        className="text-[11px] border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/70 hover:bg-zinc-50 dark:hover:bg-zinc-900 text-zinc-700 dark:text-zinc-600 hover:text-zinc-900 dark:hover:text-zinc-200 px-3 py-2 rounded-lg transition-colors disabled:opacity-40"
                       >
                         Copiar URL
                       </button>
                     </div>
                   </div>
-                  <div className="text-[11px] text-zinc-500 dark:text-zinc-400 break-all bg-white dark:bg-black/20 p-2 rounded border border-zinc-200 dark:border-zinc-800/50">
-                    {utmUrl || 'Preencha a URL base e UTMs para gerar o link.'}
+                  <p className="text-[11px] text-zinc-600 dark:text-zinc-400 mb-2">
+                    Versão com <code className="text-[10px]">{'{{'}…{'}}'}</code> literal para colar no Meta. Para testar no navegador, use a cópia codificada abaixo.
+                  </p>
+                  <div className="text-[11px] text-zinc-800 dark:text-zinc-200 break-all bg-white dark:bg-black/20 p-2 rounded border border-zinc-300 dark:border-zinc-800/50">
+                    {utmUrlForMeta || 'Preencha a URL base e UTMs para gerar o link.'}
                   </div>
+                  {utmUrlEncoded ? (
+                    <div className="mt-3 pt-3 border-t border-zinc-200 dark:border-zinc-800">
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-500">
+                          URL codificada (navegador)
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(utmUrlEncoded);
+                            showFlash('URL codificada copiada!');
+                          }}
+                          className="text-[10px] text-blue-700 dark:text-blue-400 hover:underline"
+                        >
+                          Copiar
+                        </button>
+                      </div>
+                      <div className="text-[10px] text-zinc-600 dark:text-zinc-400 break-all font-mono">{utmUrlEncoded}</div>
+                    </div>
+                  ) : null}
                 </div>
               </div>
 

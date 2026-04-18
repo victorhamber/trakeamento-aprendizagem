@@ -20,8 +20,8 @@ export function RevenueChart({ data, currency, isDark }: { data: DailyPoint[]; c
   };
 
   const lineColor = isDark ? '#34d399' : '#059669';
-  const gridColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
-  const textColor = isDark ? '#71717a' : '#6b7280';
+  const gridColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.11)';
+  const textColor = isDark ? '#71717a' : '#52525b';
 
   if (!data || data.length === 0) {
     return (

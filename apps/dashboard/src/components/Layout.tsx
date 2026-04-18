@@ -59,7 +59,7 @@ const NavItem = ({ to, label, icon: IconComp }: { to: string; label: string; ico
     to={to}
     className={({ isActive }) =>
       `group relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all duration-200 ${isActive
-        ? 'bg-blue-50 dark:bg-white/10 text-blue-600 dark:text-white font-medium border border-blue-100 dark:border-white/10 shadow-sm dark:shadow-[0_10px_30px_rgba(0,0,0,0.35)]'
+        ? 'bg-indigo-50 dark:bg-white/10 text-indigo-900 dark:text-white font-medium border border-indigo-200/90 dark:border-white/10 shadow-sm dark:shadow-[0_10px_30px_rgba(0,0,0,0.35)]'
         : 'text-muted-foreground hover:text-foreground dark:hover:text-white hover:bg-muted dark:hover:bg-white/5 border border-transparent'
       }`
     }
@@ -198,11 +198,13 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
             <div className="flex items-center gap-2">
               {/* Theme toggle */}
               <button
+                type="button"
                 onClick={toggleTheme}
                 className={`h-9 w-9 rounded-xl border flex items-center justify-center transition-all hover:scale-105 ${isDark
                   ? 'border-white/10 bg-white/5 text-zinc-400 hover:text-amber-300 hover:bg-amber-500/10'
                   : 'border-border bg-muted text-muted-foreground hover:text-primary hover:bg-blue-50'
                   }`}
+                aria-label={isDark ? 'Mudar para tema claro' : 'Mudar para tema escuro'}
                 title={isDark ? 'Mudar para tema claro' : 'Mudar para tema escuro'}
               >
                 {isDark ? <IconSun /> : <IconMoon />}

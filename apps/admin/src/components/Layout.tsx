@@ -184,6 +184,8 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
                 type="button"
                 onClick={() => setMobileOpen((open) => !open)}
                 className={`lg:hidden h-9 w-9 rounded-xl border flex items-center justify-center ${isDark ? 'border-white/10 bg-white/5' : 'border-zinc-200 bg-zinc-50'}`}
+                aria-label={mobileOpen ? 'Fechar menu' : 'Abrir menu'}
+                title={mobileOpen ? 'Fechar menu' : 'Abrir menu'}
               >
                 <svg viewBox="0 0 24 24" fill="none" className="h-4.5 w-4.5">
                   <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
@@ -195,11 +197,13 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
             <div className="flex items-center gap-2">
               {/* Theme toggle */}
               <button
+                type="button"
                 onClick={toggleTheme}
                 className={`h-9 w-9 rounded-xl border flex items-center justify-center transition-all hover:scale-105 ${isDark
                   ? 'border-white/10 bg-white/5 text-zinc-400 hover:text-amber-300 hover:bg-amber-500/10'
                   : 'border-zinc-200 bg-zinc-50 text-zinc-500 hover:text-indigo-500 hover:bg-indigo-50'
                   }`}
+                aria-label={isDark ? 'Mudar para tema claro' : 'Mudar para tema escuro'}
                 title={isDark ? 'Mudar para tema claro' : 'Mudar para tema escuro'}
               >
                 {isDark ? <IconSun /> : <IconMoon />}
@@ -208,11 +212,13 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
               {/* Notification bell */}
               <div className="relative">
                 <button
+                  type="button"
                   onClick={() => setNotifOpen(!notifOpen)}
                   className={`h-9 w-9 rounded-xl border flex items-center justify-center transition-all hover:scale-105 ${isDark
                     ? 'border-white/10 bg-white/5 text-zinc-400 hover:text-white hover:bg-white/10'
                     : 'border-zinc-200 bg-zinc-50 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100'
                     }`}
+                  aria-label="Notificações"
                   title="Notificações"
                 >
                   <IconBell />
@@ -225,7 +231,13 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
 
                 {notifOpen && (
                   <>
-                    <button className="fixed inset-0 z-30" onClick={() => setNotifOpen(false)} />
+                    <button
+                      type="button"
+                      className="fixed inset-0 z-30"
+                      onClick={() => setNotifOpen(false)}
+                      aria-label="Fechar lista de notificações"
+                      title="Fechar"
+                    />
                     <div className={`absolute right-0 mt-2 w-80 max-h-96 overflow-y-auto rounded-2xl border shadow-2xl z-40 ${isDark
                       ? 'bg-zinc-900 border-zinc-800 shadow-black/50'
                       : 'bg-white border-zinc-200 shadow-zinc-300/40'
@@ -242,7 +254,11 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
                           {notifications.map(n => (
                             <button
                               key={n.id}
-                              onClick={() => { markAsRead(n.id); }}
+                              type="button"
+                              aria-label={`Notificação: ${n.title}`}
+                              onClick={() => {
+                                markAsRead(n.id);
+                              }}
                               className={`w-full text-left px-4 py-3 border-b transition-colors ${isDark
                                 ? `border-zinc-800/50 ${n.is_read ? 'opacity-50' : 'hover:bg-white/5'}`
                                 : `border-zinc-50 ${n.is_read ? 'opacity-50' : 'hover:bg-zinc-50'}`
@@ -278,7 +294,13 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
       {/* ── Mobile Sidebar ── */}
       {mobileOpen && (
         <div className="lg:hidden fixed inset-0 z-40">
-          <button type="button" onClick={() => setMobileOpen(false)} className="absolute inset-0 bg-black/70" />
+          <button
+            type="button"
+            onClick={() => setMobileOpen(false)}
+            className="absolute inset-0 bg-black/70"
+            aria-label="Fechar menu"
+            title="Fechar"
+          />
           <div className={`absolute inset-y-0 left-0 w-72 max-w-full p-4 flex flex-col ${isDark ? 'bg-neutral-950 border-r border-white/10' : 'bg-white border-r border-zinc-200'}`}>
             <Link
               to="/accounts"
