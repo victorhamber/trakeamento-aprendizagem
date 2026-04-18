@@ -25,7 +25,7 @@ export const LoginPage = () => {
   };
 
   return (
-    <div className="min-h-screen relative flex items-center justify-center p-6 overflow-hidden bg-[#05070a] select-none">
+    <div className="min-h-screen relative flex items-center justify-center p-6 overflow-hidden bg-neutral-950 select-none">
       {/* Ambient gradient blobs */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute -top-32 -left-32 w-96 h-96 rounded-full bg-indigo-600/15 blur-[100px] animate-float" />

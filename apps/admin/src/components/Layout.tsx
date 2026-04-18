@@ -133,10 +133,10 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
   const isDark = theme === 'dark';
 
   return (
-    <div className="min-h-screen transition-colors duration-300 bg-slate-50 dark:bg-[#05070a] text-zinc-900 dark:text-zinc-100 grid grid-cols-1 lg:grid-cols-[260px_1fr]">
+    <div className="min-h-screen transition-colors duration-300 bg-slate-50 dark:bg-neutral-950 text-zinc-900 dark:text-zinc-100 grid grid-cols-1 lg:grid-cols-[260px_1fr]">
 
       {/* ── Desktop Sidebar ── */}
-      <aside className="hidden lg:flex flex-col bg-white dark:bg-[#080a0f] border-r border-zinc-200/60 dark:border-white/5 p-5 transition-colors duration-300">
+      <aside className="hidden lg:flex flex-col bg-white dark:bg-neutral-950 border-r border-zinc-200/60 dark:border-white/5 p-5 transition-colors duration-300">
         <Link to="/accounts" className="flex items-center gap-3 px-2 mb-7 select-none">
           <img src="/logo-icon.png?v=2" alt="Trajettu" className="h-12 w-12 object-contain pointer-events-none filter sepia hue-rotate-180" />
           <div className="leading-tight">
@@ -177,7 +177,7 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
 
       {/* ── Main ── */}
       <main className="flex flex-col min-w-0">
-        <header className={`sticky top-0 z-10 backdrop-blur-xl border-b ${isDark ? 'bg-[#05070a]/80 border-white/5' : 'bg-white/80 border-zinc-200/60'}`}>
+        <header className={`sticky top-0 z-10 backdrop-blur-xl border-b ${isDark ? 'bg-neutral-950/85 border-white/5' : 'bg-white/80 border-zinc-200/60'}`}>
           <div className="w-full px-4 sm:px-8 py-3 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <button
@@ -279,7 +279,7 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
       {mobileOpen && (
         <div className="lg:hidden fixed inset-0 z-40">
           <button type="button" onClick={() => setMobileOpen(false)} className="absolute inset-0 bg-black/70" />
-          <div className={`absolute inset-y-0 left-0 w-72 max-w-full p-4 flex flex-col ${isDark ? 'bg-[#0b0f17] border-r border-white/10' : 'bg-white border-r border-zinc-200'}`}>
+          <div className={`absolute inset-y-0 left-0 w-72 max-w-full p-4 flex flex-col ${isDark ? 'bg-neutral-950 border-r border-white/10' : 'bg-white border-r border-zinc-200'}`}>
             <Link
               to="/accounts"
               onClick={() => setMobileOpen(false)}

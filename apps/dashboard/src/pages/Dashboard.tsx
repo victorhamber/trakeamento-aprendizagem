@@ -242,8 +242,8 @@ export const DashboardPage = () => {
       <div className="relative rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 overflow-hidden px-6 py-7 mb-6 shadow-sm dark:shadow-none select-none">
         {/* ambient glow */}
         <div className="pointer-events-none absolute inset-0 hidden dark:block">
-          <div className="absolute -top-16 -right-16 w-72 h-72 bg-blue-500/8 rounded-full blur-3xl" />
-          <div className="absolute -bottom-10 -left-10 w-48 h-48 bg-violet-500/6 rounded-full blur-3xl" />
+          <div className="absolute -top-16 -right-16 w-72 h-72 bg-white/[0.04] rounded-full blur-3xl" />
+          <div className="absolute -bottom-10 -left-10 w-48 h-48 bg-zinc-500/[0.06] rounded-full blur-3xl" />
         </div>
 
         <div className="relative flex flex-col sm:flex-row sm:items-center gap-4 justify-between">

@@ -130,7 +130,7 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
     <div className="min-h-screen transition-colors duration-300 bg-background text-foreground grid grid-cols-1 lg:grid-cols-[260px_1fr]">
 
       {/* ── Desktop Sidebar ── */}
-      <aside className="hidden lg:flex flex-col bg-card dark:bg-[#080a0f] border-r border-border p-5 transition-colors duration-300 select-none">
+      <aside className="hidden lg:flex flex-col bg-card dark:bg-neutral-950 border-r border-border p-5 transition-colors duration-300 select-none">
         <Link to="/dashboard" className="flex items-center gap-3 px-2 mb-7 select-none">
           <img src="/logo-icon.png?v=2" alt="Trajettu" className="h-12 w-12 object-contain pointer-events-none" />
           <div className="leading-tight">
@@ -178,7 +178,7 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
 
       {/* ── Main ── */}
       <main className="flex flex-col min-w-0">
-        <header className={`sticky top-0 z-10 backdrop-blur-xl border-b border-border ${isDark ? 'bg-[#05070a]/80' : 'bg-card/80'} select-none`}>
+        <header className={`sticky top-0 z-10 backdrop-blur-xl border-b border-border ${isDark ? 'bg-neutral-950/85' : 'bg-card/80'} select-none`}>
           <div className="w-full px-4 sm:px-8 py-3 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <button
@@ -300,7 +300,7 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
             aria-label="Fechar menu"
             title="Fechar"
           />
-          <div className={`absolute inset-y-0 left-0 w-72 max-w-full p-4 flex flex-col ${isDark ? 'bg-[#0b0f17] border-r border-white/10' : 'bg-card border-r border-border'} select-none`}>
+          <div className={`absolute inset-y-0 left-0 w-72 max-w-full p-4 flex flex-col ${isDark ? 'bg-neutral-950 border-r border-white/10' : 'bg-card border-r border-border'} select-none`}>
             <Link
               to="/dashboard"
               onClick={() => setMobileOpen(false)}
