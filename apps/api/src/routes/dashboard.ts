@@ -194,7 +194,7 @@ router.get('/mobile-summary', async (req, res) => {
            AND ($4::int[] IS NULL OR s.id = ANY($4))
            AND ($5::text IS NULL OR COALESCE(NULLIF(UPPER(TRIM(p.currency)), ''), 'BRL') = $5::text)
          ORDER BY COALESCE(p.platform_date, p.created_at) DESC
-         LIMIT 20`,
+         LIMIT 50`,
         [auth.accountId, start, end, siteFilter, currencyFilter]
       ),
       pool.query(`SELECT COUNT(*)::int as c FROM sites WHERE account_id = $1`, [auth.accountId]),
@@ -248,6 +248,56 @@ router.get('/mobile-summary', async (req, res) => {
     });
   } catch (err) {
     console.error('Dashboard mobile-summary Error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.get('/mobile-purchases', async (req, res) => {
+  const auth = req.auth!;
+  const period = normalizeMobilePeriodParam((req.query.period as string) || 'today');
+  const since = typeof req.query.since === 'string' ? req.query.since.trim() : undefined;
+  const until = typeof req.query.until === 'string' ? req.query.until.trim() : undefined;
+  const siteIds = parseSiteIds(req.query.sites);
+  const siteFilter = siteIdFilterParam(siteIds);
+  const currencyFilter = parseCurrencyFilter(req.query.currency);
+  const bounds = resolveMobilePeriod(period, since, until);
+  if ('error' in bounds) {
+    return res.status(400).json({ error: bounds.error });
+  }
+  const { start, end } = bounds;
+  
+  const page = parseInt(req.query.page as string, 10) || 1;
+  const limit = 50;
+  const offset = (page - 1) * limit;
+
+  try {
+    const recentRes = await pool.query(
+      `SELECT p.id, p.order_id, p.platform, p.amount, p.currency, COALESCE(p.platform_date, p.created_at) as created_at, s.name as site_name
+       FROM purchases p
+       JOIN sites s ON s.site_key = p.site_key AND s.account_id = $1
+       WHERE p.status IN ${APPROVED_PURCHASE_STATUSES}
+         AND COALESCE(p.platform_date, p.created_at) <= $3::timestamptz
+         AND ($2::timestamptz IS NULL OR COALESCE(p.platform_date, p.created_at) >= $2::timestamptz)
+         AND ($4::int[] IS NULL OR s.id = ANY($4))
+         AND ($5::text IS NULL OR COALESCE(NULLIF(UPPER(TRIM(p.currency)), ''), 'BRL') = $5::text)
+       ORDER BY COALESCE(p.platform_date, p.created_at) DESC
+       LIMIT $6 OFFSET $7`,
+      [auth.accountId, start, end, siteFilter, currencyFilter, limit, offset]
+    );
+
+    const recent = (recentRes.rows || []).map((r: any) => ({
+      id: r.id,
+      orderId: r.order_id,
+      platform: r.platform,
+      amount: r.amount != null ? Number(r.amount) : null,
+      currency: r.currency,
+      createdAt: r.created_at,
+      siteName: r.site_name,
+    }));
+
+    res.json({ purchases: recent });
+  } catch (err) {
+    console.error('Dashboard mobile-purchases Error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
