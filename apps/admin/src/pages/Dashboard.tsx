@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { Layout } from '../components/Layout';
@@ -184,6 +184,7 @@ type TooltipState = {
 const SalesChart = ({ data, currency, isDark }: { data: DailyPoint[]; currency: string; isDark: boolean }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
+  const tooltipRef = useRef<HTMLDivElement>(null);
   const [tooltip, setTooltip] = useState<TooltipState>(null);
   const [W, setW] = useState(800);
   const H = 180;
@@ -269,6 +270,20 @@ const SalesChart = ({ data, currency, isDark }: { data: DailyPoint[]; currency: 
     setTooltip({ x: pt.x, y: pt.y, point: pt.d, side });
   };
 
+  useLayoutEffect(() => {
+    const el = tooltipRef.current;
+    if (!el || !tooltip) return;
+    el.style.top = `${(tooltip.y / H) * 100}%`;
+    el.style.transform = 'translateY(-50%)';
+    if (tooltip.side === 'left') {
+      el.style.left = `calc(${(tooltip.x / W) * 100}% + 14px)`;
+      el.style.right = 'auto';
+    } else {
+      el.style.right = `calc(${100 - (tooltip.x / W) * 100}% + 14px)`;
+      el.style.left = 'auto';
+    }
+  }, [tooltip, W, H]);
+
   return (
     <div className="relative select-none w-full" ref={containerRef}>
       {!hasData ? (
@@ -346,15 +361,7 @@ const SalesChart = ({ data, currency, isDark }: { data: DailyPoint[]; currency: 
 
           {/* Tooltip */}
           {tooltip && (
-            <div
-              className="absolute pointer-events-none z-10"
-              style={{
-                top: `${(tooltip.y / H) * 100}%`,
-                left: tooltip.side === 'left' ? `calc(${(tooltip.x / W) * 100}% + 14px)` : undefined,
-                right: tooltip.side === 'right' ? `calc(${100 - (tooltip.x / W) * 100}% + 14px)` : undefined,
-                transform: 'translateY(-50%)',
-              }}
-            >
+            <div ref={tooltipRef} className="absolute pointer-events-none z-10">
               <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl shadow-xl px-3.5 py-2.5 min-w-[140px]">
                 <div className="text-[11px] font-semibold text-zinc-800 dark:text-zinc-200 mb-1.5">
                   {new Date(tooltip.point.date + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })}
@@ -468,6 +475,7 @@ export const DashboardPage = () => {
 
           <div className="shrink-0 flex flex-wrap items-center gap-2 self-start sm:self-auto">
             <select
+              aria-label="Filtrar por site"
               value={selectedSiteId}
               onChange={(e) => setSelectedSiteId(e.target.value)}
               className={selectCls}
@@ -480,6 +488,7 @@ export const DashboardPage = () => {
               ))}
             </select>
             <select
+              aria-label="Período do relatório"
               value={period}
               onChange={(e) => setPeriod(e.target.value)}
               className={selectCls}
@@ -492,6 +501,7 @@ export const DashboardPage = () => {
               <option value="maximum">Máximo</option>
             </select>
             <select
+              aria-label="Moeda do faturamento"
               value={currency}
               onChange={(e) => setCurrency(e.target.value)}
               className={selectCls}
