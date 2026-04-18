@@ -1394,6 +1394,11 @@ router.get('/:siteId/buyers', requireAuth, async (req, res) => {
           MAX(purchased_at) AS last_purchase_at,
           COUNT(*)::int AS purchases_count,
           COALESCE(SUM(amount), 0)::numeric AS revenue,
+          CASE
+            WHEN COUNT(DISTINCT CASE WHEN currency IS NOT NULL AND BTRIM(currency::text) <> '' THEN UPPER(BTRIM(currency::text)) END) = 1
+            THEN MAX(UPPER(BTRIM(currency::text))) FILTER (WHERE currency IS NOT NULL AND BTRIM(currency::text) <> '')
+            ELSE NULL
+          END AS revenue_currency,
           (ARRAY_AGG(NULLIF(BTRIM(customer_name), '') ORDER BY purchased_at DESC))[1] AS last_customer_name,
           (ARRAY_AGG(NULLIF(BTRIM(customer_email), '') ORDER BY purchased_at DESC))[1] AS last_customer_email,
           (ARRAY_AGG(NULLIF(BTRIM(customer_phone), '') ORDER BY purchased_at DESC))[1] AS last_customer_phone,
@@ -1435,6 +1440,7 @@ router.get('/:siteId/buyers', requireAuth, async (req, res) => {
         last_order_id,
         purchases_count,
         revenue,
+        revenue_currency,
         last_purchase_at
       FROM enriched
       ORDER BY last_purchase_at DESC NULLS LAST

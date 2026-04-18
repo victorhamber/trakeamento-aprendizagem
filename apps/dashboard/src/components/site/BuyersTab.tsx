@@ -11,6 +11,8 @@ type BuyerRow = {
   last_order_id?: string | null;
   purchases_count: number;
   revenue: number;
+  /** Só preenchida quando todas as compras do comprador compartilham a mesma moeda (evita somar BRL+USD como um único símbolo). */
+  revenue_currency: string | null;
   last_purchase_at: string | null;
 };
 
@@ -180,8 +182,23 @@ function PageSlugTag({ url, className }: { url: string; className?: string }) {
   );
 }
 
-const money = (n: number) =>
-  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(n || 0);
+function formatMoney(n: number, currencyCode: string | null | undefined): string {
+  const raw = (currencyCode || '').trim().toUpperCase();
+  const code = /^[A-Z]{3}$/.test(raw) ? raw : 'BRL';
+  try {
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: code, maximumFractionDigits: 2 }).format(
+      n || 0
+    );
+  } catch {
+    return new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0);
+  }
+}
+
+/** Receita agregada: só formata como moeda ISO quando a API confirma uma única moeda no período. */
+function formatRevenueCell(n: number, singleCurrency: string | null | undefined): string {
+  if (singleCurrency) return formatMoney(n, singleCurrency);
+  return `${new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0)} *`;
+}
 
 function purchaseStatusLabel(status: string | null | undefined): string {
   const s = String(status || '').toLowerCase().trim();
@@ -408,7 +425,16 @@ export function BuyersTab({ siteId }: { siteId: number }) {
                     ) : null}
                   </td>
                   <td className="px-4 py-3 text-right tabular-nums text-zinc-700 dark:text-zinc-200">{r.purchases_count}</td>
-                  <td className="px-4 py-3 text-right tabular-nums text-zinc-700 dark:text-zinc-200">{money(Number(r.revenue || 0))}</td>
+                  <td
+                    className="px-4 py-3 text-right tabular-nums text-zinc-700 dark:text-zinc-200"
+                    title={
+                      r.revenue_currency
+                        ? undefined
+                        : 'Soma numérica: há mais de uma moeda entre as compras ou moeda não informada. Abra o comprador para ver cada valor na moeda correta.'
+                    }
+                  >
+                    {formatRevenueCell(Number(r.revenue || 0), r.revenue_currency ?? null)}
+                  </td>
                   <td className="px-4 py-3 text-right text-zinc-600 dark:text-zinc-400">{dt(r.last_purchase_at)}</td>
                 </tr>
               ))}
@@ -459,7 +485,10 @@ export function BuyersTab({ siteId }: { siteId: number }) {
                       <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-950/25 p-3">
                         <div className="text-[11px] font-semibold text-zinc-600 dark:text-zinc-400">Compra (última)</div>
                         <div className="mt-1 text-xs text-zinc-800 dark:text-zinc-200">
-                          {detail.purchases?.[0]?.amount != null ? money(Number(detail.purchases[0].amount)) : '—'} · {dt(detail.purchases?.[0]?.purchased_at)}
+                          {detail.purchases?.[0]?.amount != null
+                            ? formatMoney(Number(detail.purchases[0].amount), detail.purchases[0].currency)
+                            : '—'}{' '}
+                          · {dt(detail.purchases?.[0]?.purchased_at)}
                         </div>
                         <div className="mt-1 text-[11px] text-zinc-600 dark:text-zinc-400 truncate">
                           Pedido: {detail.purchases?.[0]?.order_id || '—'}
@@ -569,7 +598,7 @@ export function BuyersTab({ siteId }: { siteId: number }) {
                                   {p.order_id || '—'}
                                 </td>
                                 <td className="py-2 pr-3 text-right tabular-nums text-zinc-800 dark:text-zinc-200 whitespace-nowrap">
-                                  {p.amount != null ? money(Number(p.amount)) : '—'}
+                                  {p.amount != null ? formatMoney(Number(p.amount), p.currency) : '—'}
                                 </td>
                                 <td className="py-2 text-zinc-600 dark:text-zinc-400">{purchaseStatusLabel(p.status)}</td>
                               </tr>
