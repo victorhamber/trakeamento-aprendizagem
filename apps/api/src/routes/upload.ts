@@ -8,6 +8,7 @@ import FormData from 'form-data';
 import { requireAuth } from '../middleware/auth';
 import { pool } from '../db/pool';
 import { decryptString } from '../lib/crypto';
+import { OPENAI_CHAT_MODEL } from '../constants/openai-chat-model';
 
 const router = Router();
 
@@ -120,14 +121,14 @@ router.post('/creative', requireAuth, upload.single('file'), async (req, res) =>
         let mediaDescription = '';
 
         if (isImage) {
-            // GPT-4o Vision: describe the image
+            // Visão via chat completions (modelo único do produto)
             const base64 = fs.readFileSync(file.path).toString('base64');
             const dataUri = `data:${file.mimetype};base64,${base64}`;
 
             const response = await axios.post(
                 'https://api.openai.com/v1/chat/completions',
                 {
-                    model: 'gpt-4o',
+                    model: OPENAI_CHAT_MODEL,
                     max_tokens: 500,
                     messages: [
                         {

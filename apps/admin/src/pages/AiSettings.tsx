@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { Layout } from '../components/Layout';
 
+const OPENAI_CHAT_MODEL = 'gpt-4.1-mini';
+
 type Settings = {
   has_openai_key: boolean;
   openai_model: string;
@@ -10,14 +12,12 @@ type Settings = {
 export const AiSettingsPage = () => {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [openaiApiKey, setOpenaiApiKey] = useState('');
-  const [openaiModel, setOpenaiModel] = useState('gpt-4o');
   const [saving, setSaving] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
 
   const load = async () => {
     const res = await api.get('/ai/settings');
     setSettings(res.data);
-    setOpenaiModel(res.data.openai_model || 'gpt-4o');
   };
 
   useEffect(() => {
@@ -29,7 +29,7 @@ export const AiSettingsPage = () => {
     setSaving(true);
     setFlash(null);
     try {
-      await api.put('/ai/settings', { openai_api_key: openaiApiKey || undefined, openai_model: openaiModel });
+      await api.put('/ai/settings', { openai_api_key: openaiApiKey || undefined, openai_model: OPENAI_CHAT_MODEL });
       setOpenaiApiKey('');
       await load();
       setFlash('Chave salva com sucesso. A IA já pode gerar diagnósticos.');
@@ -80,14 +80,10 @@ export const AiSettingsPage = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs text-zinc-700 dark:text-zinc-400">Modelo</label>
-                <select
-                  value={openaiModel}
-                  onChange={(e) => setOpenaiModel(e.target.value)}
-                  className="mt-1 w-full rounded-lg bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-200 outline-none focus:border-indigo-500/60 dark:focus:border-zinc-600 transition-colors"
-                >
-                  <option value="gpt-4o">gpt-4o</option>
-                  <option value="gpt-4o-mini">gpt-4o-mini</option>
-                </select>
+                <div className="mt-1 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 px-3.5 py-2.5 text-sm font-mono text-zinc-900 dark:text-zinc-200">
+                  {OPENAI_CHAT_MODEL}
+                </div>
+                <p className="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">Modelo fixo do produto.</p>
               </div>
 
               <div>

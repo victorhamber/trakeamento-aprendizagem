@@ -9,13 +9,14 @@ import {
 import { buildAnalysisSystemPrompt } from './prompts/analysis-system-prompt';
 import { buildMentorSystemPrompt } from './prompts/mentor-conversion-master-prompt';
 import { routeSkills, type MentorSkill } from './mentor-skills';
+import { OPENAI_CHAT_MODEL } from '../constants/openai-chat-model';
 
 interface LlmConfig {
   apiKey: string;
   model: string;
 }
 
-const DEFAULT_MODEL = 'gpt-4o';
+const DEFAULT_MODEL = OPENAI_CHAT_MODEL;
 const DEFAULT_TEMPERATURE = 0.2;
 const DEFAULT_MAX_TOKENS = 12000;
 const MENTOR_MAX_TOKENS = 4500;
@@ -95,7 +96,7 @@ export class LlmService {
   private async getKeyForSite(siteKey: string): Promise<LlmConfig | null> {
     try {
       const result = await pool.query(
-        `SELECT a.openai_api_key_enc, a.openai_model
+        `SELECT a.openai_api_key_enc
          FROM sites s
          LEFT JOIN account_settings a ON a.account_id = s.account_id
          WHERE s.site_key = $1`,
@@ -105,7 +106,7 @@ export class LlmService {
       if (!row?.openai_api_key_enc) return null;
       return {
         apiKey: decryptString(row.openai_api_key_enc as string),
-        model: (row.openai_model as string) || DEFAULT_MODEL,
+        model: OPENAI_CHAT_MODEL,
       };
     } catch (err) {
       this.log('error', 'Failed to fetch LLM config from DB', err);
