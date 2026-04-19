@@ -9,7 +9,7 @@ import { DashboardPage } from './pages/Dashboard';
 import { AiSettingsPage } from './pages/AiSettings';
 import { SitesPage } from './pages/Sites';
 import { SitePage } from './pages/Site';
-import { TreinamentosPage } from './pages/Treinamentos';
+import { TreinamentosShell, TreinamentosLessonPanel, DEFAULT_LESSON_SLUG } from './pages/Treinamentos';
 
 const RequireAuth = ({ children }: { children: React.ReactNode }) => {
   const auth = useAuth();
@@ -60,10 +60,13 @@ function App() {
         path="/treinamentos"
         element={
           <RequireAuth>
-            <TreinamentosPage />
+            <TreinamentosShell />
           </RequireAuth>
         }
-      />
+      >
+        <Route index element={<Navigate to={`/treinamentos/${DEFAULT_LESSON_SLUG}`} replace />} />
+        <Route path=":lessonSlug" element={<TreinamentosLessonPanel />} />
+      </Route>
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
