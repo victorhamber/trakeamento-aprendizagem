@@ -848,6 +848,18 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
 
               const fullPayloadJson = hasPayload ? JSON.stringify(hook.last_payload, null, 2) : '';
 
+              const safeStringify = (val: unknown): string => {
+                if (val === undefined || val === null) return '';
+                if (typeof val === 'object') return JSON.stringify(val);
+                return String(val);
+              };
+
+              const optionPreview = (key: string, maxLen = 42): string => {
+                const raw = safeStringify(flatPayload[key]).replace(/\s+/g, ' ').trim();
+                if (!raw) return '';
+                return raw.length > maxLen ? `${raw.slice(0, maxLen)}…` : raw;
+              };
+
               return (
                 <div key={hook.id} className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 overflow-hidden">
                   {/* Header do Webhook */}
@@ -1018,11 +1030,14 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
                                       aria-label={`${mapField.label} — escolher caminho na lista`}
                                     >
                                       <option value="">— Escolher na lista (opcional) —</option>
-                                      {availableKeys.map(k => (
-                                        <option key={k} value={k}>
-                                          {k}
-                                        </option>
-                                      ))}
+                                      {availableKeys.map(k => {
+                                        const ex = optionPreview(k);
+                                        return (
+                                          <option key={k} value={k}>
+                                            {ex ? `${k} (ex.: ${ex})` : k}
+                                          </option>
+                                        );
+                                      })}
                                     </select>
                                   ) : null}
                                   <label htmlFor={`webhook-map-${hook.id}-${mapField.field}`} className="sr-only">
