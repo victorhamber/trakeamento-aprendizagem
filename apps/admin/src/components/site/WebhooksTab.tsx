@@ -36,6 +36,7 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
   const [mappingState, setMappingState] = useState<Record<string, Record<string, string>>>({});
   const [samplePayloadDraft, setSamplePayloadDraft] = useState<Record<string, string>>({});
   const [samplePayloadLoadingId, setSamplePayloadLoadingId] = useState<string | null>(null);
+  const [payloadRefreshHookId, setPayloadRefreshHookId] = useState<string | null>(null);
   const [mappingDefaultsState, setMappingDefaultsState] = useState<
     Record<string, Partial<Record<'currency' | 'status' | 'payment_method' | 'phone' | 'first_name' | 'last_name', string>>>
   >({});
@@ -61,14 +62,26 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
   const [checkoutBusy, setCheckoutBusy] = useState(false);
   const [checkoutLogsBusy, setCheckoutLogsBusy] = useState(false);
 
-  const loadCustomWebhooks = useCallback(async () => {
+  const loadCustomWebhooks = useCallback(async (): Promise<boolean> => {
     try {
       const res = await api.get(`/sites/${id}/custom-webhooks`);
       setCustomWebhooks(res.data.webhooks || []);
+      return true;
     } catch (err) {
       console.error('Failed to load custom webhooks', err);
+      return false;
     }
   }, [id]);
+
+  const handleRefreshWebhookPayload = async (hookId: string) => {
+    setPayloadRefreshHookId(hookId);
+    try {
+      const ok = await loadCustomWebhooks();
+      showFlash(ok ? 'Payload atualizado.' : 'Não foi possível atualizar o payload.', ok ? 'success' : 'error');
+    } finally {
+      setPayloadRefreshHookId(null);
+    }
+  };
 
   const fillDummyData = useCallback(() => {
     const ts = Date.now();
@@ -955,6 +968,14 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
                             <div className="space-y-3">
                               <div className="p-3 bg-zinc-50 dark:bg-zinc-900 rounded text-[10px] text-zinc-500 space-y-2">
                                 <p>Ainda não há POST gravado. Envie um teste pela plataforma para esta URL ou cole abaixo um JSON de exemplo (log da Monetizze, Ticto, etc.) e carregue.</p>
+                                <button
+                                  type="button"
+                                  disabled={payloadRefreshHookId === hook.id}
+                                  onClick={() => handleRefreshWebhookPayload(hook.id)}
+                                  className="text-[10px] px-2 py-1 rounded border border-zinc-300 dark:border-zinc-600 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-800 disabled:opacity-50"
+                                >
+                                  {payloadRefreshHookId === hook.id ? 'Atualizando…' : 'Atualizar — ver se já chegou POST'}
+                                </button>
                               </div>
                               <label htmlFor={`admin-sample-json-${hook.id}`} className="block text-[10px] font-medium text-zinc-500 mb-1">
                                 Colar JSON bruto e carregar
@@ -988,6 +1009,14 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
                                   className="text-[10px] px-2 py-1 rounded border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-800"
                                 >
                                   Copiar JSON inteiro
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={payloadRefreshHookId === hook.id}
+                                  onClick={() => handleRefreshWebhookPayload(hook.id)}
+                                  className="text-[10px] px-2 py-1 rounded border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-800 disabled:opacity-50"
+                                >
+                                  {payloadRefreshHookId === hook.id ? 'Atualizando…' : 'Atualizar payload'}
                                 </button>
                               </div>
                               <pre className="flex-1 min-h-0 text-[10px] leading-relaxed text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap break-words font-mono bg-zinc-50 dark:bg-zinc-950 p-3 rounded border border-zinc-200 dark:border-zinc-800 overflow-auto">
