@@ -32,6 +32,15 @@ const IconBrain = ({ className }: { className?: string }) => (
   </svg>
 );
 
+const IconTraining = ({ className }: { className?: string }) => (
+  <svg viewBox="0 0 24 24" fill="none" className={className} stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+    <path d="M9 10h6" />
+    <path d="M9 14h4" />
+  </svg>
+);
+
 const IconSun = () => (
   <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="12" cy="12" r="4" />
@@ -54,9 +63,10 @@ const IconBell = () => (
 
 // ─── Nav Item ─────────────────────────────────────────────────────────────────
 
-const NavItem = ({ to, label, icon: IconComp }: { to: string; label: string; icon: React.FC<{ className?: string }> }) => (
+const NavItem = ({ to, label, icon: IconComp, onNavigate }: { to: string; label: string; icon: React.FC<{ className?: string }>; onNavigate?: () => void }) => (
   <NavLink
     to={to}
+    onClick={() => onNavigate?.()}
     className={({ isActive }) =>
       `group relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all duration-200 ${isActive
         ? 'bg-indigo-50 dark:bg-white/10 text-indigo-900 dark:text-white font-medium border border-indigo-200/90 dark:border-white/10 shadow-sm dark:shadow-[0_10px_30px_rgba(0,0,0,0.35)]'
@@ -147,10 +157,7 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
 
           <div className="pt-5">
             <div className="text-[9px] uppercase tracking-[0.2em] font-bold px-3 mb-2 text-zinc-400 dark:text-zinc-600">Recursos</div>
-            <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm cursor-not-allowed border border-transparent text-zinc-400 dark:text-zinc-600">
-              <div className="h-5 w-5 rounded-md flex items-center justify-center text-[8px] font-bold bg-zinc-200 dark:bg-zinc-800/50">SOON</div>
-              <span>Treinamentos</span>
-            </div>
+            <NavItem to="/treinamentos" label="Treinamentos" icon={IconTraining} />
           </div>
         </nav>
 
@@ -318,9 +325,13 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
             </Link>
 
             <nav className="mt-4 space-y-1">
-              <NavItem to="/dashboard" label="Dashboard" icon={IconDashboard} />
-              <NavItem to="/sites" label="Meus Sites" icon={IconSites} />
-              <NavItem to="/ai" label="Inteligência IA" icon={IconBrain} />
+              <NavItem to="/dashboard" label="Dashboard" icon={IconDashboard} onNavigate={() => setMobileOpen(false)} />
+              <NavItem to="/sites" label="Meus Sites" icon={IconSites} onNavigate={() => setMobileOpen(false)} />
+              <NavItem to="/ai" label="Inteligência IA" icon={IconBrain} onNavigate={() => setMobileOpen(false)} />
+              <div className="pt-4">
+                <div className={`text-[9px] uppercase tracking-[0.2em] font-bold px-3 mb-2 ${isDark ? 'text-zinc-600' : 'text-zinc-400'}`}>Recursos</div>
+                <NavItem to="/treinamentos" label="Treinamentos" icon={IconTraining} onNavigate={() => setMobileOpen(false)} />
+              </div>
             </nav>
 
             <div className={`mt-auto pt-4 border-t ${isDark ? 'border-white/5' : 'border-border'}`}>

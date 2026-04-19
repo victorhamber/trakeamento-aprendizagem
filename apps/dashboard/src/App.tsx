@@ -9,6 +9,7 @@ import { DashboardPage } from './pages/Dashboard';
 import { AiSettingsPage } from './pages/AiSettings';
 import { SitesPage } from './pages/Sites';
 import { SitePage } from './pages/Site';
+import { TreinamentosPage } from './pages/Treinamentos';
 
 const RequireAuth = ({ children }: { children: React.ReactNode }) => {
   const auth = useAuth();
@@ -52,6 +53,14 @@ function App() {
         element={
           <RequireAuth>
             <AiSettingsPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/treinamentos"
+        element={
+          <RequireAuth>
+            <TreinamentosPage />
           </RequireAuth>
         }
       />
