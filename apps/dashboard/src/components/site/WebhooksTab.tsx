@@ -782,6 +782,20 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
               const isEditing = editingWebhookId === hook.id;
               const hasPayload = hook.last_payload && Object.keys(hook.last_payload).length > 0;
 
+              const flattenObject = (obj: any, prefix = ''): Record<string, any> => {
+                return Object.keys(obj || {}).reduce((acc: any, k: string) => {
+                  const pre = prefix.length ? prefix + '.' : '';
+                  if (typeof obj[k] === 'object' && obj[k] !== null && !Array.isArray(obj[k])) {
+                    Object.assign(acc, flattenObject(obj[k], pre + k));
+                  } else {
+                    acc[pre + k] = obj[k];
+                  }
+                  return acc;
+                }, {});
+              };
+              const flatPayload = hasPayload ? flattenObject(hook.last_payload) : {};
+              const availableKeys = Object.keys(flatPayload).sort();
+
               const cfgFromHook = hook.mapping_config;
               const normalizedHookCfg =
                 cfgFromHook && typeof cfgFromHook === 'object' && !Array.isArray(cfgFromHook)
@@ -911,11 +925,12 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
                   {/* Builder Area */}
                   {isEditing && (
                     <div className="p-4 bg-white dark:bg-zinc-950">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                        <div>
-                          <h5 className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 mb-1">JSON bruto (último POST)</h5>
-                          <p className="text-[10px] text-zinc-500 mb-2">
-                            Única referência do corpo recebido na URL do webhook. Copie para o ChatGPT se quiser; à direita, digite os caminhos com pontos (ex.: <code className="text-zinc-600 dark:text-zinc-400">data.customer.email</code>).
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-stretch">
+                        <div className="flex flex-col min-h-0 md:min-h-[min(72vh,780px)]">
+                          <h5 className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 mb-1 shrink-0">JSON bruto (último POST)</h5>
+                          <p className="text-[10px] text-zinc-500 mb-2 shrink-0">
+                            Única referência do corpo recebido na URL do webhook. Copie para o ChatGPT se quiser; à direita, escolha na lista ou digite o caminho (ex.:{' '}
+                            <code className="text-zinc-600 dark:text-zinc-400">data.customer.email</code>).
                           </p>
                           {!hasPayload ? (
                             <div className="space-y-3">
@@ -944,7 +959,7 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
                             </div>
                           ) : (
                             <>
-                              <div className="flex flex-wrap gap-2 mb-2">
+                              <div className="flex flex-wrap gap-2 mb-2 shrink-0">
                                 <button
                                   type="button"
                                   onClick={() => {
@@ -956,20 +971,20 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
                                   Copiar JSON inteiro
                                 </button>
                               </div>
-                              <pre className="text-[10px] leading-relaxed text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap break-words font-mono bg-zinc-50 dark:bg-zinc-950 p-3 rounded border border-zinc-200 dark:border-zinc-800 max-h-[min(70vh,560px)] overflow-auto">
+                              <pre className="flex-1 min-h-0 text-[10px] leading-relaxed text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap break-words font-mono bg-zinc-50 dark:bg-zinc-950 p-3 rounded border border-zinc-200 dark:border-zinc-800 overflow-auto">
                                 {fullPayloadJson}
                               </pre>
                             </>
                           )}
                         </div>
 
-                        <div>
-                          <h5 className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 mb-3">Mapeamento para API do Meta</h5>
-                          <p className="text-[10px] text-zinc-500 mb-3">
-                            Digite livremente o caminho com pontos (cole o que o ChatGPT sugerir, ex.: <code className="text-zinc-600 dark:text-zinc-400">data.customer.email</code>). Use Ctrl+F no JSON à esquerda para achar trechos. Deixe vazio se for opcional. Onde o POST não trouxer dado, use os{' '}
+                        <div className="flex flex-col min-h-0 md:min-h-[min(72vh,780px)]">
+                          <h5 className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 mb-3 shrink-0">Mapeamento para API do Meta</h5>
+                          <p className="text-[10px] text-zinc-500 mb-3 shrink-0">
+                            Em cada campo: use o menu <strong className="text-zinc-600 dark:text-zinc-400">Escolher na lista</strong> (caminhos detectados no JSON) ou digite/ajuste no campo de texto (ex.: valor do ChatGPT). Ctrl+F no JSON à esquerda ajuda a achar trechos. Deixe vazio se for opcional. Onde o POST não trouxer dado, use os{' '}
                             <strong className="text-zinc-600 dark:text-zinc-400">padrões</strong> abaixo.
                           </p>
-                          <div className="space-y-3">
+                          <div className="space-y-3 shrink-0">
                             {[
                               { label: 'E-mail do Cliente', field: 'email' },
                               { label: 'Telefone', field: 'phone' },
@@ -980,27 +995,45 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
                               { label: 'ID do Pedido', field: 'order_id' },
                               { label: 'Status da Compra', field: 'status' },
                               { label: 'Método de pagamento (PIX / boleto — título do push)', field: 'payment_method' }
-                            ].map(mapField => (
-                              <div key={mapField.field}>
-                                <label htmlFor={`dash-webhook-map-${hook.id}-${mapField.field}`} className="block text-[10px] font-medium text-zinc-500 mb-1">
-                                  {mapField.label}
-                                </label>
-                                <input
-                                  type="text"
-                                  id={`dash-webhook-map-${hook.id}-${mapField.field}`}
-                                  value={
-                                    typeof currentMap[mapField.field] === 'string'
-                                      ? currentMap[mapField.field]
-                                      : ''
-                                  }
-                                  onChange={e => setFieldMap(mapField.field, e.target.value)}
-                                  placeholder="ex.: data.customer.email"
-                                  autoComplete="off"
-                                  spellCheck={false}
-                                  className="w-full rounded bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 px-2 py-1.5 text-[11px] outline-none font-mono text-zinc-800 dark:text-zinc-200"
-                                />
-                              </div>
-                            ))}
+                            ].map(mapField => {
+                              const pathVal =
+                                typeof currentMap[mapField.field] === 'string' ? currentMap[mapField.field] : '';
+                              const listMatch = hasPayload && availableKeys.includes(pathVal);
+                              return (
+                                <div key={mapField.field}>
+                                  <span className="block text-[10px] font-medium text-zinc-500 mb-1">{mapField.label}</span>
+                                  {hasPayload && availableKeys.length > 0 ? (
+                                    <select
+                                      id={`dash-webhook-pick-${hook.id}-${mapField.field}`}
+                                      value={listMatch ? pathVal : ''}
+                                      onChange={e => setFieldMap(mapField.field, e.target.value)}
+                                      className="w-full rounded bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 px-2 py-1.5 text-[11px] outline-none mb-1"
+                                      aria-label={`${mapField.label} — escolher caminho na lista`}
+                                    >
+                                      <option value="">— Escolher na lista (opcional) —</option>
+                                      {availableKeys.map(k => (
+                                        <option key={k} value={k}>
+                                          {k}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  ) : null}
+                                  <label htmlFor={`dash-webhook-map-${hook.id}-${mapField.field}`} className="sr-only">
+                                    {mapField.label} — caminho (editar)
+                                  </label>
+                                  <input
+                                    type="text"
+                                    id={`dash-webhook-map-${hook.id}-${mapField.field}`}
+                                    value={pathVal}
+                                    onChange={e => setFieldMap(mapField.field, e.target.value)}
+                                    placeholder="Digite o caminho (ex.: data.customer.email)"
+                                    autoComplete="off"
+                                    spellCheck={false}
+                                    className="w-full rounded bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 px-2 py-1.5 text-[11px] outline-none font-mono text-zinc-800 dark:text-zinc-200"
+                                  />
+                                </div>
+                              );
+                            })}
                           </div>
                           <div className="mt-4 p-3 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50/80 dark:bg-zinc-900/50 space-y-2">
                             <h6 className="text-[10px] font-semibold text-zinc-700 dark:text-zinc-300 uppercase tracking-wide">
