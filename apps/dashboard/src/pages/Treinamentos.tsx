@@ -53,7 +53,7 @@ export const TreinamentosLessonPanel = () => {
       </div>
 
       <div className="p-5 sm:p-6 border-t border-zinc-100 dark:border-zinc-800/80">
-        <div className="text-xs font-semibold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
+        <div className="inline-flex items-center rounded-lg bg-indigo-100 px-3 py-1.5 text-sm font-bold uppercase tracking-wide text-indigo-950 dark:bg-indigo-500/25 dark:text-indigo-50">
           Aula {idx}
         </div>
         <h2 className="mt-2 text-lg sm:text-xl font-bold text-zinc-900 dark:text-white leading-snug">
@@ -87,15 +87,30 @@ export const TreinamentosShell = () => {
                   }`
                 }
               >
-                <span className="block text-[10px] font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-500">Aula {i + 1}</span>
-                <span className="mt-0.5 block text-xs font-medium leading-snug">{lesson.title}</span>
+                {({ isActive }) => (
+                  <>
+                    <span
+                      className={
+                        `inline-flex rounded-md px-2 py-0.5 text-xs font-bold uppercase tracking-wide ${isActive
+                          ? 'bg-indigo-600 text-white dark:bg-indigo-500 dark:text-white'
+                          : 'bg-indigo-100 text-indigo-950 dark:bg-indigo-500/30 dark:text-indigo-50'
+                          }`
+                      }
+                    >
+                      Aula {i + 1}
+                    </span>
+                    <span className="mt-1.5 block text-xs font-medium leading-snug">{lesson.title}</span>
+                  </>
+                )}
               </NavLink>
             ))}
           </div>
 
-          <aside className="hidden lg:block w-72 shrink-0 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/50 p-2">
-            <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-[0.15em] text-zinc-500 dark:text-zinc-500">
-              Curso · Fundamentos
+          <aside className="hidden lg:block w-72 shrink-0 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/50 p-3">
+            <div className="mb-3 rounded-xl border border-indigo-200/80 bg-indigo-50 px-3 py-2.5 dark:border-indigo-400/30 dark:bg-indigo-500/15">
+              <span className="text-xs font-bold uppercase tracking-[0.14em] text-indigo-950 dark:text-indigo-50">
+                Curso · Fundamentos
+              </span>
             </div>
             <nav className="space-y-1">
               {TREINAMENTO_LESSONS.map((lesson, i) => (
@@ -111,10 +126,19 @@ export const TreinamentosShell = () => {
                 >
                   {({ isActive }) => (
                     <>
-                      <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">Aula {i + 1}</span>
                       <span
                         className={
-                          `mt-1 block text-sm font-medium leading-snug ${isActive ? 'text-indigo-950 dark:text-white' : 'text-zinc-900 dark:text-zinc-100'}`
+                          `inline-flex w-fit rounded-md px-2 py-1 text-xs font-bold uppercase tracking-wide ${isActive
+                            ? 'bg-indigo-600 text-white dark:bg-indigo-500 dark:text-white'
+                            : 'bg-zinc-200 text-zinc-900 dark:bg-zinc-600 dark:text-zinc-50'
+                            }`
+                        }
+                      >
+                        Aula {i + 1}
+                      </span>
+                      <span
+                        className={
+                          `mt-2 block text-sm font-medium leading-snug ${isActive ? 'text-indigo-950 dark:text-white' : 'text-zinc-900 dark:text-zinc-100'}`
                         }
                       >
                         {lesson.title}
