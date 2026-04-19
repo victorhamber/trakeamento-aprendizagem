@@ -208,7 +208,13 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
           ? (rawCfg as Record<string, unknown>)
           : {};
       const { defaults: _oldDef, ...pathKeysFromDb } = cfgObj;
-      const paths = { ...pathKeysFromDb, ...(mappingState[hookId] || {}) } as Record<string, string>;
+      const merged = { ...pathKeysFromDb, ...(mappingState[hookId] || {}) } as Record<string, unknown>;
+      const paths: Record<string, string> = {};
+      for (const [k, v] of Object.entries(merged)) {
+        if (k === 'defaults' || typeof v !== 'string') continue;
+        const t = v.trim();
+        if (t) paths[k] = t;
+      }
       const def = mappingDefaultsState[hookId] || {};
       const defaults: Record<string, string> = {};
       (['currency', 'status', 'payment_method', 'phone', 'first_name', 'last_name'] as const).forEach(k => {
@@ -783,22 +789,6 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
               const isEditing = editingWebhookId === hook.id;
               const hasPayload = hook.last_payload && Object.keys(hook.last_payload).length > 0;
 
-              // Funcao recursiva para varrer o JSON e gerar paths pontilhados -> { "buyer.email": "joao@...", "amount": 97 }
-              const flattenObject = (obj: any, prefix = ''): Record<string, any> => {
-                return Object.keys(obj || {}).reduce((acc: any, k: string) => {
-                  const pre = prefix.length ? prefix + '.' : '';
-                  if (typeof obj[k] === 'object' && obj[k] !== null && !Array.isArray(obj[k])) {
-                    Object.assign(acc, flattenObject(obj[k], pre + k));
-                  } else {
-                    acc[pre + k] = obj[k];
-                  }
-                  return acc;
-                }, {});
-              };
-
-              const flatPayload = hasPayload ? flattenObject(hook.last_payload) : {};
-              const availableKeys = Object.keys(flatPayload).sort();
-
               const cfgFromHook = hook.mapping_config;
               const normalizedHookCfg =
                 cfgFromHook && typeof cfgFromHook === 'object' && !Array.isArray(cfgFromHook)
@@ -840,11 +830,6 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
                   ...prev,
                   [hook.id]: { ...mappingDefaultsRow, ...prev[hook.id], [key]: val },
                 }));
-              };
-
-              const safeStringify = (val: any): string => {
-                if (typeof val === 'object' && val !== null) return JSON.stringify(val);
-                return String(val);
               };
 
               const fullPayloadJson = hasPayload ? JSON.stringify(hook.last_payload, null, 2) : '';
@@ -930,46 +915,39 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
                     </div>
                   </div>
 
-                  {hasPayload && !isEditing && (
-                    <details className="group border-b border-zinc-200 dark:border-zinc-800 bg-zinc-100/50 dark:bg-zinc-950/40">
-                      <summary className="px-4 py-2.5 text-[11px] font-medium text-zinc-600 dark:text-zinc-400 cursor-pointer list-none flex items-center gap-2 [&::-webkit-details-marker]:hidden">
-                        <span className="text-zinc-400 group-open:rotate-90 transition-transform">▸</span>
-                        Ver corpo completo do último POST (JSON bruto — qualquer plataforma)
-                      </summary>
-                      <div className="px-4 pb-3 space-y-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            void navigator.clipboard.writeText(fullPayloadJson);
-                            showFlash('JSON completo copiado.');
-                          }}
-                          className="text-[10px] px-2 py-1 rounded border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-800"
-                        >
-                          Copiar JSON inteiro
-                        </button>
-                        <pre className="text-[10px] leading-relaxed text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap break-words font-mono bg-white dark:bg-zinc-950 p-3 rounded border border-zinc-200 dark:border-zinc-800 max-h-[min(70vh,560px)] overflow-auto">
-                          {fullPayloadJson}
-                        </pre>
-                      </div>
-                    </details>
-                  )}
-
                   {/* Builder Area */}
                   {isEditing && (
                     <div className="p-4 bg-white dark:bg-zinc-950">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                         <div>
-                          <h5 className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 mb-1">Corpo completo recebido (JSON bruto)</h5>
+                          <h5 className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 mb-1">JSON bruto (último POST)</h5>
                           <p className="text-[10px] text-zinc-500 mb-2">
-                            É exatamente o que a plataforma enviou na URL do webhook (Monetizze, Ticto, Braip, etc.). O servidor aceita corpo JSON, <code className="text-zinc-600 dark:text-zinc-400">text/plain</code> com JSON ou{' '}
-                            <code className="text-zinc-600 dark:text-zinc-400">application/x-www-form-urlencoded</code> com o objeto em campos como <code className="text-zinc-600 dark:text-zinc-400">data</code> / <code className="text-zinc-600 dark:text-zinc-400">payload</code>. Use Ctrl+F e copie o caminho com pontos nos selects à direita.
+                            Única referência do corpo recebido na URL do webhook. Copie para o ChatGPT se quiser; à direita, digite os caminhos com pontos (ex.: <code className="text-zinc-600 dark:text-zinc-400">data.customer.email</code>).
                           </p>
-                          {availableKeys.length === 0 ? (
-                            <div className="p-3 bg-zinc-50 dark:bg-zinc-900 rounded text-[10px] text-zinc-500 space-y-2">
-                              <p>Nenhum POST recebido ainda na URL do webhook.</p>
-                              <p className="text-zinc-600 dark:text-zinc-400">
-                                Cole um JSON real abaixo (log da plataforma, doc ou teste) e carregue — o painel passa a mostrar o corpo completo aqui.
-                              </p>
+                          {!hasPayload ? (
+                            <div className="space-y-3">
+                              <div className="p-3 bg-zinc-50 dark:bg-zinc-900 rounded text-[10px] text-zinc-500 space-y-2">
+                                <p>Ainda não há POST gravado. Envie um teste pela plataforma para esta URL ou cole abaixo um JSON de exemplo (log da Monetizze, Ticto, etc.) e carregue.</p>
+                              </div>
+                              <label htmlFor={`admin-sample-json-${hook.id}`} className="block text-[10px] font-medium text-zinc-500 mb-1">
+                                Colar JSON bruto e carregar
+                              </label>
+                              <textarea
+                                id={`admin-sample-json-${hook.id}`}
+                                rows={10}
+                                value={samplePayloadDraft[hook.id] ?? ''}
+                                onChange={e => setSamplePayloadDraft(prev => ({ ...prev, [hook.id]: e.target.value }))}
+                                className="w-full rounded-md bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 px-2 py-1.5 text-[10px] font-mono text-zinc-700 dark:text-zinc-300 outline-none resize-y min-h-[120px]"
+                                spellCheck={false}
+                              />
+                              <button
+                                type="button"
+                                disabled={samplePayloadLoadingId === hook.id}
+                                onClick={() => handleLoadSamplePayload(hook.id)}
+                                className="w-full bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 disabled:opacity-50 text-zinc-800 dark:text-zinc-200 py-2 rounded-lg text-xs font-medium transition-colors"
+                              >
+                                {samplePayloadLoadingId === hook.id ? 'Carregando…' : 'Carregar JSON bruto'}
+                              </button>
                             </div>
                           ) : (
                             <>
@@ -985,68 +963,19 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
                                   Copiar JSON inteiro
                                 </button>
                               </div>
-                              <pre className="text-[10px] leading-relaxed text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap break-words font-mono bg-zinc-50 dark:bg-zinc-950 p-3 rounded border border-zinc-200 dark:border-zinc-800 max-h-[min(70vh,520px)] overflow-auto mb-4">
+                              <pre className="text-[10px] leading-relaxed text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap break-words font-mono bg-zinc-50 dark:bg-zinc-950 p-3 rounded border border-zinc-200 dark:border-zinc-800 max-h-[min(70vh,560px)] overflow-auto">
                                 {fullPayloadJson}
                               </pre>
-                              <details className="rounded border border-zinc-200 dark:border-zinc-800 bg-zinc-50/80 dark:bg-zinc-900/40">
-                                <summary className="px-3 py-2 text-[10px] font-medium text-zinc-600 dark:text-zinc-400 cursor-pointer">
-                                  Lista achatada (atalho opcional — só chaves folha)
-                                </summary>
-                                <div className="px-3 pb-3 max-h-[220px] overflow-y-auto space-y-1">
-                                  {availableKeys.map(key => (
-                                    <div
-                                      key={key}
-                                      className="flex flex-col gap-0.5 text-[10px] p-1.5 rounded hover:bg-white dark:hover:bg-zinc-950"
-                                    >
-                                      <div className="flex items-center justify-between gap-2">
-                                        <code className="text-zinc-700 dark:text-zinc-300 font-medium truncate shrink-0">{key}</code>
-                                        <span
-                                          className="text-zinc-400 truncate max-w-[120px] font-mono"
-                                          title={safeStringify(flatPayload[key])}
-                                        >
-                                          {safeStringify(flatPayload[key])}
-                                        </span>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              </details>
                             </>
                           )}
-                          <div className="mt-4 pt-3 border-t border-zinc-200 dark:border-zinc-800">
-                            <label htmlFor={`admin-sample-json-${hook.id}`} className="block text-[10px] font-medium text-zinc-500 mb-1">
-                              Colar JSON de exemplo (pendente ou aprovado)
-                            </label>
-                            <textarea
-                              id={`admin-sample-json-${hook.id}`}
-                              rows={10}
-                              value={samplePayloadDraft[hook.id] ?? ''}
-                              onChange={e => setSamplePayloadDraft(prev => ({ ...prev, [hook.id]: e.target.value }))}
-                              className="w-full rounded-md bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 px-2 py-1.5 text-[10px] font-mono text-zinc-700 dark:text-zinc-300 outline-none resize-y min-h-[120px]"
-                              spellCheck={false}
-                            />
-                            <button
-                              type="button"
-                              disabled={samplePayloadLoadingId === hook.id}
-                              onClick={() => handleLoadSamplePayload(hook.id)}
-                              className="mt-2 w-full bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 disabled:opacity-50 text-zinc-800 dark:text-zinc-200 py-2 rounded-lg text-xs font-medium transition-colors"
-                            >
-                              {samplePayloadLoadingId === hook.id ? 'Carregando…' : 'Carregar JSON para mapeamento'}
-                            </button>
-                          </div>
                         </div>
 
                         <div>
                           <h5 className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 mb-3">Mapeamento para API do Meta</h5>
                           <p className="text-[10px] text-zinc-500 mb-3">
-                            Digite o caminho com pontos (ex.: <code className="text-zinc-600 dark:text-zinc-400">data.buyer.email</code>) ou clique no campo e escolha uma sugestão da lista. Deixe vazio se for opcional. Onde o POST não trouxer dado, use os{' '}
-                            <strong className="text-zinc-600 dark:text-zinc-400">padrões</strong> abaixo (moeda, status, método, telefone, nome).
+                            Digite livremente o caminho com pontos (cole o que o ChatGPT sugerir, ex.: <code className="text-zinc-600 dark:text-zinc-400">data.customer.email</code>). Use Ctrl+F no JSON à esquerda. Deixe vazio se for opcional. Onde o POST não trouxer dado, use os{' '}
+                            <strong className="text-zinc-600 dark:text-zinc-400">padrões</strong> abaixo.
                           </p>
-                          <datalist id={`webhook-dl-${hook.id}`}>
-                            {availableKeys.map(k => (
-                              <option key={k} value={k} label={`${k} → ${safeStringify(flatPayload[k]).slice(0, 36)}`} />
-                            ))}
-                          </datalist>
                           <div className="space-y-3">
                             {[
                               { label: 'E-mail do Cliente', field: 'email' },
@@ -1064,17 +993,16 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
                                 <input
                                   type="text"
                                   id={`webhook-map-${hook.id}-${mapField.field}`}
-                                  list={`webhook-dl-${hook.id}`}
                                   value={
                                     typeof currentMap[mapField.field] === 'string'
                                       ? currentMap[mapField.field]
                                       : ''
                                   }
                                   onChange={e => setFieldMap(mapField.field, e.target.value)}
-                                  placeholder="Digite o caminho (ex.: customer.email) ou escolha na lista"
+                                  placeholder="ex.: data.customer.email"
                                   autoComplete="off"
                                   spellCheck={false}
-                                  className="w-full rounded bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 px-2 py-1.5 text-[11px] outline-none font-mono"
+                                  className="w-full rounded bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 px-2 py-1.5 text-[11px] outline-none font-mono text-zinc-800 dark:text-zinc-200"
                                 />
                               </div>
                             ))}
