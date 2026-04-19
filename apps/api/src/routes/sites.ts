@@ -1107,8 +1107,9 @@ router.post('/:siteId/custom-webhooks/:hookId/sample-payload', requireAuth, asyn
   }
 
   const serialized = JSON.stringify(sample);
-  if (serialized.length > 262144) {
-    return res.status(400).json({ error: 'Payload muito grande (máximo 256 KB).' });
+  /** Alinhado ao limite de POST em /webhooks (body JSON), para colar payload real (ex.: Hotmart). */
+  if (serialized.length > 5 * 1024 * 1024) {
+    return res.status(400).json({ error: 'Payload muito grande (máximo 5 MB).' });
   }
 
   const result = await pool.query(

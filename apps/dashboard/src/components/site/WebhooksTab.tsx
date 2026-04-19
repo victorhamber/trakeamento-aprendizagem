@@ -954,7 +954,8 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
                         <div>
                           <h5 className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 mb-1">Corpo completo recebido (JSON bruto)</h5>
                           <p className="text-[10px] text-zinc-500 mb-2">
-                            É exatamente o que a plataforma enviou (Monetizze, Kiwify, Ticto, etc.). Use Ctrl+F e copie o caminho com pontos (ex.: <code className="text-zinc-600 dark:text-zinc-400">data.buyer.email</code>) nos selects à direita.
+                            É exatamente o que a plataforma enviou na URL do webhook (Monetizze, Ticto, Braip, etc.). O servidor aceita corpo JSON, <code className="text-zinc-600 dark:text-zinc-400">text/plain</code> com JSON ou{' '}
+                            <code className="text-zinc-600 dark:text-zinc-400">application/x-www-form-urlencoded</code> com o objeto em campos como <code className="text-zinc-600 dark:text-zinc-400">data</code> / <code className="text-zinc-600 dark:text-zinc-400">payload</code>. Use Ctrl+F e copie o caminho com pontos nos selects à direita.
                           </p>
                           {availableKeys.length === 0 ? (
                             <div className="p-3 bg-zinc-50 dark:bg-zinc-900 rounded text-[10px] text-zinc-500 space-y-2">
@@ -1031,8 +1032,14 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
                         <div>
                           <h5 className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 mb-3">Mapeamento para API do Meta</h5>
                           <p className="text-[10px] text-zinc-500 mb-3">
-                            Nos selects, use os caminhos que você encontrou no JSON à esquerda. Onde o POST não trouxer dado, use os <strong className="text-zinc-600 dark:text-zinc-400">padrões</strong> abaixo (moeda, status, método, telefone, nome).
+                            Digite o caminho com pontos (ex.: <code className="text-zinc-600 dark:text-zinc-400">data.buyer.email</code>) ou clique no campo e escolha uma sugestão da lista. Deixe vazio se for opcional. Onde o POST não trouxer dado, use os{' '}
+                            <strong className="text-zinc-600 dark:text-zinc-400">padrões</strong> abaixo (moeda, status, método, telefone, nome).
                           </p>
+                          <datalist id={`dash-webhook-dl-${hook.id}`}>
+                            {availableKeys.map(k => (
+                              <option key={k} value={k} label={`${k} → ${safeStringify(flatPayload[k]).slice(0, 36)}`} />
+                            ))}
+                          </datalist>
                           <div className="space-y-3">
                             {[
                               { label: 'E-mail do Cliente', field: 'email' },
@@ -1049,23 +1056,21 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
                                 <label htmlFor={`dash-webhook-map-${hook.id}-${mapField.field}`} className="block text-[10px] font-medium text-zinc-500 mb-1">
                                   {mapField.label}
                                 </label>
-                                <select
+                                <input
+                                  type="text"
                                   id={`dash-webhook-map-${hook.id}-${mapField.field}`}
+                                  list={`dash-webhook-dl-${hook.id}`}
                                   value={
                                     typeof currentMap[mapField.field] === 'string'
                                       ? currentMap[mapField.field]
                                       : ''
                                   }
                                   onChange={e => setFieldMap(mapField.field, e.target.value)}
-                                  className="w-full rounded bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 px-2 py-1.5 text-[11px] outline-none"
-                                >
-                                  <option value="">-- Selecione o campo (opcional) --</option>
-                                  {availableKeys.map(k => (
-                                    <option key={k} value={k}>
-                                      {k} (Ex: {safeStringify(flatPayload[k]).slice(0, 20)}...)
-                                    </option>
-                                  ))}
-                                </select>
+                                  placeholder="Digite o caminho (ex.: customer.email) ou escolha na lista"
+                                  autoComplete="off"
+                                  spellCheck={false}
+                                  className="w-full rounded bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 px-2 py-1.5 text-[11px] outline-none font-mono"
+                                />
                               </div>
                             ))}
                           </div>

@@ -4,7 +4,11 @@ import express from 'express';
 import bodyParser from 'body-parser';
 import cookieParser from 'cookie-parser';
 import ingestRoutes from './routes/ingest';
-import webhookRoutes from './routes/webhooks';
+import webhookRoutes, {
+  customWebhookParseBodyMiddleware,
+  customWebhookPostHandler,
+  customWebhookRawBodyParser,
+} from './routes/webhooks';
 import authRoutes from './routes/auth';
 import sitesRoutes from './routes/sites';
 import integrationsRoutes from './routes/integrations';
@@ -79,7 +83,25 @@ app.use((req, res, next) => {
 
   next();
 });
-app.use('/webhooks', bodyParser.json({ type: '*/*' }));
+/**
+ * Webhook personalizado: lê o corpo bruto antes do JSON global para aceitar
+ * JSON, text/plain com JSON, form-urlencoded (ex.: campo `data`) sem perder campos.
+ * A rota `POST /custom/:id` foi removida do router para não duplicar.
+ */
+app.post(
+  '/webhooks/custom/:id',
+  customWebhookRawBodyParser,
+  customWebhookParseBodyMiddleware,
+  async (req, res, next) => {
+    try {
+      await customWebhookPostHandler(req, res);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+/** Webhooks (Hotmart, custom, etc.) podem exceder o default 100kb do body-parser. */
+app.use('/webhooks', bodyParser.json({ type: '*/*', limit: '5mb' }));
 // Parse text/plain as JSON for sendBeacon fallback (uses text/plain to avoid CORS preflight)
 app.use('/ingest', bodyParser.text({ type: 'text/plain' }));
 app.use(bodyParser.json());

@@ -1,5 +1,6 @@
 import geoip from 'geoip-lite';
-import { Router } from 'express';
+import bodyParser from 'body-parser';
+import { Router, type Request, type Response, type NextFunction } from 'express';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import { pool } from '../db/pool';
@@ -1558,9 +1559,80 @@ function strOrUndef(v: unknown): string | undefined {
   return s === '' ? undefined : s;
 }
 
-router.post('/custom/:id', async (req, res) => {
+/**
+ * Plataformas (Monetizze, Ticto, etc.) enviam JSON direto, JSON em text/plain,
+ * ou form-urlencoded com o objeto em `data` / `payload` / `body`. O body-parser
+ * global só tratava JSON “puro” e podia deixar `req.body` vazio ou incompleto.
+ */
+export function parseCustomWebhookInbound(raw: Buffer, contentTypeHeader: string | undefined): Record<string, unknown> {
+  const ct = (contentTypeHeader || '').toLowerCase().split(';')[0]?.trim() || '';
+  const text = raw.toString('utf8');
+  if (!text.trim()) return {};
+
+  const tryParseObject = (s: string): Record<string, unknown> | null => {
+    const t = s.trim();
+    if (!t) return null;
+    try {
+      const o = JSON.parse(t) as unknown;
+      if (o && typeof o === 'object' && !Array.isArray(o)) return o as Record<string, unknown>;
+      if (Array.isArray(o) && o.length === 1 && o[0] && typeof o[0] === 'object' && !Array.isArray(o[0])) {
+        return o[0] as Record<string, unknown>;
+      }
+    } catch {
+      /* ignore */
+    }
+    return null;
+  };
+
+  if (ct.includes('json') || ct === '' || ct === '*/*') {
+    const parsed = tryParseObject(text);
+    if (parsed) return parsed;
+  }
+
+  if (ct.includes('text/plain')) {
+    const parsed = tryParseObject(text);
+    if (parsed) return parsed;
+  }
+
+  if (ct.includes('application/x-www-form-urlencoded')) {
+    const params = new URLSearchParams(text);
+    const jsonKeys = ['data', 'payload', 'body', 'json', 'webhook', 'event', 'content', 'order', 'sale', 'transaction'];
+    for (const k of jsonKeys) {
+      const v = params.get(k);
+      if (!v) continue;
+      const parsed = tryParseObject(v);
+      if (parsed) return parsed;
+    }
+    const flat: Record<string, unknown> = {};
+    params.forEach((val, key) => {
+      flat[key] = val;
+    });
+    return flat;
+  }
+
+  const heuristic = tryParseObject(text);
+  if (heuristic) return heuristic;
+
+  return {
+    _ingest_warning: 'unrecognized_body_format',
+    _content_type: contentTypeHeader || null,
+    _raw_utf8_preview: text.slice(0, 12000),
+  };
+}
+
+export const customWebhookRawBodyParser = bodyParser.raw({ type: '*/*', limit: '5mb' });
+
+export function customWebhookParseBodyMiddleware(req: Request, _res: Response, next: NextFunction) {
+  const buf = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+  const ct = req.headers['content-type'];
+  req.body = parseCustomWebhookInbound(buf, typeof ct === 'string' ? ct : undefined);
+  next();
+}
+
+/** POST /webhooks/custom/:id — registrado em main.ts antes do bodyParser.json global. */
+export async function customWebhookPostHandler(req: Request, res: Response) {
   const webhookId = req.params.id;
-  const payload = req.body;
+  const payload = req.body as Record<string, unknown>;
   const hookRow = await pool.query(`SELECT c.*, s.site_key FROM custom_webhooks c JOIN sites s ON s.id = c.site_id WHERE c.id = $1`, [webhookId]);
   if (!hookRow.rowCount) return res.status(404).json({ error: 'Not found' });
   const hook = hookRow.rows[0];
@@ -1625,7 +1697,7 @@ router.post('/custom/:id', async (req, res) => {
     paymentMethodRaw,
   });
   return res.json({ received: true });
-});
+}
 
 router.post('/admin/provision', async (req, res) => {
   const secret = req.query.secret as string;
