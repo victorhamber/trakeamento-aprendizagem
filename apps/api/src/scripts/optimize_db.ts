@@ -14,7 +14,7 @@ async function optimizeDb() {
       { label: 'mentor_chat (60d)', sql: `DELETE FROM mentor_chat_history WHERE created_at < NOW() - INTERVAL '60 days'` },
       { label: 'site_visitors (90d)', sql: `DELETE FROM site_visitors WHERE last_seen_at < NOW() - INTERVAL '90 days'` },
       { label: 'purchases (12m)', sql: `DELETE FROM purchases WHERE created_at < NOW() - INTERVAL '12 months'` },
-      { label: 'meta_insights (90d)', sql: `DELETE FROM meta_insights_daily WHERE date_start < CURRENT_DATE - INTERVAL '90 days'` },
+      { label: 'meta_insights (45d)', sql: `DELETE FROM meta_insights_daily WHERE date_start < CURRENT_DATE - INTERVAL '45 days'` },
       { label: 'password_resets (expired)', sql: `DELETE FROM password_resets WHERE expires_at < NOW()` },
       { label: 'notifications (read 90d)', sql: `DELETE FROM notifications WHERE is_read = true AND created_at < NOW() - INTERVAL '90 days'` },
     ];
@@ -29,7 +29,7 @@ async function optimizeDb() {
 
     const strips = [
       { label: 'purchases.raw_payload (7d)', sql: `UPDATE purchases SET raw_payload = NULL WHERE raw_payload IS NOT NULL AND created_at < NOW() - INTERVAL '7 days'` },
-      { label: 'meta_insights.raw_payload (30d)', sql: `UPDATE meta_insights_daily SET raw_payload = NULL WHERE raw_payload IS NOT NULL AND date_start < CURRENT_DATE - INTERVAL '30 days'` },
+      { label: 'meta_insights.raw_payload (14d)', sql: `UPDATE meta_insights_daily SET raw_payload = NULL WHERE raw_payload IS NOT NULL AND date_start < CURRENT_DATE - INTERVAL '14 days'` },
       { label: 'custom_webhooks.last_payload (30d)', sql: `UPDATE custom_webhooks SET last_payload = NULL WHERE last_payload IS NOT NULL AND updated_at < NOW() - INTERVAL '30 days'` },
     ];
 

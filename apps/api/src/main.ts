@@ -154,8 +154,8 @@ app.get('/health', async (req, res) => {
 //   capi_outbox_dead_letter → 30 days   (audit trail, then discard)
 //   purchases               → 12 months (commercial/financial history)
 //   purchases.raw_payload   → NULL after 7 days (data already in typed columns)
-//   meta_insights_daily     → 90 days   (aggregated metrics)
-//   meta_insights.raw_payload → NULL after 30 days (metrics already in typed columns)
+//   meta_insights_daily     → 45 days   (aggregated Meta Ads metrics; not pixel events)
+//   meta_insights.raw_payload → NULL after 14 days (metrics already in typed columns)
 //   site_visitors           → 90 days   (last_seen_at)
 //   mentor_chat_history     → 60 days   (AI conversation memory)
 //   custom_webhooks.last_payload → NULL after 30 days (debug only)
@@ -174,7 +174,7 @@ async function runDataRetentionCleanup() {
       { label: 'capi_outbox', sql: `DELETE FROM capi_outbox WHERE attempts >= 5 OR created_at < NOW() - INTERVAL '7 days'` },
       { label: 'capi_dead_letter', sql: `DELETE FROM capi_outbox_dead_letter WHERE created_at < NOW() - INTERVAL '30 days'` },
       { label: 'purchases', sql: `DELETE FROM purchases WHERE created_at < NOW() - INTERVAL '12 months'` },
-      { label: 'meta_insights_daily', sql: `DELETE FROM meta_insights_daily WHERE date_start < CURRENT_DATE - INTERVAL '90 days'` },
+      { label: 'meta_insights_daily', sql: `DELETE FROM meta_insights_daily WHERE date_start < CURRENT_DATE - INTERVAL '45 days'` },
       { label: 'site_visitors', sql: `DELETE FROM site_visitors WHERE last_seen_at < NOW() - INTERVAL '90 days'` },
       { label: 'mentor_chat', sql: `DELETE FROM mentor_chat_history WHERE created_at < NOW() - INTERVAL '60 days'` },
       { label: 'password_resets', sql: `DELETE FROM password_resets WHERE expires_at < NOW()` },
@@ -200,7 +200,7 @@ async function runDataRetentionCleanup() {
       },
       {
         label: 'insights_raw_payload',
-        sql: `UPDATE meta_insights_daily SET raw_payload = NULL WHERE raw_payload IS NOT NULL AND date_start < CURRENT_DATE - INTERVAL '30 days'`,
+        sql: `UPDATE meta_insights_daily SET raw_payload = NULL WHERE raw_payload IS NOT NULL AND date_start < CURRENT_DATE - INTERVAL '14 days'`,
       },
       {
         label: 'webhooks_last_payload',

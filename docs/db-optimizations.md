@@ -10,7 +10,7 @@ Este documento descreve a política de retenção de dados e boas práticas para
 | **capi_outbox** | 7 dias + remoção de falhas permanentes (attempts >= 5) | Fila efêmera. |
 | **recommendation_reports** | Uma linha por contexto (site_key + campaign_id + date_preset) | UPSERT substitui o anterior; não há limpeza por idade. |
 | **purchases** | 12 meses | Histórico comercial/financeiro (disputas, MRR). |
-| **meta_insights_daily** | 90 dias | Métricas agregadas; tendências recentes. |
+| **meta_insights_daily** | 45 dias | Métricas agregadas da Meta (anúncios); não é o mesmo que eventos do pixel. |
 | **site_visitors** | 90 dias (last_seen_at) | Evita crescimento ilimitado; suficiente para atribuição. |
 | **password_resets** | Remoção de tokens expirados (expires_at < NOW()) | Reduz tabela e evita reuso. |
 | **notifications** | Notificações **lidas** com mais de 90 dias | Mantém inbox recente. |
