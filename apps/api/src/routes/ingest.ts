@@ -166,6 +166,55 @@ function visitorPiiHashScalar(val: string[] | undefined): string | undefined {
   return s.length > 64 ? s.slice(0, 64) : s;
 }
 
+function firstNonEmptyString(val: unknown): string | undefined {
+  if (typeof val === 'string') {
+    const t = val.trim();
+    return t ? t : undefined;
+  }
+  if (Array.isArray(val) && typeof val[0] === 'string') {
+    const t = val[0].trim();
+    return t ? t : undefined;
+  }
+  return undefined;
+}
+
+/**
+ * External_id para persistência em `site_visitors`.
+ * Regra: NÃO usar `event_id` como fallback primário (isso cria 1 visitor por evento e derruba o banco).
+ */
+function deriveVisitorExternalIdForStorage(input: {
+  external_id?: unknown;
+  fbp?: string | null;
+  fbc?: string | null;
+  em?: string[] | undefined;
+  ph?: string[] | undefined;
+  client_ip_address?: string | undefined;
+  client_user_agent?: string | undefined;
+  eventId: string;
+}) {
+  const ext = firstNonEmptyString(input.external_id);
+  if (ext) return ext;
+
+  const fbp = (input.fbp || '').trim();
+  if (fbp) return `fbp_${createHash('sha256').update(fbp).digest('hex').slice(0, 32)}`;
+
+  const fbc = (input.fbc || '').trim();
+  if (fbc) return `fbc_${createHash('sha256').update(fbc).digest('hex').slice(0, 32)}`;
+
+  const em = visitorPiiHashScalar(input.em);
+  if (em) return `em_${em}`;
+
+  const ph = visitorPiiHashScalar(input.ph);
+  if (ph) return `ph_${ph}`;
+
+  const ip = (input.client_ip_address || '').trim();
+  const ua = (input.client_user_agent || '').trim();
+  if (ip || ua) return `fp_${createHash('sha256').update(`${ip}|${ua}`).digest('hex').slice(0, 32)}`;
+
+  // Último recurso (deve ser raríssimo): ainda evita string gigante.
+  return `anon_${createHash('sha256').update(input.eventId).digest('hex').slice(0, 16)}`;
+}
+
 // ─── Engagement scoring ───────────────────────────────────────────────────────
 
 function toNumber(value: unknown): number {
@@ -800,12 +849,16 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
       const ph = capiUser.ph;
       const fn = capiUser.fn;
       const ln = capiUser.ln;
-      // external_id em buildCapiUserData é ID em claro (ex.: eid_*); hash para Meta CAPI em CapiService.buildPayload.
-      const rawExt = capiUser.external_id;
-      const extId =
-        rawExt != null && String(rawExt).trim() !== ''
-          ? (Array.isArray(rawExt) ? String(rawExt[0]) : String(rawExt))
-          : `anon_${eventId}`;
+      const extId = deriveVisitorExternalIdForStorage({
+        external_id: capiUser.external_id,
+        fbp,
+        fbc,
+        em,
+        ph,
+        client_ip_address: capiUser.client_ip_address,
+        client_user_agent: capiUser.client_user_agent,
+        eventId,
+      });
 
       const trafficSourceValue = buildVisitorTrafficSourceString(
         event.custom_data as Record<string, unknown> | undefined,
@@ -835,6 +888,17 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
             last_user_agent = COALESCE(EXCLUDED.last_user_agent, site_visitors.last_user_agent),
             total_events = site_visitors.total_events + 1,
             last_seen_at = NOW()
+          WHERE
+            site_visitors.last_seen_at < NOW() - INTERVAL '20 seconds'
+            OR (site_visitors.fbc IS NULL AND EXCLUDED.fbc IS NOT NULL)
+            OR (site_visitors.fbp IS NULL AND EXCLUDED.fbp IS NOT NULL)
+            OR (site_visitors.email_hash IS NULL AND EXCLUDED.email_hash IS NOT NULL)
+            OR (site_visitors.phone_hash IS NULL AND EXCLUDED.phone_hash IS NOT NULL)
+            OR (site_visitors.first_name_hash IS NULL AND EXCLUDED.first_name_hash IS NOT NULL)
+            OR (site_visitors.last_name_hash IS NULL AND EXCLUDED.last_name_hash IS NOT NULL)
+            OR (site_visitors.last_ip IS NULL AND EXCLUDED.last_ip IS NOT NULL)
+            OR (site_visitors.last_user_agent IS NULL AND EXCLUDED.last_user_agent IS NOT NULL)
+            OR site_visitors.last_event_name IS DISTINCT FROM EXCLUDED.last_event_name
         `, [
           siteKey,
           extId,
@@ -1075,11 +1139,16 @@ router.post('/batch', cors(), ingestLimiter, async (req, res) => {
       // Visitor UPSERTs + CAPI + GA4 — all fire-and-forget per event
       for (const p of inserted) {
         const capiUser = await buildCapiUserData(req, p.event.user_data || {}, siteKey, p.event.custom_data ?? {});
-        const rawExtB = capiUser.external_id;
-        const extId =
-          rawExtB != null && String(rawExtB).trim() !== ''
-            ? (Array.isArray(rawExtB) ? String(rawExtB[0]) : String(rawExtB))
-            : `anon_${p.eventId}`;
+        const extId = deriveVisitorExternalIdForStorage({
+          external_id: capiUser.external_id,
+          fbp: capiUser.fbp,
+          fbc: capiUser.fbc,
+          em: capiUser.em,
+          ph: capiUser.ph,
+          client_ip_address: capiUser.client_ip_address,
+          client_user_agent: capiUser.client_user_agent,
+          eventId: p.eventId,
+        });
         const trafficSourceValue = buildVisitorTrafficSourceString(
           p.event.custom_data as Record<string, unknown> | undefined,
           p.eventSourceUrl
@@ -1104,6 +1173,17 @@ router.post('/batch', cors(), ingestLimiter, async (req, res) => {
             last_user_agent = COALESCE(EXCLUDED.last_user_agent, site_visitors.last_user_agent),
             total_events = site_visitors.total_events + 1,
             last_seen_at = NOW()
+          WHERE
+            site_visitors.last_seen_at < NOW() - INTERVAL '20 seconds'
+            OR (site_visitors.fbc IS NULL AND EXCLUDED.fbc IS NOT NULL)
+            OR (site_visitors.fbp IS NULL AND EXCLUDED.fbp IS NOT NULL)
+            OR (site_visitors.email_hash IS NULL AND EXCLUDED.email_hash IS NOT NULL)
+            OR (site_visitors.phone_hash IS NULL AND EXCLUDED.phone_hash IS NOT NULL)
+            OR (site_visitors.first_name_hash IS NULL AND EXCLUDED.first_name_hash IS NOT NULL)
+            OR (site_visitors.last_name_hash IS NULL AND EXCLUDED.last_name_hash IS NOT NULL)
+            OR (site_visitors.last_ip IS NULL AND EXCLUDED.last_ip IS NOT NULL)
+            OR (site_visitors.last_user_agent IS NULL AND EXCLUDED.last_user_agent IS NOT NULL)
+            OR site_visitors.last_event_name IS DISTINCT FROM EXCLUDED.last_event_name
         `, [
           siteKey,
           extId,
