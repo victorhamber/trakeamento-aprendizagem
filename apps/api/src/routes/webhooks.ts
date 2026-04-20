@@ -1708,24 +1708,89 @@ router.post('/admin/provision', async (req, res) => {
   let offerCode = payload.purchase?.offer?.code || payload.product_id || payload.offer_code || '';
 
   if (!email) return res.status(400).json({ error: 'Missing email' });
+  email = String(email).trim().toLowerCase();
+
   const userRow = await pool.query('SELECT account_id FROM users WHERE email = $1', [email]);
   let accountId = userRow.rowCount ? userRow.rows[0].account_id : null;
 
-  if (['APPROVED', 'COMPLETED', 'PAID'].includes(status)) {
+  // ── Encontrar plano pelo offer_code da Hotmart ──
+  let matchedPlan: { id: number; name: string; max_sites: number; type: string } | null = null;
+  if (offerCode) {
+    const planRow = await pool.query(
+      `SELECT id, name, type, max_sites FROM plans
+       WHERE offer_codes IS NOT NULL AND offer_codes ILIKE '%' || $1 || '%'`,
+      [String(offerCode).trim()]
+    );
+    if (planRow.rowCount) matchedPlan = planRow.rows[0] as any;
+  }
+  // Fallback: plano mais caro disponível
+  if (!matchedPlan) {
+    const fallback = await pool.query('SELECT id, name, type, max_sites FROM plans ORDER BY price DESC LIMIT 1');
+    if (fallback.rowCount) matchedPlan = fallback.rows[0] as any;
+  }
+
+  log.info(`[Provision] email=${email} status=${status} offerCode=${offerCode} plan=${matchedPlan?.name || 'none'}`);
+
+  if (['APPROVED', 'COMPLETED', 'PAID', 'PURCHASE_COMPLETE', 'PURCHASE_APPROVED'].includes(status)) {
     if (!accountId) {
-      const resAcc = await pool.query('INSERT INTO accounts (name, is_active) VALUES ($1, true) RETURNING id', [email.split('@')[0]]);
+      // ── Nova conta: criar account + user + enviar e-mail ──
+      const resAcc = await pool.query(
+        'INSERT INTO accounts (name, is_active, active_plan_id, bonus_site_limit) VALUES ($1, true, $2, $3) RETURNING id',
+        [email.split('@')[0], matchedPlan?.id || null, matchedPlan?.max_sites || 1]
+      );
       accountId = resAcc.rows[0].id;
       const pass = crypto.randomBytes(8).toString('hex');
       const hash = await bcrypt.hash(pass, 12);
       await pool.query('INSERT INTO users (account_id, email, password_hash) VALUES ($1, $2, $3)', [accountId, email, hash]);
+
+      // Enviar e-mail de boas-vindas com dados de acesso usando o template configurável
+      try {
+        const { sendWelcomeEmail } = await import('../services/email');
+        await sendWelcomeEmail(email, email.split('@')[0], pass, matchedPlan?.name);
+      } catch (emailErr) {
+        console.warn('[Provision] Failed to send welcome email:', emailErr);
+      }
     } else {
-      await pool.query('UPDATE accounts SET is_active = true WHERE id = $1', [accountId]);
+      // ── Conta existente: reativar e atualizar plano se necessário ──
+      if (matchedPlan?.type === 'SUBSCRIPTION') {
+        await pool.query(
+          'UPDATE accounts SET is_active = true, active_plan_id = $2, bonus_site_limit = COALESCE($3, bonus_site_limit) WHERE id = $1',
+          [accountId, matchedPlan.id, matchedPlan.max_sites]
+        );
+      } else {
+        // Se for ADDON, não sobrepõe o active_plan_id, apenas atualiza o status se estivesse bloqueado
+        await pool.query('UPDATE accounts SET is_active = true WHERE id = $1', [accountId]);
+      }
     }
-  } else if (['CANCELED', 'REFUNDED'].includes(status) && accountId) {
-    await pool.query('UPDATE accounts SET is_active = false WHERE id = $1', [accountId]);
+  } else if (['CANCELED', 'CANCELLED', 'REFUNDED', 'PURCHASE_CANCELED', 'PURCHASE_REFUNDED', 'EXPIRED', 'PURCHASE_EXPIRED'].includes(status) && accountId) {
+    if (matchedPlan?.type === 'ADDON') {
+      // Se cancelou o "Site Extra", reduzimos o limite, mas não suspendemos a conta inteira!
+      await pool.query(
+        'UPDATE accounts SET bonus_site_limit = GREATEST(1, bonus_site_limit - $2) WHERE id = $1',
+        [accountId, matchedPlan.max_sites]
+      );
+    } else {
+      // Se cancelou o plano base, bloqueia a conta inteira
+      await pool.query('UPDATE accounts SET is_active = false WHERE id = $1', [accountId]);
+    }
   }
-  if (accountId) await pool.query('INSERT INTO subscriptions (account_id, status, provider_subscription_id) VALUES ($1, $2, $3)', [accountId, status, payload.transaction || payload.id || 'webhook']);
-  return res.json({ success: true });
+
+  // ── Registrar subscription (com plan_id para não violar NOT NULL) ──
+  if (accountId && matchedPlan) {
+    try {
+      await pool.query(
+        `INSERT INTO subscriptions (account_id, plan_id, status, provider_subscription_id)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT DO NOTHING`,
+        [accountId, matchedPlan.id, status, payload.transaction || payload.id || `hotmart_${Date.now()}`]
+      );
+    } catch (subErr) {
+      console.warn('[Provision] Failed to insert subscription:', subErr);
+    }
+  }
+
+  return res.json({ success: true, accountId, plan: matchedPlan?.name || null });
 });
 
 export default router;
+

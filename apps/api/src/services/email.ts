@@ -10,8 +10,11 @@ export const DEFAULT_WELCOME_HTML = `
   <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
     <h1 style="color: #4f46e5;">Bem-vindo ao Trajettu!</h1>
     <p>Olá {{name}},</p>
-    <p>Estamos muito felizes em ter você conosco. Sua conta foi criada com sucesso.</p>
-    <p>Agora você tem acesso ao poder da inteligência artificial para analisar suas campanhas e otimizar seus resultados.</p>
+    <p>Estamos muito felizes em ter você conosco. Sua conta do plano <strong>{{plan_name}}</strong> foi criada com sucesso.</p>
+    <div style="background: #f3f4f6; border-radius: 8px; padding: 20px; margin: 20px 0;">
+      <p style="margin: 0 0 8px;"><strong>🔑 Senha temporária:</strong> {{password}}</p>
+    </div>
+    <p>Recomendamos alterar sua senha após o primeiro acesso.</p>
     <p>Para começar, acesse seu painel:</p>
     <a href="{{app_url}}" style="display: inline-block; background-color: #4f46e5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">Acessar Painel</a>
     <p style="margin-top: 30px; font-size: 12px; color: #666;">Se você tiver alguma dúvida, responda a este e-mail.</p>
@@ -88,12 +91,17 @@ async function loadEmailSettings(): Promise<EmailSettings> {
   return settings;
 }
 
-export async function sendWelcomeEmail(email: string, name: string) {
+export async function sendWelcomeEmail(email: string, name: string, password?: string, planName?: string) {
   try {
     const settings = await loadEmailSettings();
     const resend = new Resend(settings.apiKey);
     const from = `${settings.fromName} <${settings.fromEmail}>`;
-    const html = renderTemplate(settings.welcomeHtml, { name, app_url: DEFAULT_APP_URL });
+    const html = renderTemplate(settings.welcomeHtml, { 
+      name, 
+      app_url: DEFAULT_APP_URL, 
+      password: password || '******', 
+      plan_name: planName || 'Seu Plano' 
+    });
 
     const { error } = await resend.emails.send({
       from,
