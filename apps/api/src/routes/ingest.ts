@@ -44,7 +44,8 @@ const ingestLimiter = rateLimit({
     try {
       const siteKeyRaw = (req.query['key'] as string | undefined) || (req.headers['x-site-key'] as string | undefined);
       const siteKey = typeof siteKeyRaw === 'string' ? siteKeyRaw.trim() : '';
-      console.warn('[Ingest] rate limit hit', {
+      // Use stdout to ensure panel log visibility in some runtimes.
+      console.log('[Ingest] rate limit hit', {
         site_key: siteKey || null,
         req_ip: req.ip,
         cf_ip: req.headers['cf-connecting-ip'],
