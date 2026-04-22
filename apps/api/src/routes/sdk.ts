@@ -79,8 +79,10 @@ router.get('/loader.js', (req, res) => {
     // Carrega o tracker cedo para não perder PageView/Meta; difere apenas os snippets extras.
     inject(true);
   }
-  if(document.readyState==='complete')afterLoad();
-  else window.addEventListener('load',afterLoad,{once:true});
+  if(document.readyState==='complete' || document.readyState==='interactive') afterLoad();
+  else document.addEventListener('DOMContentLoaded', afterLoad, { once:true });
+  // Fallback: se algum browser/extensão impedir DOMContentLoaded, tenta no load.
+  window.addEventListener('load', afterLoad, { once:true });
 })();`;
 
   return res.send(js);
