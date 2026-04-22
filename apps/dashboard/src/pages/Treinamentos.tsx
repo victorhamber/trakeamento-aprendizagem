@@ -21,6 +21,12 @@ export const TREINAMENTO_LESSONS: TreinamentoLesson[] = [
     title: 'Webhooks: Hotmart e integração personalizada no Trajettu',
     summary: 'Conecte vendas e plataformas ao painel via webhook.',
   },
+  {
+    slug: 'integracao-chatgpt-trajettu-relatorios',
+    youtubeId: 'nfWu_jS6l30',
+    title: 'Integração ChatGPT no Trajettu: Crie sua API e Gere Relatórios Automáticos',
+    summary: 'Como criar a API Key, adicionar crédito e conectar a IA para gerar relatórios e diagnósticos automáticos.',
+  },
 ];
 
 export const DEFAULT_LESSON_SLUG = TREINAMENTO_LESSONS[0]!.slug;
