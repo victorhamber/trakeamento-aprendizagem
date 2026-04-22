@@ -118,6 +118,13 @@ export const AccountsPage = () => {
   const [bonusModal, setBonusModal] = useState<{ accId: number; current: number } | null>(null);
   const [bonusValue, setBonusValue] = useState('');
   const [confirmAction, setConfirmAction] = useState<{ title: string; message: string; label: string; variant: 'danger' | 'primary'; action: () => Promise<void> } | null>(null);
+  const [createModal, setCreateModal] = useState(false);
+  const [newEmail, setNewEmail] = useState('');
+  const [newName, setNewName] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [newPlanId, setNewPlanId] = useState<string>('0');
+  const [createdTempPassword, setCreatedTempPassword] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
 
   // Toast
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -255,6 +262,25 @@ export const AccountsPage = () => {
     });
   };
 
+  const requestDeleteAccount = (acc: AccountRow) => {
+    setConfirmAction({
+      title: 'Excluir conta',
+      message: `Tem certeza que deseja excluir PERMANENTEMENTE a conta "${acc.email}"? Isso remove sites e dados relacionados por cascata. Essa ação não pode ser desfeita.`,
+      label: 'Excluir',
+      variant: 'danger',
+      action: async () => {
+        try {
+          await api.delete(`/admin/accounts/${acc.id}`);
+          showToast('Conta excluída');
+          await load();
+        } catch (e: any) {
+          const msg = e?.response?.data?.error || 'Erro ao excluir conta';
+          showToast(msg, 'error');
+        }
+      },
+    });
+  };
+
   const openBonusModal = (acc: AccountRow) => {
     setBonusModal({ accId: acc.id, current: acc.bonus_site_limit });
     setBonusValue(String(acc.bonus_site_limit));
@@ -349,6 +375,20 @@ export const AccountsPage = () => {
           <option value="active">Ativos</option>
           <option value="blocked">Bloqueados</option>
         </select>
+
+        <button
+          onClick={() => {
+            setCreateModal(true);
+            setCreatedTempPassword(null);
+            setNewEmail('');
+            setNewName('');
+            setNewPassword('');
+            setNewPlanId('0');
+          }}
+          className="sm:ml-auto px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm transition-colors"
+        >
+          Adicionar usuário
+        </button>
       </div>
 
       {/* Results count when filtering */}
@@ -449,6 +489,12 @@ export const AccountsPage = () => {
                         >
                           Alterar Plano
                         </button>
+                        <button
+                          onClick={() => requestDeleteAccount(acc)}
+                          className="text-[11px] font-bold uppercase tracking-wider text-red-600 hover:text-red-500 dark:text-red-400 dark:hover:text-red-300"
+                        >
+                          Excluir
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -513,6 +559,133 @@ export const AccountsPage = () => {
               </button>
               <button onClick={saveBonus} className="flex-1 bg-amber-600 hover:bg-amber-500 text-white font-semibold text-sm py-2.5 rounded-xl transition-colors">
                 Salvar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create Account/User Modal */}
+      {createModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white dark:bg-zinc-900 rounded-2xl p-6 w-full max-w-md shadow-2xl border border-zinc-200 dark:border-white/10">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-bold">Adicionar usuário manualmente</h3>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                  Cria uma conta + usuário. Se você não informar senha, geramos uma temporária.
+                </p>
+              </div>
+              <button
+                onClick={() => setCreateModal(false)}
+                className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
+                title="Fechar"
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" d="M6 18 18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+
+            <div className="mt-5 space-y-3">
+              <div>
+                <label className="block text-xs text-zinc-500 mb-1">Email</label>
+                <input
+                  value={newEmail}
+                  onChange={(e) => setNewEmail(e.target.value)}
+                  placeholder="cliente@dominio.com"
+                  className="w-full rounded-xl bg-zinc-50 dark:bg-black/20 border border-zinc-200 dark:border-white/10 px-3 py-2.5 text-sm outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-zinc-500 mb-1">Nome da conta (opcional)</label>
+                <input
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  placeholder="Ex: Wellington / Empresa X"
+                  className="w-full rounded-xl bg-zinc-50 dark:bg-black/20 border border-zinc-200 dark:border-white/10 px-3 py-2.5 text-sm outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-zinc-500 mb-1">Plano (opcional)</label>
+                  <select
+                    value={newPlanId}
+                    onChange={(e) => setNewPlanId(e.target.value)}
+                    title="Plano"
+                    className="w-full rounded-xl bg-zinc-50 dark:bg-black/20 border border-zinc-200 dark:border-white/10 px-3 py-2.5 text-sm outline-none focus:border-indigo-500"
+                  >
+                    <option value="0">Free / Sem plano</option>
+                    {plans.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-zinc-500 mb-1">Senha (opcional)</label>
+                  <input
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="mín. 8 caracteres"
+                    className="w-full rounded-xl bg-zinc-50 dark:bg-black/20 border border-zinc-200 dark:border-white/10 px-3 py-2.5 text-sm outline-none focus:border-indigo-500"
+                  />
+                </div>
+              </div>
+
+              {createdTempPassword && (
+                <div className="rounded-xl border border-emerald-200 dark:border-emerald-500/20 bg-emerald-50/70 dark:bg-emerald-500/10 px-4 py-3">
+                  <div className="text-xs font-bold text-emerald-800 dark:text-emerald-300 uppercase tracking-wider">Senha temporária gerada</div>
+                  <div className="mt-2 flex items-center justify-between gap-3">
+                    <code className="text-sm font-mono text-emerald-900 dark:text-emerald-200">{createdTempPassword}</code>
+                    <button
+                      onClick={() => { navigator.clipboard.writeText(createdTempPassword); showToast('Senha copiada'); }}
+                      className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition-colors"
+                    >
+                      Copiar
+                    </button>
+                  </div>
+                  <div className="mt-2 text-xs text-emerald-800/80 dark:text-emerald-300/80">
+                    Envie essa senha para o cliente (recomendado trocar depois).
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="mt-5 flex gap-3">
+              <button
+                onClick={() => setCreateModal(false)}
+                disabled={creating}
+                className="flex-1 bg-zinc-100 dark:bg-white/5 hover:bg-zinc-200 dark:hover:bg-white/10 text-zinc-900 dark:text-white font-semibold text-sm py-2.5 rounded-xl transition-colors disabled:opacity-60"
+              >
+                Fechar
+              </button>
+              <button
+                onClick={async () => {
+                  const email = newEmail.trim();
+                  if (!email || !email.includes('@')) {
+                    showToast('Email inválido', 'error');
+                    return;
+                  }
+                  setCreating(true);
+                  try {
+                    const res = await api.post('/admin/accounts', {
+                      email,
+                      name: newName.trim() || null,
+                      password: newPassword.trim() || null,
+                      active_plan_id: newPlanId === '0' ? null : Number(newPlanId),
+                    });
+                    setCreatedTempPassword(res.data?.temp_password || null);
+                    showToast('Usuário criado com sucesso');
+                    await load();
+                  } catch (e: any) {
+                    const msg = e?.response?.data?.error || 'Erro ao criar usuário';
+                    showToast(msg, 'error');
+                  } finally {
+                    setCreating(false);
+                  }
+                }}
+                disabled={creating}
+                className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm py-2.5 rounded-xl transition-colors disabled:opacity-60"
+              >
+                {creating ? 'Criando...' : 'Criar usuário'}
               </button>
             </div>
           </div>

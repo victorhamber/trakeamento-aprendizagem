@@ -5,6 +5,7 @@ import {
   DEFAULT_WELCOME_SUBJECT, DEFAULT_WELCOME_HTML,
   DEFAULT_RESET_SUBJECT, DEFAULT_RESET_HTML,
 } from '../services/email';
+import bcrypt from 'bcryptjs';
 
 const router = Router();
 
@@ -104,6 +105,111 @@ router.get('/accounts', async (req, res) => {
   } catch (error) {
     console.error('List Accounts Error:', error);
     res.status(500).json({ error: 'Failed to list accounts' });
+  }
+});
+
+// POST /admin/accounts - Create a new account + user manually (Super Admin)
+router.post('/accounts', async (req, res) => {
+  const { email, name, password, active_plan_id, is_active } = req.body || {};
+
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  const accountName = String(name || '').trim();
+
+  if (!normalizedEmail || !normalizedEmail.includes('@')) {
+    return res.status(400).json({ error: 'Email inválido' });
+  }
+
+  const plainPassword =
+    String(password || '').trim() ||
+    `TA-${Math.random().toString(36).slice(2, 6).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+
+  if (plainPassword.length < 8) {
+    return res.status(400).json({ error: 'Senha deve ter no mínimo 8 caracteres' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const accRes = await client.query(
+      `
+        INSERT INTO accounts (name, is_active, active_plan_id)
+        VALUES ($1, COALESCE($2, true), $3)
+        RETURNING id, name, is_active, active_plan_id, created_at
+      `,
+      [
+        accountName || normalizedEmail,
+        typeof is_active === 'boolean' ? is_active : null,
+        active_plan_id ? Number(active_plan_id) : null,
+      ],
+    );
+
+    const account = accRes.rows[0];
+    const hash = await bcrypt.hash(plainPassword, 12);
+
+    const userRes = await client.query(
+      `
+        INSERT INTO users (account_id, email, password_hash)
+        VALUES ($1, $2, $3)
+        RETURNING id, email, created_at
+      `,
+      [account.id, normalizedEmail, hash],
+    );
+
+    await client.query('COMMIT');
+
+    return res.status(201).json({
+      account,
+      user: userRes.rows[0],
+      temp_password: plainPassword,
+    });
+  } catch (error: any) {
+    await client.query('ROLLBACK');
+    if (error?.code === '23505') {
+      return res.status(409).json({ error: 'Já existe um usuário com esse email' });
+    }
+    console.error('Create Account Error:', error);
+    return res.status(500).json({ error: 'Failed to create account' });
+  } finally {
+    client.release();
+  }
+});
+
+// DELETE /admin/accounts/:id - Permanently delete an account (and all related data via cascades)
+router.delete('/accounts/:id', async (req, res) => {
+  const accountId = Number(req.params.id);
+  if (!accountId || Number.isNaN(accountId)) {
+    return res.status(400).json({ error: 'Account id inválido' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const { rows } = await client.query(
+      'SELECT id, name, is_active, created_at FROM accounts WHERE id = $1',
+      [accountId],
+    );
+    if (!rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Account not found' });
+    }
+
+    // Hard delete: relies on FK cascades (accounts -> sites -> web_events/purchases/etc.)
+    const del = await client.query('DELETE FROM accounts WHERE id = $1', [accountId]);
+    await client.query('COMMIT');
+
+    return res.json({ success: true, deleted: del.rowCount, account: rows[0] });
+  } catch (error: any) {
+    await client.query('ROLLBACK');
+    // FK violation (if some relationship isn't cascade)
+    if (error?.code === '23503') {
+      return res.status(400).json({ error: 'Não foi possível excluir: existem dados relacionados impedindo a exclusão.' });
+    }
+    console.error('Delete Account Error:', error);
+    return res.status(500).json({ error: 'Failed to delete account' });
+  } finally {
+    client.release();
   }
 });
 
