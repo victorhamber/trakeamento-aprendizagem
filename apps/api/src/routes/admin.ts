@@ -27,6 +27,17 @@ const requireSuperAdmin = async (req: any, res: any, next: any) => {
 router.use(requireAuth);
 router.use(requireSuperAdmin);
 
+// GET /admin/provision-url - returns the full provisioning webhook URL (Super Admin)
+router.get('/provision-url', async (req, res) => {
+  const apiBase = String(process.env.PUBLIC_API_BASE_URL || 'https://api.trajettu.com').trim() || 'https://api.trajettu.com';
+  const secret = String(process.env.WEBHOOK_ADMIN_SECRET || '').trim();
+  if (!secret) {
+    return res.status(400).json({ error: 'WEBHOOK_ADMIN_SECRET não configurado na API' });
+  }
+  const base = apiBase.endsWith('/') ? apiBase.slice(0, -1) : apiBase;
+  return res.json({ url: `${base}/admin/provision?secret=${encodeURIComponent(secret)}` });
+});
+
 // Endpoint para migrar/popular last_traffic_source de web_events antigos para site_visitors
 router.post('/migrate-sources', async (req, res) => {
   try {

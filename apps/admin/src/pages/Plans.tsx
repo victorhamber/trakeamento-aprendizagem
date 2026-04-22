@@ -16,6 +16,8 @@ type Plan = {
 export const PlansPage = () => {
     const [plans, setPlans] = useState<Plan[]>([]);
     const [loading, setLoading] = useState(true);
+    const [provisionUrl, setProvisionUrl] = useState<string>('https://api.trajettu.com/admin/provision?secret=WEBHOOK_ADMIN_SECRET');
+    const [provisionUrlError, setProvisionUrlError] = useState<string | null>(null);
 
     // Form
     const [editingId, setEditingId] = useState<number | null>(null);
@@ -40,6 +42,18 @@ export const PlansPage = () => {
 
     useEffect(() => {
         load();
+    }, []);
+
+    useEffect(() => {
+        api.get('/admin/provision-url')
+            .then((res) => {
+                if (res?.data?.url) setProvisionUrl(String(res.data.url));
+                setProvisionUrlError(null);
+            })
+            .catch((e: any) => {
+                const msg = e?.response?.data?.error || 'Não foi possível carregar o link do webhook mestre';
+                setProvisionUrlError(String(msg));
+            });
     }, []);
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -122,9 +136,14 @@ export const PlansPage = () => {
                 </div>
                 <div className="w-full sm:w-auto mt-2 sm:mt-0">
                     <div className="flex bg-white dark:bg-black/40 border border-indigo-200 dark:border-indigo-500/30 rounded-lg overflow-hidden">
-                        <input title="Webhook de provisão" readOnly value="https://api.trajettu.com/admin/provision?secret=WEBHOOK_ADMIN_SECRET" className="text-xs font-mono px-3 py-2 bg-transparent text-zinc-600 dark:text-zinc-400 outline-none min-w-[300px]" />
-                        <button onClick={() => { navigator.clipboard.writeText('https://api.trajettu.com/admin/provision?secret=WEBHOOK_ADMIN_SECRET'); alert('Link de Webhook Copiado!'); }} className="px-3 bg-indigo-100 hover:bg-indigo-200 dark:bg-indigo-500/20 dark:hover:bg-indigo-500/40 text-indigo-700 dark:text-indigo-300 font-medium text-xs transition-colors">Copiar</button>
+                        <input title="Webhook de provisão" readOnly value={provisionUrl} className="text-xs font-mono px-3 py-2 bg-transparent text-zinc-600 dark:text-zinc-400 outline-none min-w-[300px]" />
+                        <button onClick={() => { navigator.clipboard.writeText(provisionUrl); alert('Link de Webhook Copiado!'); }} className="px-3 bg-indigo-100 hover:bg-indigo-200 dark:bg-indigo-500/20 dark:hover:bg-indigo-500/40 text-indigo-700 dark:text-indigo-300 font-medium text-xs transition-colors">Copiar</button>
                     </div>
+                    {provisionUrlError && (
+                        <div className="mt-2 text-[11px] text-amber-700 dark:text-amber-300">
+                            {provisionUrlError}
+                        </div>
+                    )}
                 </div>
             </div>
 
