@@ -96,7 +96,13 @@ router.get('/accounts', async (req, res) => {
           INNER JOIN sites s3 ON s3.site_key = we2.site_key
           WHERE s3.account_id = a.id) AS last_activity
       FROM accounts a
-      LEFT JOIN users u ON u.account_id = a.id
+      LEFT JOIN LATERAL (
+        SELECT email
+        FROM users
+        WHERE account_id = a.id
+        ORDER BY id ASC
+        LIMIT 1
+      ) u ON true
       LEFT JOIN plans p ON a.active_plan_id = p.id
       ORDER BY a.created_at DESC
     `;
@@ -185,6 +191,14 @@ router.delete('/accounts/:id', async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+
+    // Block deleting the currently logged-in user's own account (prevents locking yourself out)
+    const my = await client.query('SELECT account_id FROM users WHERE id = $1', [req.auth?.userId]);
+    const myAccountId = my.rows?.[0]?.account_id;
+    if (myAccountId && Number(myAccountId) === accountId) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Você não pode excluir a conta em que está logado.' });
+    }
 
     const { rows } = await client.query(
       'SELECT id, name, is_active, created_at FROM accounts WHERE id = $1',

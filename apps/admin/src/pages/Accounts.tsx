@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { api } from '../lib/api';
 import { Layout } from '../components/Layout';
+import { useAuth } from '../state/auth';
 
 type AccountRow = {
   id: number;
@@ -99,6 +100,7 @@ const timeAgo = (dateStr: string | null): string => {
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export const AccountsPage = () => {
+  const auth = useAuth();
   const [accounts, setAccounts] = useState<AccountRow[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [loading, setLoading] = useState(true);
@@ -263,6 +265,10 @@ export const AccountsPage = () => {
   };
 
   const requestDeleteAccount = (acc: AccountRow) => {
+    if (auth.account?.id && acc.id === auth.account.id) {
+      showToast('Você não pode excluir a conta em que está logado.', 'error');
+      return;
+    }
     setConfirmAction({
       title: 'Excluir conta',
       message: `Tem certeza que deseja excluir PERMANENTEMENTE a conta "${acc.email}"? Isso remove sites e dados relacionados por cascata. Essa ação não pode ser desfeita.`,
