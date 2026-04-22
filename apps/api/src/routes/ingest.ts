@@ -822,9 +822,15 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
         xff: req.headers['x-forwarded-for'],
       });
     } catch {}
-    return res.status(429).json({
+    // Important UX/SaaS behavior: don't break the client pixel/web events.
+    // We intentionally return 202 so the browser doesn't treat it as a hard failure and start retry loops.
+    return res.status(202).json({
+      status: 'ignored_over_quota',
       error: 'event_limit_reached',
-      message: `Monthly event limit reached (${quota.used}/${quota.limit}). Upgrade your plan.`,
+      message:
+        `Cota mensal de eventos atingida para este site (${quota.used}/${quota.limit}). ` +
+        `O Pixel WEB continua funcionando normalmente. ` +
+        `O envio SERVER (CAPI/GA4) volta automaticamente no próximo ciclo ou após aumentar seu plano.`,
     });
   }
 

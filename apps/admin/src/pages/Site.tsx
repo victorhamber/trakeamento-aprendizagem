@@ -18,6 +18,13 @@ type Site = {
   site_key: string;
   inject_head_html?: string | null;
   inject_body_html?: string | null;
+  quota?: {
+    limit: number;
+    used: number;
+    remaining: number;
+    pct: number;
+    alert_level: 'none' | 'warn' | 'critical' | 'over';
+  };
 };
 
 type Tab = 'snippet' | 'meta' | 'utm' | 'campaigns' | 'ga' | 'matching' | 'webhooks' | 'reports';
@@ -2196,6 +2203,63 @@ ${scriptContent}
       }
     >
       {/* ── Header ── */}
+      {site?.quota?.alert_level && site.quota.alert_level !== 'none' && site.quota.limit > 0 && (
+        <div
+          className={`mb-5 rounded-2xl border p-4 sm:p-5 ${
+            site.quota.alert_level === 'over'
+              ? 'border-red-200 bg-red-50/70 dark:border-red-500/20 dark:bg-red-500/10'
+              : site.quota.alert_level === 'critical'
+                ? 'border-amber-200 bg-amber-50/70 dark:border-amber-500/20 dark:bg-amber-500/10'
+                : 'border-yellow-200 bg-yellow-50/70 dark:border-yellow-500/20 dark:bg-yellow-500/10'
+          }`}
+        >
+          <div
+            className={`text-sm font-bold ${
+              site.quota.alert_level === 'over'
+                ? 'text-red-900 dark:text-red-200'
+                : site.quota.alert_level === 'critical'
+                  ? 'text-amber-900 dark:text-amber-200'
+                  : 'text-yellow-900 dark:text-yellow-200'
+            }`}
+          >
+            {site.quota.alert_level === 'over'
+              ? 'Cota mensal de eventos atingida neste site'
+              : 'Sua cota mensal de eventos está acabando neste site'}
+          </div>
+          <div
+            className={`mt-1 text-xs leading-relaxed ${
+              site.quota.alert_level === 'over'
+                ? 'text-red-800/90 dark:text-red-200/80'
+                : site.quota.alert_level === 'critical'
+                  ? 'text-amber-800/90 dark:text-amber-200/80'
+                  : 'text-yellow-800/90 dark:text-yellow-200/80'
+            }`}
+          >
+            Você já usou <b>{new Intl.NumberFormat('pt-BR').format(site.quota.used)}</b> de{' '}
+            <b>{new Intl.NumberFormat('pt-BR').format(site.quota.limit)}</b> eventos no ciclo atual.
+            {' '}
+            O <b>Pixel WEB</b> continua funcionando normalmente. Quando a cota do Trajettu estoura, apenas o{' '}
+            <b>envio SERVER</b> (CAPI/GA4) pausa e volta no próximo ciclo ou após upgrade.
+          </div>
+          <div className="mt-3 flex items-center gap-3">
+            <div className="h-2 w-56 rounded-full bg-black/10 dark:bg-white/10 overflow-hidden">
+              <div
+                className={`h-full rounded-full ${
+                  site.quota.alert_level === 'over'
+                    ? 'bg-red-500'
+                    : site.quota.alert_level === 'critical'
+                      ? 'bg-amber-500'
+                      : 'bg-yellow-500'
+                }`}
+                style={{ width: `${Math.min(100, Math.max(0, (site.quota.pct || 0) * 100))}%` }}
+              />
+            </div>
+            <div className="text-[11px] text-zinc-700 dark:text-zinc-300 tabular-nums">
+              {new Intl.NumberFormat('pt-BR').format(site.quota.remaining)} restantes
+            </div>
+          </div>
+        </div>
+      )}
       <div className="flex items-start justify-between gap-4 mb-1">
         <div>
           <Link

@@ -171,7 +171,34 @@ const toNumberOrNull = (value: unknown) => {
 router.get('/', requireAuth, async (req, res) => {
   const auth = req.auth!;
   const result = await pool.query(
-    'SELECT id, name, domain, site_key, created_at FROM sites WHERE account_id = $1 ORDER BY id DESC',
+    `
+      WITH plan AS (
+        SELECT COALESCE(p.max_events, 999999999) AS max_events
+        FROM accounts a
+        LEFT JOIN plans p ON a.active_plan_id = p.id
+        WHERE a.id = $1
+        LIMIT 1
+      ),
+      usage AS (
+        SELECT
+          we.site_key,
+          COUNT(*)::int AS used_events
+        FROM web_events we
+        INNER JOIN sites s ON s.site_key = we.site_key
+        WHERE s.account_id = $1
+          AND we.event_time >= date_trunc('month', NOW())
+          AND we.event_name <> 'PageEngagement'
+        GROUP BY we.site_key
+      )
+      SELECT
+        s.id, s.name, s.domain, s.site_key, s.created_at,
+        (SELECT max_events FROM plan) AS max_events,
+        COALESCE(u.used_events, 0) AS used_events
+      FROM sites s
+      LEFT JOIN usage u ON u.site_key = s.site_key
+      WHERE s.account_id = $1
+      ORDER BY s.id DESC
+    `,
     [auth.accountId]
   );
 
@@ -184,7 +211,30 @@ router.get('/', requireAuth, async (req, res) => {
 
   const maxSites = (accountRes.rows[0]?.plan_max_sites || 1) + (accountRes.rows[0]?.bonus_site_limit || 0);
 
-  return res.json({ sites: result.rows, max_sites: maxSites });
+  const sites = (result.rows || []).map((row: any) => {
+    const maxEvents = Number(row.max_events ?? 0) || 0;
+    const usedEvents = Number(row.used_events ?? 0) || 0;
+    const remainingEvents = maxEvents > 0 ? Math.max(0, maxEvents - usedEvents) : 0;
+    const pct = maxEvents > 0 ? Math.min(1, usedEvents / maxEvents) : 0;
+
+    let quota_alert_level: 'none' | 'warn' | 'critical' | 'over' = 'none';
+    if (maxEvents > 0 && usedEvents >= maxEvents) quota_alert_level = 'over';
+    else if (maxEvents > 0 && (pct >= 0.95 || remainingEvents <= 500)) quota_alert_level = 'critical';
+    else if (maxEvents > 0 && (pct >= 0.8 || remainingEvents <= 2000)) quota_alert_level = 'warn';
+
+    return {
+      ...row,
+      quota: {
+        limit: maxEvents,
+        used: usedEvents,
+        remaining: remainingEvents,
+        pct,
+        alert_level: quota_alert_level,
+      },
+    };
+  });
+
+  return res.json({ sites, max_sites: maxSites });
 });
 
 const MAX_INJECT_HTML_CHARS = 200_000;
@@ -197,11 +247,57 @@ router.get('/:siteId', requireAuth, async (req, res) => {
   if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
 
   const result = await pool.query(
-    'SELECT id, name, domain, site_key, created_at, inject_head_html, inject_body_html FROM sites WHERE id = $1 AND account_id = $2',
+    `
+      WITH plan AS (
+        SELECT COALESCE(p.max_events, 999999999) AS max_events
+        FROM accounts a
+        LEFT JOIN plans p ON a.active_plan_id = p.id
+        WHERE a.id = $2
+        LIMIT 1
+      ),
+      usage AS (
+        SELECT COUNT(*)::int AS used_events
+        FROM web_events we
+        INNER JOIN sites s ON s.site_key = we.site_key
+        WHERE s.id = $1
+          AND s.account_id = $2
+          AND we.event_time >= date_trunc('month', NOW())
+          AND we.event_name <> 'PageEngagement'
+      )
+      SELECT
+        s.id, s.name, s.domain, s.site_key, s.created_at, s.inject_head_html, s.inject_body_html,
+        (SELECT max_events FROM plan) AS max_events,
+        (SELECT used_events FROM usage) AS used_events
+      FROM sites s
+      WHERE s.id = $1 AND s.account_id = $2
+      LIMIT 1
+    `,
     [siteId, auth.accountId]
   );
   if (!(result.rowCount || 0)) return res.status(404).json({ error: 'Site not found' });
-  return res.json({ site: result.rows[0] });
+  const row: any = result.rows[0];
+  const maxEvents = Number(row.max_events ?? 0) || 0;
+  const usedEvents = Number(row.used_events ?? 0) || 0;
+  const remainingEvents = maxEvents > 0 ? Math.max(0, maxEvents - usedEvents) : 0;
+  const pct = maxEvents > 0 ? Math.min(1, usedEvents / maxEvents) : 0;
+
+  let quota_alert_level: 'none' | 'warn' | 'critical' | 'over' = 'none';
+  if (maxEvents > 0 && usedEvents >= maxEvents) quota_alert_level = 'over';
+  else if (maxEvents > 0 && (pct >= 0.95 || remainingEvents <= 500)) quota_alert_level = 'critical';
+  else if (maxEvents > 0 && (pct >= 0.8 || remainingEvents <= 2000)) quota_alert_level = 'warn';
+
+  return res.json({
+    site: {
+      ...row,
+      quota: {
+        limit: maxEvents,
+        used: usedEvents,
+        remaining: remainingEvents,
+        pct,
+        alert_level: quota_alert_level,
+      },
+    },
+  });
 });
 
 router.get('/:siteId/injected-snippets', requireAuth, async (req, res) => {

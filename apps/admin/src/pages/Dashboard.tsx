@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { Layout } from '../components/Layout';
@@ -401,7 +401,17 @@ export const DashboardPage = () => {
   const [data, setData] = useState<Overview | null>(null);
   const [salesData, setSalesData] = useState<DailyPoint[]>([]);
   const [hasOpenAiKey, setHasOpenAiKey] = useState<boolean | null>(null);
-  const [sites, setSites] = useState<Array<{ id: number; name: string }>>([]);
+  const [sites, setSites] = useState<Array<{
+    id: number;
+    name: string;
+    quota?: {
+      limit: number;
+      used: number;
+      remaining: number;
+      pct: number;
+      alert_level: 'none' | 'warn' | 'critical' | 'over';
+    };
+  }>>([]);
   const [selectedSiteId, setSelectedSiteId] = useState('');
   const [period, setPeriod] = useState('last_7d');
   const [currency, setCurrency] = useState('BRL');
@@ -420,6 +430,15 @@ export const DashboardPage = () => {
       .then((res) => setSites(res.data?.sites || []))
       .catch(() => setSites([]));
   }, []);
+
+  const quotaAlerts = useMemo(() => {
+    const list = (sites || []).filter((s: { quota?: { alert_level?: string } }) => s.quota?.alert_level && s.quota.alert_level !== 'none');
+    list.sort((a, b) => {
+      const w = (lvl?: string) => (lvl === 'over' ? 3 : lvl === 'critical' ? 2 : lvl === 'warn' ? 1 : 0);
+      return w(b.quota?.alert_level) - w(a.quota?.alert_level);
+    });
+    return list.slice(0, 5);
+  }, [sites]);
 
   useEffect(() => {
     const params: any = { period, currency };
@@ -520,6 +539,42 @@ export const DashboardPage = () => {
           </div>
         </div>
       </div>
+
+      {quotaAlerts.length > 0 && (
+        <div className="mb-6 rounded-2xl border border-amber-200 dark:border-amber-500/20 bg-amber-50/70 dark:bg-amber-500/10 p-4 sm:p-5">
+          <div className="text-sm font-bold text-amber-900 dark:text-amber-200">
+            Atenção: sua cota mensal de eventos está terminando em alguns sites
+          </div>
+          <div className="mt-1 text-xs text-amber-800/90 dark:text-amber-200/80 leading-relaxed">
+            O <b>Pixel WEB</b> continua funcionando normalmente. Quando a cota do Trajettu estoura, apenas o <b>envio SERVER</b> (CAPI/GA4) pausa e volta no próximo ciclo ou após upgrade.
+          </div>
+          <div className="mt-3 flex flex-col gap-2">
+            {quotaAlerts.map((s) => (
+              <Link
+                key={s.id}
+                to={`/sites/${s.id}`}
+                className="group flex items-center justify-between gap-3 rounded-xl bg-white/70 dark:bg-black/20 border border-amber-200/70 dark:border-amber-500/10 px-3 py-2 hover:bg-white hover:border-amber-300 dark:hover:bg-black/30 transition-colors"
+              >
+                <div className="min-w-0">
+                  <div className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 truncate">
+                    {s.name}
+                  </div>
+                  <div className="text-[11px] text-zinc-600 dark:text-zinc-400 tabular-nums">
+                    {new Intl.NumberFormat('pt-BR').format(s.quota?.used || 0)} / {new Intl.NumberFormat('pt-BR').format(s.quota?.limit || 0)} eventos
+                    {typeof s.quota?.remaining === 'number' ? ` • faltam ${new Intl.NumberFormat('pt-BR').format(s.quota.remaining)}` : ''}
+                  </div>
+                </div>
+                <div className="shrink-0 text-[10px] font-semibold uppercase tracking-widest px-2 py-1 rounded-full border
+                  bg-amber-50 text-amber-800 border-amber-200
+                  dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/20
+                ">
+                  {s.quota?.alert_level === 'over' ? 'COTA ATINGIDA' : s.quota?.alert_level === 'critical' ? 'CRÍTICO' : 'AVISO'}
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── KPI grid ── */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-2 sm:gap-3 mb-6">

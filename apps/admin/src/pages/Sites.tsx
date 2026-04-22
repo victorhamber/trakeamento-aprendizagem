@@ -9,6 +9,13 @@ type Site = {
   domain: string | null;
   site_key: string;
   created_at: string;
+  quota?: {
+    limit: number;
+    used: number;
+    remaining: number;
+    pct: number;
+    alert_level: 'none' | 'warn' | 'critical' | 'over';
+  };
 };
 
 export const SitesPage = () => {
@@ -146,6 +153,40 @@ export const SitesPage = () => {
                     <div className="min-w-0">
                       <div className="font-semibold text-sm text-zinc-900 dark:text-zinc-100 group-hover:text-black dark:group-hover:text-white transition-colors truncate">{s.name}</div>
                       <div className="text-xs text-zinc-500 dark:text-zinc-500 truncate">{s.domain || '—'}</div>
+                      {s.quota?.limit ? (
+                        <div className="mt-1.5 flex items-center gap-2">
+                          <div className="h-1.5 w-32 rounded-full bg-zinc-200 dark:bg-white/10 overflow-hidden">
+                            <div
+                              className={`h-full rounded-full ${
+                                s.quota.alert_level === 'over'
+                                  ? 'bg-red-500'
+                                  : s.quota.alert_level === 'critical'
+                                    ? 'bg-amber-500'
+                                    : s.quota.alert_level === 'warn'
+                                      ? 'bg-yellow-500'
+                                      : 'bg-emerald-500'
+                              }`}
+                              style={{ width: `${Math.min(100, Math.max(0, (s.quota.pct || 0) * 100))}%` }}
+                            />
+                          </div>
+                          <div className="text-[11px] text-zinc-500 dark:text-zinc-500 tabular-nums">
+                            {new Intl.NumberFormat('pt-BR').format(s.quota.used)} / {new Intl.NumberFormat('pt-BR').format(s.quota.limit)}
+                          </div>
+                          {s.quota.alert_level !== 'none' && (
+                            <span
+                              className={`text-[10px] font-semibold uppercase tracking-widest px-2 py-0.5 rounded-full border ${
+                                s.quota.alert_level === 'over'
+                                  ? 'bg-red-50 text-red-700 border-red-200 dark:bg-red-500/10 dark:text-red-300 dark:border-red-500/20'
+                                  : s.quota.alert_level === 'critical'
+                                    ? 'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/20'
+                                    : 'bg-yellow-50 text-yellow-800 border-yellow-200 dark:bg-yellow-500/10 dark:text-yellow-300 dark:border-yellow-500/20'
+                              }`}
+                            >
+                              {s.quota.alert_level === 'over' ? 'COTA ATINGIDA' : 'COTA BAIXA'}
+                            </span>
+                          )}
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                   <div className="flex items-center gap-3 shrink-0">
