@@ -35,7 +35,8 @@ router.get('/provision-url', async (req, res) => {
     return res.status(400).json({ error: 'WEBHOOK_ADMIN_SECRET não configurado na API' });
   }
   const base = apiBase.endsWith('/') ? apiBase.slice(0, -1) : apiBase;
-  return res.json({ url: `${base}/admin/provision?secret=${encodeURIComponent(secret)}` });
+  // Provision endpoint lives under /webhooks (see main.ts mounting).
+  return res.json({ url: `${base}/webhooks/admin/provision?secret=${encodeURIComponent(secret)}` });
 });
 
 // Endpoint para migrar/popular last_traffic_source de web_events antigos para site_visitors
