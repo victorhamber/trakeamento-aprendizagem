@@ -149,6 +149,14 @@ router.post('/accounts', async (req, res) => {
   try {
     await client.query('BEGIN');
 
+    let planName: string | null = null;
+    if (active_plan_id) {
+      try {
+        const p = await client.query('SELECT name FROM plans WHERE id = $1 LIMIT 1', [Number(active_plan_id)]);
+        planName = p.rows?.[0]?.name ? String(p.rows[0].name) : null;
+      } catch {}
+    }
+
     const accRes = await client.query(
       `
         INSERT INTO accounts (name, is_active, active_plan_id)
@@ -176,10 +184,20 @@ router.post('/accounts', async (req, res) => {
 
     await client.query('COMMIT');
 
+    // Best-effort: send welcome email for manual-created accounts too (same template as provisioning).
+    let emailSent = false;
+    try {
+      const { sendWelcomeEmail } = await import('../services/email');
+      emailSent = await sendWelcomeEmail(normalizedEmail, accountName || normalizedEmail.split('@')[0], plainPassword, planName || undefined);
+    } catch (emailErr) {
+      console.warn('[Admin] Failed to send welcome email (manual create):', emailErr);
+    }
+
     return res.status(201).json({
       account,
       user: userRes.rows[0],
       temp_password: plainPassword,
+      email_sent: emailSent,
     });
   } catch (error: any) {
     await client.query('ROLLBACK');
