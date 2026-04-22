@@ -19,10 +19,26 @@ const LRUCache = require('lru-cache').LRUCache || require('lru-cache');
 
 const ga4Service = new Ga4Service(pool);
 
+function rateLimitKey(req: Request): string {
+  const siteKeyRaw = (req.query['key'] as string | undefined) || (req.headers['x-site-key'] as string | undefined);
+  const siteKey = typeof siteKeyRaw === 'string' ? siteKeyRaw.trim() : '';
+
+  // Prefer Cloudflare real client IP when present, then fallback to generic proxy parsing.
+  // With EasyPanel behind Cloudflare, req.ip can collapse to a proxy IP unless proxy headers are trusted.
+  const cfIp = (req.headers['cf-connecting-ip'] as string | undefined)?.trim();
+  const ip = cfIp || getClientIp(req as any) || req.ip || 'unknown';
+
+  // Separate budgets per site to avoid one hot site starving all others.
+  return `${siteKey || 'no_site'}|${ip}`;
+}
+
 const ingestLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
   max: 300, // limit each IP to 300 requests per minute
   message: { error: 'Too many requests' },
+  keyGenerator: rateLimitKey,
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 
 const router = Router();
