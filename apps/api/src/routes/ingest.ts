@@ -23,11 +23,10 @@ function rateLimitKey(req: Request): string {
   const siteKeyRaw = (req.query['key'] as string | undefined) || (req.headers['x-site-key'] as string | undefined);
   const siteKey = typeof siteKeyRaw === 'string' ? siteKeyRaw.trim() : '';
 
-  // Prefer Cloudflare real client IP when present, then fallback to generic proxy parsing.
-  // With EasyPanel behind Cloudflare, req.ip can collapse to a proxy IP unless proxy headers are trusted.
+  // Prefer Cloudflare real client IP. With CF + EasyPanel, req.ip can collapse to a proxy IP depending on hop count.
   const cfIp = (req.headers['cf-connecting-ip'] as string | undefined)?.trim();
-  const ipRaw = cfIp || getClientIp(req as any) || req.ip || 'unknown';
-  // Use express-rate-limit helper to normalize IPv6 and prevent bypass.
+  const ipRaw = cfIp || getClientIp(req) || req.ip || 'unknown';
+  // Normalize IPv6 and prevent bypass using express-rate-limit helper.
   const ip = ipKeyGenerator({ ip: ipRaw } as any);
 
   // Separate budgets per site to avoid one hot site starving all others.
@@ -36,11 +35,25 @@ function rateLimitKey(req: Request): string {
 
 const ingestLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: 300, // limit each IP to 300 requests per minute
+  max: 1200, // limit each site+IP to 1200 requests per minute
   message: { error: 'Too many requests' },
   keyGenerator: rateLimitKey,
   standardHeaders: true,
   legacyHeaders: false,
+  handler: (req, res, _next, options) => {
+    try {
+      const siteKeyRaw = (req.query['key'] as string | undefined) || (req.headers['x-site-key'] as string | undefined);
+      const siteKey = typeof siteKeyRaw === 'string' ? siteKeyRaw.trim() : '';
+      console.warn('[Ingest] rate limit hit', {
+        site_key: siteKey || null,
+        req_ip: req.ip,
+        cf_ip: req.headers['cf-connecting-ip'],
+        xff: req.headers['x-forwarded-for'],
+        key: rateLimitKey(req),
+      });
+    } catch {}
+    res.status(options.statusCode).json(options.message);
+  },
 });
 
 const router = Router();
