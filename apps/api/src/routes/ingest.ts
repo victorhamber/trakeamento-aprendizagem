@@ -810,7 +810,7 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
   }
 
   // ─── 1b. Quota check (plan-based monthly event limit) ────────────
-  const quota = await checkEventQuota(siteKey);
+  const quota = await checkEventQuota(siteKey, eventName);
   if (!quota.allowed) {
     try {
       console.log('[Ingest] quota limit hit', {

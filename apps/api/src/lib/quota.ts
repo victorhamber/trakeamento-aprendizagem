@@ -24,9 +24,15 @@ const inflightCounts = new Map<string, number>();
  * Designed to be fast (cached) and non-blocking — a small over-count is acceptable
  * (soft enforcement); hard enforcement happens on the DB side via the GC/admin panel.
  */
-export async function checkEventQuota(siteKey: string): Promise<
+export async function checkEventQuota(siteKey: string, eventName?: string): Promise<
   { allowed: true } | { allowed: false; reason: string; limit: number; used: number }
 > {
+  // PageEngagement é telemetria/qualidade (pode ser alta frequência). Não conta na cota mensal.
+  // Mantém PageView/conversões como base de cobrança/limite.
+  if (eventName === 'PageEngagement') {
+    return { allowed: true };
+  }
+
   let entry = quotaCache.get(siteKey) as QuotaEntry | undefined;
 
   if (!entry) {
@@ -36,6 +42,7 @@ export async function checkEventQuota(siteKey: string): Promise<
                 (SELECT COUNT(*)::text FROM web_events
                  WHERE site_key = $1
                    AND event_time >= date_trunc('month', NOW())
+                   AND event_name <> 'PageEngagement'
                 ) AS event_count
          FROM sites s
          LEFT JOIN accounts a ON a.id = s.account_id

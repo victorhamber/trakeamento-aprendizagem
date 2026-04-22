@@ -24,6 +24,7 @@ export const PlansPage = () => {
     const [type, setType] = useState('SUBSCRIPTION');
     const [cycle, setCycle] = useState('MONTHLY');
     const [sites, setSites] = useState('1');
+    const [events, setEvents] = useState('10000');
     const [offerCodes, setOfferCodes] = useState('');
 
     const load = async () => {
@@ -50,7 +51,7 @@ export const PlansPage = () => {
                 price,
                 billing_cycle: cycle,
                 max_sites: parseInt(sites, 10),
-                max_events: 10000, // default for now
+                max_events: parseInt(events, 10),
                 offer_codes: offerCodes.trim() || null
             };
 
@@ -64,6 +65,7 @@ export const PlansPage = () => {
             setName('');
             setPrice('');
             setSites('1');
+            setEvents('10000');
             setType('SUBSCRIPTION');
             setCycle('MONTHLY');
             setOfferCodes('');
@@ -80,6 +82,7 @@ export const PlansPage = () => {
         setType(p.type);
         setCycle(p.billing_cycle);
         setSites(p.max_sites.toString());
+        setEvents(p.max_events?.toString?.() || '10000');
         setOfferCodes(p.offer_codes || '');
         // Scroll to top
         window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -100,6 +103,7 @@ export const PlansPage = () => {
         setName('');
         setPrice('');
         setSites('1');
+        setEvents('10000');
         setType('SUBSCRIPTION');
         setCycle('MONTHLY');
         setOfferCodes('');
@@ -118,7 +122,7 @@ export const PlansPage = () => {
                 </div>
                 <div className="w-full sm:w-auto mt-2 sm:mt-0">
                     <div className="flex bg-white dark:bg-black/40 border border-indigo-200 dark:border-indigo-500/30 rounded-lg overflow-hidden">
-                        <input readOnly value="https://api.trajettu.com/admin/provision?secret=WEBHOOK_ADMIN_SECRET" className="text-xs font-mono px-3 py-2 bg-transparent text-zinc-600 dark:text-zinc-400 outline-none min-w-[300px]" />
+                        <input title="Webhook de provisão" readOnly value="https://api.trajettu.com/admin/provision?secret=WEBHOOK_ADMIN_SECRET" className="text-xs font-mono px-3 py-2 bg-transparent text-zinc-600 dark:text-zinc-400 outline-none min-w-[300px]" />
                         <button onClick={() => { navigator.clipboard.writeText('https://api.trajettu.com/admin/provision?secret=WEBHOOK_ADMIN_SECRET'); alert('Link de Webhook Copiado!'); }} className="px-3 bg-indigo-100 hover:bg-indigo-200 dark:bg-indigo-500/20 dark:hover:bg-indigo-500/40 text-indigo-700 dark:text-indigo-300 font-medium text-xs transition-colors">Copiar</button>
                     </div>
                 </div>
@@ -133,33 +137,46 @@ export const PlansPage = () => {
                         <form onSubmit={handleSubmit} className="space-y-4">
                             <div>
                                 <label className="block text-xs text-zinc-500 mb-1">Nome (ex: Pro Mensal)</label>
-                                <input required value={name} onChange={e => setName(e.target.value)} className="w-full rounded-xl bg-zinc-50 dark:bg-black/20 border border-zinc-200 dark:border-white/10 px-3 py-2 text-sm outline-none focus:border-indigo-500" />
+                                <input title="Nome do plano" required value={name} onChange={e => setName(e.target.value)} className="w-full rounded-xl bg-zinc-50 dark:bg-black/20 border border-zinc-200 dark:border-white/10 px-3 py-2 text-sm outline-none focus:border-indigo-500" />
                             </div>
                             <div>
                                 <label className="block text-xs text-zinc-500 mb-1">Códigos da Oferta (Hotmart/Kiwify/Eduzz) <span className="text-zinc-400 font-normal ml-1">Para Webhook de Provisão. Separe por vírgulas.</span></label>
-                                <input value={offerCodes} onChange={e => setOfferCodes(e.target.value)} placeholder="ex: test, plano_anual, prod_x" className="w-full rounded-xl bg-zinc-50 dark:bg-black/20 border border-zinc-200 dark:border-white/10 px-3 py-2 text-sm outline-none focus:border-indigo-500" />
+                                <input title="Códigos da oferta" value={offerCodes} onChange={e => setOfferCodes(e.target.value)} placeholder="ex: test, plano_anual, prod_x" className="w-full rounded-xl bg-zinc-50 dark:bg-black/20 border border-zinc-200 dark:border-white/10 px-3 py-2 text-sm outline-none focus:border-indigo-500" />
                             </div>
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
                                     <label className="block text-xs text-zinc-500 mb-1">Preço (R$)</label>
-                                    <input required value={price} onChange={e => setPrice(e.target.value)} type="number" step="0.01" className="w-full rounded-xl bg-zinc-50 dark:bg-black/20 border border-zinc-200 dark:border-white/10 px-3 py-2 text-sm outline-none focus:border-indigo-500" />
+                                    <input title="Preço do plano" required value={price} onChange={e => setPrice(e.target.value)} type="number" step="0.01" className="w-full rounded-xl bg-zinc-50 dark:bg-black/20 border border-zinc-200 dark:border-white/10 px-3 py-2 text-sm outline-none focus:border-indigo-500" />
                                 </div>
                                 <div>
                                     <label className="block text-xs text-zinc-500 mb-1">Limite Sites</label>
-                                    <input required value={sites} onChange={e => setSites(e.target.value)} type="number" className="w-full rounded-xl bg-zinc-50 dark:bg-black/20 border border-zinc-200 dark:border-white/10 px-3 py-2 text-sm outline-none focus:border-indigo-500" />
+                                    <input title="Limite de sites" required value={sites} onChange={e => setSites(e.target.value)} type="number" className="w-full rounded-xl bg-zinc-50 dark:bg-black/20 border border-zinc-200 dark:border-white/10 px-3 py-2 text-sm outline-none focus:border-indigo-500" />
                                 </div>
+                            </div>
+                            <div>
+                                <label className="block text-xs text-zinc-500 mb-1">Cota mensal de eventos</label>
+                                <input
+                                    title="Cota mensal de eventos"
+                                    required
+                                    value={events}
+                                    onChange={e => setEvents(e.target.value)}
+                                    type="number"
+                                    min={0}
+                                    step={1}
+                                    className="w-full rounded-xl bg-zinc-50 dark:bg-black/20 border border-zinc-200 dark:border-white/10 px-3 py-2 text-sm outline-none focus:border-indigo-500"
+                                />
                             </div>
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
                                     <label className="block text-xs text-zinc-500 mb-1">Tipo</label>
-                                    <select value={type} onChange={e => setType(e.target.value)} className="w-full rounded-xl bg-zinc-50 dark:bg-black/20 border border-zinc-200 dark:border-white/10 px-3 py-2 text-sm outline-none focus:border-indigo-500">
+                                    <select title="Tipo do plano" value={type} onChange={e => setType(e.target.value)} className="w-full rounded-xl bg-zinc-50 dark:bg-black/20 border border-zinc-200 dark:border-white/10 px-3 py-2 text-sm outline-none focus:border-indigo-500">
                                         <option value="SUBSCRIPTION">Assinatura Base</option>
                                         <option value="ADDON">Add-on (Extra Site)</option>
                                     </select>
                                 </div>
                                 <div>
                                     <label className="block text-xs text-zinc-500 mb-1">Ciclo</label>
-                                    <select value={cycle} onChange={e => setCycle(e.target.value)} className="w-full rounded-xl bg-zinc-50 dark:bg-black/20 border border-zinc-200 dark:border-white/10 px-3 py-2 text-sm outline-none focus:border-indigo-500">
+                                    <select title="Ciclo de cobrança" value={cycle} onChange={e => setCycle(e.target.value)} className="w-full rounded-xl bg-zinc-50 dark:bg-black/20 border border-zinc-200 dark:border-white/10 px-3 py-2 text-sm outline-none focus:border-indigo-500">
                                         <option value="MONTHLY">Mensal</option>
                                         <option value="YEARLY">Anual</option>
                                         <option value="LIFETIME">Vitalício</option>
