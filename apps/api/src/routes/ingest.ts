@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { pool } from '../db/pool';
 import { capiService, CapiService, CapiEvent } from '../services/capi';
 import { Ga4Service } from '../services/ga4';
-import rateLimit from 'express-rate-limit'; // Added import for express-rate-limit
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit'; // Added import for express-rate-limit
 import cors from 'cors'; // Added import for cors
 import { DDI_LIST } from '../lib/ddi';
 import { getClientIp } from '../lib/ip';
@@ -26,7 +26,9 @@ function rateLimitKey(req: Request): string {
   // Prefer Cloudflare real client IP when present, then fallback to generic proxy parsing.
   // With EasyPanel behind Cloudflare, req.ip can collapse to a proxy IP unless proxy headers are trusted.
   const cfIp = (req.headers['cf-connecting-ip'] as string | undefined)?.trim();
-  const ip = cfIp || getClientIp(req as any) || req.ip || 'unknown';
+  const ipRaw = cfIp || getClientIp(req as any) || req.ip || 'unknown';
+  // Use express-rate-limit helper to normalize IPv6 and prevent bypass.
+  const ip = ipKeyGenerator({ ip: ipRaw } as any);
 
   // Separate budgets per site to avoid one hot site starving all others.
   return `${siteKey || 'no_site'}|${ip}`;
