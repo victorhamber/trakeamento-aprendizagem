@@ -812,6 +812,16 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
   // ─── 1b. Quota check (plan-based monthly event limit) ────────────
   const quota = await checkEventQuota(siteKey);
   if (!quota.allowed) {
+    try {
+      console.log('[Ingest] quota limit hit', {
+        site_key: siteKey,
+        used: quota.used,
+        limit: quota.limit,
+        req_ip: req.ip,
+        cf_ip: req.headers['cf-connecting-ip'],
+        xff: req.headers['x-forwarded-for'],
+      });
+    } catch {}
     return res.status(429).json({
       error: 'event_limit_reached',
       message: `Monthly event limit reached (${quota.used}/${quota.limit}). Upgrade your plan.`,
