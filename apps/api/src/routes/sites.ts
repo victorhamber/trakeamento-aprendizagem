@@ -292,7 +292,7 @@ router.get('/:siteId', requireAuth, async (req, res) => {
 
   const result = await pool.query(
     `
-      usage AS (
+      WITH usage AS (
         SELECT COUNT(*)::int AS used_events
         FROM web_events we
         INNER JOIN sites s ON s.site_key = we.site_key
