@@ -453,19 +453,54 @@ export const SitePage = () => {
   const normalizeCapturedHrefContains = useCallback((raw: string) => {
     const v = (raw || '').trim();
     if (!v) return '';
-    // Preserva parâmetros que diferenciam oferta/plano (ex.: off / checkoutmode)
-    // e remove parâmetros variáveis (UTMs, fbp/fbc, external_id, etc.).
+    // Estratégia SaaS: manter params "de negócio" (qualquer plataforma)
+    // e remover apenas params de tracking (UTMs, gclid/fbclid, fbp/fbc, ids, etc.).
     try {
       const base = 'https://_/';
       const u = new URL(v.startsWith('http://') || v.startsWith('https://') ? v : base + v.replace(/^\//, ''));
 
-      const keep: Array<[string, string]> = [];
-      const off = u.searchParams.get('off');
-      if (off) keep.push(['off', off]);
-      const checkoutmode = u.searchParams.get('checkoutmode');
-      if (checkoutmode) keep.push(['checkoutmode', checkoutmode]);
+      const dropExact = new Set([
+        // UTMs / ad platforms
+        'fbclid',
+        'gclid',
+        'wbraid',
+        'gbraid',
+        'ttclid',
+        'msclkid',
+        'yclid',
+        'twclid',
+        // Meta cookies/ids
+        'fbp',
+        'fbc',
+        // Common tracking ids
+        'external_id',
+        'eid',
+        'sck',
+        'sccid',
+        'ref',
+        // Trajettu / misc
+        'ta_ts',
+        'ta_origin',
+        'ta_pick',
+        'ta_test',
+        'ta_rule',
+      ]);
 
-      // Se não achou nenhum parâmetro estável, mantém compatibilidade com a regra anterior (corta no primeiro &).
+      const keep: Array<[string, string]> = [];
+      for (const [k, val] of u.searchParams.entries()) {
+        const key = (k || '').toLowerCase();
+        if (!key) continue;
+        if (key.startsWith('utm_')) continue;
+        if (key.startsWith('mtm_')) continue; // Matomo
+        if (key.startsWith('pk_')) continue; // Piwik/Matomo
+        if (key.startsWith('ga_')) continue; // GA params
+        if (key === '_gl') continue; // GA linker
+        if (dropExact.has(key)) continue;
+        if (!val) continue;
+        keep.push([k, val]);
+      }
+
+      // Se não sobrou nenhum parâmetro "de negócio", mantém compatibilidade com a regra anterior (corta no primeiro &).
       if (keep.length === 0) {
         const idx = v.indexOf('&');
         if (idx <= 0) return v;
