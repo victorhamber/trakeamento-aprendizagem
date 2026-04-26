@@ -450,6 +450,14 @@ export const SitePage = () => {
     buttonRuleCss,
   ]);
 
+  const normalizeCapturedHrefContains = useCallback((raw: string) => {
+    const v = (raw || '').trim();
+    if (!v) return '';
+    const idx = v.indexOf('&');
+    if (idx <= 0) return v;
+    return v.slice(0, idx);
+  }, []);
+
   useEffect(() => {
     const onMessage = (ev: MessageEvent) => {
       try {
@@ -464,7 +472,8 @@ export const SitePage = () => {
         }
         const sug = payload.suggested || {};
         if (typeof sug.match_text === 'string') setButtonRuleText(sug.match_text);
-        if (typeof sug.match_href_contains === 'string') setButtonRuleHrefContains(sug.match_href_contains);
+        if (typeof sug.match_href_contains === 'string')
+          setButtonRuleHrefContains(normalizeCapturedHrefContains(sug.match_href_contains));
         if (typeof sug.match_class_contains === 'string') setButtonRuleClassContains(sug.match_class_contains);
         if (typeof sug.match_css === 'string') setButtonRuleCss(sug.match_css);
 
@@ -485,7 +494,7 @@ export const SitePage = () => {
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, []);
+  }, [normalizeCapturedHrefContains]);
 
   const loadSavedForms = useCallback(async () => {
     try {
