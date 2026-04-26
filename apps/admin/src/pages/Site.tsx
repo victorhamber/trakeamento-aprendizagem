@@ -453,9 +453,33 @@ export const SitePage = () => {
   const normalizeCapturedHrefContains = useCallback((raw: string) => {
     const v = (raw || '').trim();
     if (!v) return '';
-    const idx = v.indexOf('&');
-    if (idx <= 0) return v;
-    return v.slice(0, idx);
+    // Preserva parâmetros que diferenciam oferta/plano (ex.: off / checkoutmode)
+    // e remove parâmetros variáveis (UTMs, fbp/fbc, external_id, etc.).
+    try {
+      const base = 'https://_/';
+      const u = new URL(v.startsWith('http://') || v.startsWith('https://') ? v : base + v.replace(/^\//, ''));
+
+      const keep: Array<[string, string]> = [];
+      const off = u.searchParams.get('off');
+      if (off) keep.push(['off', off]);
+      const checkoutmode = u.searchParams.get('checkoutmode');
+      if (checkoutmode) keep.push(['checkoutmode', checkoutmode]);
+
+      // Se não achou nenhum parâmetro estável, mantém compatibilidade com a regra anterior (corta no primeiro &).
+      if (keep.length === 0) {
+        const idx = v.indexOf('&');
+        if (idx <= 0) return v;
+        return v.slice(0, idx);
+      }
+
+      const path = u.pathname || '/';
+      const qs = keep.map(([k, val]) => `${encodeURIComponent(k)}=${encodeURIComponent(val)}`).join('&');
+      return qs ? `${path}?${qs}` : path;
+    } catch {
+      const idx = v.indexOf('&');
+      if (idx <= 0) return v;
+      return v.slice(0, idx);
+    }
   }, []);
 
   useEffect(() => {
