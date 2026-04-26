@@ -168,38 +168,64 @@ const toNumberOrNull = (value: unknown) => {
   return null;
 };
 
+const BILLING_PERIOD_DAYS = 30;
+const BILLING_PERIOD_MS = BILLING_PERIOD_DAYS * 24 * 60 * 60 * 1000;
+function computeRollingWindowFromAnchor(anchor: Date, now = new Date()): { start: Date; end: Date } {
+  const a = anchor instanceof Date ? anchor.getTime() : new Date(anchor).getTime();
+  const n = now.getTime();
+  if (!Number.isFinite(a) || !Number.isFinite(n) || n <= a) {
+    const start = new Date(now.getTime() - BILLING_PERIOD_MS);
+    return { start, end: now };
+  }
+  const elapsed = n - a;
+  const periods = Math.floor(elapsed / BILLING_PERIOD_MS);
+  const start = new Date(a + periods * BILLING_PERIOD_MS);
+  const end = new Date(start.getTime() + BILLING_PERIOD_MS);
+  return { start, end };
+}
+
 router.get('/', requireAuth, async (req, res) => {
   const auth = req.auth!;
+  const planRes = await pool.query<{ max_events: number; anchor: string }>(
+    `
+      SELECT
+        COALESCE(p.max_events, 999999999) AS max_events,
+        a.created_at::text AS anchor
+      FROM accounts a
+      LEFT JOIN plans p ON a.active_plan_id = p.id
+      WHERE a.id = $1
+      LIMIT 1
+    `,
+    [auth.accountId],
+  );
+  const anchor = new Date(planRes.rows?.[0]?.anchor || new Date().toISOString());
+  const { start: quota_start, end: quota_end } = computeRollingWindowFromAnchor(anchor);
+  const maxEventsForAccount = Number(planRes.rows?.[0]?.max_events ?? 999999999) || 999999999;
+
   const result = await pool.query(
     `
-      WITH plan AS (
-        SELECT COALESCE(p.max_events, 999999999) AS max_events
-        FROM accounts a
-        LEFT JOIN plans p ON a.active_plan_id = p.id
-        WHERE a.id = $1
-        LIMIT 1
-      ),
-      usage AS (
+      WITH usage AS (
         SELECT
           we.site_key,
           COUNT(*)::int AS used_events
         FROM web_events we
         INNER JOIN sites s ON s.site_key = we.site_key
         WHERE s.account_id = $1
-          AND we.event_time >= date_trunc('month', NOW())
+          AND we.event_time >= $2
+          AND we.event_time < $3
           AND we.event_name <> 'PageEngagement'
         GROUP BY we.site_key
       )
       SELECT
         s.id, s.name, s.domain, s.site_key, s.created_at,
-        (SELECT max_events FROM plan) AS max_events,
+        $4::int AS max_events,
         COALESCE(u.used_events, 0) AS used_events
       FROM sites s
       LEFT JOIN usage u ON u.site_key = s.site_key
       WHERE s.account_id = $1
       ORDER BY s.id DESC
     `,
-    [auth.accountId]
+    [auth.accountId, quota_start, quota_end, maxEventsForAccount],
   );
 
   const accountRes = await pool.query(`
@@ -230,6 +256,8 @@ router.get('/', requireAuth, async (req, res) => {
         remaining: remainingEvents,
         pct,
         alert_level: quota_alert_level,
+        cycle_start: quota_start.toISOString(),
+        cycle_end: quota_end.toISOString(),
       },
     };
   });
@@ -246,33 +274,43 @@ router.get('/:siteId', requireAuth, async (req, res) => {
   const siteId = Number(req.params.siteId);
   if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
 
+  const planRes = await pool.query<{ max_events: number; anchor: string }>(
+    `
+      SELECT
+        COALESCE(p.max_events, 999999999) AS max_events,
+        a.created_at::text AS anchor
+      FROM accounts a
+      LEFT JOIN plans p ON a.active_plan_id = p.id
+      WHERE a.id = $1
+      LIMIT 1
+    `,
+    [auth.accountId],
+  );
+  const anchor = new Date(planRes.rows?.[0]?.anchor || new Date().toISOString());
+  const { start: quota_start, end: quota_end } = computeRollingWindowFromAnchor(anchor);
+  const maxEventsForAccount = Number(planRes.rows?.[0]?.max_events ?? 999999999) || 999999999;
+
   const result = await pool.query(
     `
-      WITH plan AS (
-        SELECT COALESCE(p.max_events, 999999999) AS max_events
-        FROM accounts a
-        LEFT JOIN plans p ON a.active_plan_id = p.id
-        WHERE a.id = $2
-        LIMIT 1
-      ),
       usage AS (
         SELECT COUNT(*)::int AS used_events
         FROM web_events we
         INNER JOIN sites s ON s.site_key = we.site_key
         WHERE s.id = $1
           AND s.account_id = $2
-          AND we.event_time >= date_trunc('month', NOW())
+          AND we.event_time >= $3
+          AND we.event_time < $4
           AND we.event_name <> 'PageEngagement'
       )
       SELECT
         s.id, s.name, s.domain, s.site_key, s.created_at, s.inject_head_html, s.inject_body_html,
-        (SELECT max_events FROM plan) AS max_events,
+        $5::int AS max_events,
         (SELECT used_events FROM usage) AS used_events
       FROM sites s
       WHERE s.id = $1 AND s.account_id = $2
       LIMIT 1
     `,
-    [siteId, auth.accountId]
+    [siteId, auth.accountId, quota_start, quota_end, maxEventsForAccount]
   );
   if (!(result.rowCount || 0)) return res.status(404).json({ error: 'Site not found' });
   const row: any = result.rows[0];
@@ -295,6 +333,8 @@ router.get('/:siteId', requireAuth, async (req, res) => {
         remaining: remainingEvents,
         pct,
         alert_level: quota_alert_level,
+        cycle_start: quota_start.toISOString(),
+        cycle_end: quota_end.toISOString(),
       },
     },
   });
