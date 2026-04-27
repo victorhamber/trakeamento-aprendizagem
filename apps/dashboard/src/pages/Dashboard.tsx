@@ -240,6 +240,7 @@ export const DashboardPage = () => {
   const convRatePct = visits > 0 ? Math.round((purchases / visits) * 10000) / 100 : 0;
   // Dashboard não tem custo de anúncio; deixamos ROAS como placeholder (fica pronto para plugar Meta depois).
   const roasPlaceholder = '—';
+  const ticketMedio = purchases > 0 ? (Number(data?.total_revenue || 0) / purchases) : 0;
 
   useEffect(() => {
     api.get('/ai/settings')
@@ -405,13 +406,28 @@ export const DashboardPage = () => {
 
         <div className="space-y-4">
           <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 p-5 shadow-sm dark:shadow-none select-none relative overflow-hidden">
-            <div className="pointer-events-none absolute -top-10 -right-10 w-48 h-48 bg-emerald-500/10 rounded-full blur-3xl" />
+            <div className="pointer-events-none absolute -top-10 -right-10 w-48 h-48 bg-indigo-500/10 rounded-full blur-3xl" />
             <div className="relative">
-              <div className="text-xs font-semibold uppercase tracking-widest text-zinc-600 dark:text-zinc-500">Receita (Meta)</div>
-              <div className="mt-2 text-2xl font-bold text-zinc-900 dark:text-zinc-100 tabular-nums">
-                {fmtCurrency(data?.total_revenue ?? 0)}
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-widest text-zinc-600 dark:text-zinc-500">Insights de IA</div>
+                  <div className="mt-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                    {Number(data?.reports_7d || 0) > 0 ? 'Novas oportunidades encontradas' : 'Sem insights recentes'}
+                  </div>
+                  <div className="mt-1 text-[11px] text-zinc-500">
+                    {Number(data?.reports_7d || 0)} diagnósticos gerados
+                  </div>
+                </div>
+                <Link
+                  to="/ai"
+                  className="shrink-0 text-[10px] font-semibold uppercase tracking-widest text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 transition-colors"
+                >
+                  Ver insights →
+                </Link>
               </div>
-              <div className="mt-1 text-[11px] text-zinc-500">Período selecionado</div>
+              <div className="mt-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/60 dark:bg-zinc-900/30 px-3 py-2 text-[11px] text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                Dica: use os insights para entender gargalos do funil e priorizar os ajustes com mais impacto.
+              </div>
             </div>
           </div>
 
@@ -432,6 +448,12 @@ export const DashboardPage = () => {
                 {visits > 0 ? `${convRatePct.toFixed(2)}%` : '—'}
               </div>
               <div className="mt-1 text-[11px] text-zinc-500">Compras / Visitas</div>
+              <div className="mt-3 flex items-center justify-between text-[11px] text-zinc-600 dark:text-zinc-400">
+                <span>Ticket médio</span>
+                <span className="font-semibold text-zinc-900 dark:text-zinc-100 tabular-nums">
+                  {purchases > 0 ? fmtCurrency(ticketMedio) : '—'}
+                </span>
+              </div>
             </div>
           </div>
 
@@ -466,15 +488,18 @@ export const DashboardPage = () => {
           <RevenueChart data={salesData} currency={currency} isDark={isDark} />
         </div>
 
-        {/* Placeholder: mantém o funil pequeno antigo fora (já temos o hero) */}
+        {/* Card auxiliar (sem redundância de funil) */}
         <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 p-5 shadow-sm dark:shadow-none select-none">
-          <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100 mb-2">Resumo do funil</div>
+          <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100 mb-2">Visão rápida</div>
           <div className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">
-            Visitas: <span className="font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">{visits}</span>
-            <br />
-            Checkouts: <span className="font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">{Number(funnelData?.checkouts || 0)}</span>
+            Receita: <span className="font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">{fmtCurrency(data?.total_revenue ?? 0)}</span>
             <br />
             Compras: <span className="font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">{purchases}</span>
+            <br />
+            Conversão: <span className="font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">{visits > 0 ? `${convRatePct.toFixed(2)}%` : '—'}</span>
+          </div>
+          <div className="mt-3 text-[11px] text-zinc-500 leading-relaxed">
+            Use o painel lateral para ver insights e status; abaixo você tem os picos por dia e canais/regiões.
           </div>
         </div>
       </div>
