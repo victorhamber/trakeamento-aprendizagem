@@ -79,7 +79,7 @@ export function FunnelChart({ data, isDark }: { data: any; isDark: boolean }) {
             <stop offset="100%" stopColor="#22c55e" stopOpacity="0.0" />
           </linearGradient>
           <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
-            <feGaussianBlur stdDeviation="14" result="blur" />
+            <feGaussianBlur stdDeviation="8" result="blur" />
             <feColorMatrix
               in="blur"
               type="matrix"
@@ -87,7 +87,7 @@ export function FunnelChart({ data, isDark }: { data: any; isDark: boolean }) {
                 0 0 0 0 0.13
                 0 0 0 0 0.90
                 0 0 0 0 0.67
-                0 0 0 0.55 0"
+                0 0 0 0.28 0"
               result="glowColor"
             />
             <feMerge>
@@ -102,8 +102,8 @@ export function FunnelChart({ data, isDark }: { data: any; isDark: boolean }) {
         {/* Subtle neon line behind */}
         <path
           d={`M ${leftX} ${topY - 28} L ${rightX} ${topY - 48}`}
-          stroke="rgba(16,185,129,0.22)"
-          strokeWidth="8"
+          stroke="rgba(16,185,129,0.14)"
+          strokeWidth="5"
           strokeLinecap="round"
           filter="url(#glow)"
         />
@@ -116,14 +116,14 @@ export function FunnelChart({ data, isDark }: { data: any; isDark: boolean }) {
           const stagePct = pctPrev[i] ?? 0;
           return (
             <g key={s.key}>
-              <polygon points={pts} fill="url(#funnelFill)" stroke={stroke} strokeWidth="1.2" filter="url(#glow)" />
+              <polygon points={pts} fill="url(#funnelFill)" stroke={stroke} strokeWidth="1.1" filter="url(#glow)" opacity={0.96} />
               {/* Left edge highlight */}
               <polyline
                 points={`${g.x0l},${g.y0} ${g.x1l},${g.y1}`}
                 stroke="url(#funnelEdge)"
-                strokeWidth="6"
+                strokeWidth="4"
                 strokeLinecap="round"
-                opacity={0.9}
+                opacity={0.65}
               />
 
               <text x={cx} y={cy - 10} textAnchor="middle" fill={text2} fontSize="22" fontWeight="700">
