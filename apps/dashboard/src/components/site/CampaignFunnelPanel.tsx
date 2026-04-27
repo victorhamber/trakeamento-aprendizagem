@@ -339,36 +339,90 @@ function buildFunnelSummary(args: {
 }): string {
   const { campaignName, periodLabel, primary, comparePrimary, compareLabel, generatedAt } = args;
   const f = primary.funnel;
+  const spend = Number(primary.spend || 0);
+  const impressions = Number(f.impressions || 0);
+  const linkClicks = Number(f.link_clicks || 0);
+  const results = Number(primary.objective_metric || (f as any).objective_metric || 0);
+  const cpm = impressions > 0 ? (spend / impressions) * 1000 : 0;
+  const ctrLink = impressions > 0 ? (linkClicks / impressions) * 100 : 0;
+  const cpcLink = linkClicks > 0 ? spend / linkClicks : 0;
+  const cpr = results > 0 ? spend / results : 0;
+  const metaRevenue = Number(primary.meta_revenue || 0);
+  const metaRoas = spend > 0 && metaRevenue > 0 ? metaRevenue / spend : 0;
+
+  const q = primary.meta_rankings?.quality ? String(primary.meta_rankings.quality) : '';
+  const e = primary.meta_rankings?.engagement_rate ? String(primary.meta_rankings.engagement_rate) : '';
+  const c = primary.meta_rankings?.conversion_rate ? String(primary.meta_rankings.conversion_rate) : '';
+  const hasRankings = !!(q || e || c);
+  const rankingText = hasRankings
+    ? [
+        q ? `Qualidade: ${q}` : '',
+        e ? `Engajamento: ${e}` : '',
+        c ? `Conversão: ${c}` : '',
+      ].filter(Boolean).join(' | ')
+    : '';
+
+  const metricName = String(primary.objective_metric_label || 'Resultado').trim();
+
   const lines = [
     `📊 Resumo — ${campaignName}`,
-    `Período: ${periodLabel}`,
+    `📆 Período: ${periodLabel}`,
     '',
-    `Cliques no link: ${formatNumber(f.link_clicks)}`,
-    `Ver página (LP): ${formatNumber(f.landing_page_views)}`,
-    `${primary.objective_metric_label || 'Objetivo'}: ${formatNumber(primary.objective_metric || (f as any).objective_metric || 0)}`,
-    `Checkout: ${formatNumber(f.initiates_checkout)}`,
-    `Compras (Meta): ${formatNumber(f.purchases)}`,
+    `📌 Resultados do funil`,
+    `- Cliques no link: ${formatNumber(f.link_clicks)}`,
+    `- Ver página (LP): ${formatNumber(f.landing_page_views)}`,
+    `- ${metricName}: ${formatNumber(results)}`,
+    `- Checkout: ${formatNumber(f.initiates_checkout)}`,
+    `- Compras (Meta): ${formatNumber(f.purchases)}`,
     '',
-    `Taxas: clique→página ${primary.funnel_rates.lp_from_clicks_pct}% | página→checkout ${primary.funnel_rates.checkout_from_lp_pct}% | checkout→compra ${primary.funnel_rates.purchase_from_checkout_pct}%`,
-    `Investido: ${formatMoney(primary.spend)}`,
+    `📈 Taxas`,
+    `- Clique → página: ${primary.funnel_rates.lp_from_clicks_pct}%`,
+    `- Página → checkout: ${primary.funnel_rates.checkout_from_lp_pct}%`,
+    `- Checkout → compra: ${primary.funnel_rates.purchase_from_checkout_pct}%`,
     '',
-    primary.bottleneck_plain ? `O que importa: ${primary.bottleneck_plain}` : '',
-    primary.present_label ? `Situação: ${primary.present_label}` : '',
-    primary.future_label ? `Próximo passo: ${primary.future_label}` : '',
+    `💰 Custos e entrega`,
+    `- Investido: ${formatMoney(spend)}`,
+    `- CPM: ${impressions > 0 ? formatMoney(cpm) : '—'}`,
+    `- CTR (link): ${impressions > 0 ? formatPct(ctrLink, 2) : '—'}`,
+    `- CPC (link): ${linkClicks > 0 ? formatMoney(cpcLink) : '—'}`,
+    `- Custo por ${metricName}: ${results > 0 ? formatMoney(cpr) : '—'}`,
+    metaRevenue > 0 ? `- Receita (Meta): ${formatMoney(metaRevenue)}` : '',
+    metaRevenue > 0 ? `- ROAS (Meta): ${metaRoas.toFixed(2)}x` : '',
+    '',
+    hasRankings ? `🧪 Diagnóstico (Meta Rankings)` : '',
+    hasRankings ? rankingText : '',
+    '',
+    primary.bottleneck_plain ? `🧠 O que isso quer dizer` : '',
+    primary.bottleneck_plain ? primary.bottleneck_plain : '',
+    primary.present_label ? `✅ Situação agora: ${primary.present_label}` : '',
+    primary.future_label ? `➡️ Próximo passo: ${primary.future_label}` : '',
   ];
 
   if (comparePrimary && compareLabel) {
     const p = comparePrimary;
+    const pSpend = Number(p.spend || 0);
+    const pImpr = Number(p.funnel.impressions || 0);
+    const pClicks = Number(p.funnel.link_clicks || 0);
+    const pResults = Number(p.objective_metric || (p.funnel as any).objective_metric || 0);
+    const pCpm = pImpr > 0 ? (pSpend / pImpr) * 1000 : 0;
+    const pCtr = pImpr > 0 ? (pClicks / pImpr) * 100 : 0;
+    const pCpc = pClicks > 0 ? pSpend / pClicks : 0;
+    const pCpr = pResults > 0 ? pSpend / pResults : 0;
+    const pMetaRev = Number(p.meta_revenue || 0);
+    const pMetaRoas = pSpend > 0 && pMetaRev > 0 ? pMetaRev / pSpend : 0;
     lines.push(
       '',
-      `— Comparativo (${compareLabel}) —`,
-      `Cliques: ${formatNumber(p.funnel.link_clicks)} | LP: ${formatNumber(p.funnel.landing_page_views)} | Checkout: ${formatNumber(p.funnel.initiates_checkout)} | Compras: ${formatNumber(p.funnel.purchases)}`,
-      `Investido: ${formatMoney(p.spend)}`
+      `🔁 Comparativo (${compareLabel})`,
+      `- Investido: ${formatMoney(pSpend)}`,
+      `- CPM: ${pImpr > 0 ? formatMoney(pCpm) : '—'} | CTR (link): ${pImpr > 0 ? formatPct(pCtr, 2) : '—'} | CPC (link): ${pClicks > 0 ? formatMoney(pCpc) : '—'}`,
+      `- Custo por ${metricName}: ${pResults > 0 ? formatMoney(pCpr) : '—'}`,
+      pMetaRev > 0 ? `- ROAS (Meta): ${pMetaRoas.toFixed(2)}x` : '',
+      `- Cliques: ${formatNumber(p.funnel.link_clicks)} | LP: ${formatNumber(p.funnel.landing_page_views)} | Checkout: ${formatNumber(p.funnel.initiates_checkout)} | Compras: ${formatNumber(p.funnel.purchases)}`
     );
   }
 
   if (generatedAt) {
-    lines.push('', `Atualizado: ${formatGeneratedAt(generatedAt)}`);
+    lines.push('', `🕒 Atualizado: ${formatGeneratedAt(generatedAt)}`);
   }
 
   return lines.filter(Boolean).join('\n');
