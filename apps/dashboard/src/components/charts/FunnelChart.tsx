@@ -50,7 +50,8 @@ export function FunnelChart({ data, isDark }: { data: any; isDark: boolean }) {
     const y0 = topY + i * (stageH + gap);
     const y1 = y0 + stageH;
     const w0 = (rightX - leftX) * widths[i];
-    const w1 = (rightX - leftX) * widths[i + 1] ?? w0 * 0.78;
+    const nextWidth = widths[i + 1];
+    const w1 = nextWidth !== undefined ? (rightX - leftX) * nextWidth : w0 * 0.78;
     const cx = W / 2;
     const x0l = cx - w0 / 2;
     const x0r = cx + w0 / 2 + skew;
