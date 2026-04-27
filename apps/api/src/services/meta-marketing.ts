@@ -601,7 +601,22 @@ export class MetaMarketingService {
     if (!cfg) return;
 
     // Resolve the actual date window so we can delete stale rows before inserting
-    const range = this.clampInsightsSyncRange(this.resolveDateRange(datePreset, timeRange));
+    // IMPORTANT: ranges gigantes (ex.: "maximum") tornam o sync lento e instável (Graph 500 / "reduce data").
+    // Para UX, sempre limitamos o sync a uma janela recente.
+    const resolved = this.resolveDateRange(datePreset, timeRange);
+    const range = this.clampInsightsSyncRange(resolved);
+
+    const ymdToMs = (ymd: string): number => new Date(`${ymd}T12:00:00.000Z`).getTime();
+    const rangeDays = Math.max(1, Math.ceil((ymdToMs(range.until) - ymdToMs(range.since)) / 86_400_000));
+    const MAX_SYNC_DAYS = 90;
+    const effectiveRange = rangeDays > MAX_SYNC_DAYS
+      ? { since: addDaysToYmd(range.until, -(MAX_SYNC_DAYS - 1)), until: range.until }
+      : range;
+    if (effectiveRange.since !== range.since) {
+      console.warn(
+        `[MetaSync] Sync window capped to ${MAX_SYNC_DAYS}d (requested ~${rangeDays}d: ${range.since} → ${range.until})`
+      );
+    }
 
     try {
       const baseUrl = `https://graph.facebook.com/${META_GRAPH_API_VERSION}/${cfg.adAccountId}/insights`;
@@ -620,78 +635,41 @@ export class MetaMarketingService {
 
       const campaignFields = [...MetaMarketingService.BASE_FIELDS].join(',');
 
-      const ymdToMs = (ymd: string): number => new Date(`${ymd}T12:00:00.000Z`).getTime();
-      const rangeDays = Math.max(1, Math.ceil((ymdToMs(range.until) - ymdToMs(range.since)) / 86_400_000));
+      const timeParams = { time_range: { since: effectiveRange.since, until: effectiveRange.until } };
 
-      // Meta frequentemente dá HTTP 500 / "reduce the amount of data" em ranges grandes.
-      // Para manter rápido no comum (7/14/30d) e robusto no extremo (maximum/custom gigante),
-      // só fazemos chunking quando o range é grande.
-      const MAX_CHUNK_DAYS = 45;
-      const CHUNK_ONLY_IF_DAYS_GT = 90;
-      const buildChunks = (sinceYmd: string, untilYmd: string): Array<{ since: string; until: string }> => {
-        const out: Array<{ since: string; until: string }> = [];
-        let cur = sinceYmd;
-        while (cur <= untilYmd) {
-          const candidateUntil = addDaysToYmd(cur, MAX_CHUNK_DAYS - 1);
-          const u = candidateUntil <= untilYmd ? candidateUntil : untilYmd;
-          out.push({ since: cur, until: u });
-          cur = addDaysToYmd(u, 1);
-        }
-        return out;
-      };
+      let adInsights: Record<string, unknown>[];
+      let adSetInsights: Record<string, unknown>[];
+      let campaignInsights: Record<string, unknown>[];
 
-      const chunks = rangeDays > CHUNK_ONLY_IF_DAYS_GT ? buildChunks(range.since, range.until) : [{ since: range.since, until: range.until }];
-      let adInsights: Record<string, unknown>[] = [];
-      let adSetInsights: Record<string, unknown>[] = [];
-      let campaignInsights: Record<string, unknown>[] = [];
-
-      const fetchChunk = async (c: { since: string; until: string }) => {
-        const timeParams = { time_range: { since: c.since, until: c.until } };
-        try {
-          const [ad0, adset0, camp0] = await this.fetchInsightsFirstPagesBatch(
-            cfg.token,
-            cfg.adAccountId,
-            c.since,
-            c.until,
-            adFields,
-            adSetFields,
-            campaignFields
-          );
-          const [adRest, adsetRest, campRest] = await Promise.all([
-            this.fetchRemainingPagesFromNext(ad0.nextUrl),
-            this.fetchRemainingPagesFromNext(adset0.nextUrl),
-            this.fetchRemainingPagesFromNext(camp0.nextUrl),
-          ]);
-          return {
-            ad: [...ad0.data, ...adRest],
-            adset: [...adset0.data, ...adsetRest],
-            campaign: [...camp0.data, ...campRest],
-          };
-        } catch (batchErr) {
-          console.warn('[MetaSync] insights batch failed, using parallel GET:', this.summarizeMetaError(batchErr));
-          const [a, b, d] = await Promise.all([
-            this.fetchAllPages(baseUrl, { access_token: cfg.token, level: 'ad', ...timeParams, time_increment: 1, fields: adFields, limit: 500 }),
-            this.fetchAllPages(baseUrl, { access_token: cfg.token, level: 'adset', ...timeParams, time_increment: 1, fields: adSetFields, limit: 500 }),
-            this.fetchAllPages(baseUrl, { access_token: cfg.token, level: 'campaign', ...timeParams, time_increment: 1, fields: campaignFields, limit: 500 }),
-          ]);
-          return { ad: a, adset: b, campaign: d };
-        }
-      };
-
-      // Concorrência pequena para acelerar sem estourar rate-limit (e sem piorar os 500).
-      const CONCURRENCY = chunks.length > 1 ? 2 : 1;
-      for (let i = 0; i < chunks.length; i += CONCURRENCY) {
-        const slice = chunks.slice(i, i + CONCURRENCY);
-        const results = await Promise.all(slice.map(fetchChunk));
-        for (const r of results) {
-          adInsights = adInsights.concat(r.ad);
-          adSetInsights = adSetInsights.concat(r.adset);
-          campaignInsights = campaignInsights.concat(r.campaign);
-        }
+      try {
+        const [ad0, adset0, camp0] = await this.fetchInsightsFirstPagesBatch(
+          cfg.token,
+          cfg.adAccountId,
+          effectiveRange.since,
+          effectiveRange.until,
+          adFields,
+          adSetFields,
+          campaignFields
+        );
+        const [adRest, adsetRest, campRest] = await Promise.all([
+          this.fetchRemainingPagesFromNext(ad0.nextUrl),
+          this.fetchRemainingPagesFromNext(adset0.nextUrl),
+          this.fetchRemainingPagesFromNext(camp0.nextUrl),
+        ]);
+        adInsights = [...ad0.data, ...adRest];
+        adSetInsights = [...adset0.data, ...adsetRest];
+        campaignInsights = [...camp0.data, ...campRest];
+      } catch (batchErr) {
+        console.warn('[MetaSync] insights batch failed, using parallel GET:', this.summarizeMetaError(batchErr));
+        [adInsights, adSetInsights, campaignInsights] = await Promise.all([
+          this.fetchAllPages(baseUrl, { access_token: cfg.token, level: 'ad', ...timeParams, time_increment: 1, fields: adFields, limit: 500 }),
+          this.fetchAllPages(baseUrl, { access_token: cfg.token, level: 'adset', ...timeParams, time_increment: 1, fields: adSetFields, limit: 500 }),
+          this.fetchAllPages(baseUrl, { access_token: cfg.token, level: 'campaign', ...timeParams, time_increment: 1, fields: campaignFields, limit: 500 }),
+        ]);
       }
 
       console.log(
-        `[MetaSync] site=${siteId} range=${range.since}→${range.until} ` +
+        `[MetaSync] site=${siteId} range=${effectiveRange.since}→${effectiveRange.until} ` +
         `campaigns=${campaignInsights.length} adsets=${adSetInsights.length} ads=${adInsights.length}`
       );
 
@@ -746,7 +724,7 @@ export class MetaMarketingService {
            WHERE site_id = $1
              AND date_start >= $2
              AND date_start <= $3`,
-          [siteId, range.since, range.until]
+          [siteId, effectiveRange.since, effectiveRange.until]
         );
 
         // ── Insert fresh rows ───────────────────────────────────────────────
