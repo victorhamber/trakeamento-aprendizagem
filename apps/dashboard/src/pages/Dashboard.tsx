@@ -461,9 +461,21 @@ export const DashboardPage = () => {
           <div className="neo-card neo-border neo-glow rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-zinc-950/45 p-5 shadow-sm dark:shadow-none select-none relative overflow-hidden">
             <div className="pointer-events-none absolute -top-10 -right-10 w-48 h-48 bg-emerald-500/10 rounded-full blur-3xl" />
             <div className="relative flex items-center gap-4">
-              <div className="h-14 w-14 rounded-2xl bg-emerald-500/15 border border-emerald-500/25 flex items-center justify-center">
-                <div className="h-8 w-8 rounded-full bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center">
-                  <div className="h-3 w-3 rounded-full bg-emerald-400 shadow-[0_0_14px_rgba(52,211,153,0.55)]" />
+              <div
+                className="relative h-14 w-14 shrink-0 rounded-2xl bg-emerald-500/15 border border-emerald-500/25 flex items-center justify-center overflow-visible"
+                aria-hidden="true"
+              >
+                <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                  <div className="h-4 w-4 rounded-full border border-emerald-300/50 animate-ping [animation-duration:2.1s] motion-reduce:animate-none" />
+                </div>
+                <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                  <div
+                    className="h-4 w-4 rounded-full border border-emerald-200/40 animate-ping [animation-duration:2.1s] [animation-delay:1.05s] motion-reduce:animate-none"
+                  />
+                </div>
+                <div className="relative z-10 flex h-8 w-8 items-center justify-center">
+                  <div className="absolute h-6 w-6 rounded-full border border-emerald-500/40 ring-1 ring-emerald-500/10" />
+                  <div className="h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-[0_0_16px_rgba(52,211,153,0.7)]" />
                 </div>
               </div>
               <div className="min-w-0">
