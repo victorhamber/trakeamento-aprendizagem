@@ -264,19 +264,57 @@ function FunnelKpis({ row }: { row: FunnelRow }) {
   const cpr = results > 0 ? spend / results : 0;
 
   const resultLabel = (row.objective_metric_label || 'Resultado').trim();
-  const resultLabelShort = resultLabel.length > 18 ? `${resultLabel.slice(0, 18)}…` : resultLabel;
+  const resultLabelShort = resultLabel.length > 14 ? `${resultLabel.slice(0, 14)}…` : resultLabel;
+
+  const pillCpr = benchPill(levelFromLowerBetter(cpr, 3, 6, 12));
+  const pillCpm = benchPill(levelFromLowerBetter(cpm, 25, 45, 70));
+  const pillCtr = benchPill(levelFromHigherBetter(ctr, 0.8, 1.2, 2.0));
+  const pillCpc = benchPill(levelFromLowerBetter(cpcLink, 1.2, 2.5, 4.0));
 
   return (
-    <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-2">
-      <KpiCard
-        label={`Custo por ${resultLabelShort}`}
-        value={results > 0 ? formatMoney(cpr) : '—'}
-        hint={results > 0 ? `${formatNumber(results)} ${resultLabel.toLowerCase()}` : 'Sem resultado no período'}
-        accent={results > 0 ? 'violet' : 'zinc'}
-      />
-      <KpiCard label="CPM" value={impressions > 0 ? formatMoney(cpm) : '—'} hint="Custo por 1.000 impressões" accent="amber" />
-      <KpiCard label="CTR (link)" value={impressions > 0 ? formatPct(ctr, 2) : '—'} hint="Cliques no link / impressões" accent="blue" />
-      <KpiCard label="CPC (link)" value={linkClicks > 0 ? formatMoney(cpcLink) : '—'} hint="Custo por clique no link" accent="emerald" />
+    <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px] text-zinc-500">
+      <div className="rounded-lg bg-zinc-100 dark:bg-zinc-800/50 p-2 border border-zinc-200 dark:border-zinc-700/50">
+        <div className="flex items-center justify-between gap-2">
+          <div className="text-zinc-600 dark:text-zinc-400">Custo por evento</div>
+          <span className={pillCpr.cls} title="Heurística (depende de nicho/oferta)">
+            {pillCpr.label}
+          </span>
+        </div>
+        <div className="text-zinc-900 dark:text-zinc-200 font-semibold tabular-nums">{results > 0 ? formatMoney(cpr) : '—'}</div>
+        <div className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-snug mt-0.5">
+          {results > 0 ? `${formatNumber(results)} ${resultLabelShort}` : 'Sem resultado no período'}
+        </div>
+      </div>
+      <div className="rounded-lg bg-zinc-100 dark:bg-zinc-800/50 p-2 border border-zinc-200 dark:border-zinc-700/50">
+        <div className="flex items-center justify-between gap-2">
+          <div className="text-zinc-600 dark:text-zinc-400">CPM</div>
+          <span className={pillCpm.cls} title="Heurística (depende do seu leilão)">
+            {pillCpm.label}
+          </span>
+        </div>
+        <div className="text-zinc-900 dark:text-zinc-200 font-semibold tabular-nums">{impressions > 0 ? formatMoney(cpm) : '—'}</div>
+        <div className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-snug mt-0.5">Custo por 1.000</div>
+      </div>
+      <div className="rounded-lg bg-zinc-100 dark:bg-zinc-800/50 p-2 border border-zinc-200 dark:border-zinc-700/50">
+        <div className="flex items-center justify-between gap-2">
+          <div className="text-zinc-600 dark:text-zinc-400">CTR (link)</div>
+          <span className={pillCtr.cls} title="Heurística (depende do criativo/público)">
+            {pillCtr.label}
+          </span>
+        </div>
+        <div className="text-zinc-900 dark:text-zinc-200 font-semibold tabular-nums">{impressions > 0 ? formatPct(ctr, 2) : '—'}</div>
+        <div className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-snug mt-0.5">Link / imp.</div>
+      </div>
+      <div className="rounded-lg bg-zinc-100 dark:bg-zinc-800/50 p-2 border border-zinc-200 dark:border-zinc-700/50">
+        <div className="flex items-center justify-between gap-2">
+          <div className="text-zinc-600 dark:text-zinc-400">CPC (link)</div>
+          <span className={pillCpc.cls} title="Heurística (depende do seu CPM/CTR)">
+            {pillCpc.label}
+          </span>
+        </div>
+        <div className="text-zinc-900 dark:text-zinc-200 font-semibold tabular-nums">{linkClicks > 0 ? formatMoney(cpcLink) : '—'}</div>
+        <div className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-snug mt-0.5">Custo por clique</div>
+      </div>
     </div>
   );
 }
@@ -410,6 +448,22 @@ function toPct(rate01: number): number {
   return Math.round(rate01 * 1000) / 10;
 }
 
+function levelFromHigherBetter(value: number, okAt: number, goodAt: number, strongAt: number): BenchLevel {
+  if (!Number.isFinite(value)) return 'bad';
+  if (value < okAt) return 'bad';
+  if (value < goodAt) return 'ok';
+  if (value < strongAt) return 'good';
+  return 'strong';
+}
+
+function levelFromLowerBetter(value: number, strongLt: number, goodLt: number, okLt: number): BenchLevel {
+  if (!Number.isFinite(value) || value <= 0) return 'bad';
+  if (value < strongLt) return 'strong';
+  if (value < goodLt) return 'good';
+  if (value < okLt) return 'ok';
+  return 'bad';
+}
+
 function leigoHeadline(primary: FunnelRow) {
   const v = Number(primary.funnel.landing_page_views || 0);
   const ic = Number(primary.funnel.initiates_checkout || 0);
@@ -457,7 +511,7 @@ function FunnelInfoCards({ row }: { row: FunnelRow }) {
   const pillV2P = benchPill(benchLevel(visitToPurchase, 0.01, 0.02, 0.04));
   return (
     <>
-      <div className="mt-4 grid grid-cols-3 gap-2 text-[10px] text-zinc-500">
+      <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px] text-zinc-500">
         <div className="rounded-lg bg-zinc-100 dark:bg-zinc-800/50 p-2 border border-zinc-200 dark:border-zinc-700/50">
           <div className="flex items-center justify-between gap-2">
             <div className="text-zinc-600 dark:text-zinc-400">Clique → página</div>
@@ -485,14 +539,14 @@ function FunnelInfoCards({ row }: { row: FunnelRow }) {
           </div>
           <div className="text-zinc-900 dark:text-zinc-200 font-semibold tabular-nums">{row.funnel_rates.purchase_from_checkout_pct}%</div>
         </div>
-      </div>
-      <div className="mt-2">
-        <div className="text-[11px] text-zinc-600 dark:text-zinc-400 flex items-center gap-2">
-          <span className="font-medium">Visita → compra:</span>
-          <span className={pillV2P.cls} title="Benchmark global DR (2025–2026)">
-            {pillV2P.label}
-          </span>
-          <span className="tabular-nums">{toPct(visitToPurchase)}%</span>
+        <div className="rounded-lg bg-zinc-100 dark:bg-zinc-800/50 p-2 border border-zinc-200 dark:border-zinc-700/50">
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-zinc-600 dark:text-zinc-400">Visita → compra</div>
+            <span className={pillV2P.cls} title="Benchmark global DR (2025–2026)">
+              {pillV2P.label}
+            </span>
+          </div>
+          <div className="text-zinc-900 dark:text-zinc-200 font-semibold tabular-nums">{toPct(visitToPurchase)}%</div>
         </div>
       </div>
     </>
@@ -1265,30 +1319,6 @@ export function CampaignFunnelPanel({
                 <FunnelInfoCards row={primary} />
                 <FunnelKpis row={primary} />
 
-                <div className="flex flex-wrap gap-2 pt-1">
-                  <button
-                    type="button"
-                    onClick={() => copySummary()}
-                    className="text-[11px] px-2.5 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-800"
-                  >
-                    {copyFeedback ? 'Copiado!' : 'Copiar resumo'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => openWhatsAppSummary()}
-                    className="text-[11px] px-2.5 py-1.5 rounded-lg border border-emerald-600/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200 hover:bg-emerald-500/20"
-                  >
-                    WhatsApp
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => openEmailSummary()}
-                    className="text-[11px] px-2.5 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-800"
-                  >
-                    E-mail
-                  </button>
-                </div>
-
                 <div className="mt-4">
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                     <KpiCard label="Investido" value={formatMoney(primary.spend)} hint={comparePrimary ? `vs. anterior ${formatMoney(comparePrimary.spend)}` : undefined} accent="zinc" />
@@ -1316,6 +1346,30 @@ export function CampaignFunnelPanel({
                       Diferença de investimento: <SpendDelta cur={primary.spend} prev={comparePrimary.spend} />
                     </div>
                   ) : null}
+                </div>
+
+                <div className="flex flex-wrap gap-2 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => copySummary()}
+                    className="text-[11px] px-2.5 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-800"
+                  >
+                    {copyFeedback ? 'Copiado!' : 'Copiar resumo'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openWhatsAppSummary()}
+                    className="text-[11px] px-2.5 py-1.5 rounded-lg border border-emerald-600/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200 hover:bg-emerald-500/20"
+                  >
+                    WhatsApp
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openEmailSummary()}
+                    className="text-[11px] px-2.5 py-1.5 rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-800"
+                  >
+                    E-mail
+                  </button>
                 </div>
               </div>
 
