@@ -14,6 +14,44 @@ const bestTimesCache = new Map<
   { at: number; value: any }
 >();
 
+/** Heurística leve (sem dependência extra) — bom o suficiente para donut no dashboard. */
+function classifyUserAgent(uaRaw: string): 'mobile' | 'tablet' | 'desktop' | 'unknown' {
+  const ua = String(uaRaw || '').trim();
+  if (!ua) return 'unknown';
+  const s = ua.toLowerCase();
+
+  if (s.includes('ipad') || s.includes('tablet') || (s.includes('android') && !s.includes('mobile'))) {
+    return 'tablet';
+  }
+  if (
+    /iphone|ipod|android.*mobile|webos|blackberry|iemobile|opera mini|mobile/i.test(ua) ||
+    (s.includes('android') && s.includes('mobile'))
+  ) {
+    return 'mobile';
+  }
+  if (/windows|macintosh|linux|x11|x86_64|wow64|cros/i.test(ua)) {
+    return 'desktop';
+  }
+  return 'unknown';
+}
+
+function extractUserAgentFromPurchaseRow(raw: unknown): string {
+  if (!raw || typeof raw !== 'object') return '';
+  const p = raw as Record<string, unknown>;
+  const candidates: unknown[] = [
+    p.client_user_agent,
+    (p as any)?.user_data?.client_user_agent,
+    (p as any)?.userData?.client_user_agent,
+    (p as any)?.user_agent,
+    (p as any)?.userAgent,
+    (p as any)?._capi_debug?.user_data?.client_user_agent,
+  ];
+  for (const c of candidates) {
+    if (typeof c === 'string' && c.trim()) return c.trim();
+  }
+  return '';
+}
+
 // TEMPORARY: Diagnostic endpoint to debug purchase visibility issues
 router.get('/debug-purchase/:orderId', requireAuth, async (req, res) => {
   const orderId = req.params.orderId;
@@ -339,7 +377,7 @@ router.get('/best-times', requireAuth, async (req, res) => {
           FROM attributed
           GROUP BY 1
           ORDER BY 2 DESC
-          LIMIT 3
+          LIMIT 6
         `;
 
         topLocationsQuery = `
@@ -414,7 +452,7 @@ router.get('/best-times', requireAuth, async (req, res) => {
           FROM attributed
           GROUP BY 1
           ORDER BY 2 DESC
-          LIMIT 3
+          LIMIT 6
         `;
 
         topLocationsQuery = `
@@ -460,6 +498,49 @@ router.get('/best-times', requireAuth, async (req, res) => {
       const peakResult = await pool.query(query, peakParams);
       const sourceResult = await pool.query(topSourcesQuery, auxParams);
       const locationResult = await pool.query(topLocationsQuery, auxParams);
+
+      // Amostra de User-Agents para distribuição de dispositivos (donut no dashboard)
+      const deviceCounts = new Map<string, number>();
+      if (isPurchase) {
+        const uaSample = await pool.query(
+          `SELECT p.raw_payload
+           FROM purchases p
+           WHERE p.site_key = ANY(
+             SELECT site_key FROM sites WHERE account_id = $1 AND ($2::int IS NULL OR id = $2::int)
+           )
+             AND COALESCE(p.platform_date, p.created_at) >= $3 AND COALESCE(p.platform_date, p.created_at) <= $4
+             AND p.status IN ('approved', 'paid', 'completed', 'active')
+           ORDER BY COALESCE(p.platform_date, p.created_at) DESC
+           LIMIT 2500`,
+          [...paramsBase]
+        );
+        uaSample.rows.forEach((row) => {
+          const ua = extractUserAgentFromPurchaseRow(row.raw_payload);
+          const k = classifyUserAgent(ua);
+          deviceCounts.set(k, (deviceCounts.get(k) || 0) + 1);
+        });
+      } else {
+        const uaSample = await pool.query(
+          `SELECT e.user_data->>'client_user_agent' as ua
+           FROM web_events e
+           WHERE e.site_key = ANY(
+             SELECT site_key FROM sites WHERE account_id = $1 AND ($2::int IS NULL OR id = $2::int)
+           )
+             AND e.event_name = ANY($5) AND e.event_time >= $3 AND e.event_time <= $4
+           ORDER BY e.event_time DESC
+           LIMIT 8000`,
+          auxParams
+        );
+        uaSample.rows.forEach((row) => {
+          const k = classifyUserAgent(String(row.ua || ''));
+          deviceCounts.set(k, (deviceCounts.get(k) || 0) + 1);
+        });
+      }
+
+      const top_devices = ['mobile', 'tablet', 'desktop', 'unknown']
+        .map((k) => ({ device: k, count: deviceCounts.get(k) || 0 }))
+        .filter((d) => d.count > 0)
+        .sort((a, b) => b.count - a.count);
 
       // Resolve IPs em Localizações em memória (rápido com geoip-lite).
       // Se o país do Meta (pixel) e o país do GeoIP baterem, usamos cidade/estado do IP + sufixo · pixel.
@@ -552,7 +633,8 @@ router.get('/best-times', requireAuth, async (req, res) => {
         daily_peaks: dailyPeaks,
         total_volume: maxCount, // apenas para referência de escala
         top_sources: sourceResult.rows.map(r => ({ source: r.source, count: r.count })),
-        top_locations: topLocations
+        top_locations: topLocations,
+        top_devices
       };
     };
 
@@ -560,7 +642,7 @@ router.get('/best-times', requireAuth, async (req, res) => {
     const pageview = await getPeak(['PageView']);
     const purchase = await getPeak(['Purchase']);
     const lead = await getPeak(['Lead', 'CompleteRegistration', 'Contact', 'Schedule']);
-    const checkout = await getPeak(['InitiateCheckout', 'AddToCart']);
+    const checkout = await getPeak(['InitiateCheckout']);
 
     const out = {
       pageview,

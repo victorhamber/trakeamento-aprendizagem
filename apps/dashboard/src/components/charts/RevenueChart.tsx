@@ -1,4 +1,13 @@
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  Line,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 
 type DailyPoint = {
   date: string;
@@ -19,7 +28,8 @@ export function RevenueChart({ data, currency, isDark }: { data: DailyPoint[]; c
     return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
   };
 
-  const lineColor = isDark ? '#34d399' : '#059669';
+  const lineColor = isDark ? '#22d3ee' : '#059669';
+  const fillId = isDark ? 'revGlowDark' : 'revGlowLight';
   const gridColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.11)';
   const textColor = isDark ? '#71717a' : '#52525b';
 
@@ -49,46 +59,60 @@ export function RevenueChart({ data, currency, isDark }: { data: DailyPoint[]; c
   return (
     <div className="h-[300px] w-full select-none outline-none focus:outline-none">
       <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+        <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+          <defs>
+            <linearGradient id={fillId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={lineColor} stopOpacity={isDark ? 0.45 : 0.22} />
+              <stop offset="100%" stopColor={lineColor} stopOpacity={0} />
+            </linearGradient>
+          </defs>
           <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
-          <XAxis 
-            dataKey="date" 
-            tickFormatter={fmtDate} 
-            stroke={textColor} 
-            tick={{ fontSize: 11 }} 
+          <XAxis
+            dataKey="date"
+            tickFormatter={fmtDate}
+            stroke={textColor}
+            tick={{ fontSize: 11 }}
             tickLine={false}
             axisLine={false}
             dy={10}
           />
-          <YAxis 
-            tickFormatter={(val) => fmtCurrency(val)} 
-            stroke={textColor} 
-            tick={{ fontSize: 11 }} 
+          <YAxis
+            tickFormatter={(val) => fmtCurrency(val)}
+            stroke={textColor}
+            tick={{ fontSize: 11 }}
             tickLine={false}
             axisLine={false}
             width={60}
           />
-          <Tooltip 
+          <Tooltip
             formatter={(value: any) => [fmtCurrency(Number(value)), 'Receita']}
             labelFormatter={(label: any) => fmtDate(String(label))}
-            contentStyle={{ 
-              backgroundColor: isDark ? '#18181b' : '#fff', 
+            contentStyle={{
+              backgroundColor: isDark ? '#18181b' : '#fff',
               borderColor: isDark ? '#27272a' : '#e4e4e7',
               borderRadius: '8px',
-              fontSize: '12px'
+              fontSize: '12px',
             }}
             itemStyle={{ color: isDark ? '#e4e4e7' : '#18181b' }}
           />
-          <Line 
-            type="monotone" 
-            dataKey="revenue" 
-            stroke={lineColor} 
-            strokeWidth={2} 
-            dot={{ r: 4, fill: lineColor, strokeWidth: 2, stroke: isDark ? '#18181b' : '#fff' }} 
-            activeDot={{ r: 6, fill: lineColor, stroke: isDark ? '#fff' : '#000', strokeWidth: 2 }} 
+          <Area
+            type="monotone"
+            dataKey="revenue"
+            stroke="transparent"
+            fill={`url(#${fillId})`}
+            fillOpacity={1}
             isAnimationActive={true}
           />
-        </LineChart>
+          <Line
+            type="monotone"
+            dataKey="revenue"
+            stroke={lineColor}
+            strokeWidth={2}
+            dot={{ r: 3, fill: lineColor, strokeWidth: 0 }}
+            activeDot={{ r: 5, fill: lineColor, stroke: isDark ? '#fff' : '#000', strokeWidth: 2 }}
+            isAnimationActive={true}
+          />
+        </AreaChart>
       </ResponsiveContainer>
     </div>
   );
