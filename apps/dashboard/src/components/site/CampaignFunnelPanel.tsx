@@ -62,6 +62,11 @@ const formatMoney = (value: number) =>
 
 const formatNumber = (value: number) => new Intl.NumberFormat('pt-BR').format(value);
 
+const formatPct = (value: number, digits = 2) => {
+  if (!Number.isFinite(value)) return '0%';
+  return `${value.toFixed(digits)}%`;
+};
+
 type DiagnosisReport = {
   analysis_text?: string;
   context?: Record<string, unknown>;
@@ -214,6 +219,66 @@ function SpendDelta({ cur, prev }: { cur: number; prev: number | undefined }) {
   if (Math.abs(d) < 0.01) return <span className="text-zinc-500">(=)</span>;
   if (d > 0) return <span className="text-rose-600 dark:text-rose-400">(+{formatMoney(d)})</span>;
   return <span className="text-emerald-600 dark:text-emerald-400">({formatMoney(d)})</span>;
+}
+
+function KpiCard({
+  label,
+  value,
+  hint,
+  accent,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+  accent?: 'emerald' | 'blue' | 'violet' | 'amber' | 'rose' | 'zinc';
+}) {
+  const accentCls =
+    accent === 'emerald'
+      ? 'border-emerald-500/25 bg-emerald-500/10'
+      : accent === 'blue'
+        ? 'border-blue-500/25 bg-blue-500/10'
+        : accent === 'violet'
+          ? 'border-violet-500/25 bg-violet-500/10'
+          : accent === 'amber'
+            ? 'border-amber-500/25 bg-amber-500/10'
+            : accent === 'rose'
+              ? 'border-rose-500/25 bg-rose-500/10'
+              : 'border-zinc-200 dark:border-zinc-700/60 bg-white/60 dark:bg-zinc-900/40';
+  return (
+    <div className={`rounded-2xl border p-3 ${accentCls}`}>
+      <div className="text-[10px] font-bold uppercase tracking-wide text-zinc-600 dark:text-zinc-400">{label}</div>
+      <div className="mt-1 text-lg font-extrabold tabular-nums text-zinc-900 dark:text-zinc-100 leading-none">{value}</div>
+      {hint ? <div className="mt-1 text-[11px] text-zinc-600 dark:text-zinc-400 leading-snug">{hint}</div> : null}
+    </div>
+  );
+}
+
+function FunnelKpis({ row }: { row: FunnelRow }) {
+  const spend = Number(row.spend || 0);
+  const impressions = Number(row.funnel.impressions || 0);
+  const linkClicks = Number(row.funnel.link_clicks || 0);
+  const results = Number(row.objective_metric || 0);
+  const cpm = impressions > 0 ? (spend / impressions) * 1000 : 0;
+  const ctr = impressions > 0 ? (linkClicks / impressions) * 100 : 0;
+  const cpcLink = linkClicks > 0 ? spend / linkClicks : 0;
+  const cpr = results > 0 ? spend / results : 0;
+
+  const resultLabel = (row.objective_metric_label || 'Resultado').trim();
+  const resultLabelShort = resultLabel.length > 18 ? `${resultLabel.slice(0, 18)}…` : resultLabel;
+
+  return (
+    <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-2">
+      <KpiCard
+        label={`Custo por ${resultLabelShort}`}
+        value={results > 0 ? formatMoney(cpr) : '—'}
+        hint={results > 0 ? `${formatNumber(results)} ${resultLabel.toLowerCase()}` : 'Sem resultado no período'}
+        accent={results > 0 ? 'violet' : 'zinc'}
+      />
+      <KpiCard label="CPM" value={impressions > 0 ? formatMoney(cpm) : '—'} hint="Custo por 1.000 impressões" accent="amber" />
+      <KpiCard label="CTR (link)" value={impressions > 0 ? formatPct(ctr, 2) : '—'} hint="Cliques no link / impressões" accent="blue" />
+      <KpiCard label="CPC (link)" value={linkClicks > 0 ? formatMoney(cpcLink) : '—'} hint="Custo por clique no link" accent="emerald" />
+    </div>
+  );
 }
 
 function buildFunnelSummary(args: {
@@ -1198,6 +1263,7 @@ export function CampaignFunnelPanel({
 
                 <FunnelBars f={primary.funnel} objectiveLabel={primary.objective_metric_label} />
                 <FunnelInfoCards row={primary} />
+                <FunnelKpis row={primary} />
 
                 <div className="flex flex-wrap gap-2 pt-1">
                   <button
@@ -1223,34 +1289,32 @@ export function CampaignFunnelPanel({
                   </button>
                 </div>
 
-                <div className="text-xs text-zinc-500 flex flex-wrap items-center gap-2">
-                  <span>
-                    Investido:{' '}
-                    <strong className="text-zinc-900 dark:text-zinc-200 tabular-nums">{formatMoney(primary.spend)}</strong>
-                  </span>
-                  {Number(primary.meta_revenue || 0) > 0 ? (
-                    <>
-                      <span className="text-zinc-500">·</span>
-                      <span>
-                        Receita (Meta):{' '}
-                        <strong className="text-zinc-900 dark:text-zinc-200 tabular-nums">
-                          {formatMoney(Number(primary.meta_revenue || 0))}
-                        </strong>
-                      </span>
-                      <span className="text-zinc-500">·</span>
-                      <span>
-                        ROAS (Meta):{' '}
-                        <strong className="text-zinc-900 dark:text-zinc-200 tabular-nums">
-                          {(Number(primary.meta_roas || 0)).toFixed(2)}x
-                        </strong>
-                      </span>
-                    </>
-                  ) : null}
+                <div className="mt-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                    <KpiCard label="Investido" value={formatMoney(primary.spend)} hint={comparePrimary ? `vs. anterior ${formatMoney(comparePrimary.spend)}` : undefined} accent="zinc" />
+                    <KpiCard
+                      label="Receita (Meta)"
+                      value={Number(primary.meta_revenue || 0) > 0 ? formatMoney(Number(primary.meta_revenue || 0)) : '—'}
+                      hint="Meta (action_values)"
+                      accent="emerald"
+                    />
+                    <KpiCard
+                      label="ROAS (Meta)"
+                      value={Number(primary.meta_revenue || 0) > 0 ? `${(Number(primary.meta_roas || 0)).toFixed(2)}x` : '—'}
+                      hint={comparePrimary ? (() => {
+                        const prevRev = Number(comparePrimary.meta_revenue || 0);
+                        const prevSpend = Number(comparePrimary.spend || 0);
+                        const prevRoas = prevSpend > 0 ? prevRev / prevSpend : 0;
+                        if (!Number.isFinite(prevRoas) || prevRoas <= 0) return undefined;
+                        return `vs. anterior ${prevRoas.toFixed(2)}x`;
+                      })() : undefined}
+                      accent="violet"
+                    />
+                  </div>
                   {comparePrimary ? (
-                    <span className="text-zinc-500">
-                      vs. anterior <strong className="tabular-nums">{formatMoney(comparePrimary.spend)}</strong>{' '}
-                      <SpendDelta cur={primary.spend} prev={comparePrimary.spend} />
-                    </span>
+                    <div className="mt-2 text-xs text-zinc-600 dark:text-zinc-400">
+                      Diferença de investimento: <SpendDelta cur={primary.spend} prev={comparePrimary.spend} />
+                    </div>
                   ) : null}
                 </div>
               </div>
