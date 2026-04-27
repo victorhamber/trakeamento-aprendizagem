@@ -44,7 +44,6 @@ function bestTimesTzNote(tz?: string) {
 interface BestTimeCardsProps {
   siteId?: number;
   period?: string;
-  isDark?: boolean;
 }
 
 const DAYS_SHORT = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
@@ -128,11 +127,11 @@ const DEVICE_LABEL: Record<string, string> = {
   unknown: 'Outros',
 };
 
-const DEVICE_COLOR: Record<string, string> = {
-  mobile: '#22d3ee',
-  desktop: '#a78bfa',
-  tablet: '#f59e0b',
-  unknown: '#64748b',
+const DEVICE_RING: Record<string, string> = {
+  mobile: 'bg-cyan-400',
+  desktop: 'bg-violet-400',
+  tablet: 'bg-amber-400',
+  unknown: 'bg-slate-400',
 };
 
 function deviceLabel(k: string) {
@@ -289,7 +288,15 @@ function DeviceDonut({ data }: { data: PeakData }) {
                 {chartData.map((entry) => (
                   <Cell
                     key={entry.key}
-                    fill={DEVICE_COLOR[entry.key] || '#94a3b8'}
+                    fill={
+                      entry.key === 'mobile'
+                        ? '#22d3ee'
+                        : entry.key === 'desktop'
+                          ? '#a78bfa'
+                          : entry.key === 'tablet'
+                            ? '#f59e0b'
+                            : '#94a3b8'
+                    }
                     stroke="rgba(0,0,0,0.2)"
                     strokeWidth={0.5}
                   />
@@ -304,7 +311,9 @@ function DeviceDonut({ data }: { data: PeakData }) {
             return (
               <div key={d.key} className="flex items-center justify-between text-[10px] sm:text-xs gap-2">
                 <span className="flex items-center gap-1.5 min-w-0">
-                  <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ background: DEVICE_COLOR[d.key] || '#94a3b8' }} />
+                  <span
+                    className={twMerge('h-1.5 w-1.5 rounded-full shrink-0', DEVICE_RING[d.key] || 'bg-slate-400')}
+                  />
                   <span className="text-zinc-600 dark:text-zinc-400 truncate">{d.name}</span>
                 </span>
                 <span className="shrink-0 font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">
