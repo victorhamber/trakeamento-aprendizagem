@@ -262,11 +262,17 @@ function FunnelKpis({ row }: { row: FunnelRow }) {
   const ctr = impressions > 0 ? (linkClicks / impressions) * 100 : 0;
   const cpcLink = linkClicks > 0 ? spend / linkClicks : 0;
   const cpr = results > 0 ? spend / results : 0;
+  const metaRevenue = Number(row.meta_revenue || 0);
+  const roas = spend > 0 && metaRevenue > 0 ? metaRevenue / spend : 0;
 
   const resultLabel = (row.objective_metric_label || 'Resultado').trim();
   const resultLabelShort = resultLabel.length > 14 ? `${resultLabel.slice(0, 14)}…` : resultLabel;
 
-  const pillCpr = benchPill(levelFromLowerBetter(cpr, 3, 6, 12));
+  // Se existe retorno (receita Meta), o “custo por evento” deve ser julgado pelo ROAS.
+  // Senão, cai no custo por resultado (CPR).
+  const pillCpr = metaRevenue > 0
+    ? benchPill(levelFromHigherBetter(roas, 1.0, 1.8, 3.0))
+    : benchPill(levelFromLowerBetter(cpr, 3, 6, 12));
   const pillCpm = benchPill(levelFromLowerBetter(cpm, 25, 45, 70));
   const pillCtr = benchPill(levelFromHigherBetter(ctr, 0.8, 1.2, 2.0));
   const pillCpc = benchPill(levelFromLowerBetter(cpcLink, 1.2, 2.5, 4.0));
@@ -282,7 +288,11 @@ function FunnelKpis({ row }: { row: FunnelRow }) {
         </div>
         <div className="text-zinc-900 dark:text-zinc-200 font-semibold tabular-nums">{results > 0 ? formatMoney(cpr) : '—'}</div>
         <div className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-snug mt-0.5">
-          {results > 0 ? `${formatNumber(results)} ${resultLabelShort}` : 'Sem resultado no período'}
+          {metaRevenue > 0 && spend > 0
+            ? `ROAS ${roas.toFixed(2)}x (receita Meta)`
+            : results > 0
+              ? `${formatNumber(results)} ${resultLabelShort}`
+              : 'Sem resultado no período'}
         </div>
       </div>
       <div className="rounded-lg bg-zinc-100 dark:bg-zinc-800/50 p-2 border border-zinc-200 dark:border-zinc-700/50">
