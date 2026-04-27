@@ -177,8 +177,16 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
       }
     }
 
-    // Trigger Webhook if configured
-    if (config.webhook_url) {
+    // Trigger Webhook(s) if configured
+    const webhookUrlsRaw = Array.isArray(config.webhook_urls) ? config.webhook_urls : [];
+    const webhookUrls = webhookUrlsRaw
+      .map((x: any) => String(x || '').trim())
+      .filter(Boolean)
+      .slice(0, 5);
+    const legacyWebhookUrl = typeof config.webhook_url === 'string' ? config.webhook_url.trim() : '';
+    if (legacyWebhookUrl && !webhookUrls.includes(legacyWebhookUrl)) webhookUrls.push(legacyWebhookUrl);
+
+    if (webhookUrls.length) {
       try {
         const body = req.body || {};
 
@@ -208,31 +216,33 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
           data: body,
         };
 
-        const controller = new AbortController();
-        const timeoutMs = 8000;
-        const t = setTimeout(() => controller.abort(), timeoutMs);
-        fetch(config.webhook_url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json; charset=utf-8',
-            'User-Agent': 'Trajettu-FormsWebhook/1.0',
-          },
-          body: JSON.stringify(payload),
-          signal: controller.signal,
-        })
-          .then(async (r) => {
-            clearTimeout(t);
-            if (!r.ok) {
-              const text = await r.text().catch(() => '');
-              console.error(
-                `Webhook non-2xx for form ${publicId}: ${r.status} ${r.statusText} body=${text?.slice(0, 1200) || ''}`
-              );
-            }
+        for (const url of webhookUrls) {
+          const controller = new AbortController();
+          const timeoutMs = 8000;
+          const t = setTimeout(() => controller.abort(), timeoutMs);
+          fetch(url, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json; charset=utf-8',
+              'User-Agent': 'Trajettu-FormsWebhook/1.0',
+            },
+            body: JSON.stringify(payload),
+            signal: controller.signal,
           })
-          .catch((err) => {
-            clearTimeout(t);
-            console.error(`Webhook failed for form ${publicId}:`, err);
-          });
+            .then(async (r) => {
+              clearTimeout(t);
+              if (!r.ok) {
+                const text = await r.text().catch(() => '');
+                console.error(
+                  `Webhook non-2xx for form ${publicId}: ${url} ${r.status} ${r.statusText} body=${text?.slice(0, 1200) || ''}`
+                );
+              }
+            })
+            .catch((err) => {
+              clearTimeout(t);
+              console.error(`Webhook failed for form ${publicId}: ${url}`, err);
+            });
+        }
       } catch (err) {
         console.error(`Webhook setup failed for form ${publicId}:`, err);
       }

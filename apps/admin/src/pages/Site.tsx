@@ -342,7 +342,7 @@ export const SitePage = () => {
   const [postSubmitAction, setPostSubmitAction] = useState<'message' | 'redirect'>('message');
   const [postSubmitMessage, setPostSubmitMessage] = useState('Obrigado! Seus dados foram enviados com sucesso.');
   const [postSubmitRedirectUrl, setPostSubmitRedirectUrl] = useState('');
-  const [formWebhookUrl, setFormWebhookUrl] = useState('');
+  const [formWebhookUrls, setFormWebhookUrls] = useState<string[]>(['']);
 
 
 
@@ -570,6 +570,11 @@ export const SitePage = () => {
       return;
     }
 
+    const normalizedWebhookUrls = (formWebhookUrls || [])
+      .map((x) => String(x || '').trim())
+      .filter(Boolean)
+      .slice(0, 5);
+
     const config = {
       fields: formFields,
       theme: formTheme,
@@ -583,7 +588,8 @@ export const SitePage = () => {
       post_submit_action: postSubmitAction,
       post_submit_message: postSubmitMessage,
       post_submit_redirect_url: postSubmitRedirectUrl,
-      webhook_url: formWebhookUrl
+      webhook_urls: normalizedWebhookUrls,
+      webhook_url: normalizedWebhookUrls[0] || ''
     };
 
     try {
@@ -635,7 +641,11 @@ export const SitePage = () => {
     setPostSubmitAction(cfg.post_submit_action || 'message');
     setPostSubmitMessage(cfg.post_submit_message || 'Obrigado! Seus dados foram enviados com sucesso.');
     setPostSubmitRedirectUrl(cfg.post_submit_redirect_url || '');
-    setFormWebhookUrl(cfg.webhook_url || '');
+    const urls = Array.isArray(cfg.webhook_urls) ? cfg.webhook_urls : [];
+    const cleaned = urls.map((x: any) => String(x || '').trim()).filter(Boolean);
+    const fallback = typeof cfg.webhook_url === 'string' && cfg.webhook_url.trim() ? [cfg.webhook_url.trim()] : [];
+    const merged = [...cleaned, ...fallback].filter(Boolean).slice(0, 5);
+    setFormWebhookUrls(merged.length ? merged : ['']);
     showFlash(`Formulário "${form.name}" carregado!`);
   };
 
@@ -1139,7 +1149,8 @@ export const SitePage = () => {
       post_submit_action: postSubmitAction,
       post_submit_message: postSubmitMessage,
       post_submit_redirect_url: postSubmitRedirectUrl,
-      webhook_url: formWebhookUrl
+      webhook_urls: (formWebhookUrls || []).map((x) => String(x || '').trim()).filter(Boolean).slice(0, 5),
+      webhook_url: (formWebhookUrls || []).map((x) => String(x || '').trim()).find(Boolean) || ''
     };
 
     let publicId = '';
@@ -1158,7 +1169,11 @@ export const SitePage = () => {
         post_submit_action: form.config.post_submit_action || 'message',
         post_submit_message: form.config.post_submit_message || 'Obrigado! Seus dados foram enviados com sucesso.',
         post_submit_redirect_url: form.config.post_submit_redirect_url || '',
-        webhook_url: form.config.webhook_url || ''
+        webhook_urls: Array.isArray(form.config.webhook_urls)
+          ? form.config.webhook_urls.map((x: any) => String(x || '').trim()).filter(Boolean).slice(0, 5)
+          : [],
+        webhook_url:
+          typeof form.config.webhook_url === 'string' && form.config.webhook_url.trim() ? form.config.webhook_url.trim() : ''
       };
       publicId = form.public_id;
     } else if (selectedFormId) {
@@ -4275,17 +4290,55 @@ ${scriptContent}
 
                         {/* Webhook */}
                         <div>
-                          <label htmlFor="site-form-webhook-url" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
-                            Webhook URL (Opcional)
-                          </label>
-                          <input
-                            id="site-form-webhook-url"
-                            value={formWebhookUrl}
-                            onChange={e => setFormWebhookUrl(e.target.value)}
-                            className={inputCls}
-                            placeholder="https://seu-crm.com/webhook..."
-                          />
-                          <p className="text-[10px] text-zinc-600 dark:text-zinc-500 mt-1">Enviaremos os dados do lead para esta URL via POST JSON.</p>
+                          <div className="flex items-center justify-between gap-2">
+                            <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
+                              Webhooks (Opcional)
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => setFormWebhookUrls((prev) => [...(prev?.length ? prev : ['']), ''].slice(0, 5))}
+                              className="text-[11px] px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-900/50"
+                              title="Adicionar outro webhook"
+                            >
+                              + Adicionar
+                            </button>
+                          </div>
+
+                          <div className="space-y-2">
+                            {(formWebhookUrls?.length ? formWebhookUrls : ['']).map((url, idx) => (
+                              <div key={idx} className="flex gap-2">
+                                <input
+                                  value={url}
+                                  onChange={(e) =>
+                                    setFormWebhookUrls((prev) => {
+                                      const next = [...(prev?.length ? prev : [''])];
+                                      next[idx] = e.target.value;
+                                      return next.slice(0, 5);
+                                    })
+                                  }
+                                  className={inputCls}
+                                  placeholder="https://seu-crm.com/webhook..."
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setFormWebhookUrls((prev) => {
+                                      const next = (prev?.length ? [...prev] : ['']).filter((_, i) => i !== idx);
+                                      return (next.length ? next : ['']).slice(0, 5);
+                                    })
+                                  }
+                                  className="px-3 rounded-lg border border-zinc-200 dark:border-zinc-800 text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-900/50"
+                                  title="Remover"
+                                  aria-label="Remover webhook"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                          <p className="text-[10px] text-zinc-600 dark:text-zinc-500 mt-1">
+                            Enviaremos os dados do lead para todas as URLs via POST JSON (máx. 5).
+                          </p>
                         </div>
                       </div>
                     </div>
