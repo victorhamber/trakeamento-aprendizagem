@@ -432,7 +432,8 @@ function buildFunnelSummary(args: {
     lines.push('', `🕒 Atualizado: ${formatGeneratedAt(generatedAt)}`);
   }
 
-  return lines.filter(Boolean).join('\n');
+  // Mantém linhas vazias para legibilidade (WhatsApp/E-mail).
+  return lines.filter((l) => l !== null && l !== undefined).join('\n');
 }
 
 function presentBadgeClass(p: FunnelRow['present']) {
