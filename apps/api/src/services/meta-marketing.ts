@@ -620,9 +620,14 @@ export class MetaMarketingService {
 
       const campaignFields = [...MetaMarketingService.BASE_FIELDS].join(',');
 
+      const ymdToMs = (ymd: string): number => new Date(`${ymd}T12:00:00.000Z`).getTime();
+      const rangeDays = Math.max(1, Math.ceil((ymdToMs(range.until) - ymdToMs(range.since)) / 86_400_000));
+
       // Meta frequentemente dá HTTP 500 / "reduce the amount of data" em ranges grandes.
-      // Para deixar robusto (usuário final não controla período), quebramos em chunks menores.
+      // Para manter rápido no comum (7/14/30d) e robusto no extremo (maximum/custom gigante),
+      // só fazemos chunking quando o range é grande.
       const MAX_CHUNK_DAYS = 45;
+      const CHUNK_ONLY_IF_DAYS_GT = 90;
       const buildChunks = (sinceYmd: string, untilYmd: string): Array<{ since: string; until: string }> => {
         const out: Array<{ since: string; until: string }> = [];
         let cur = sinceYmd;
@@ -635,12 +640,12 @@ export class MetaMarketingService {
         return out;
       };
 
-      const chunks = buildChunks(range.since, range.until);
+      const chunks = rangeDays > CHUNK_ONLY_IF_DAYS_GT ? buildChunks(range.since, range.until) : [{ since: range.since, until: range.until }];
       let adInsights: Record<string, unknown>[] = [];
       let adSetInsights: Record<string, unknown>[] = [];
       let campaignInsights: Record<string, unknown>[] = [];
 
-      for (const c of chunks) {
+      const fetchChunk = async (c: { since: string; until: string }) => {
         const timeParams = { time_range: { since: c.since, until: c.until } };
         try {
           const [ad0, adset0, camp0] = await this.fetchInsightsFirstPagesBatch(
@@ -657,9 +662,11 @@ export class MetaMarketingService {
             this.fetchRemainingPagesFromNext(adset0.nextUrl),
             this.fetchRemainingPagesFromNext(camp0.nextUrl),
           ]);
-          adInsights = adInsights.concat(ad0.data, adRest);
-          adSetInsights = adSetInsights.concat(adset0.data, adsetRest);
-          campaignInsights = campaignInsights.concat(camp0.data, campRest);
+          return {
+            ad: [...ad0.data, ...adRest],
+            adset: [...adset0.data, ...adsetRest],
+            campaign: [...camp0.data, ...campRest],
+          };
         } catch (batchErr) {
           console.warn('[MetaSync] insights batch failed, using parallel GET:', this.summarizeMetaError(batchErr));
           const [a, b, d] = await Promise.all([
@@ -667,9 +674,19 @@ export class MetaMarketingService {
             this.fetchAllPages(baseUrl, { access_token: cfg.token, level: 'adset', ...timeParams, time_increment: 1, fields: adSetFields, limit: 500 }),
             this.fetchAllPages(baseUrl, { access_token: cfg.token, level: 'campaign', ...timeParams, time_increment: 1, fields: campaignFields, limit: 500 }),
           ]);
-          adInsights = adInsights.concat(a);
-          adSetInsights = adSetInsights.concat(b);
-          campaignInsights = campaignInsights.concat(d);
+          return { ad: a, adset: b, campaign: d };
+        }
+      };
+
+      // Concorrência pequena para acelerar sem estourar rate-limit (e sem piorar os 500).
+      const CONCURRENCY = chunks.length > 1 ? 2 : 1;
+      for (let i = 0; i < chunks.length; i += CONCURRENCY) {
+        const slice = chunks.slice(i, i + CONCURRENCY);
+        const results = await Promise.all(slice.map(fetchChunk));
+        for (const r of results) {
+          adInsights = adInsights.concat(r.ad);
+          adSetInsights = adSetInsights.concat(r.adset);
+          campaignInsights = campaignInsights.concat(r.campaign);
         }
       }
 
