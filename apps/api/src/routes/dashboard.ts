@@ -319,6 +319,7 @@ router.get('/funnel', async (req, res) => {
       SELECT
         COUNT(CASE WHEN e.event_name = 'PageView' THEN 1 END)::int as page_views,
         COUNT(CASE WHEN e.event_name = 'PageEngagement' THEN 1 END)::int as engagements,
+        COUNT(CASE WHEN e.event_name IN ('Lead', 'CompleteRegistration', 'Contact', 'Schedule') THEN 1 END)::int as leads,
         COUNT(CASE WHEN e.event_name = 'InitiateCheckout' THEN 1 END)::int as checkouts
       FROM web_events e
       WHERE e.site_key = ANY(
@@ -348,10 +349,12 @@ router.get('/funnel', async (req, res) => {
     const events = eventsRes.rows[0] || {};
     const purchases = purchasesRes.rows[0] || {};
 
+    const ev = events as Record<string, number | string | null | undefined>;
     res.json({
-      page_views: Number(events.page_views || 0),
-      engagements: Number(events.engagements || 0),
-      checkouts: Number(events.checkouts || 0),
+      page_views: Number(ev.page_views || 0),
+      engagements: Number(ev.engagements || 0),
+      leads: Number(ev.leads || 0),
+      checkouts: Number(ev.checkouts || 0),
       purchases: Number(purchases.purchases || 0)
     });
   } catch (err) {

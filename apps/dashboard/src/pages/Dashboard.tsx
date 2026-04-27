@@ -27,6 +27,7 @@ type DailyPoint = {
 type FunnelData = {
   page_views: number;
   engagements: number;
+  leads: number;
   checkouts: number;
   purchases: number;
 };
@@ -407,10 +408,10 @@ export const DashboardPage = () => {
           <div className="relative p-5">
             <div className="flex items-start justify-between gap-3 mb-4">
               <div>
-                <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100">Funil da campanha</div>
+                <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100">Visão geral do funil</div>
                 <div className="text-[11px] text-zinc-500 mt-0.5">{getPeriodLabel(period)}</div>
               </div>
-              <div className="text-[10px] uppercase tracking-widest font-semibold text-emerald-600 dark:text-emerald-400">
+              <div className="text-[10px] uppercase tracking-widest font-semibold text-cyan-500 dark:text-cyan-400">
                 Visão geral
               </div>
             </div>
