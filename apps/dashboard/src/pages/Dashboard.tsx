@@ -481,8 +481,8 @@ export const DashboardPage = () => {
 
       {/* ── Charts Section ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-        {/* Revenue Chart (Span 2) */}
-        <div className="neo-card neo-border neo-glow lg:col-span-2 rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-zinc-950/45 p-5 shadow-sm dark:shadow-none select-none">
+        {/* Revenue Chart (full width) */}
+        <div className="neo-card neo-border neo-glow lg:col-span-3 rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-zinc-950/45 p-5 shadow-sm dark:shadow-none select-none">
           <div className="flex items-center justify-between mb-4">
             <div>
               <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100">Desempenho ao longo do tempo</div>
@@ -490,21 +490,6 @@ export const DashboardPage = () => {
             </div>
           </div>
           <RevenueChart data={salesData} currency={currency} isDark={isDark} />
-        </div>
-
-        {/* Card auxiliar (sem redundância de funil) */}
-        <div className="neo-card neo-border neo-glow rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-zinc-950/45 p-5 shadow-sm dark:shadow-none select-none">
-          <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100 mb-2">Visão rápida</div>
-          <div className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">
-            Receita: <span className="font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">{fmtCurrency(data?.total_revenue ?? 0)}</span>
-            <br />
-            Compras: <span className="font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">{purchases}</span>
-            <br />
-            Conversão: <span className="font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">{visits > 0 ? `${convRatePct.toFixed(2)}%` : '—'}</span>
-          </div>
-          <div className="mt-3 text-[11px] text-zinc-500 leading-relaxed">
-            Use o painel lateral para ver insights e status; abaixo você tem os picos por dia e canais/regiões.
-          </div>
         </div>
       </div>
 
