@@ -15,6 +15,11 @@ type FunnelRow = {
   spend: number;
   meta_revenue?: number;
   meta_roas?: number;
+  meta_rankings?: {
+    quality?: string | null;
+    engagement_rate?: string | null;
+    conversion_rate?: string | null;
+  } | null;
   funnel: {
     link_clicks: number;
     landing_page_views: number;
@@ -433,6 +438,66 @@ function severityBorder(sev: string | undefined) {
   if (sev === 'high') return 'border-rose-400 dark:border-rose-500/50 bg-rose-500/10';
   if (sev === 'medium') return 'border-amber-400 dark:border-amber-500/45 bg-amber-500/10';
   return 'border-zinc-200 dark:border-zinc-600/50 bg-zinc-50 dark:bg-zinc-800/40';
+}
+
+function normalizeMetaRanking(raw: string | null | undefined): 'below' | 'average' | 'above' | null {
+  const s = String(raw || '').trim().toLowerCase();
+  if (!s) return null;
+  if (s.includes('below')) return 'below';
+  if (s.includes('above')) return 'above';
+  if (s.includes('average')) return 'average';
+  return null;
+}
+
+function rankingLabelPt(r: 'below' | 'average' | 'above') {
+  if (r === 'below') return 'Abaixo da média';
+  if (r === 'above') return 'Acima da média';
+  return 'Na média';
+}
+
+function rankingPillCls(r: 'below' | 'average' | 'above') {
+  const base = 'inline-flex items-center rounded-lg border px-2 py-0.5 text-[10px] font-semibold';
+  if (r === 'above') return base + ' bg-emerald-500/15 text-emerald-800 dark:text-emerald-200 border-emerald-500/30';
+  if (r === 'average') return base + ' bg-amber-500/15 text-amber-900 dark:text-amber-200 border-amber-500/30';
+  return base + ' bg-rose-500/15 text-rose-800 dark:text-rose-200 border-rose-500/30';
+}
+
+function metaRankingJustification(primary: FunnelRow): { title: string; lines: string[] } | null {
+  const q = normalizeMetaRanking(primary.meta_rankings?.quality);
+  const e = normalizeMetaRanking(primary.meta_rankings?.engagement_rate);
+  const c = normalizeMetaRanking(primary.meta_rankings?.conversion_rate);
+  if (!q && !e && !c) return null;
+
+  const lines: string[] = [];
+
+  if (q === 'below') {
+    lines.push(
+      'Qualidade baixa geralmente significa que o anúncio está parecendo pouco relevante para o público (promessa genérica, visual fraco, texto confuso ou criativo “fora do contexto” da audiência).'
+    );
+  }
+  if (e === 'below') {
+    lines.push(
+      'Engajamento baixo costuma indicar que o criativo não prende atenção (hook fraco, ritmo lento, thumbnail/capa sem contraste, primeira frase sem “gancho”).'
+    );
+  }
+  if (c === 'below') {
+    lines.push(
+      'Conversão baixa geralmente aponta “mismatch”: o anúncio promete uma coisa e a página/checkout entrega outra, ou a oferta não está clara o suficiente para tráfego frio.'
+    );
+  }
+
+  if (lines.length === 0) {
+    lines.push('As classificações estão na média/acima — isso tende a ajudar o CPM e a entrega.');
+  }
+
+  // Ação sugerida (prioriza o que mais afeta CPM)
+  const actions: string[] = [];
+  if (q === 'below') actions.push('Ação: teste 2–3 novos criativos com ângulos diferentes e uma promessa mais específica (mesma oferta).');
+  if (e === 'below') actions.push('Ação: fortaleça os 2 primeiros segundos (benefício + padrão visual forte) e corte “enrolação”.');
+  if (c === 'below') actions.push('Ação: alinhe headline da página com o anúncio e coloque prova/benefícios acima do botão.');
+  if (actions.length) lines.push(actions[0]);
+
+  return { title: 'Meta: por que o CPM pode estar subindo', lines };
 }
 
 export function CampaignFunnelPanel({
@@ -1198,6 +1263,44 @@ export function CampaignFunnelPanel({
                     </div>
                     <div className="text-sm text-zinc-900 dark:text-zinc-100 leading-relaxed font-semibold">{leigo.oneLiner}</div>
                     <div className="text-sm text-zinc-700 dark:text-zinc-300 leading-relaxed mt-2">{leigo.oneAction}</div>
+                    {(() => {
+                      const just = primary ? metaRankingJustification(primary) : null;
+                      if (!just) return null;
+                      const q = normalizeMetaRanking(primary.meta_rankings?.quality);
+                      const e = normalizeMetaRanking(primary.meta_rankings?.engagement_rate);
+                      const c = normalizeMetaRanking(primary.meta_rankings?.conversion_rate);
+                      return (
+                        <div className="mt-3 pt-3 border-t border-zinc-200 dark:border-zinc-800 space-y-2">
+                          <div className="text-[10px] font-bold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                            {just.title}
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {q ? (
+                              <span className={rankingPillCls(q)} title="Classificação de qualidade (Meta)">
+                                Qualidade: {rankingLabelPt(q)}
+                              </span>
+                            ) : null}
+                            {e ? (
+                              <span className={rankingPillCls(e)} title="Classificação de taxa de engajamento (Meta)">
+                                Engajamento: {rankingLabelPt(e)}
+                              </span>
+                            ) : null}
+                            {c ? (
+                              <span className={rankingPillCls(c)} title="Classificação de taxa de conversão (Meta)">
+                                Conversão: {rankingLabelPt(c)}
+                              </span>
+                            ) : null}
+                          </div>
+                          <div className="space-y-2">
+                            {just.lines.map((t, idx) => (
+                              <div key={idx} className="text-[13px] leading-relaxed text-zinc-700 dark:text-zinc-300">
+                                {t}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 ) : null}
 

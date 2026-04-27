@@ -389,6 +389,9 @@ export class MetaMarketingService {
     'objective',
     'results',
     'result_rate',
+    'quality_ranking',
+    'engagement_rate_ranking',
+    'conversion_rate_ranking',
   ] as const;
 
   /**
@@ -954,6 +957,14 @@ export class MetaMarketingService {
     ];
   }
 
+  private getInsightRankings(row: Record<string, unknown>): [string | null, string | null, string | null] {
+    return [
+      MetaMarketingService.asString((row as any).quality_ranking),
+      MetaMarketingService.asString((row as any).engagement_rate_ranking),
+      MetaMarketingService.asString((row as any).conversion_rate_ranking),
+    ];
+  }
+
   private async persistAdInsight(
     siteId: number,
     row: Record<string, unknown>,
@@ -975,6 +986,7 @@ export class MetaMarketingService {
     const adsetId = MetaMarketingService.asString(row.adset_id);
     const parent = adsetId && adSetMap ? adSetMap.get(adsetId) : null;
     const values = this.getInsightValues(siteId, row);
+    const rankings = this.getInsightRankings(row);
 
     // Override objective and custom_event_name/count if missing/mismatched but present in parent
     if (parent) {
@@ -1020,7 +1032,8 @@ export class MetaMarketingService {
         leads, contacts, purchases, adds_to_cart, initiates_checkout, cost_per_lead, cost_per_purchase,
         objective, results, result_rate,
         date_start, date_stop, raw_payload, custom_event_name, custom_event_count,
-        optimization_goal, optimized_event_name
+        optimization_goal, optimized_event_name,
+        quality_ranking, engagement_rate_ranking, conversion_rate_ranking
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7,
         $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
@@ -1028,7 +1041,7 @@ export class MetaMarketingService {
         $24, $25, $26, $27, $28, $29, $30,
         $31, $32, $33,
         $34, $35, $36, $37, $38,
-        $39, $40
+        $39, $40, $41, $42, $43, $44
       )`,
       [
         siteId,
@@ -1041,6 +1054,9 @@ export class MetaMarketingService {
         ...values,
         parent?.optimizationGoal ?? null,
         parent?.optimizedEventName ?? null,
+        rankings[0],
+        rankings[1],
+        rankings[2],
       ]
     );
   }
@@ -1053,6 +1069,7 @@ export class MetaMarketingService {
   ) {
     const adsetId = MetaMarketingService.asString((row as any).adset_id);
     const meta = (adsetId ? adsetMetaMap.get(adsetId) : null) || null;
+    const rankings = this.getInsightRankings(row);
     const q = client ?? pool;
     await q.query(
       `INSERT INTO meta_insights_daily (
@@ -1062,7 +1079,8 @@ export class MetaMarketingService {
         leads, contacts, purchases, adds_to_cart, initiates_checkout, cost_per_lead, cost_per_purchase,
         objective, results, result_rate,
         date_start, date_stop, raw_payload, custom_event_name, custom_event_count,
-        optimization_goal, optimized_event_name
+        optimization_goal, optimized_event_name,
+        quality_ranking, engagement_rate_ranking, conversion_rate_ranking
       ) VALUES (
         $1, $2, $3, $4, $5,
         $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
@@ -1070,7 +1088,7 @@ export class MetaMarketingService {
         $22, $23, $24, $25, $26, $27, $28,
         $29, $30, $31,
         $32, $33, $34, $35, $36,
-        $37, $38
+        $37, $38, $39, $40, $41, $42
       )`,
       [
         siteId,
@@ -1081,12 +1099,16 @@ export class MetaMarketingService {
         ...this.getInsightValues(siteId, row),
         meta?.optimizationGoal ?? null,
         meta?.optimizedEventName ?? null,
+        rankings[0],
+        rankings[1],
+        rankings[2],
       ]
     );
   }
 
   private async persistCampaignInsight(siteId: number, row: Record<string, unknown>, client?: PoolClient) {
     const q = client ?? pool;
+    const rankings = this.getInsightRankings(row);
     await q.query(
       `INSERT INTO meta_insights_daily (
         site_id, campaign_id, campaign_name,
@@ -1095,7 +1117,8 @@ export class MetaMarketingService {
         leads, contacts, purchases, adds_to_cart, initiates_checkout, cost_per_lead, cost_per_purchase,
         objective, results, result_rate,
         date_start, date_stop, raw_payload, custom_event_name, custom_event_count,
-        optimization_goal, optimized_event_name
+        optimization_goal, optimized_event_name,
+        quality_ranking, engagement_rate_ranking, conversion_rate_ranking
       ) VALUES (
         $1, $2, $3,
         $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
@@ -1103,7 +1126,7 @@ export class MetaMarketingService {
         $20, $21, $22, $23, $24, $25, $26,
         $27, $28, $29,
         $30, $31, $32, $33, $34,
-        $35, $36
+        $35, $36, $37, $38, $39, $40
       )`,
       [
         siteId,
@@ -1112,6 +1135,9 @@ export class MetaMarketingService {
         ...this.getInsightValues(siteId, row),
         null,
         null,
+        rankings[0],
+        rankings[1],
+        rankings[2],
       ]
     );
   }

@@ -220,6 +220,9 @@ const schemaSql = `
     custom_event_count INTEGER,
     optimization_goal VARCHAR(120),
     optimized_event_name VARCHAR(120),
+    quality_ranking VARCHAR(60),
+    engagement_rate_ranking VARCHAR(60),
+    conversion_rate_ranking VARCHAR(60),
     date_start DATE NOT NULL,
     date_stop DATE,
     raw_payload JSONB,
@@ -521,6 +524,12 @@ export const ensureSchema = async (pool: Pool) => {
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS custom_event_count INTEGER');
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS optimization_goal VARCHAR(120)');
     await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS optimized_event_name VARCHAR(120)');
+  });
+
+  await migrate('meta_insights_rankings', async () => {
+    await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS quality_ranking VARCHAR(60)');
+    await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS engagement_rate_ranking VARCHAR(60)');
+    await pool.query('ALTER TABLE meta_insights_daily ADD COLUMN IF NOT EXISTS conversion_rate_ranking VARCHAR(60)');
   });
 
   await migrate('recommendation_reports_upsert', async () => {

@@ -691,6 +691,20 @@ function mapRawRowToFunnelResponse(r: Record<string, unknown>) {
     bottleneck,
     bottleneck_plain,
     ...hints,
+    meta_rankings: {
+      quality:
+        typeof (r as any).quality_ranking === 'string' && String((r as any).quality_ranking).trim()
+          ? String((r as any).quality_ranking).trim()
+          : null,
+      engagement_rate:
+        typeof (r as any).engagement_rate_ranking === 'string' && String((r as any).engagement_rate_ranking).trim()
+          ? String((r as any).engagement_rate_ranking).trim()
+          : null,
+      conversion_rate:
+        typeof (r as any).conversion_rate_ranking === 'string' && String((r as any).conversion_rate_ranking).trim()
+          ? String((r as any).conversion_rate_ranking).trim()
+          : null,
+    },
     adset_name:
       typeof r.adset_name === 'string' && r.adset_name.trim() ? String(r.adset_name).trim() : null,
     first_party_page:
@@ -828,6 +842,26 @@ router.get('/campaigns/funnel-breakdown', requireAuth, async (req, res) => {
         ? `ORDER BY COALESCE(SUM(purchases), 0) DESC, COALESCE(SUM(initiates_checkout), 0) DESC, COALESCE(SUM(spend), 0) DESC NULLS LAST, COALESCE(SUM(impressions), 0) DESC`
         : `ORDER BY COALESCE(SUM(spend), 0) DESC NULLS LAST, COALESCE(SUM(impressions), 0) DESC`;
 
+    const rankScoreSql = (field: string) => `
+      MIN(
+        CASE
+          WHEN ${field} IS NULL OR btrim(${field}::text) = '' THEN NULL
+          WHEN lower(${field}::text) LIKE 'above_%' THEN 3
+          WHEN lower(${field}::text) LIKE 'average%' THEN 2
+          WHEN lower(${field}::text) LIKE 'below_%' THEN 1
+          ELSE NULL
+        END
+      )
+    `;
+    const rankLabelSql = (scoreExpr: string) => `
+      CASE
+        WHEN ${scoreExpr} = 1 THEN 'below_average'
+        WHEN ${scoreExpr} = 2 THEN 'average'
+        WHEN ${scoreExpr} = 3 THEN 'above_average'
+        ELSE NULL
+      END
+    `;
+
     const funnelSql =
       level === 'campaign'
         ? `
@@ -853,6 +887,21 @@ router.get('/campaigns/funnel-breakdown', requireAuth, async (req, res) => {
         ) t
         ORDER BY campaign_id, spend_sum DESC NULLS LAST
       )
+      , ad_rank AS (
+        SELECT
+          ad.campaign_id,
+          ${rankLabelSql(rankScoreSql('ad.quality_ranking'))} AS quality_ranking,
+          ${rankLabelSql(rankScoreSql('ad.engagement_rate_ranking'))} AS engagement_rate_ranking,
+          ${rankLabelSql(rankScoreSql('ad.conversion_rate_ranking'))} AS conversion_rate_ranking
+        FROM meta_insights_daily ad
+        WHERE ad.site_id = $1
+          AND ad.campaign_id = $4
+          AND ad.ad_id IS NOT NULL
+          AND ad.date_start >= $2
+          AND ad.date_start < $3
+          AND COALESCE(ad.spend, 0) > 0
+        GROUP BY 1
+      )
       SELECT
         ${idField},
         ${nameField},
@@ -877,9 +926,13 @@ router.get('/campaigns/funnel-breakdown', requireAuth, async (req, res) => {
         COALESCE(SUM(m.initiates_checkout), 0)::bigint AS initiates_checkout,
         COALESCE(SUM(m.purchases), 0)::bigint AS purchases,
         COALESCE(SUM(m.custom_event_count), 0)::bigint AS custom_event_count,
-        MAX(m.custom_event_name) AS custom_event_name
+        MAX(m.custom_event_name) AS custom_event_name,
+        MAX(ar.quality_ranking) AS quality_ranking,
+        MAX(ar.engagement_rate_ranking) AS engagement_rate_ranking,
+        MAX(ar.conversion_rate_ranking) AS conversion_rate_ranking
       FROM meta_insights_daily m
       LEFT JOIN adset_opt a ON a.campaign_id = m.campaign_id
+      LEFT JOIN ad_rank ar ON ar.campaign_id = m.campaign_id
       WHERE m.site_id = $1
         AND m.date_start >= $2
         AND m.date_start < $3
@@ -912,7 +965,10 @@ router.get('/campaigns/funnel-breakdown', requireAuth, async (req, res) => {
         COALESCE(SUM(initiates_checkout), 0)::bigint AS initiates_checkout,
         COALESCE(SUM(purchases), 0)::bigint AS purchases,
         COALESCE(SUM(custom_event_count), 0)::bigint AS custom_event_count,
-        MAX(custom_event_name) AS custom_event_name
+        MAX(custom_event_name) AS custom_event_name,
+        ${rankLabelSql(rankScoreSql('quality_ranking'))} AS quality_ranking,
+        ${rankLabelSql(rankScoreSql('engagement_rate_ranking'))} AS engagement_rate_ranking,
+        ${rankLabelSql(rankScoreSql('conversion_rate_ranking'))} AS conversion_rate_ranking
         ${extraAdFields}
       FROM meta_insights_daily
       WHERE site_id = $1
