@@ -119,16 +119,19 @@ router.get('/overview', requireAuth, async (req, res) => {
   const metaSpend = Number(metaAgg.rows[0]?.spend || 0);
   const metaRevenue = Number(metaAgg.rows[0]?.meta_revenue || 0);
   const metaRoas = metaSpend > 0 ? Math.round((metaRevenue / metaSpend) * 1000) / 1000 : 0;
+  const totalRevenue = Number(purchasesPeriod.rows[0]?.total_revenue || 0);
+  const roasReal = metaSpend > 0 ? Math.round((totalRevenue / metaSpend) * 1000) / 1000 : 0;
 
   return res.json({
     sites: sites.rows[0]?.c || 0,
     events_today: eventsPeriod.rows[0]?.c || 0,
     purchases_today: purchasesPeriod.rows[0]?.c || 0,
-    total_revenue: purchasesPeriod.rows[0]?.total_revenue || 0,
+    total_revenue: totalRevenue || 0,
     reports_7d: reportsPeriod.rows[0]?.c || 0,
     meta_spend: metaSpend,
     meta_revenue: metaRevenue,
     meta_roas: metaRoas,
+    roas_real: roasReal,
     // debug: ajuda a validar se "Hoje" está no fuso correto
     _range: {
       period: p,

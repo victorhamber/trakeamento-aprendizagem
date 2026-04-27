@@ -15,6 +15,7 @@ type Overview = {
   meta_spend?: number;
   meta_revenue?: number;
   meta_roas?: number;
+  roas_real?: number;
 };
 
 type DailyPoint = {
@@ -246,6 +247,7 @@ export const DashboardPage = () => {
   const metaSpend = Number(data?.meta_spend || 0);
   const metaRevenue = Number(data?.meta_revenue || 0);
   const metaRoas = Number(data?.meta_roas || 0);
+  const roasReal = Number(data?.roas_real || 0);
 
   useEffect(() => {
     api.get('/ai/settings')
@@ -420,15 +422,20 @@ export const DashboardPage = () => {
           <div className="neo-card neo-border neo-glow rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-zinc-950/45 p-5 shadow-sm dark:shadow-none select-none relative overflow-hidden">
             <div className="pointer-events-none absolute -top-10 -right-10 w-48 h-48 bg-cyan-500/10 rounded-full blur-3xl" />
             <div className="relative">
-              <div className="text-xs font-semibold uppercase tracking-widest text-zinc-600 dark:text-zinc-500">ROAS (Meta)</div>
+              <div className="text-xs font-semibold uppercase tracking-widest text-zinc-600 dark:text-zinc-500">ROAS</div>
               <div className="mt-2 text-2xl font-bold text-zinc-900 dark:text-zinc-100 tabular-nums">
-                {metaSpend > 0 ? `${metaRoas.toFixed(2)}x` : '—'}
+                {metaSpend > 0 ? `${roasReal.toFixed(2)}x` : '—'}
               </div>
               <div className="mt-1 text-[11px] text-zinc-500">
                 {metaSpend > 0
-                  ? `Investido ${fmtCurrency(metaSpend)} · Receita ${fmtCurrency(metaRevenue)}`
+                  ? `Investido ${fmtCurrency(metaSpend)} · Receita ${fmtCurrency(data?.total_revenue ?? 0)}`
                   : 'Conecte Meta Ads e aguarde sincronizar'}
               </div>
+              {metaSpend > 0 ? (
+                <div className="mt-2 text-[10px] text-zinc-500">
+                  Meta atribuído: {fmtCurrency(metaRevenue)} · {metaRoas.toFixed(2)}x
+                </div>
+              ) : null}
             </div>
           </div>
 
