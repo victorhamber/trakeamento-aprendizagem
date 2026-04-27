@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { Layout } from '../components/Layout';
 import { BestTimeCards } from '../components/BestTimeCards';
+import { RecentInsightsBlock } from '../components/RecentInsightsPanel';
 import { RevenueChart } from '../components/charts/RevenueChart';
 import { FunnelChart } from '../components/charts/FunnelChart';
 
@@ -475,18 +476,24 @@ export const DashboardPage = () => {
         </div>
       </div>
 
-      {/* ── Charts Section ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-        {/* Revenue Chart (full width) */}
-        <div className="neo-card neo-border neo-glow lg:col-span-3 rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-zinc-950/45 p-5 shadow-sm dark:shadow-none select-none">
-          <div className="flex items-center justify-between mb-4">
+      {/* ── Receita + insights (2 colunas) ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6 items-stretch">
+        <div className="neo-card neo-border neo-glow rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-zinc-950/45 p-5 shadow-sm dark:shadow-none select-none flex flex-col min-h-0">
+          <div className="flex items-start justify-between gap-3 mb-3">
             <div>
               <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100">Desempenho ao longo do tempo</div>
               <div className="text-[11px] text-zinc-500 mt-0.5">{getPeriodLabel(period)}</div>
+              <div className="mt-2 flex items-center gap-1.5 text-[11px] text-zinc-600 dark:text-zinc-500">
+                <span className="h-1.5 w-1.5 rounded-full bg-cyan-500 shadow-[0_0_6px_rgba(34,211,238,0.6)]" />
+                <span>Receita ({currency === 'BRL' ? 'R$' : '$'})</span>
+              </div>
             </div>
           </div>
-          <RevenueChart data={salesData} currency={currency} isDark={isDark} />
+          <div className="flex-1 min-h-[300px]">
+            <RevenueChart data={salesData} currency={currency} isDark={isDark} />
+          </div>
         </div>
+        <RecentInsightsBlock siteId={selectedSiteId ? Number(selectedSiteId) : undefined} period={period} />
       </div>
 
       <BestTimeCards siteId={selectedSiteId ? Number(selectedSiteId) : undefined} period={period} />
