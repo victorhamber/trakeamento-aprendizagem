@@ -1237,7 +1237,20 @@ export const SitePage = () => {
       if (saved) publicId = saved.public_id;
     }
 
-    const { fields, theme, button_text, button_bg_color, button_text_color, event_type, custom_event_name, event_value, event_currency, post_submit_action: action, webhook_url: webhook } = currentConfig;
+    const {
+      fields,
+      theme,
+      button_text,
+      button_bg_color,
+      button_text_color,
+      event_type,
+      custom_event_name,
+      event_value,
+      event_currency,
+      post_submit_action: action,
+      webhook_url: webhook,
+      webhook_urls: webhooks,
+    } = currentConfig;
 
     const evtName = event_type === 'Custom' ? custom_event_name : event_type;
     if (!evtName) {
@@ -1245,7 +1258,8 @@ export const SitePage = () => {
       return;
     }
 
-    const needsBackend = !!webhook || action === 'redirect' || action === 'message';
+    const webhookCount = Array.isArray(webhooks) ? webhooks.filter(Boolean).length : 0;
+    const needsBackend = !!webhook || webhookCount > 0 || action === 'redirect' || action === 'message';
 
     if (needsBackend && !publicId) {
       showFlash('Salve o formulário para ativar Webhook e Ações Pós-Cadastro!', 'error');
