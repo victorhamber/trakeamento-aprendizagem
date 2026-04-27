@@ -9,16 +9,18 @@ export function FunnelChart({ data, isDark }: { data: any; isDark: boolean }) {
     return String(Math.trunc(v));
   };
 
-  const engagements = Number(data.engagements || 0); // proxy (PageEngagement)
+  // Não existe "Link Click" direto no tracking atual do dashboard.
+  // Aqui usamos PageEngagement como proxy para "Clique no link".
+  const linkClicksProxy = Number(data.engagements || 0);
   const visits = Number(data.page_views || 0);
   const checkouts = Number(data.checkouts || 0);
   const purchases = Number(data.purchases || 0);
 
   // Garante consistência visual do funil (evita % > 100% quando o proxy vem menor que visitas)
-  const top = Math.max(engagements, visits);
+  const top = Math.max(linkClicksProxy, visits);
 
   const stages = [
-    { key: 'engagements', label: 'Engajamentos', value: engagements || top },
+    { key: 'clicks', label: 'Clique no link', value: linkClicksProxy || top },
     { key: 'visits', label: 'Visitas', value: visits },
     { key: 'checkouts', label: 'Checkout', value: checkouts },
     { key: 'purchases', label: 'Compras', value: purchases },
@@ -64,7 +66,7 @@ export function FunnelChart({ data, isDark }: { data: any; isDark: boolean }) {
   const text2 = isDark ? 'rgba(229,231,235,0.75)' : 'rgba(15,23,42,0.65)';
 
   return (
-    <div className="h-[320px] w-full select-none outline-none focus:outline-none">
+    <div className="h-[420px] sm:h-[460px] w-full select-none outline-none focus:outline-none">
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-full">
         <defs>
           <linearGradient id="funnelFill" x1="0" y1="0" x2="1" y2="1">
