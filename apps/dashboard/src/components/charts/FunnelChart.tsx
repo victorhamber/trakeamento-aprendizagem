@@ -1,6 +1,7 @@
 type FunnelPayload = {
   page_views?: number;
-  leads?: number;
+  /** Proxy “clique no link” = eventos PageEngagement (API /dashboard/funnel) */
+  engagements?: number;
   checkouts?: number;
   purchases?: number;
 };
@@ -40,14 +41,17 @@ function fmtPctChain(num: number, den: number) {
 export function FunnelChart({ data, isDark }: { data: FunnelPayload | null; isDark: boolean }) {
   if (!data) return null;
 
+  const clicks = Number(data.engagements || 0);
   const page = Number(data.page_views || 0);
-  const lead = Number(data.leads || 0);
   const ic = Number(data.checkouts || 0);
   const pur = Number(data.purchases || 0);
 
+  const topRef = Math.max(clicks, page);
+  const v0 = clicks > 0 ? clicks : topRef;
+
   const stages = [
+    { key: 'clicks', label: 'Cliques no link', value: v0 },
     { key: 'page', label: 'PageView', value: page },
-    { key: 'lead', label: 'Lead', value: lead },
     { key: 'ic', label: 'InitiateCheckout', value: ic },
     { key: 'pur', label: 'Compras', value: pur },
   ];
@@ -83,9 +87,9 @@ export function FunnelChart({ data, isDark }: { data: FunnelPayload | null; isDa
   const longLabel = (s: string) => s.length > 14;
 
   const shareForIndex = (i: number) => {
-    if (i === 0) return page > 0 ? '100,0%' : '0,0%';
-    if (i === 1) return fmtPctChain(lead, page);
-    if (i === 2) return fmtPctChain(ic, lead);
+    if (i === 0) return topRef > 0 ? '100,0%' : '0,0%';
+    if (i === 1) return fmtPctChain(page, topRef);
+    if (i === 2) return fmtPctChain(ic, page);
     return fmtPctChain(pur, ic);
   };
 
@@ -101,7 +105,7 @@ export function FunnelChart({ data, isDark }: { data: FunnelPayload | null; isDa
             </linearGradient>
           ))}
           <linearGradient id="funnelEdge" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stopColor="#22d3ee" stopOpacity="0.35" />
+            <stop offset="0%" stopColor="#22d3ee" stopOpacity="0.2" />
             <stop offset="100%" stopColor="#22d3ee" stopOpacity="0" />
           </linearGradient>
         </defs>
@@ -117,9 +121,9 @@ export function FunnelChart({ data, isDark }: { data: FunnelPayload | null; isDa
               <polyline
                 points={`${g.x0l},${g.y0} ${g.x1l},${g.y1}`}
                 stroke="url(#funnelEdge)"
-                strokeWidth="2.5"
+                strokeWidth="2"
                 strokeLinecap="round"
-                opacity={isDark ? 0.45 : 0.3}
+                opacity={isDark ? 0.28 : 0.2}
               />
               <text
                 x={cx}

@@ -399,12 +399,7 @@ export const DashboardPage = () => {
 
       {/* ── Funnel Hero (estilo referência) ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-        <div className="neo-card neo-border neo-glow lg:col-span-2 rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-zinc-950/45 overflow-hidden shadow-sm dark:shadow-none select-none relative">
-          {/* Ambient glow */}
-          <div className="pointer-events-none absolute inset-0 hidden dark:block">
-            <div className="absolute -top-20 -left-20 w-80 h-80 bg-emerald-500/10 rounded-full blur-3xl" />
-            <div className="absolute -bottom-24 -right-24 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl" />
-          </div>
+        <div className="neo-card neo-border lg:col-span-2 rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-zinc-950/45 overflow-hidden shadow-sm dark:shadow-none select-none relative">
           <div className="relative p-5">
             <div className="flex items-start justify-between gap-3 mb-4">
               <div>
