@@ -182,6 +182,32 @@ input[type='date']::-webkit-calendar-picker-indicator {
   }
 }
 
+/* Dashboard — ícone "radar" no status de rastreamento (onadas expandindo do centro) */
+@keyframes tracking-radar-wave {
+  0% {
+    transform: scale(0.45);
+    opacity: 0.85;
+  }
+
+  100% {
+    transform: scale(2.85);
+    opacity: 0;
+  }
+}
+
+.animate-tracking-radar-wave {
+  transform-origin: center;
+  will-change: transform, opacity;
+  animation: tracking-radar-wave 2.1s cubic-bezier(0.1, 0.55, 0.2, 1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-tracking-radar-wave {
+    animation: none;
+    opacity: 0 !important;
+  }
+}
+
 .animate-in {
   animation-fill-mode: both;
   animation-duration: 180ms;
@@ -258,6 +284,11 @@ input[type='date']::-webkit-calendar-picker-indicator {
 .neo-card {
   position: relative;
   overflow: hidden;
+}
+
+/* Permite anéis do radar expandirem sem serem recortados pelo .neo-card */
+.neo-card.neo-card--radar-bleed {
+  overflow: visible;
 }
 
 .neo-card::before {

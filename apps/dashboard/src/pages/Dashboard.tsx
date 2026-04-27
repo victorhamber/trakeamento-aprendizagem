@@ -458,25 +458,23 @@ export const DashboardPage = () => {
             </div>
           </div>
 
-          <div className="neo-card neo-border neo-glow rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-zinc-950/45 p-5 shadow-sm dark:shadow-none select-none relative overflow-hidden">
+          <div className="neo-card neo-card--radar-bleed neo-border neo-glow rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-zinc-950/45 p-5 shadow-sm dark:shadow-none select-none relative">
             <div className="pointer-events-none absolute -top-10 -right-10 w-48 h-48 bg-emerald-500/10 rounded-full blur-3xl" />
             <div className="relative flex items-center gap-4">
               <div
-                className="relative h-14 w-14 shrink-0 rounded-2xl bg-emerald-500/15 border border-emerald-500/25 flex items-center justify-center overflow-visible"
+                className="relative h-12 w-12 shrink-0 flex items-center justify-center"
                 aria-hidden="true"
               >
-                <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                  <div className="h-4 w-4 rounded-full border border-emerald-300/50 animate-ping [animation-duration:2.1s] motion-reduce:animate-none" />
+                <div className="pointer-events-none absolute left-1/2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2">
+                  <div className="h-full w-full rounded-full border-2 border-emerald-400/60 animate-tracking-radar-wave" />
                 </div>
-                <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                  <div
-                    className="h-4 w-4 rounded-full border border-emerald-200/40 animate-ping [animation-duration:2.1s] [animation-delay:1.05s] motion-reduce:animate-none"
-                  />
+                <div className="pointer-events-none absolute left-1/2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2">
+                  <div className="h-full w-full rounded-full border-2 border-emerald-300/50 animate-tracking-radar-wave [animation-delay:0.7s]" />
                 </div>
-                <div className="relative z-10 flex h-8 w-8 items-center justify-center">
-                  <div className="absolute h-6 w-6 rounded-full border border-emerald-500/40 ring-1 ring-emerald-500/10" />
-                  <div className="h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-[0_0_16px_rgba(52,211,153,0.7)]" />
+                <div className="pointer-events-none absolute left-1/2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2">
+                  <div className="h-full w-full rounded-full border-2 border-emerald-200/40 animate-tracking-radar-wave [animation-delay:1.4s]" />
                 </div>
+                <div className="relative z-10 h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-[0_0_18px_rgba(52,211,153,0.8)]" />
               </div>
               <div className="min-w-0">
                 <div className="text-xs font-semibold uppercase tracking-widest text-zinc-600 dark:text-zinc-500">Status de rastreamento</div>
