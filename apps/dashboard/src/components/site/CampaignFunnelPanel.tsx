@@ -72,6 +72,13 @@ type DiagnosisReport = {
   context?: Record<string, unknown>;
 } & Record<string, unknown>;
 
+type LeigoHeadline = {
+  oneLiner: string;
+  oneAction: string;
+  scenario?: string;
+  secondaryNote?: string;
+};
+
 const chatMarkdownComponents = {
   p: ({ children }: { children?: React.ReactNode }) => (
     <p className="text-[13px] leading-relaxed text-zinc-800 dark:text-zinc-100 whitespace-pre-wrap">{children}</p>
@@ -532,32 +539,66 @@ function leigoHeadline(primary: FunnelRow) {
   const v = Number(primary.funnel.landing_page_views || 0);
   const ic = Number(primary.funnel.initiates_checkout || 0);
   const p = Number(primary.funnel.purchases || 0);
+  const spend = Number(primary.spend || 0);
+  const impressions = Number(primary.funnel.impressions || 0);
+  const linkClicks = Number(primary.funnel.link_clicks || 0);
+  const cpm = impressions > 0 ? (spend / impressions) * 1000 : 0;
+  const ctr = impressions > 0 ? (linkClicks / impressions) * 100 : 0;
+  const cpc = linkClicks > 0 ? spend / linkClicks : 0;
   const visitToIc = v > 0 ? ic / v : 0;
   const icToPurchase = ic > 0 ? p / ic : 0;
   const l1 = benchLevel(visitToIc, 0.03, 0.06, 0.12);
   const l2 = benchLevel(icToPurchase, 0.15, 0.25, 0.40);
 
+  const connectRate = linkClicks > 0 ? v / linkClicks : 0;
+  const lvlConnect = benchLevel(connectRate, 0.55, 0.65, 0.75);
+  const lvlV2IC = l1;
+  const lvlIC2P = l2;
+  const lvlV2P = benchLevel(v > 0 ? p / v : 0, 0.01, 0.02, 0.04);
+
+  const scenario = `Cenário hoje: clique→página ${primary.funnel_rates.lp_from_clicks_pct}% (${benchPill(lvlConnect).label}), página→checkout ${primary.funnel_rates.checkout_from_lp_pct}% (${benchPill(lvlV2IC).label}), checkout→compra ${primary.funnel_rates.purchase_from_checkout_pct}% (${benchPill(lvlIC2P).label}), visita→compra ${toPct(v > 0 ? p / v : 0)}% (${benchPill(lvlV2P).label}).`;
+
+  const isNewOrLowData = impressions < 1500 || linkClicks < 25 || spend < 40;
+  const secondaryLooksGood = (ctr >= 1.2 && cpc > 0 && cpc <= 2.8) || (ctr >= 1.8);
+  const secondaryLooksBad = (ctr > 0 && ctr < 0.8) || (cpc > 4.0) || (cpm > 70);
+  const secondaryNote =
+    isNewOrLowData && secondaryLooksGood
+      ? `Campanha ainda com pouco volume. Por enquanto, olhe mais as métricas “de entrega”: CTR (link) ${formatPct(ctr, 2)}, CPC (link) ${linkClicks > 0 ? formatMoney(cpc) : '—'} e CPM ${impressions > 0 ? formatMoney(cpm) : '—'}. Elas indicam um começo bom — agora é ganhar volume e confirmar na conversão.`
+      : isNewOrLowData && secondaryLooksBad
+        ? `Campanha ainda com pouco volume, mas as métricas “de entrega” já acendem alerta: CTR (link) ${formatPct(ctr, 2)}, CPC (link) ${linkClicks > 0 ? formatMoney(cpc) : '—'} e CPM ${impressions > 0 ? formatMoney(cpm) : '—'}. Antes de mexer na página, ajuste criativo/público para melhorar clique e baratear a entrega.`
+        : '';
+
   if (ic >= 1 && p === 0) {
     return {
       oneLiner: 'Você está perdendo gente no checkout: começam, mas não concluem.',
       oneAction: 'Ação agora: revise pagamento (Pix/cartão), garantia e o “preço final” (frete/juros) no checkout.',
+      scenario,
+      secondaryNote,
     };
   }
   if (l1 === 'bad') {
     return {
       oneLiner: 'O gargalo está na página: muita gente entra, pouca inicia checkout.',
       oneAction: 'Ação agora: ajuste a headline para bater com o anúncio e coloque prova social acima do botão.',
+      scenario,
+      secondaryNote,
     };
   }
   if (l2 === 'bad') {
     return {
       oneLiner: 'O gargalo está no checkout/oferta: iniciam checkout, mas poucos compram.',
       oneAction: 'Ação agora: simplifique o checkout e deixe garantia/benefícios e formas de pagamento muito claros.',
+      scenario,
+      secondaryNote,
     };
   }
   return {
     oneLiner: 'Seu funil está no caminho: agora é melhorar criativo e repetir o que está funcionando.',
     oneAction: 'Ação agora: duplique o melhor anúncio e teste 1 variação de ângulo (mesma oferta, nova promessa).',
+    scenario,
+    secondaryNote: !secondaryNote && secondaryLooksBad
+      ? `Atenção nas métricas “de entrega”: CTR (link) ${formatPct(ctr, 2)}, CPC (link) ${linkClicks > 0 ? formatMoney(cpc) : '—'} e CPM ${impressions > 0 ? formatMoney(cpm) : '—'}. Se CTR cair ou CPC/CPM subirem, priorize criativo/público antes de escalar.`
+      : secondaryNote,
   };
 }
 
@@ -1256,7 +1297,7 @@ export function CampaignFunnelPanel({
 
   const primary = rows[0];
   const comparePrimary = compareRows[0];
-  const leigo = primary ? leigoHeadline(primary) : null;
+  const leigo: LeigoHeadline | null = primary ? (leigoHeadline(primary) as LeigoHeadline) : null;
 
   return (
     <div className="rounded-2xl border border-zinc-200 dark:border-zinc-700/60 bg-gradient-to-b from-white to-zinc-50 dark:from-zinc-900/80 dark:to-zinc-950/90 overflow-hidden shadow-sm dark:shadow-lg">
@@ -1445,6 +1486,16 @@ export function CampaignFunnelPanel({
                     </div>
                     <div className="text-sm text-zinc-900 dark:text-zinc-100 leading-relaxed font-semibold">{leigo.oneLiner}</div>
                     <div className="text-sm text-zinc-700 dark:text-zinc-300 leading-relaxed mt-2">{leigo.oneAction}</div>
+                    {leigo.secondaryNote ? (
+                      <div className="text-[13px] text-zinc-700 dark:text-zinc-300 leading-relaxed mt-2">
+                        {leigo.secondaryNote}
+                      </div>
+                    ) : null}
+                    {leigo.scenario ? (
+                      <div className="text-[12px] text-zinc-600 dark:text-zinc-400 leading-relaxed mt-2 border-t border-zinc-200 dark:border-zinc-800 pt-2">
+                        {leigo.scenario}
+                      </div>
+                    ) : null}
                     {(() => {
                       const just = primary ? metaRankingJustification(primary) : null;
                       if (!just) return null;
