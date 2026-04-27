@@ -200,7 +200,7 @@ export function RecentInsightsBlock({ siteId, period }: { siteId?: number; perio
   return (
     <div className="neo-card neo-border neo-glow h-full rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-zinc-950/45 p-5 shadow-sm dark:shadow-none select-none flex flex-col">
       <div className="mb-4">
-        <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100">Outros insights recentes</div>
+        <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100">Insights recentes</div>
         <div className="text-[11px] text-zinc-500 mt-0.5">Base: PageView do período (lado a lado com a receita).</div>
       </div>
       <div className="flex-1 min-h-0">

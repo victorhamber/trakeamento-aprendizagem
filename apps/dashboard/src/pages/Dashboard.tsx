@@ -476,9 +476,9 @@ export const DashboardPage = () => {
         </div>
       </div>
 
-      {/* ── Receita + insights (2 colunas) ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6 items-stretch">
-        <div className="neo-card neo-border neo-glow rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-zinc-950/45 p-5 shadow-sm dark:shadow-none select-none flex flex-col min-h-0">
+      {/* ── Receita + insights (mesma proporção do funil: 2 col + 1 col) ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6 items-stretch">
+        <div className="neo-card neo-border neo-glow lg:col-span-2 rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-zinc-950/45 p-5 shadow-sm dark:shadow-none select-none flex flex-col min-h-0">
           <div className="flex items-start justify-between gap-3 mb-3">
             <div>
               <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100">Desempenho ao longo do tempo</div>
