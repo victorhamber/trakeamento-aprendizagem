@@ -374,6 +374,9 @@ const schemaSql = `
   last_user_agent TEXT,
   city VARCHAR(255),
   state VARCHAR(255),
+  first_group_tag TEXT,
+  last_group_tag TEXT,
+  last_group_tag_at TIMESTAMP,
   last_seen_at TIMESTAMP DEFAULT NOW(),
     created_at TIMESTAMP DEFAULT NOW(),
     UNIQUE(site_key, external_id)
@@ -548,6 +551,12 @@ export const ensureSchema = async (pool: Pool) => {
     await pool.query('ALTER TABLE site_visitors ALTER COLUMN fbc TYPE TEXT');
     await pool.query('ALTER TABLE purchases ALTER COLUMN fbp TYPE TEXT');
     await pool.query('ALTER TABLE purchases ALTER COLUMN fbc TYPE TEXT');
+  });
+
+  await migrate('site_visitors_group_tag_cols', async () => {
+    await pool.query('ALTER TABLE site_visitors ADD COLUMN IF NOT EXISTS first_group_tag TEXT');
+    await pool.query('ALTER TABLE site_visitors ADD COLUMN IF NOT EXISTS last_group_tag TEXT');
+    await pool.query('ALTER TABLE site_visitors ADD COLUMN IF NOT EXISTS last_group_tag_at TIMESTAMP');
   });
 
   await migrate('fk_cascade_events', async () => {

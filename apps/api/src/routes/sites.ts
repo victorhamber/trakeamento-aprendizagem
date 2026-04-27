@@ -1538,6 +1538,8 @@ router.get('/:siteId/buyers', requireAuth, async (req, res) => {
   const offset = Math.max(0, Number(req.query.offset || 0));
   const purchaseStatusFilter = resolveBuyersPurchaseStatusFilter(req.query.purchase_status);
   const statusInList = purchaseStatusFilter === 'pending' ? PENDING_PURCHASE_STATUSES : APPROVED_PURCHASE_STATUSES;
+  const groupTagFilterRaw = typeof req.query.group_tag === 'string' ? req.query.group_tag : '';
+  const groupTagFilter = String(groupTagFilterRaw || '').trim().slice(0, 160);
 
   try {
     const result = await pool.query(
@@ -1558,10 +1560,12 @@ router.get('/:siteId/buyers', requireAuth, async (req, res) => {
           p.customer_name,
           p.customer_email,
           p.customer_phone,
+          NULLIF(BTRIM(p.custom_data->>'group_tag'), '') AS group_tag,
           COALESCE(p.buyer_email_hash, p.fbp, p.fbc, p.order_id, ('purchase:' || p.id::text)) AS buyer_key
         FROM purchases p
         WHERE p.site_key = $1
           AND p.status IN ${statusInList}
+          AND ($4::text IS NULL OR $4::text = '' OR (p.custom_data->>'group_tag') ILIKE ('%' || $4::text || '%'))
       ),
       buyers AS (
         SELECT
@@ -1578,7 +1582,8 @@ router.get('/:siteId/buyers', requireAuth, async (req, res) => {
           (ARRAY_AGG(NULLIF(BTRIM(customer_email), '') ORDER BY purchased_at DESC))[1] AS last_customer_email,
           (ARRAY_AGG(NULLIF(BTRIM(customer_phone), '') ORDER BY purchased_at DESC))[1] AS last_customer_phone,
           (ARRAY_AGG(NULLIF(BTRIM(purchase_external_id::text), '') ORDER BY purchased_at DESC))[1] AS last_purchase_external_id,
-          (ARRAY_AGG(NULLIF(BTRIM(order_id), '') ORDER BY purchased_at DESC))[1] AS last_order_id
+          (ARRAY_AGG(NULLIF(BTRIM(order_id), '') ORDER BY purchased_at DESC))[1] AS last_order_id,
+          (ARRAY_AGG(NULLIF(BTRIM(group_tag), '') ORDER BY purchased_at DESC))[1] AS last_group_tag
         FROM pf
         GROUP BY 1
       ),
@@ -1588,7 +1593,8 @@ router.get('/:siteId/buyers', requireAuth, async (req, res) => {
           v.external_id,
           v.email_hash,
           v.fbp AS v_fbp,
-          v.fbc AS v_fbc
+          v.fbc AS v_fbc,
+          v.last_group_tag AS v_group_tag
         FROM buyers b
         LEFT JOIN site_visitors v
           ON v.site_key = $1
@@ -1601,6 +1607,7 @@ router.get('/:siteId/buyers', requireAuth, async (req, res) => {
       SELECT
         buyer_key,
         COALESCE(external_id, last_purchase_external_id) AS external_id,
+        COALESCE(NULLIF(BTRIM(last_group_tag), ''), NULLIF(BTRIM(v_group_tag), '')) AS group_tag,
         COALESCE(
           NULLIF(BTRIM(last_customer_name), ''),
           NULLIF(BTRIM(last_customer_email), ''),
@@ -1621,7 +1628,7 @@ router.get('/:siteId/buyers', requireAuth, async (req, res) => {
       ORDER BY last_purchase_at DESC NULLS LAST
       LIMIT $2 OFFSET $3
       `,
-      [siteKey, limit, offset]
+      [siteKey, limit, offset, groupTagFilter || null]
     );
 
     return res.json({ buyers: result.rows });
@@ -1662,6 +1669,7 @@ router.get('/:siteId/buyers/by-key/:buyerKey', requireAuth, async (req, res) => 
         fbc,
         buyer_email_hash,
         utm_source, utm_medium, utm_campaign,
+        NULLIF(btrim(custom_data->>'group_tag'), '') AS group_tag,
         COALESCE(platform_date, created_at) AS purchased_at,
         COUNT(*) OVER()::int AS total_count
        FROM purchases
@@ -1848,6 +1856,7 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
         customer_name, customer_email, customer_phone,
         external_id, fbp, fbc, buyer_email_hash,
         utm_source, utm_medium, utm_campaign,
+        NULLIF(btrim(custom_data->>'group_tag'), '') AS group_tag,
         COALESCE(platform_date, created_at) AS purchased_at,
         COUNT(*) OVER()::int AS total_count
        FROM purchases

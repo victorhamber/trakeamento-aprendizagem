@@ -92,6 +92,13 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
     if (!formRes.rowCount) return res.status(404).json({ error: 'Form not found' });
     const form = formRes.rows[0];
     const config = form.config || {};
+    const groupTagRaw =
+      typeof config.group_tag === 'string'
+        ? config.group_tag
+        : typeof (config as any).groupTag === 'string'
+          ? (config as any).groupTag
+          : '';
+    const groupTag = String(groupTagRaw || '').trim().slice(0, 160);
 
     // ── CAPI INTEGRATION ──
     const siteId = form.site_id;
@@ -138,6 +145,66 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
       // Se o frontend mandar cookies/ids, aproveita no fallback server-side.
       if (typeof body.fbp === 'string') userData.fbp = body.fbp;
       if (typeof body.fbc === 'string') userData.fbc = body.fbc;
+
+      // ── Visitor Profile (site_visitors) ──
+      // Sempre grava o perfil do lead (independente de tracked_by_frontend),
+      // para poder propagar group_tag para compras futuras.
+      try {
+        const emailHash = email ? CapiService.hash(String(email).trim().toLowerCase()) : null;
+        const phoneDigits = phone ? String(phone).replace(/\D/g, '') : '';
+        const phoneHash = phoneDigits ? CapiService.hash(phoneDigits) : null;
+        const externalId = typeof userData.external_id === 'string' && userData.external_id.trim()
+          ? userData.external_id.trim()
+          : (emailHash || phoneHash);
+
+        if (externalId) {
+          const lastIp = getClientIp(req) || null;
+          const lastUa = (req.headers['user-agent'] as string | undefined) || null;
+          const lastEventName = 'form_submit';
+
+          await pool.query(
+            `
+              INSERT INTO site_visitors (
+                site_key, external_id, fbc, fbp, email_hash, phone_hash,
+                total_events, last_event_name, last_ip, last_user_agent,
+                first_group_tag, last_group_tag, last_group_tag_at
+              ) VALUES ($1, $2, $3, $4, $5, $6, 1, $7, $8, $9, $10, $11, CASE WHEN $11 IS NULL OR $11 = '' THEN NULL ELSE NOW() END)
+              ON CONFLICT (site_key, external_id) DO UPDATE SET
+                fbc = COALESCE(EXCLUDED.fbc, site_visitors.fbc),
+                fbp = COALESCE(EXCLUDED.fbp, site_visitors.fbp),
+                email_hash = COALESCE(EXCLUDED.email_hash, site_visitors.email_hash),
+                phone_hash = COALESCE(EXCLUDED.phone_hash, site_visitors.phone_hash),
+                last_event_name = EXCLUDED.last_event_name,
+                last_ip = COALESCE(EXCLUDED.last_ip, site_visitors.last_ip),
+                last_user_agent = COALESCE(EXCLUDED.last_user_agent, site_visitors.last_user_agent),
+                total_events = site_visitors.total_events + 1,
+                last_seen_at = NOW(),
+                first_group_tag = COALESCE(site_visitors.first_group_tag, EXCLUDED.first_group_tag),
+                last_group_tag = COALESCE(NULLIF(EXCLUDED.last_group_tag, ''), site_visitors.last_group_tag),
+                last_group_tag_at = CASE
+                  WHEN NULLIF(EXCLUDED.last_group_tag, '') IS NULL THEN site_visitors.last_group_tag_at
+                  WHEN site_visitors.last_group_tag IS DISTINCT FROM EXCLUDED.last_group_tag THEN NOW()
+                  ELSE site_visitors.last_group_tag_at
+                END
+            `,
+            [
+              siteKey,
+              externalId,
+              typeof body.fbc === 'string' ? body.fbc : null,
+              typeof body.fbp === 'string' ? body.fbp : null,
+              emailHash,
+              phoneHash,
+              lastEventName,
+              lastIp,
+              lastUa,
+              groupTag || null,
+              groupTag || null,
+            ]
+          );
+        }
+      } catch (err) {
+        console.error(`[Forms] Failed to upsert site_visitors for form ${publicId}:`, err);
+      }
 
       // Determine Event Name from Config
       let eventName = 'Lead';
@@ -206,6 +273,7 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
           form_id: form.public_id,
           form_name: form.name,
           submitted_at: new Date().toISOString(),
+          group_tag: groupTag || null,
           // Common “flat” fields (many CRMs require these at root)
           name: name || null,
           email: email || null,

@@ -342,6 +342,7 @@ export const SitePage = () => {
   const [postSubmitAction, setPostSubmitAction] = useState<'message' | 'redirect'>('message');
   const [postSubmitMessage, setPostSubmitMessage] = useState('Obrigado! Seus dados foram enviados com sucesso.');
   const [postSubmitRedirectUrl, setPostSubmitRedirectUrl] = useState('');
+  const [formGroupTag, setFormGroupTag] = useState('');
   const [formWebhookUrls, setFormWebhookUrls] = useState<string[]>(['']);
 
 
@@ -588,6 +589,7 @@ export const SitePage = () => {
       post_submit_action: postSubmitAction,
       post_submit_message: postSubmitMessage,
       post_submit_redirect_url: postSubmitRedirectUrl,
+      group_tag: String(formGroupTag || '').trim(),
       webhook_urls: normalizedWebhookUrls,
       webhook_url: normalizedWebhookUrls[0] || ''
     };
@@ -641,6 +643,7 @@ export const SitePage = () => {
     setPostSubmitAction(cfg.post_submit_action || 'message');
     setPostSubmitMessage(cfg.post_submit_message || 'Obrigado! Seus dados foram enviados com sucesso.');
     setPostSubmitRedirectUrl(cfg.post_submit_redirect_url || '');
+    setFormGroupTag(cfg.group_tag || cfg.groupTag || '');
     const urls = Array.isArray(cfg.webhook_urls) ? cfg.webhook_urls : [];
     const cleaned = urls.map((x: any) => String(x || '').trim()).filter(Boolean);
     const fallback = typeof cfg.webhook_url === 'string' && cfg.webhook_url.trim() ? [cfg.webhook_url.trim()] : [];
@@ -4300,6 +4303,23 @@ ${scriptContent}
                               />
                             </>
                           )}
+                        </div>
+
+                        {/* Group Tag */}
+                        <div>
+                          <label htmlFor="site-form-group-tag" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
+                            Tag do grupo (opcional)
+                          </label>
+                          <input
+                            id="site-form-group-tag"
+                            value={formGroupTag}
+                            onChange={(e) => setFormGroupTag(e.target.value)}
+                            className={inputCls}
+                            placeholder="Ex.: Grupo WhatsApp - Emagrecimento"
+                          />
+                          <p className="text-[10px] text-zinc-600 dark:text-zinc-500 mt-1">
+                            Essa tag é salva no perfil do visitante e aparece na auditoria da compra quando conseguirmos casar lead → compra.
+                          </p>
                         </div>
 
                         {/* Webhook */}

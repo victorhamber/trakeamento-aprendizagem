@@ -1057,6 +1057,31 @@ async function processPurchaseWebhook({
   // 3. Database Persistence
   const dbEmailHash = email ? CapiService.hash(email.toLowerCase()) : null;
   const visitorExtId = mergedExternalId || `anon_purchase_${orderId}`;
+  let recoveredGroupTag: string | null = null;
+  try {
+    const phoneDigits = phone ? String(phone).replace(/[^0-9]/g, '') : '';
+    const dbPhoneHash = phoneDigits ? CapiService.hash(phoneDigits) : null;
+    const lookupRes = await pool.query(
+      `
+        SELECT last_group_tag
+        FROM site_visitors
+        WHERE site_key = $1
+          AND (
+            (external_id = $2::text)
+            OR ($3::text IS NOT NULL AND email_hash = $3::text)
+            OR ($4::text IS NOT NULL AND phone_hash = $4::text)
+          )
+        ORDER BY last_seen_at DESC
+        LIMIT 1
+      `,
+      [siteKey, visitorExtId, dbEmailHash, dbPhoneHash]
+    );
+    if (lookupRes.rowCount && lookupRes.rows[0]?.last_group_tag) {
+      recoveredGroupTag = String(lookupRes.rows[0].last_group_tag || '').trim().slice(0, 160) || null;
+    }
+  } catch (e) {
+    // Non-blocking: don't break webhook processing if visitor lookup fails.
+  }
 
   let rawPayloadForDb: Record<string, unknown> = {};
   try {
@@ -1068,6 +1093,14 @@ async function processPurchaseWebhook({
     rawPayloadForDb = { _ingest_note: 'payload could not be serialized for storage' };
   }
   rawPayloadForDb._capi_debug = capiPayload;
+
+  const purchaseCustomDataForDb = (() => {
+    const base = (capiPayload.custom_data && typeof capiPayload.custom_data === 'object')
+      ? (capiPayload.custom_data as Record<string, unknown>)
+      : {};
+    if (!recoveredGroupTag) return base;
+    return { ...base, group_tag: recoveredGroupTag };
+  })();
 
   const visitorTrafficStr = buildVisitorTrafficSourceString(
     {
@@ -1134,7 +1167,7 @@ async function processPurchaseWebhook({
     siteKey, orderId, platform, value, resolvedCurrency, finalStatus,
     email, phone, `${firstName || ''} ${lastName || ''}`.trim(),
     mergedFbcSafe, mergedFbpSafe, mergedExternalId, utmSource, utmMedium, utmCampaign,
-    platformDate, JSON.stringify(capiPayload.user_data), JSON.stringify(capiPayload.custom_data),
+    platformDate, JSON.stringify(capiPayload.user_data), JSON.stringify(purchaseCustomDataForDb),
     JSON.stringify(rawPayloadForDb),
     dbEmailHash
   ]);

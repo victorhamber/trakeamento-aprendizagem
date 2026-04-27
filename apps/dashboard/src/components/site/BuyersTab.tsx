@@ -4,6 +4,7 @@ import { api } from '../../lib/api';
 type BuyerRow = {
   buyer_key: string;
   external_id: string | null;
+  group_tag?: string | null;
   display_name?: string | null;
   last_customer_name?: string | null;
   last_customer_email?: string | null;
@@ -37,6 +38,7 @@ type BuyerDetail = {
     currency: string | null;
     status: string;
     purchased_at: string;
+    group_tag?: string | null;
     customer_name?: string | null;
     customer_email?: string | null;
     customer_phone?: string | null;
@@ -227,6 +229,7 @@ export function BuyersTab({ siteId }: { siteId: number }) {
   const [rows, setRows] = useState<BuyerRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [groupTagFilter, setGroupTagFilter] = useState('');
 
   const [selected, setSelected] = useState<null | { externalId: string | null; buyerKey: string; title?: string | null }>(null);
   const [detail, setDetail] = useState<BuyerDetail | null>(null);
@@ -242,7 +245,7 @@ export function BuyersTab({ siteId }: { siteId: number }) {
     setError(null);
     try {
       const res = await api.get(`/sites/${siteId}/buyers`, {
-        params: { limit: 100, purchase_status: purchaseListFilter },
+        params: { limit: 100, purchase_status: purchaseListFilter, group_tag: groupTagFilter || undefined },
       });
       setRows((res.data?.buyers || []) as BuyerRow[]);
     } catch (e: any) {
@@ -255,7 +258,7 @@ export function BuyersTab({ siteId }: { siteId: number }) {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [siteId, purchaseListFilter]);
+  }, [siteId, purchaseListFilter, groupTagFilter]);
 
   useEffect(() => {
     if (!selected) {
@@ -339,6 +342,15 @@ export function BuyersTab({ siteId }: { siteId: number }) {
           </p>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
+          <input
+            value={groupTagFilter}
+            onChange={(e) => {
+              setSelected(null);
+              setGroupTagFilter(e.target.value);
+            }}
+            placeholder="Filtrar por grupo…"
+            className="text-xs px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white/60 dark:bg-zinc-950/25 text-zinc-700 dark:text-zinc-200 placeholder:text-zinc-400 dark:placeholder:text-zinc-600 min-w-[220px]"
+          />
           <div
             className="inline-flex rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50/80 dark:bg-zinc-900/50 p-0.5"
             role="group"
@@ -394,6 +406,7 @@ export function BuyersTab({ siteId }: { siteId: number }) {
             <thead className="bg-zinc-50 dark:bg-zinc-900/60">
               <tr>
                 <th className="text-left px-4 py-3 font-semibold text-zinc-600 dark:text-zinc-400">Comprador</th>
+                <th className="text-left px-4 py-3 font-semibold text-zinc-600 dark:text-zinc-400">Grupo</th>
                 <th className="text-right px-4 py-3 font-semibold text-zinc-600 dark:text-zinc-400">Compras</th>
                 <th className="text-right px-4 py-3 font-semibold text-zinc-600 dark:text-zinc-400">Receita</th>
                 <th className="text-right px-4 py-3 font-semibold text-zinc-600 dark:text-zinc-400">Última compra</th>
@@ -402,7 +415,7 @@ export function BuyersTab({ siteId }: { siteId: number }) {
             <tbody>
               {rows.length === 0 && !loading ? (
                 <tr>
-                  <td colSpan={4} className="px-4 py-6 text-center text-zinc-600 dark:text-zinc-500">
+                  <td colSpan={5} className="px-4 py-6 text-center text-zinc-600 dark:text-zinc-500">
                     Nenhum comprador encontrado.
                   </td>
                 </tr>
@@ -423,6 +436,9 @@ export function BuyersTab({ siteId }: { siteId: number }) {
                     {!r.external_id ? (
                       <div className="text-[11px] text-amber-600 dark:text-amber-400">Sem external_id (abrindo por buyer_key)</div>
                     ) : null}
+                  </td>
+                  <td className="px-4 py-3 text-zinc-700 dark:text-zinc-200 truncate max-w-[260px]" title={r.group_tag || ''}>
+                    {r.group_tag || '—'}
                   </td>
                   <td className="px-4 py-3 text-right tabular-nums text-zinc-700 dark:text-zinc-200">{r.purchases_count}</td>
                   <td
@@ -493,6 +509,11 @@ export function BuyersTab({ siteId }: { siteId: number }) {
                         <div className="mt-1 text-[11px] text-zinc-600 dark:text-zinc-400 truncate">
                           Pedido: {detail.purchases?.[0]?.order_id || '—'}
                         </div>
+                        {(detail.purchases?.[0]?.group_tag || '').trim() ? (
+                          <div className="mt-1 text-[11px] text-zinc-600 dark:text-zinc-400 truncate" title={detail.purchases?.[0]?.group_tag || ''}>
+                            Grupo: {detail.purchases?.[0]?.group_tag}
+                          </div>
+                        ) : null}
                       </div>
                       <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-950/25 p-3">
                         <div className="text-[11px] font-semibold text-zinc-600 dark:text-zinc-400">Contato (webhook)</div>
