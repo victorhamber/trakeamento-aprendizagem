@@ -437,8 +437,22 @@ function buildFunnelSummary(args: {
     lines.push('', `🕒 *Atualizado:* ${formatGeneratedAt(generatedAt)}`);
   }
 
-  // Mantém linhas vazias para legibilidade (WhatsApp/E-mail).
-  return lines.filter((l) => l !== null && l !== undefined).join('\n');
+  // Mantém legibilidade (WhatsApp/E-mail), mas evita "buracos" (muitas linhas vazias seguidas).
+  const normalized: string[] = [];
+  let prevWasBlank = false;
+  for (const raw of lines) {
+    const s = raw === null || raw === undefined ? '' : String(raw);
+    const isBlank = s.trim().length === 0;
+    if (isBlank) {
+      if (prevWasBlank) continue;
+      normalized.push('');
+      prevWasBlank = true;
+      continue;
+    }
+    normalized.push(s);
+    prevWasBlank = false;
+  }
+  return normalized.join('\n');
 }
 
 function presentBadgeClass(p: FunnelRow['present']) {
