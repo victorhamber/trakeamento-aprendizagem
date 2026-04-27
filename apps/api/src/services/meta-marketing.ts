@@ -844,7 +844,7 @@ export class MetaMarketingService {
 
   /**
    * Extract all common metric values from a Meta insights row.
-   * Returns exactly 32 values matching the column order in persistAdInsight /
+   * Returns exactly 31 values matching the column order in persistAdInsight /
    * persistAdSetInsight / persistCampaignInsight (after their respective prefixes).
    *
    * Column order:
@@ -1041,7 +1041,7 @@ export class MetaMarketingService {
         $24, $25, $26, $27, $28, $29, $30,
         $31, $32, $33,
         $34, $35, $36, $37, $38,
-        $39, $40, $41, $42, $43, $44
+        $39, $40, $41, $42, $43
       )`,
       [
         siteId,
@@ -1088,7 +1088,7 @@ export class MetaMarketingService {
         $22, $23, $24, $25, $26, $27, $28,
         $29, $30, $31,
         $32, $33, $34, $35, $36,
-        $37, $38, $39, $40, $41, $42
+        $37, $38, $39, $40, $41
       )`,
       [
         siteId,
@@ -1126,7 +1126,7 @@ export class MetaMarketingService {
         $20, $21, $22, $23, $24, $25, $26,
         $27, $28, $29,
         $30, $31, $32, $33, $34,
-        $35, $36, $37, $38, $39, $40
+        $35, $36, $37, $38, $39
       )`,
       [
         siteId,
