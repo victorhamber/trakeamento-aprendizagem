@@ -372,37 +372,39 @@ function buildFunnelSummary(args: {
   const metricName = String(primary.objective_metric_label || 'Resultado').trim();
 
   const lines = [
-    `📊 Resumo — ${campaignName}`,
-    `📆 Período: ${periodLabel}`,
+    `📊 *Resumo — ${campaignName}*`,
+    `📆 *Período:* ${periodLabel}`,
     '',
-    `📌 Resultados do funil`,
-    `- Cliques no link: ${formatNumber(f.link_clicks)}`,
-    `- Ver página (LP): ${formatNumber(f.landing_page_views)}`,
-    `- ${metricName}: ${formatNumber(results)}`,
-    `- Checkout: ${formatNumber(f.initiates_checkout)}`,
-    `- Compras (Meta): ${formatNumber(f.purchases)}`,
+    `📌 *Resultados do funil*`,
+    `• *Cliques no link:* ${formatNumber(f.link_clicks)}`,
+    `• *Ver página (LP):* ${formatNumber(f.landing_page_views)}`,
+    `• *${metricName}:* ${formatNumber(results)}`,
+    `• *Checkout:* ${formatNumber(f.initiates_checkout)}`,
+    `• *Compras (Meta):* ${formatNumber(f.purchases)}`,
     '',
-    `📈 Taxas`,
-    `- Clique → página: ${primary.funnel_rates.lp_from_clicks_pct}%`,
-    `- Página → checkout: ${primary.funnel_rates.checkout_from_lp_pct}%`,
-    `- Checkout → compra: ${primary.funnel_rates.purchase_from_checkout_pct}%`,
+    `📈 *Taxas*`,
+    `• *Clique → página:* ${primary.funnel_rates.lp_from_clicks_pct}%`,
+    `• *Página → checkout:* ${primary.funnel_rates.checkout_from_lp_pct}%`,
+    `• *Checkout → compra:* ${primary.funnel_rates.purchase_from_checkout_pct}%`,
     '',
-    `💰 Custos e entrega`,
-    `- Investido: ${formatMoney(spend)}`,
-    `- CPM: ${impressions > 0 ? formatMoney(cpm) : '—'}`,
-    `- CTR (link): ${impressions > 0 ? formatPct(ctrLink, 2) : '—'}`,
-    `- CPC (link): ${linkClicks > 0 ? formatMoney(cpcLink) : '—'}`,
-    `- Custo por ${metricName}: ${results > 0 ? formatMoney(cpr) : '—'}`,
-    metaRevenue > 0 ? `- Receita (Meta): ${formatMoney(metaRevenue)}` : '',
-    metaRevenue > 0 ? `- ROAS (Meta): ${metaRoas.toFixed(2)}x` : '',
+    `💰 *Custos e entrega*`,
+    `• *Investido:* ${formatMoney(spend)}`,
+    `• *CPM:* ${impressions > 0 ? formatMoney(cpm) : '—'}`,
+    `• *CTR (link):* ${impressions > 0 ? formatPct(ctrLink, 2) : '—'}`,
+    `• *CPC (link):* ${linkClicks > 0 ? formatMoney(cpcLink) : '—'}`,
+    `• *Custo por ${metricName}:* ${results > 0 ? formatMoney(cpr) : '—'}`,
+    metaRevenue > 0 ? `• *Receita (Meta):* ${formatMoney(metaRevenue)}` : '',
+    metaRevenue > 0 ? `• *ROAS (Meta):* ${metaRoas.toFixed(2)}x` : '',
     '',
-    hasRankings ? `🧪 Diagnóstico (Meta Rankings)` : '',
-    hasRankings ? rankingText : '',
+    hasRankings ? `🧪 *Diagnóstico (Meta Rankings)*` : '',
+    hasRankings ? `• ${rankingText}` : '',
     '',
-    primary.bottleneck_plain ? `🧠 O que isso quer dizer` : '',
+    primary.bottleneck_plain ? `🧠 *O que isso quer dizer*` : '',
     primary.bottleneck_plain ? primary.bottleneck_plain : '',
-    primary.present_label ? `✅ Situação agora: ${primary.present_label}` : '',
-    primary.future_label ? `➡️ Próximo passo: ${primary.future_label}` : '',
+    primary.present_label ? '' : '',
+    primary.present_label ? `✅ *Situação agora:* ${primary.present_label}` : '',
+    primary.future_label ? '' : '',
+    primary.future_label ? `➡️ *Próximo passo:* ${primary.future_label}` : '',
   ];
 
   if (comparePrimary && compareLabel) {
@@ -419,17 +421,20 @@ function buildFunnelSummary(args: {
     const pMetaRoas = pSpend > 0 && pMetaRev > 0 ? pMetaRev / pSpend : 0;
     lines.push(
       '',
-      `🔁 Comparativo (${compareLabel})`,
-      `- Investido: ${formatMoney(pSpend)}`,
-      `- CPM: ${pImpr > 0 ? formatMoney(pCpm) : '—'} | CTR (link): ${pImpr > 0 ? formatPct(pCtr, 2) : '—'} | CPC (link): ${pClicks > 0 ? formatMoney(pCpc) : '—'}`,
-      `- Custo por ${metricName}: ${pResults > 0 ? formatMoney(pCpr) : '—'}`,
-      pMetaRev > 0 ? `- ROAS (Meta): ${pMetaRoas.toFixed(2)}x` : '',
-      `- Cliques: ${formatNumber(p.funnel.link_clicks)} | LP: ${formatNumber(p.funnel.landing_page_views)} | Checkout: ${formatNumber(p.funnel.initiates_checkout)} | Compras: ${formatNumber(p.funnel.purchases)}`
+      `🔁 *Comparativo (${compareLabel})*`,
+      `• *Investido:* ${formatMoney(pSpend)}`,
+      `• *CPM:* ${pImpr > 0 ? formatMoney(pCpm) : '—'}`,
+      `• *CTR (link):* ${pImpr > 0 ? formatPct(pCtr, 2) : '—'}`,
+      `• *CPC (link):* ${pClicks > 0 ? formatMoney(pCpc) : '—'}`,
+      `• *Custo por ${metricName}:* ${pResults > 0 ? formatMoney(pCpr) : '—'}`,
+      pMetaRev > 0 ? `• *ROAS (Meta):* ${pMetaRoas.toFixed(2)}x` : '',
+      '',
+      `• *Cliques:* ${formatNumber(p.funnel.link_clicks)} | *LP:* ${formatNumber(p.funnel.landing_page_views)} | *Checkout:* ${formatNumber(p.funnel.initiates_checkout)} | *Compras:* ${formatNumber(p.funnel.purchases)}`
     );
   }
 
   if (generatedAt) {
-    lines.push('', `🕒 Atualizado: ${formatGeneratedAt(generatedAt)}`);
+    lines.push('', `🕒 *Atualizado:* ${formatGeneratedAt(generatedAt)}`);
   }
 
   // Mantém linhas vazias para legibilidade (WhatsApp/E-mail).
