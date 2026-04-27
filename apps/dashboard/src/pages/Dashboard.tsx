@@ -20,6 +20,13 @@ type DailyPoint = {
   revenue: number;
 };
 
+type FunnelData = {
+  page_views: number;
+  engagements: number;
+  checkouts: number;
+  purchases: number;
+};
+
 // ─── Icons ───────────────────────────────────────────────────────────────────
 
 const IconSites = () => (
@@ -184,7 +191,7 @@ const selectCls =
 export const DashboardPage = () => {
   const [data, setData] = useState<Overview | null>(null);
   const [salesData, setSalesData] = useState<DailyPoint[]>([]);
-  const [funnelData, setFunnelData] = useState<any>(null);
+  const [funnelData, setFunnelData] = useState<FunnelData | null>(null);
   const [hasOpenAiKey, setHasOpenAiKey] = useState<boolean | null>(null);
   const [sites, setSites] = useState<Array<{ id: number; name: string }>>([]);
   const [selectedSiteId, setSelectedSiteId] = useState('');
@@ -224,6 +231,15 @@ export const DashboardPage = () => {
       .catch(() => setFunnelData(null));
 
   }, [period, currency, selectedSiteId]);
+
+  const fmtCurrency = (v: number) =>
+    new Intl.NumberFormat(currency === 'BRL' ? 'pt-BR' : 'en-US', { style: 'currency', currency, maximumFractionDigits: 2 }).format(v);
+
+  const visits = Number(funnelData?.page_views || 0);
+  const purchases = Number(funnelData?.purchases || 0);
+  const convRatePct = visits > 0 ? Math.round((purchases / visits) * 10000) / 100 : 0;
+  // Dashboard não tem custo de anúncio; deixamos ROAS como placeholder (fica pronto para plugar Meta depois).
+  const roasPlaceholder = '—';
 
   useEffect(() => {
     api.get('/ai/settings')
@@ -365,28 +381,101 @@ export const DashboardPage = () => {
         />
       </div>
 
+      {/* ── Funnel Hero (estilo referência) ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+        <div className="lg:col-span-2 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 overflow-hidden shadow-sm dark:shadow-none select-none relative">
+          {/* Ambient glow */}
+          <div className="pointer-events-none absolute inset-0 hidden dark:block">
+            <div className="absolute -top-20 -left-20 w-80 h-80 bg-emerald-500/10 rounded-full blur-3xl" />
+            <div className="absolute -bottom-24 -right-24 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl" />
+          </div>
+          <div className="relative p-5">
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div>
+                <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100">Funil da campanha</div>
+                <div className="text-[11px] text-zinc-500 mt-0.5">{getPeriodLabel(period)}</div>
+              </div>
+              <div className="text-[10px] uppercase tracking-widest font-semibold text-emerald-600 dark:text-emerald-400">
+                Visão geral
+              </div>
+            </div>
+            <FunnelChart data={funnelData} isDark={isDark} />
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 p-5 shadow-sm dark:shadow-none select-none relative overflow-hidden">
+            <div className="pointer-events-none absolute -top-10 -right-10 w-48 h-48 bg-emerald-500/10 rounded-full blur-3xl" />
+            <div className="relative">
+              <div className="text-xs font-semibold uppercase tracking-widest text-zinc-600 dark:text-zinc-500">Receita (Meta)</div>
+              <div className="mt-2 text-2xl font-bold text-zinc-900 dark:text-zinc-100 tabular-nums">
+                {fmtCurrency(data?.total_revenue ?? 0)}
+              </div>
+              <div className="mt-1 text-[11px] text-zinc-500">Período selecionado</div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 p-5 shadow-sm dark:shadow-none select-none relative overflow-hidden">
+            <div className="pointer-events-none absolute -top-10 -right-10 w-48 h-48 bg-cyan-500/10 rounded-full blur-3xl" />
+            <div className="relative">
+              <div className="text-xs font-semibold uppercase tracking-widest text-zinc-600 dark:text-zinc-500">ROAS (Meta)</div>
+              <div className="mt-2 text-2xl font-bold text-zinc-900 dark:text-zinc-100 tabular-nums">{roasPlaceholder}</div>
+              <div className="mt-1 text-[11px] text-zinc-500">Conecte Meta Ads para calcular</div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 p-5 shadow-sm dark:shadow-none select-none relative overflow-hidden">
+            <div className="pointer-events-none absolute -top-10 -right-10 w-48 h-48 bg-violet-500/10 rounded-full blur-3xl" />
+            <div className="relative">
+              <div className="text-xs font-semibold uppercase tracking-widest text-zinc-600 dark:text-zinc-500">Taxa de conversão</div>
+              <div className="mt-2 text-2xl font-bold text-zinc-900 dark:text-zinc-100 tabular-nums">
+                {visits > 0 ? `${convRatePct.toFixed(2)}%` : '—'}
+              </div>
+              <div className="mt-1 text-[11px] text-zinc-500">Compras / Visitas</div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 p-5 shadow-sm dark:shadow-none select-none relative overflow-hidden">
+            <div className="pointer-events-none absolute -top-10 -right-10 w-48 h-48 bg-emerald-500/10 rounded-full blur-3xl" />
+            <div className="relative flex items-center gap-4">
+              <div className="h-14 w-14 rounded-2xl bg-emerald-500/15 border border-emerald-500/25 flex items-center justify-center">
+                <div className="h-8 w-8 rounded-full bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center">
+                  <div className="h-3 w-3 rounded-full bg-emerald-400 shadow-[0_0_14px_rgba(52,211,153,0.55)]" />
+                </div>
+              </div>
+              <div className="min-w-0">
+                <div className="text-xs font-semibold uppercase tracking-widest text-zinc-600 dark:text-zinc-500">Status de rastreamento</div>
+                <div className="mt-1 text-sm font-semibold text-emerald-700 dark:text-emerald-300">Tudo funcionando</div>
+                <div className="mt-0.5 text-[11px] text-zinc-500">Eventos recebendo normalmente</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* ── Charts Section ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
         {/* Revenue Chart (Span 2) */}
         <div className="lg:col-span-2 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 p-5 shadow-sm dark:shadow-none select-none">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100">Desempenho de Vendas</div>
+              <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100">Desempenho ao longo do tempo</div>
               <div className="text-[11px] text-zinc-500 mt-0.5">{getPeriodLabel(period)}</div>
             </div>
           </div>
           <RevenueChart data={salesData} currency={currency} isDark={isDark} />
         </div>
 
-        {/* Funnel Chart (Span 1) */}
+        {/* Placeholder: mantém o funil pequeno antigo fora (já temos o hero) */}
         <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 p-5 shadow-sm dark:shadow-none select-none">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100">Funil de Conversão</div>
-              <div className="text-[11px] text-zinc-500 mt-0.5">{getPeriodLabel(period)}</div>
-            </div>
+          <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100 mb-2">Resumo do funil</div>
+          <div className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">
+            Visitas: <span className="font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">{visits}</span>
+            <br />
+            Checkouts: <span className="font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">{Number(funnelData?.checkouts || 0)}</span>
+            <br />
+            Compras: <span className="font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">{purchases}</span>
           </div>
-          <FunnelChart data={funnelData} isDark={isDark} />
         </div>
       </div>
 
