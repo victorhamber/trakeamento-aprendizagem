@@ -12,6 +12,9 @@ type Overview = {
   purchases_today: number;
   total_revenue: number;
   reports_7d: number;
+  meta_spend?: number;
+  meta_revenue?: number;
+  meta_roas?: number;
 };
 
 type DailyPoint = {
@@ -239,9 +242,10 @@ export const DashboardPage = () => {
   const visits = Number(funnelData?.page_views || 0);
   const purchases = Number(funnelData?.purchases || 0);
   const convRatePct = visits > 0 ? Math.round((purchases / visits) * 10000) / 100 : 0;
-  // Dashboard não tem custo de anúncio; deixamos ROAS como placeholder (fica pronto para plugar Meta depois).
-  const roasPlaceholder = '—';
   const ticketMedio = purchases > 0 ? (Number(data?.total_revenue || 0) / purchases) : 0;
+  const metaSpend = Number(data?.meta_spend || 0);
+  const metaRevenue = Number(data?.meta_revenue || 0);
+  const metaRoas = Number(data?.meta_roas || 0);
 
   useEffect(() => {
     api.get('/ai/settings')
@@ -417,8 +421,14 @@ export const DashboardPage = () => {
             <div className="pointer-events-none absolute -top-10 -right-10 w-48 h-48 bg-cyan-500/10 rounded-full blur-3xl" />
             <div className="relative">
               <div className="text-xs font-semibold uppercase tracking-widest text-zinc-600 dark:text-zinc-500">ROAS (Meta)</div>
-              <div className="mt-2 text-2xl font-bold text-zinc-900 dark:text-zinc-100 tabular-nums">{roasPlaceholder}</div>
-              <div className="mt-1 text-[11px] text-zinc-500">Conecte Meta Ads para calcular</div>
+              <div className="mt-2 text-2xl font-bold text-zinc-900 dark:text-zinc-100 tabular-nums">
+                {metaSpend > 0 ? `${metaRoas.toFixed(2)}x` : '—'}
+              </div>
+              <div className="mt-1 text-[11px] text-zinc-500">
+                {metaSpend > 0
+                  ? `Investido ${fmtCurrency(metaSpend)} · Receita ${fmtCurrency(metaRevenue)}`
+                  : 'Conecte Meta Ads e aguarde sincronizar'}
+              </div>
             </div>
           </div>
 

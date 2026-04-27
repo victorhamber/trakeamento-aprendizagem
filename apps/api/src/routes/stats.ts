@@ -53,6 +53,8 @@ router.get('/overview', requireAuth, async (req, res) => {
   const { start, end } = resolveDashboardPeriodRange(p, now);
   const reportTz = getMetaReportTimeZone();
   const reportTodayYmd = new Intl.DateTimeFormat('sv-SE', { timeZone: reportTz }).format(now).slice(0, 10);
+  const reportStartYmd = new Intl.DateTimeFormat('sv-SE', { timeZone: reportTz }).format(start).slice(0, 10);
+  const reportEndYmd = new Intl.DateTimeFormat('sv-SE', { timeZone: reportTz }).format(end).slice(0, 10);
 
   const sites = await pool.query('SELECT COUNT(*)::int as c FROM sites WHERE account_id = $1', [auth.accountId]);
 
@@ -91,17 +93,49 @@ router.get('/overview', requireAuth, async (req, res) => {
     [auth.accountId, start, end, siteId]
   );
 
+  // Meta (spend / receita / roas) — usa os rollups de campanha (evita dupla contagem de ad/adset).
+  const metaAgg = await pool.query(
+    `
+      SELECT
+        COALESCE(SUM(m.spend), 0)::numeric AS spend,
+        COALESCE(SUM((
+          SELECT COALESCE(SUM((av->>'value')::numeric), 0)
+          FROM jsonb_array_elements(COALESCE(m.raw_payload->'action_values', '[]'::jsonb)) av
+          WHERE av->>'action_type' = 'purchase'
+        )), 0)::numeric AS meta_revenue
+      FROM meta_insights_daily m
+      WHERE m.site_id = ANY(
+        SELECT id FROM sites WHERE account_id = $1 AND ($2::int IS NULL OR id = $2::int)
+      )
+        AND m.campaign_id IS NOT NULL
+        AND m.adset_id IS NULL
+        AND m.ad_id IS NULL
+        AND m.date_start >= $3::date
+        AND m.date_start <= $4::date
+    `,
+    [auth.accountId, siteId, reportStartYmd, reportEndYmd]
+  );
+
+  const metaSpend = Number(metaAgg.rows[0]?.spend || 0);
+  const metaRevenue = Number(metaAgg.rows[0]?.meta_revenue || 0);
+  const metaRoas = metaSpend > 0 ? Math.round((metaRevenue / metaSpend) * 1000) / 1000 : 0;
+
   return res.json({
     sites: sites.rows[0]?.c || 0,
     events_today: eventsPeriod.rows[0]?.c || 0,
     purchases_today: purchasesPeriod.rows[0]?.c || 0,
     total_revenue: purchasesPeriod.rows[0]?.total_revenue || 0,
     reports_7d: reportsPeriod.rows[0]?.c || 0,
+    meta_spend: metaSpend,
+    meta_revenue: metaRevenue,
+    meta_roas: metaRoas,
     // debug: ajuda a validar se "Hoje" está no fuso correto
     _range: {
       period: p,
       report_timezone: reportTz,
       report_today_ymd: reportTodayYmd,
+      report_start_ymd: reportStartYmd,
+      report_end_ymd: reportEndYmd,
       start_utc: start.toISOString(),
       end_utc: end.toISOString(),
       server_now_utc: now.toISOString(),
