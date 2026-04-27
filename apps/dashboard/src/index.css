@@ -252,3 +252,63 @@ input[type='date']::-webkit-calendar-picker-indicator {
   background-color: var(--form-preview-bg, #3b82f6);
   color: var(--form-preview-fg, #ffffff);
 }
+
+/* ─── Premium dark UI helpers (dashboard) ─────────────────────────────────── */
+
+.neo-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.neo-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(800px 240px at 25% -10%, rgba(99, 102, 241, 0.12), transparent 55%),
+    radial-gradient(700px 220px at 115% 30%, rgba(34, 211, 238, 0.10), transparent 55%),
+    radial-gradient(600px 200px at 45% 120%, rgba(16, 185, 129, 0.09), transparent 55%);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.neo-card:hover::before {
+  opacity: 1;
+}
+
+.neo-border {
+  position: relative;
+}
+
+.neo-border::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.30), rgba(34, 211, 238, 0.22), rgba(16, 185, 129, 0.18), rgba(99, 102, 241, 0.12));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.neo-border:hover::after {
+  opacity: 1;
+}
+
+.neo-glow {
+  box-shadow:
+    0 18px 60px rgba(0, 0, 0, 0.40),
+    0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+}
+
+.neo-subtle-grid {
+  background-image:
+    radial-gradient(circle at 1px 1px, rgba(255,255,255,0.06) 1px, transparent 0);
+  background-size: 28px 28px;
+}

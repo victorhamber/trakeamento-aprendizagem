@@ -100,9 +100,10 @@ const kpiStaggerClass = (delay: number) => {
 
 const KpiCard = ({ label, value, hint, icon, color, glow, delay = 0 }: KpiProps) => (
   <div
-    className={`group relative rounded-2xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 p-4 sm:p-5 hover:border-zinc-400 dark:hover:border-zinc-700 transition-all duration-200 overflow-hidden animate-in fade-in ${kpiStaggerClass(delay)} shadow-sm dark:shadow-none select-none outline-none focus:outline-none`}
+    className={`neo-card neo-border neo-glow group relative rounded-2xl border border-zinc-300 dark:border-white/10 bg-white dark:bg-zinc-950/50 p-4 sm:p-5 transition-all duration-200 overflow-hidden animate-in fade-in ${kpiStaggerClass(delay)} shadow-sm dark:shadow-none select-none outline-none focus:outline-none`}
   >
-    <div className={`absolute -top-8 -right-8 w-24 h-24 rounded-full blur-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 ${glow}`} />
+    <div className={`absolute -top-10 -right-10 w-32 h-32 rounded-full blur-3xl opacity-60 ${glow}`} />
+    <div className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 neo-subtle-grid" />
 
     <div className="relative flex items-start justify-between gap-2">
       <div className="min-w-0">
@@ -114,7 +115,7 @@ const KpiCard = ({ label, value, hint, icon, color, glow, delay = 0 }: KpiProps)
         </div>
         <div className="mt-1.5 text-[11px] text-zinc-600 dark:text-zinc-500 truncate">{hint}</div>
       </div>
-      <div className={`shrink-0 rounded-xl p-2 sm:p-2.5 bg-zinc-50 dark:bg-zinc-900/80 border border-zinc-200 dark:border-zinc-800 ${color}`}>
+      <div className={`shrink-0 rounded-xl p-2 sm:p-2.5 bg-zinc-50 dark:bg-white/5 border border-zinc-200 dark:border-white/10 ${color}`}>
         {icon}
       </div>
     </div>
@@ -384,7 +385,7 @@ export const DashboardPage = () => {
 
       {/* ── Funnel Hero (estilo referência) ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-        <div className="lg:col-span-2 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 overflow-hidden shadow-sm dark:shadow-none select-none relative">
+        <div className="neo-card neo-border neo-glow lg:col-span-2 rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-zinc-950/45 overflow-hidden shadow-sm dark:shadow-none select-none relative">
           {/* Ambient glow */}
           <div className="pointer-events-none absolute inset-0 hidden dark:block">
             <div className="absolute -top-20 -left-20 w-80 h-80 bg-emerald-500/10 rounded-full blur-3xl" />
@@ -405,7 +406,7 @@ export const DashboardPage = () => {
         </div>
 
         <div className="space-y-4">
-          <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 p-5 shadow-sm dark:shadow-none select-none relative overflow-hidden">
+          <div className="neo-card neo-border neo-glow rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-zinc-950/45 p-5 shadow-sm dark:shadow-none select-none relative overflow-hidden">
             <div className="pointer-events-none absolute -top-10 -right-10 w-48 h-48 bg-indigo-500/10 rounded-full blur-3xl" />
             <div className="relative">
               <div className="flex items-start justify-between gap-3">
@@ -431,7 +432,7 @@ export const DashboardPage = () => {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 p-5 shadow-sm dark:shadow-none select-none relative overflow-hidden">
+          <div className="neo-card neo-border neo-glow rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-zinc-950/45 p-5 shadow-sm dark:shadow-none select-none relative overflow-hidden">
             <div className="pointer-events-none absolute -top-10 -right-10 w-48 h-48 bg-cyan-500/10 rounded-full blur-3xl" />
             <div className="relative">
               <div className="text-xs font-semibold uppercase tracking-widest text-zinc-600 dark:text-zinc-500">ROAS (Meta)</div>
@@ -440,7 +441,7 @@ export const DashboardPage = () => {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 p-5 shadow-sm dark:shadow-none select-none relative overflow-hidden">
+          <div className="neo-card neo-border neo-glow rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-zinc-950/45 p-5 shadow-sm dark:shadow-none select-none relative overflow-hidden">
             <div className="pointer-events-none absolute -top-10 -right-10 w-48 h-48 bg-violet-500/10 rounded-full blur-3xl" />
             <div className="relative">
               <div className="text-xs font-semibold uppercase tracking-widest text-zinc-600 dark:text-zinc-500">Taxa de conversão</div>
@@ -457,7 +458,7 @@ export const DashboardPage = () => {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 p-5 shadow-sm dark:shadow-none select-none relative overflow-hidden">
+          <div className="neo-card neo-border neo-glow rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-zinc-950/45 p-5 shadow-sm dark:shadow-none select-none relative overflow-hidden">
             <div className="pointer-events-none absolute -top-10 -right-10 w-48 h-48 bg-emerald-500/10 rounded-full blur-3xl" />
             <div className="relative flex items-center gap-4">
               <div className="h-14 w-14 rounded-2xl bg-emerald-500/15 border border-emerald-500/25 flex items-center justify-center">
