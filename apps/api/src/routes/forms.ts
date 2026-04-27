@@ -179,16 +179,63 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
 
     // Trigger Webhook if configured
     if (config.webhook_url) {
-      fetch(config.webhook_url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      try {
+        const body = req.body || {};
+
+        // Normalize keys (same approach as CAPI extraction)
+        const data: Record<string, string> = {};
+        Object.keys(body).forEach((k) => {
+          data[k.toLowerCase().replace(/[^a-z0-9]/g, '')] = String((body as any)[k]);
+        });
+
+        const email = data['email'] || data['mail'] || data['e_mail'];
+        const phone = data['phone'] || data['tel'] || data['telefone'] || data['celular'] || data['whatsapp'];
+        const name =
+          data['name'] || data['nome'] || data['fullname'] || data['full_name'] || data['nomecompleto'] || undefined;
+
+        const payload = {
+          // Meta / Trajettu metadata (stable)
           form_id: form.public_id,
           form_name: form.name,
           submitted_at: new Date().toISOString(),
-          data: req.body
+          // Common “flat” fields (many CRMs require these at root)
+          name: name || null,
+          email: email || null,
+          phone: phone || null,
+          // Alternative shape (also common)
+          fields: body,
+          // Back-compat with previous versions
+          data: body,
+        };
+
+        const controller = new AbortController();
+        const timeoutMs = 8000;
+        const t = setTimeout(() => controller.abort(), timeoutMs);
+        fetch(config.webhook_url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json; charset=utf-8',
+            'User-Agent': 'Trajettu-FormsWebhook/1.0',
+          },
+          body: JSON.stringify(payload),
+          signal: controller.signal,
         })
-      }).catch(err => console.error(`Webhook failed for form ${publicId}:`, err));
+          .then(async (r) => {
+            clearTimeout(t);
+            if (!r.ok) {
+              const text = await r.text().catch(() => '');
+              console.error(
+                `Webhook non-2xx for form ${publicId}: ${r.status} ${r.statusText} body=${text?.slice(0, 1200) || ''}`
+              );
+            }
+          })
+          .catch((err) => {
+            clearTimeout(t);
+            console.error(`Webhook failed for form ${publicId}:`, err);
+          });
+      } catch (err) {
+        console.error(`Webhook setup failed for form ${publicId}:`, err);
+      }
     }
 
     return res.json({
