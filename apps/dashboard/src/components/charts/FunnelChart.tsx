@@ -9,25 +9,23 @@ export function FunnelChart({ data, isDark }: { data: any; isDark: boolean }) {
     return String(Math.trunc(v));
   };
 
-  const top = Number(data.engagements || 0); // proxy (PageEngagement)
+  const engagements = Number(data.engagements || 0); // proxy (PageEngagement)
   const visits = Number(data.page_views || 0);
   const checkouts = Number(data.checkouts || 0);
   const purchases = Number(data.purchases || 0);
 
+  // Garante consistência visual do funil (evita % > 100% quando o proxy vem menor que visitas)
+  const top = Math.max(engagements, visits);
+
   const stages = [
-    { key: 'clicks', label: 'Cliques', value: top },
+    { key: 'engagements', label: 'Engajamentos', value: engagements || top },
     { key: 'visits', label: 'Visitas', value: visits },
     { key: 'checkouts', label: 'Checkout', value: checkouts },
     { key: 'purchases', label: 'Compras', value: purchases },
   ];
 
   const pct = (a: number, b: number) => (b > 0 ? Math.round((a / b) * 1000) / 10 : 0);
-  const pctPrev = [
-    100,
-    pct(visits, top),
-    pct(checkouts, visits),
-    pct(purchases, checkouts),
-  ];
+  const pctPrev = [100, pct(visits, top), pct(checkouts, visits), pct(purchases, checkouts)];
 
   // Geometry in viewBox coordinates
   const W = 920;
