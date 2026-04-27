@@ -115,7 +115,7 @@ const Card = ({ title, data, color, textColor }: { title: string; data: PeakData
   const hasData = data.daily_peaks.some(d => d.count > 0);
 
   return (
-    <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 p-5 shadow-sm h-full flex flex-col select-none">
+    <div className="neo-card neo-border neo-glow rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-zinc-950/45 p-5 shadow-sm dark:shadow-none h-full flex flex-col select-none">
       <div className="flex items-center gap-2 mb-4 shrink-0">
         <div className={`w-2 h-2 rounded-full ${color}`} />
         <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{title}</h3>
@@ -136,8 +136,8 @@ const Card = ({ title, data, color, textColor }: { title: string; data: PeakData
                   <tr
                     key={day.dow}
                     className={twMerge(
-                      "border-b border-zinc-50 dark:border-zinc-800/30 last:border-0",
-                      day.is_best_day ? "bg-zinc-50/80 dark:bg-zinc-800/40 font-medium" : ""
+                      "border-b border-zinc-50 dark:border-white/5 last:border-0",
+                      day.is_best_day ? "bg-zinc-50/80 dark:bg-white/5 font-medium" : ""
                     )}
                   >
                     <td className={twMerge(
@@ -157,7 +157,7 @@ const Card = ({ title, data, color, textColor }: { title: string; data: PeakData
           </div>
 
           {data.top_sources && data.top_sources.length > 0 && (
-            <div className="mt-4 pt-4 border-t border-zinc-100 dark:border-zinc-800/50">
+            <div className="mt-4 pt-4 border-t border-zinc-100 dark:border-white/5">
               <h4 className="text-[10px] font-semibold tracking-wider uppercase text-zinc-700 dark:text-zinc-400 mb-2">
                 Top Origens
               </h4>
@@ -186,7 +186,7 @@ const Card = ({ title, data, color, textColor }: { title: string; data: PeakData
           )}
 
           {data.top_locations && data.top_locations.length > 0 && (
-            <div className="mt-4 pt-4 border-t border-zinc-100 dark:border-zinc-800/50">
+            <div className="mt-4 pt-4 border-t border-zinc-100 dark:border-white/5">
               <h4 className="text-[10px] font-semibold tracking-wider uppercase text-zinc-700 dark:text-zinc-400 mb-1">
                 Top Regiões
               </h4>
@@ -253,7 +253,7 @@ export function BestTimeCards({ siteId, period = 'last_30d' }: BestTimeCardsProp
   if (loading) return (
     <div className="mb-6 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
       {[1, 2, 3, 4].map(i => (
-        <div key={i} className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 p-5 h-[300px] animate-pulse">
+        <div key={i} className="neo-card neo-border neo-glow rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-zinc-950/45 p-5 h-[300px] animate-pulse">
           <div className="h-4 w-24 bg-zinc-200 dark:bg-zinc-800 rounded mb-4"></div>
           <div className="space-y-3">
             {[...Array(7)].map((_, j) => (

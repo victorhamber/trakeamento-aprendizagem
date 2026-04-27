@@ -136,7 +136,7 @@ type ShortcutProps = {
 const ShortcutCard = ({ to, icon, iconColor, iconBg, title, description }: ShortcutProps) => (
   <Link
     to={to}
-    className="group flex items-start gap-4 p-5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/30 hover:bg-zinc-100 dark:hover:bg-zinc-900/60 hover:border-zinc-300 dark:hover:border-zinc-700 transition-all duration-200 select-none"
+    className="neo-card neo-border neo-glow group flex items-start gap-4 p-5 rounded-2xl border border-zinc-200 dark:border-white/10 bg-zinc-50/50 dark:bg-zinc-950/35 hover:bg-zinc-100 dark:hover:bg-zinc-950/55 hover:border-zinc-300 dark:hover:border-white/15 transition-all duration-200 select-none"
   >
     <div
       className={`shrink-0 rounded-xl p-2.5 border border-zinc-200 dark:border-zinc-800 ${iconBg} ${iconColor} group-hover:scale-105 transition-transform duration-200 bg-white/50 dark:bg-transparent`}
@@ -486,7 +486,7 @@ export const DashboardPage = () => {
       {/* ── Charts Section ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
         {/* Revenue Chart (Span 2) */}
-        <div className="lg:col-span-2 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 p-5 shadow-sm dark:shadow-none select-none">
+        <div className="neo-card neo-border neo-glow lg:col-span-2 rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-zinc-950/45 p-5 shadow-sm dark:shadow-none select-none">
           <div className="flex items-center justify-between mb-4">
             <div>
               <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100">Desempenho ao longo do tempo</div>
@@ -497,7 +497,7 @@ export const DashboardPage = () => {
         </div>
 
         {/* Card auxiliar (sem redundância de funil) */}
-        <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 p-5 shadow-sm dark:shadow-none select-none">
+        <div className="neo-card neo-border neo-glow rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-zinc-950/45 p-5 shadow-sm dark:shadow-none select-none">
           <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100 mb-2">Visão rápida</div>
           <div className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">
             Receita: <span className="font-semibold tabular-nums text-zinc-900 dark:text-zinc-100">{fmtCurrency(data?.total_revenue ?? 0)}</span>
@@ -517,7 +517,7 @@ export const DashboardPage = () => {
       {/* ── Bottom grid ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Shortcuts */}
-        <div className="lg:col-span-2 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 p-5 shadow-sm dark:shadow-none select-none">
+        <div className="neo-card neo-border neo-glow lg:col-span-2 rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-zinc-950/45 p-5 shadow-sm dark:shadow-none select-none">
           <div className="text-xs font-semibold uppercase tracking-widest text-zinc-600 dark:text-zinc-500 mb-4">
             Atalhos
           </div>
@@ -558,7 +558,7 @@ export const DashboardPage = () => {
         </div>
 
         {/* Status */}
-        <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 p-5 shadow-sm dark:shadow-none select-none">
+        <div className="neo-card neo-border neo-glow rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-zinc-950/45 p-5 shadow-sm dark:shadow-none select-none">
           <div className="text-xs font-semibold uppercase tracking-widest text-zinc-600 dark:text-zinc-500 mb-4">
             Status do sistema
           </div>
