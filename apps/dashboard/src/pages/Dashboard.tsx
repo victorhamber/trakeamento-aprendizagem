@@ -261,6 +261,8 @@ export const DashboardPage = () => {
     }
   };
 
+  const buildId = String((import.meta as any)?.env?.VITE_GIT_SHA || '').slice(0, 7);
+
   return (
     <Layout title="Dashboard">
       {/* ── Hero banner ── */}
@@ -281,6 +283,11 @@ export const DashboardPage = () => {
               <span className="text-zinc-900 dark:text-zinc-300 font-semibold">{data?.sites ?? 0} sites</span>{' '}
               ativamente. Explore os dados abaixo ou gere um diagnóstico nas campanhas.
             </p>
+            {buildId ? (
+              <div className="mt-2 text-[10px] uppercase tracking-widest text-zinc-500 dark:text-zinc-600">
+                Build: <span className="font-semibold text-zinc-700 dark:text-zinc-400">{buildId}</span>
+              </div>
+            ) : null}
           </div>
 
           <div className="shrink-0 flex flex-wrap items-center gap-2 self-start sm:self-auto">

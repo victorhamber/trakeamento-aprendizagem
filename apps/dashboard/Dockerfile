@@ -11,6 +11,10 @@ COPY . .
 ARG VITE_API_URL
 ENV VITE_API_URL=https://api.trajettu.com
 
+# Build id para confirmar deploy/cache (Easypanel passa GIT_SHA)
+ARG GIT_SHA
+ENV VITE_GIT_SHA=$GIT_SHA
+
 RUN npm run build
 
 # --- Stage Final ---
