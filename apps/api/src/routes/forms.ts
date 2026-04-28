@@ -326,6 +326,37 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
           }
         })();
 
+        // Se o submit vier “seco” (sem UTMs/IDs), usa o último PageView/tracking do mesmo visitante como fallback.
+        // Isso permite auditoria completa sem precisar trocar o HTML antigo no site.
+        const attributionFallback = await (async () => {
+          try {
+            const extId = typeof userData.external_id === 'string' ? userData.external_id.trim() : '';
+            if (!extId) return null;
+            const r = await pool.query(
+              `
+              SELECT custom_data
+              FROM web_events
+              WHERE site_key = $1
+                AND COALESCE(custom_data->>'audit_kind', '') <> 'lead_audit'
+                AND (user_data->>'external_id') = $2
+                AND event_time >= NOW() - INTERVAL '30 days'
+              ORDER BY event_time DESC, id DESC
+              LIMIT 1
+              `,
+              [siteKey, extId]
+            );
+            const cd = r.rows?.[0]?.custom_data;
+            return cd && typeof cd === 'object' ? (cd as Record<string, unknown>) : null;
+          } catch {
+            return null;
+          }
+        })();
+
+        const pickFallback = (k: string) => {
+          const v = attributionFallback ? attributionFallback[k] : undefined;
+          return typeof v === 'string' ? v.trim() : '';
+        };
+
         const fullNameFromFields =
           typeof (safeFields as any).fullname === 'string'
             ? String((safeFields as any).fullname).trim()
@@ -335,21 +366,26 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
 
         const auditTopLevel = {
           // Page context
-          page_title: pickStr('page_title'),
-          page_path: pickStr('page_path') || urlParams.page_path,
-          page_location: pageLocation || urlParams.page_location,
+          page_title: pickStr('page_title') || pickFallback('page_title'),
+          page_path: pickStr('page_path') || urlParams.page_path || pickFallback('page_path'),
+          page_location: pageLocation || urlParams.page_location || pickFallback('page_location'),
           event_url: eventSourceUrlForAudit,
           // IDs
-          fbclid: pickStr('fbclid') || urlParams.fbclid,
-          gclid: pickStr('gclid') || urlParams.gclid,
-          click_id: pickStr('click_id') || urlParams.click_id,
+          fbclid: pickStr('fbclid') || urlParams.fbclid || pickFallback('fbclid'),
+          gclid: pickStr('gclid') || urlParams.gclid || pickFallback('gclid'),
+          click_id: pickStr('click_id') || urlParams.click_id || pickFallback('click_id'),
           // UTMs
-          utm_source: pickStr('utm_source') || urlParams.utm_source,
-          utm_medium: pickStr('utm_medium') || urlParams.utm_medium,
-          utm_campaign: pickStr('utm_campaign') || urlParams.utm_campaign,
-          utm_content: pickStr('utm_content') || urlParams.utm_content,
-          utm_term: pickStr('utm_term') || urlParams.utm_term,
-          traffic_source: pickStr('traffic_source') || pickStr('utm_source') || urlParams.utm_source,
+          utm_source: pickStr('utm_source') || urlParams.utm_source || pickFallback('utm_source'),
+          utm_medium: pickStr('utm_medium') || urlParams.utm_medium || pickFallback('utm_medium'),
+          utm_campaign: pickStr('utm_campaign') || urlParams.utm_campaign || pickFallback('utm_campaign'),
+          utm_content: pickStr('utm_content') || urlParams.utm_content || pickFallback('utm_content'),
+          utm_term: pickStr('utm_term') || urlParams.utm_term || pickFallback('utm_term'),
+          traffic_source:
+            pickStr('traffic_source') ||
+            pickStr('utm_source') ||
+            urlParams.utm_source ||
+            pickFallback('traffic_source') ||
+            pickFallback('utm_source'),
         };
 
         await pool.query(
