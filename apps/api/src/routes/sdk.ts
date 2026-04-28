@@ -343,12 +343,28 @@ router.get('/tracker.js', async (req, res) => {
   }
 
   // ─── Hashed cookie helpers ────────────────────────────────────────────────
+  var _taAmRefreshTimer = null;
+  function scheduleMetaAdvancedMatchingRefresh() {
+    try {
+      if (_taAmRefreshTimer) return;
+      _taAmRefreshTimer = setTimeout(function() {
+        _taAmRefreshTimer = null;
+        try { refreshMetaFbqAdvancedMatching(); } catch(_e) {}
+      }, 80);
+    } catch(_e) {}
+  }
+
   function setHashedCookie(cookieName, rawValue, normalizer) {
     try {
       var normalized = normalizer ? normalizer(rawValue) : (rawValue || '').toString();
       if (!normalized) return;
       sha256Hex(normalized, function(hash) {
-        if (hash) setCookie(cookieName, hash, COOKIE_TTL_2Y);
+        if (hash) {
+          setCookie(cookieName, hash, COOKIE_TTL_2Y);
+          // identify() pode ser chamado depois do Pixel já estar inicializado.
+          // Como o hash é assíncrono, garantimos um refresh após o cookie existir.
+          scheduleMetaAdvancedMatchingRefresh();
+        }
       });
     } catch(_e) {}
   }
