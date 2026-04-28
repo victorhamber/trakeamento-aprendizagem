@@ -618,9 +618,9 @@ function resolveHotmartMoneyFromCommissionsOrPurchase(
   const fp = recordOf(pr.full_price as unknown);
   const pp = recordOf(pr.price as unknown);
   // Hotmart:
-  // - `purchase.price.value` costuma ser o valor efetivamente cobrado/pago (ex.: parcela inteligente / recorrência).
-  // - `purchase.full_price.value` pode representar o “valor cheio” do plano/oferta.
-  // Para o nosso banco/analytics, priorizamos o valor pago.
+  // - `purchase.price.value` é o valor bruto cobrado/pago.
+  // - `commissions` contém o líquido (ex.: PRODUCER) já descontando taxas Hotmart.
+  // Para métricas financeiras reais do produtor, priorizamos a comissão PRODUCER quando existir.
   let rawValue: unknown =
     pp.value ?? fp.value ?? pr.amount ?? pr.total ?? (d as { amount?: unknown }).amount ?? 0;
   let currency =
@@ -629,7 +629,24 @@ function resolveHotmartMoneyFromCommissionsOrPurchase(
     coerceWebhookStr((d as { currency?: unknown }).currency) ||
     'BRL';
 
-  // Importante: comissão ≠ valor da venda. Não substituímos mais o valor por comissão.
+  // Usa comissão do PRODUTOR como "receita líquida" (soma caso venha quebrada em múltiplas linhas).
+  if (Array.isArray(commissions) && commissions.length > 0) {
+    let sum = 0;
+    let any = false;
+    let cur = '';
+    for (const c of commissions as any[]) {
+      if (!c || c.source !== 'PRODUCER') continue;
+      const v = parseFloat(String(c.value ?? ''));
+      if (!Number.isFinite(v)) continue;
+      sum += v;
+      any = true;
+      if (!cur && c.currency_value) cur = String(c.currency_value);
+    }
+    if (any) {
+      rawValue = sum;
+      if (cur) currency = cur;
+    }
+  }
 
   return { value: parseFloat(String(rawValue)) || 0, currency };
 }
