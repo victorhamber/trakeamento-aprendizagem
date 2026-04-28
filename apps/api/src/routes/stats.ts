@@ -136,6 +136,8 @@ router.get('/overview', requireAuth, async (req, res) => {
     `
       SELECT
         COALESCE(SUM(m.spend), 0)::numeric AS spend,
+        COALESCE(SUM(m.purchases), 0)::bigint AS purchases,
+        COALESCE(SUM(m.landing_page_views), 0)::bigint AS landing_page_views,
         COALESCE(SUM((
           SELECT COALESCE(SUM((av->>'value')::numeric), 0)
           FROM jsonb_array_elements(COALESCE(m.raw_payload->'action_values', '[]'::jsonb)) av
@@ -155,6 +157,8 @@ router.get('/overview', requireAuth, async (req, res) => {
   );
 
   const metaSpend = Number(metaAgg.rows[0]?.spend || 0);
+  const metaPurchases = Number(metaAgg.rows[0]?.purchases || 0);
+  const metaLandingPageViews = Number(metaAgg.rows[0]?.landing_page_views || 0);
   const metaRevenue = Number(metaAgg.rows[0]?.meta_revenue || 0);
   const metaRoas = metaSpend > 0 ? Math.round((metaRevenue / metaSpend) * 1000) / 1000 : 0;
   const totalRevenue = Number(purchasesPeriod.rows[0]?.total_revenue || 0);
@@ -169,6 +173,8 @@ router.get('/overview', requireAuth, async (req, res) => {
     meta_spend: metaSpend,
     meta_revenue: metaRevenue,
     meta_roas: metaRoas,
+    meta_purchases: metaPurchases,
+    meta_landing_page_views: metaLandingPageViews,
     roas_real: roasReal,
     // debug: ajuda a validar se "Hoje" está no fuso correto
     _range: {

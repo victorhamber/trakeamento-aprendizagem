@@ -16,6 +16,8 @@ type Overview = {
   meta_spend?: number;
   meta_revenue?: number;
   meta_roas?: number;
+  meta_purchases?: number;
+  meta_landing_page_views?: number;
   roas_real?: number;
 };
 
@@ -242,14 +244,14 @@ export const DashboardPage = () => {
   const fmtCurrency = (v: number) =>
     new Intl.NumberFormat(currency === 'BRL' ? 'pt-BR' : 'en-US', { style: 'currency', currency, maximumFractionDigits: 2 }).format(v);
 
-  const visits = Number(funnelData?.page_views || 0);
-  const purchases = Number(funnelData?.purchases || 0);
-  const convRatePct = visits > 0 ? Math.round((purchases / visits) * 10000) / 100 : 0;
-  const ticketMedio = purchases > 0 ? (Number(data?.total_revenue || 0) / purchases) : 0;
   const metaSpend = Number(data?.meta_spend || 0);
   const metaRevenue = Number(data?.meta_revenue || 0);
   const metaRoas = Number(data?.meta_roas || 0);
-  const roasReal = Number(data?.roas_real || 0);
+  const metaPurchases = Number(data?.meta_purchases || 0);
+  const metaLandingPageViews = Number(data?.meta_landing_page_views || 0);
+  const metaConvRatePct =
+    metaLandingPageViews > 0 ? Math.round((metaPurchases / metaLandingPageViews) * 10000) / 100 : 0;
+  const metaTicketMedio = metaPurchases > 0 ? (metaRevenue / metaPurchases) : 0;
 
   useEffect(() => {
     api.get('/ai/settings')
@@ -421,16 +423,17 @@ export const DashboardPage = () => {
             <div className="relative">
               <div className="text-xs font-semibold uppercase tracking-widest text-zinc-600 dark:text-zinc-500">ROAS</div>
               <div className="mt-2 text-2xl font-bold text-zinc-900 dark:text-zinc-100 tabular-nums">
-                {metaSpend > 0 ? `${roasReal.toFixed(2)}x` : '—'}
+                {metaSpend > 0 ? `${metaRoas.toFixed(2)}x` : '—'}
               </div>
               <div className="mt-1 text-[11px] text-zinc-500">
                 {metaSpend > 0
-                  ? `Investido ${fmtCurrency(metaSpend)} · Receita ${fmtCurrency(data?.total_revenue ?? 0)}`
+                  ? `Investido ${fmtCurrency(metaSpend)} · Receita (Meta) ${fmtCurrency(metaRevenue)}`
                   : 'Conecte Meta Ads e aguarde sincronizar'}
               </div>
               {metaSpend > 0 ? (
                 <div className="mt-2 text-[10px] text-zinc-500">
-                  Meta atribuído: {fmtCurrency(metaRevenue)} · {metaRoas.toFixed(2)}x
+                  Compras (Meta): {metaPurchases || 0}
+                  {metaLandingPageViews > 0 ? ` · LPV: ${metaLandingPageViews}` : ''}
                 </div>
               ) : null}
             </div>
@@ -441,9 +444,9 @@ export const DashboardPage = () => {
             <div className="relative">
               <div className="text-xs font-semibold uppercase tracking-widest text-zinc-600 dark:text-zinc-500">Taxa de conversão</div>
               <div className="mt-2 text-2xl font-bold text-zinc-900 dark:text-zinc-100 tabular-nums">
-                {visits > 0 ? `${convRatePct.toFixed(2)}%` : '—'}
+                {metaLandingPageViews > 0 ? `${metaConvRatePct.toFixed(2)}%` : '—'}
               </div>
-              <div className="mt-1 text-[11px] text-zinc-500">Compras / Visitas</div>
+              <div className="mt-1 text-[11px] text-zinc-500">Compras (Meta) / LPV (Meta)</div>
             </div>
           </div>
 
@@ -452,9 +455,9 @@ export const DashboardPage = () => {
             <div className="relative">
               <div className="text-xs font-semibold uppercase tracking-widest text-zinc-600 dark:text-zinc-500">Ticket médio</div>
               <div className="mt-2 text-2xl font-bold text-zinc-900 dark:text-zinc-100 tabular-nums">
-                {purchases > 0 ? fmtCurrency(ticketMedio) : '—'}
+                {metaPurchases > 0 ? fmtCurrency(metaTicketMedio) : '—'}
               </div>
-              <div className="mt-1 text-[11px] text-zinc-500">Receita / Compras</div>
+              <div className="mt-1 text-[11px] text-zinc-500">Receita (Meta) / Compras (Meta)</div>
             </div>
           </div>
 
