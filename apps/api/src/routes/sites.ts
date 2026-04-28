@@ -1697,12 +1697,38 @@ router.get('/:siteId/leads', requireAuth, async (req, res) => {
       [siteKey, limit, offset, groupTagFilter || null]
     );
 
-    // Enriquecimento leve em JS: device_hint + meta attribution por UTM
-    const enriched = [];
+    // Enriquecimento em JS (por página): device_hint + meta attribution por UTM
+    // Importante para SaaS: cache por combinação UTM (evita 1 lookup por lead).
+    const utmByEventId = new Map<string, Record<string, string> | null>();
+    const keyOrder: string[] = [];
+    const keyToUtm = new Map<string, Record<string, string>>();
+
     for (const r of result.rows) {
       const eventSourceUrl = typeof r.event_source_url === 'string' ? String(r.event_source_url) : null;
       const utm = mergePageviewUtm(r.custom_data, eventSourceUrl);
-      const { row: meta, source } = await resolveMetaAttributionFromUtm(siteId, utm);
+      utmByEventId.set(String(r.event_id), utm);
+      const k = metaAttributionCacheKey(utm);
+      if (k && !keyToUtm.has(k)) {
+        keyToUtm.set(k, (utm || {}) as Record<string, string>);
+        keyOrder.push(k);
+        if (keyOrder.length >= 60) break;
+      }
+    }
+
+    const metaCache = new Map<string, { row: BuyerMetaInsightRow | null; source: string | null }>();
+    for (const k of keyOrder) {
+      const utm = keyToUtm.get(k);
+      const resolved = await resolveMetaAttributionFromUtm(siteId, utm);
+      metaCache.set(k, resolved);
+    }
+
+    const enriched = [];
+    for (const r of result.rows) {
+      const utm = utmByEventId.get(String(r.event_id)) ?? null;
+      const key = metaAttributionCacheKey(utm);
+      const hit = key ? metaCache.get(key) : null;
+      const meta = hit?.row ?? null;
+      const source = hit?.source ?? null;
       const leadUa =
         (typeof (r.user_data || {}) === 'object' && r.user_data ? (r.user_data as any).client_user_agent : null) || null;
       const uaSummary = buildBuyerUserAgentSummary({
