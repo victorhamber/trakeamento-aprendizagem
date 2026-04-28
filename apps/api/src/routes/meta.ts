@@ -17,7 +17,7 @@ const router = Router();
 // Cooldown simples para evitar sync excessivo (ex.: várias abas abertas).
 // Observação: é em memória (por processo). Para cluster/escala horizontal,
 // considerar persistir em DB/Redis.
-const META_SYNC_ENDPOINT_COOLDOWN_MS = 60 * 60 * 1000; // 1h
+const META_SYNC_ENDPOINT_COOLDOWN_MS = 30 * 60 * 1000; // 30min
 const lastMetaSyncBySite = new Map<number, number>();
 
 // Evita martelar o sync quando o DB está vazio (ex.: site sem campanhas no período).

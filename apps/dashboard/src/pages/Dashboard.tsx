@@ -268,9 +268,9 @@ export const DashboardPage = () => {
       }
     };
 
-    // Atualiza ao entrar/trocar período e depois mantém “auto refresh” (1h).
+    // Atualiza ao entrar/trocar período e depois mantém “auto refresh” (30min).
     void syncOnce(false);
-    const interval = window.setInterval(() => void syncOnce(false), 60 * 60 * 1000);
+    const interval = window.setInterval(() => void syncOnce(false), 30 * 60 * 1000);
 
     return () => {
       cancelled = true;
@@ -383,19 +383,6 @@ export const DashboardPage = () => {
               <option value="last_30d">Últimos 30 dias</option>
               <option value="maximum">Máximo</option>
             </select>
-            <button
-              type="button"
-              disabled={!selectedSiteId || metaSyncBusy}
-              onClick={handleMetaSyncNow}
-              className={`text-xs rounded-lg px-3 py-2 border transition-colors ${
-                !selectedSiteId || metaSyncBusy
-                  ? 'opacity-50 cursor-not-allowed border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-500'
-                  : 'border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800'
-              }`}
-              title={!selectedSiteId ? 'Selecione um site para sincronizar' : 'Forçar sincronização do Meta Ads'}
-            >
-              {metaSyncBusy ? 'Atualizando…' : 'Atualizar dados do Meta'}
-            </button>
             <select
               aria-label="Moeda do faturamento"
               value={currency}
@@ -478,8 +465,19 @@ export const DashboardPage = () => {
                 <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100">Visão geral do funil</div>
                 <div className="text-[11px] text-zinc-500 mt-0.5">{getPeriodLabel(period)}</div>
               </div>
-              <div className="text-[10px] uppercase tracking-widest font-semibold text-cyan-500 dark:text-cyan-400">
-                Visão geral
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleMetaSyncNow}
+                  disabled={!selectedSiteId || metaSyncBusy}
+                  className="text-xs px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-40"
+                  title={!selectedSiteId ? 'Selecione um site para atualizar o Meta' : 'Forçar sincronização do Meta Ads'}
+                >
+                  {metaSyncBusy ? 'Carregando…' : 'Atualizar funil'}
+                </button>
+                <div className="text-[10px] uppercase tracking-widest font-semibold text-cyan-500 dark:text-cyan-400">
+                  Visão geral
+                </div>
               </div>
             </div>
             <FunnelChart data={funnelData} isDark={isDark} />
