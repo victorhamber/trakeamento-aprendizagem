@@ -366,6 +366,13 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
               ? String((safeFields as any).name).trim()
               : '';
 
+        const fullNameFromFnLn = (() => {
+          const fn = pickStr('fn') || pickStr('first_name') || pickStr('firstname') || pickStr('primeiro_nome') || pickStr('primeironome');
+          const ln = pickStr('ln') || pickStr('last_name') || pickStr('lastname') || pickStr('ultimo_nome') || pickStr('sobrenome');
+          const s = [fn, ln].filter(Boolean).join(' ').trim();
+          return s;
+        })();
+
         // Inferência (mesma lógica do tracker): fbclid ⇒ facebook/cpc e click_id
         const fbclidFinal = pickStr('fbclid') || urlParams.fbclid || pickFallback('fbclid');
         const gclidFinal = pickStr('gclid') || urlParams.gclid || pickFallback('gclid');
@@ -432,7 +439,7 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
               form_id: publicId,
               form_name: form.name,
               group_tag: groupTag || null,
-              name: name || fullNameFromFields || null,
+              name: name || fullNameFromFields || fullNameFromFnLn || null,
               email: email || null,
               phone: phone || null,
               ...auditTopLevel,

@@ -51,6 +51,20 @@ function deviceLabel(d: LeadRow['device']) {
 function leadPrimaryName(data: Record<string, unknown>): string {
   const pick = (o: any, k: string) => (o && typeof o[k] === 'string' ? String(o[k]).trim() : '');
   const fields = (data as any)?.fields && typeof (data as any).fields === 'object' ? (data as any).fields : null;
+  const fn =
+    pick(data, 'fn') ||
+    pick(data, 'first_name') ||
+    pick(data, 'firstname') ||
+    pick(fields, 'fn') ||
+    pick(fields, 'first_name') ||
+    pick(fields, 'firstname');
+  const ln =
+    pick(data, 'ln') ||
+    pick(data, 'last_name') ||
+    pick(data, 'lastname') ||
+    pick(fields, 'ln') ||
+    pick(fields, 'last_name') ||
+    pick(fields, 'lastname');
   const name =
     pick(data, 'name') ||
     pick(data, 'nome') ||
@@ -59,7 +73,8 @@ function leadPrimaryName(data: Record<string, unknown>): string {
     pick(fields, 'name') ||
     pick(fields, 'nome') ||
     pick(fields, 'full_name') ||
-    pick(fields, 'fullname');
+    pick(fields, 'fullname') ||
+    [fn, ln].filter(Boolean).join(' ').trim();
   return name || '—';
 }
 

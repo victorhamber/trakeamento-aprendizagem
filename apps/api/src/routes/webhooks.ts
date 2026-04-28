@@ -521,6 +521,29 @@ function resolveHotmartOrderId(
   const dataRoot = recordOf(payload.data);
   const dOrder = recordOf(d.order);
 
+  // Recorrências/assinaturas: algumas notificações podem gerar transações distintas para a mesma recorrência.
+  // Para evitar duplicar “2 compras” na mesma parcela/recorrência, usamos um id estável por subscriber + recurrence.
+  // (Mantém merge via UNIQUE(site_key, order_id).)
+  try {
+    const sub0 = recordOf((d as any).subscription);
+    const sub1 = recordOf((dataRoot as any).subscription);
+    const sub = Object.keys(sub0).length ? sub0 : sub1;
+    const subscriber = recordOf((sub as any).subscriber);
+    const subCode = coerceWebhookStr((subscriber as any).code);
+    const rec =
+      (typeof (purchase as any).recurrence_number === 'number' && Number.isFinite((purchase as any).recurrence_number))
+        ? String((purchase as any).recurrence_number)
+        : coerceWebhookStr((purchase as any).recurrence_number) ||
+          (typeof (purchase as any).recurrency_number === 'number' && Number.isFinite((purchase as any).recurrency_number))
+            ? String((purchase as any).recurrency_number)
+            : coerceWebhookStr((purchase as any).recurrency_number);
+    if (subCode && rec) {
+      return `sub_${subCode}_r${rec}`.slice(0, 100);
+    }
+  } catch {
+    // ignore
+  }
+
   const candidates: unknown[] = [
     purchase.transaction,
     purchase.transaction_id,
@@ -594,28 +617,19 @@ function resolveHotmartMoneyFromCommissionsOrPurchase(
   const pr = recordOf(purchase);
   const fp = recordOf(pr.full_price as unknown);
   const pp = recordOf(pr.price as unknown);
+  // Hotmart:
+  // - `purchase.price.value` costuma ser o valor efetivamente cobrado/pago (ex.: parcela inteligente / recorrência).
+  // - `purchase.full_price.value` pode representar o “valor cheio” do plano/oferta.
+  // Para o nosso banco/analytics, priorizamos o valor pago.
   let rawValue: unknown =
-    fp.value ?? pp.value ?? pr.amount ?? pr.total ?? (d as { amount?: unknown }).amount ?? 0;
+    pp.value ?? fp.value ?? pr.amount ?? pr.total ?? (d as { amount?: unknown }).amount ?? 0;
   let currency =
     coerceWebhookStr(fp.currency_value) ||
     coerceWebhookStr(pp.currency_value) ||
     coerceWebhookStr((d as { currency?: unknown }).currency) ||
     'BRL';
 
-  if (Array.isArray(commissions) && commissions.length > 0) {
-    const validCommissions = commissions.filter(
-      (c: any) => c && (c.source === 'PRODUCER' || c.source === 'AFFILIATE')
-    );
-    const commission = (
-      validCommissions.length > 0
-        ? validCommissions[0]
-        : commissions.filter((c: any) => c && c.source !== 'HOTMART' && c.source !== 'MARKETPLACE')[0]
-    ) as { value?: unknown; currency_value?: unknown } | undefined;
-    if (commission && commission.value !== undefined) {
-      rawValue = commission.value;
-      if (commission.currency_value) currency = String(commission.currency_value);
-    }
-  }
+  // Importante: comissão ≠ valor da venda. Não substituímos mais o valor por comissão.
 
   return { value: parseFloat(String(rawValue)) || 0, currency };
 }
