@@ -1639,6 +1639,191 @@ router.get('/:siteId/buyers', requireAuth, async (req, res) => {
 });
 
 /**
+ * Lista leads capturados via formulário (eventos web_events: Lead).
+ * Retorna “best-effort” de dados do cadastro (custom_data), tag (site_visitors) e atribuição (UTMs → Meta).
+ */
+router.get('/:siteId/leads', requireAuth, async (req, res) => {
+  const auth = req.auth!;
+  const siteId = Number(req.params.siteId);
+  if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
+
+  const siteRes = await pool.query('SELECT site_key FROM sites WHERE id = $1 AND account_id = $2', [siteId, auth.accountId]);
+  if (!siteRes.rowCount) return res.status(404).json({ error: 'Site not found' });
+  const siteKey = String(siteRes.rows[0].site_key);
+
+  const limit = Math.min(200, Math.max(10, Number(req.query.limit || 20)));
+  const offset = Math.max(0, Number(req.query.offset || 0));
+  const groupTagFilterRaw = typeof req.query.group_tag === 'string' ? req.query.group_tag : '';
+  const groupTagFilter = String(groupTagFilterRaw || '').trim().slice(0, 160);
+
+  try {
+    const result = await pool.query(
+      `
+      WITH base AS (
+        SELECT
+          we.id,
+          we.event_id,
+          we.event_time,
+          we.event_source_url,
+          we.user_data,
+          we.custom_data,
+          NULLIF(BTRIM(we.user_data->>'external_id'), '') AS external_id
+        FROM web_events we
+        WHERE we.site_key = $1
+          AND we.event_name = 'Lead'
+        ORDER BY we.event_time DESC, we.id DESC
+        LIMIT $2 OFFSET $3
+      )
+      SELECT
+        b.id,
+        b.event_id,
+        b.event_time,
+        b.event_source_url,
+        b.external_id,
+        b.custom_data,
+        b.user_data,
+        sv.city,
+        sv.state,
+        sv.last_group_tag AS group_tag,
+        sv.last_user_agent AS visitor_user_agent
+      FROM base b
+      LEFT JOIN site_visitors sv
+        ON sv.site_key = $1
+        AND b.external_id IS NOT NULL
+        AND sv.external_id = b.external_id
+      WHERE ($4::text IS NULL OR $4::text = '' OR COALESCE(sv.last_group_tag, '') ILIKE ('%' || $4::text || '%'))
+      ORDER BY b.event_time DESC, b.id DESC
+      `,
+      [siteKey, limit, offset, groupTagFilter || null]
+    );
+
+    // Enriquecimento leve em JS: device_hint + meta attribution por UTM
+    const enriched = [];
+    for (const r of result.rows) {
+      const eventSourceUrl = typeof r.event_source_url === 'string' ? String(r.event_source_url) : null;
+      const utm = mergePageviewUtm(r.custom_data, eventSourceUrl);
+      const { row: meta, source } = await resolveMetaAttributionFromUtm(siteId, utm);
+      const leadUa =
+        (typeof (r.user_data || {}) === 'object' && r.user_data ? (r.user_data as any).client_user_agent : null) || null;
+      const uaSummary = buildBuyerUserAgentSummary({
+        visitorUa: r.visitor_user_agent ? String(r.visitor_user_agent) : null,
+        lastPageviewUa: leadUa ? String(leadUa) : null,
+      });
+      enriched.push({
+        id: r.id,
+        event_id: r.event_id,
+        event_time: r.event_time,
+        event_source_url: r.event_source_url,
+        external_id: r.external_id,
+        group_tag: r.group_tag || null,
+        city: r.city || null,
+        state: r.state || null,
+        country: null,
+        device: uaSummary?.device_hint || 'unknown',
+        utm,
+        meta_attribution: meta,
+        meta_attribution_source: source,
+        data: r.custom_data || {},
+      });
+    }
+
+    return res.json({ leads: enriched });
+  } catch (err) {
+    console.error('Leads list error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * Detalhe de lead (evento Lead do web_events) por event_id.
+ */
+router.get('/:siteId/leads/:eventId', requireAuth, async (req, res) => {
+  const auth = req.auth!;
+  const siteId = Number(req.params.siteId);
+  const eventId = String(req.params.eventId || '').trim();
+  if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
+  if (!eventId) return res.status(400).json({ error: 'Invalid eventId' });
+
+  const siteRes = await pool.query('SELECT site_key FROM sites WHERE id = $1 AND account_id = $2', [siteId, auth.accountId]);
+  if (!siteRes.rowCount) return res.status(404).json({ error: 'Site not found' });
+  const siteKey = String(siteRes.rows[0].site_key);
+
+  try {
+    const r0 = await pool.query(
+      `
+      SELECT
+        we.id,
+        we.event_id,
+        we.event_time,
+        we.event_source_url,
+        we.user_data,
+        we.custom_data,
+        NULLIF(BTRIM(we.user_data->>'external_id'), '') AS external_id
+      FROM web_events we
+      WHERE we.site_key = $1
+        AND we.event_name = 'Lead'
+        AND we.event_id = $2
+      LIMIT 1
+      `,
+      [siteKey, eventId]
+    );
+    if (!r0.rowCount) return res.status(404).json({ error: 'Lead not found' });
+    const row = r0.rows[0];
+
+    const externalId = row.external_id ? String(row.external_id) : null;
+    const visitorRes = externalId
+      ? await pool.query(
+          `SELECT external_id, city, state, last_group_tag, last_user_agent, last_ip, last_seen_at
+           FROM site_visitors
+           WHERE site_key = $1 AND external_id = $2
+           LIMIT 1`,
+          [siteKey, externalId]
+        )
+      : { rows: [] as any[] };
+    const v = visitorRes.rows[0] || null;
+
+    const eventSourceUrl = typeof row.event_source_url === 'string' ? String(row.event_source_url) : null;
+    const utm = mergePageviewUtm(row.custom_data, eventSourceUrl);
+    const { row: meta, source } = await resolveMetaAttributionFromUtm(siteId, utm);
+    const leadUa =
+      (typeof (row.user_data || {}) === 'object' && row.user_data ? (row.user_data as any).client_user_agent : null) || null;
+    const uaSummary = buildBuyerUserAgentSummary({
+      visitorUa: v?.last_user_agent ? String(v.last_user_agent) : null,
+      lastPageviewUa: leadUa ? String(leadUa) : null,
+    });
+
+    return res.json({
+      lead: {
+        id: row.id,
+        event_id: row.event_id,
+        event_time: row.event_time,
+        event_source_url: row.event_source_url,
+        external_id: externalId,
+        group_tag: v?.last_group_tag || null,
+        city: v?.city || null,
+        state: v?.state || null,
+        country: null,
+        device: uaSummary?.device_hint || 'unknown',
+        utm,
+        meta_attribution: meta,
+        meta_attribution_source: source,
+        data: row.custom_data || {},
+        user_data: row.user_data || {},
+        visitor: v
+          ? {
+              last_ip: v.last_ip || null,
+              last_seen_at: v.last_seen_at || null,
+            }
+          : null,
+      },
+    });
+  } catch (err) {
+    console.error('Lead detail error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
  * Detalhe do comprador por buyer_key (fallback quando não há external_id).
  * - Retorna compras desse buyer_key
  * - Se esse buyer_key também existir em `site_visitors` (email_hash/fbp/fbc), inclui comportamento (PageView) via external_id.

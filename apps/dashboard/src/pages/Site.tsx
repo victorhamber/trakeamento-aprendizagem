@@ -11,6 +11,7 @@ import { Layout } from '../components/Layout';
 import WebhooksTab from '../components/site/WebhooksTab';
 import { ReportWizard } from '../components/site/ReportWizard';
 import { CampaignFunnelPanel, type FunnelCampaignOption } from '../components/site/CampaignFunnelPanel';
+import { LeadsTab } from '../components/site/LeadsTab';
 import { BuyersTab } from '../components/site/BuyersTab';
 type Site = {
   id: number;
@@ -21,7 +22,7 @@ type Site = {
   inject_body_html?: string | null;
 };
 
-type Tab = 'snippet' | 'meta' | 'utm' | 'campaigns' | 'buyers' | 'ga' | 'matching' | 'webhooks' | 'reports';
+type Tab = 'snippet' | 'meta' | 'utm' | 'campaigns' | 'leads' | 'buyers' | 'ga' | 'matching' | 'webhooks' | 'reports';
 type InstallSubTab = 'snippet' | 'extras';
 
 type InjectedSnippet = {
@@ -1450,6 +1451,7 @@ ${scriptContent}
       { key: 'meta' as const, label: 'Meta Ads' },
       { key: 'utm' as const, label: 'URLs UTM' },
       { key: 'campaigns' as const, label: 'Campanhas' },
+      { key: 'leads' as const, label: 'Leads' },
       { key: 'buyers' as const, label: 'Compradores' },
       { key: 'ga' as const, label: 'Google Analytics' },
       { key: 'matching' as const, label: 'Eventos' },
@@ -4327,6 +4329,13 @@ ${scriptContent}
                   </div>
                 )}
               </div>
+            )
+          }
+
+          {/* ── Tab: Compradores ── */}
+          {
+            tab === 'leads' && (
+              <LeadsTab siteId={id} />
             )
           }
 
