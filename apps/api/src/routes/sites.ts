@@ -5,6 +5,7 @@ import { requireAuth } from '../middleware/auth';
 import { encryptString, decryptString } from '../lib/crypto';
 import { capiService, CapiService } from '../services/capi';
 import { getClientIp } from '../lib/ip';
+import { geoFromGeoipLite } from '../lib/request-geo';
 import {
   mergeUtmFillGaps,
   parseStoredTrafficSource,
@@ -1750,6 +1751,12 @@ router.get('/:siteId/leads', requireAuth, async (req, res) => {
       const hit = key ? metaCache.get(key) : null;
       const meta = hit?.row ?? null;
       const source = hit?.source ?? null;
+      const ip =
+        (typeof (r.user_data || {}) === 'object' && r.user_data ? (r.user_data as any).client_ip_address : null) || null;
+      const geo = ip ? geoFromGeoipLite(String(ip)) : null;
+      const cityFallback = geo?.city ? String(geo.city) : null;
+      const stateFallback = geo?.region ? String(geo.region) : null;
+      const country = geo?.country ? String(geo.country) : null;
       const leadUa =
         (typeof (r.user_data || {}) === 'object' && r.user_data ? (r.user_data as any).client_user_agent : null) || null;
       const uaSummary = buildBuyerUserAgentSummary({
@@ -1763,9 +1770,9 @@ router.get('/:siteId/leads', requireAuth, async (req, res) => {
         event_source_url: r.event_source_url,
         external_id: r.external_id,
         group_tag: r.group_tag || null,
-        city: r.city || null,
-        state: r.state || null,
-        country: null,
+        city: r.city || cityFallback || null,
+        state: r.state || stateFallback || null,
+        country,
         device: uaSummary?.device_hint || 'unknown',
         utm,
         meta_attribution: meta,
@@ -1832,6 +1839,12 @@ router.get('/:siteId/leads/:eventId', requireAuth, async (req, res) => {
     const eventSourceUrl = typeof row.event_source_url === 'string' ? String(row.event_source_url) : null;
     const utm = mergePageviewUtm(row.custom_data, eventSourceUrl);
     const { row: meta, source } = await resolveMetaAttributionFromUtm(siteId, utm);
+    const ip =
+      (typeof (row.user_data || {}) === 'object' && row.user_data ? (row.user_data as any).client_ip_address : null) || null;
+    const geo = ip ? geoFromGeoipLite(String(ip)) : null;
+    const cityFallback = geo?.city ? String(geo.city) : null;
+    const stateFallback = geo?.region ? String(geo.region) : null;
+    const country = geo?.country ? String(geo.country) : null;
     const leadUa =
       (typeof (row.user_data || {}) === 'object' && row.user_data ? (row.user_data as any).client_user_agent : null) || null;
     const uaSummary = buildBuyerUserAgentSummary({
@@ -1847,9 +1860,9 @@ router.get('/:siteId/leads/:eventId', requireAuth, async (req, res) => {
         event_source_url: row.event_source_url,
         external_id: externalId,
         group_tag: v?.last_group_tag || null,
-        city: v?.city || null,
-        state: v?.state || null,
-        country: null,
+        city: v?.city || cityFallback || null,
+        state: v?.state || stateFallback || null,
+        country,
         device: uaSummary?.device_hint || 'unknown',
         utm,
         meta_attribution: meta,
