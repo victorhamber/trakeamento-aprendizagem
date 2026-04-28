@@ -1185,18 +1185,60 @@ async function processPurchaseWebhook({
       coerceWebhookStr(p0?.data?.transaction_id);
     if (legacyTx && legacyTx !== orderId) {
       try {
-        await pool.query(
-          `
-            UPDATE purchases p
-            SET order_id = $3, updated_at = NOW()
-            WHERE p.site_key = $1
-              AND p.order_id = $2
-              AND NOT EXISTS (
-                SELECT 1 FROM purchases x WHERE x.site_key = $1 AND x.order_id = $3
-              )
-          `,
-          [siteKey, legacyTx.slice(0, 100), orderId.slice(0, 100)]
+        const legacyId = legacyTx.slice(0, 100);
+        const stableId = orderId.slice(0, 100);
+
+        const stableExists = await pool.query(
+          `SELECT 1 FROM purchases WHERE site_key = $1 AND order_id = $2 LIMIT 1`,
+          [siteKey, stableId]
         );
+
+        // Se a linha estável já existe (duplicação já aconteceu), mescla campos úteis e remove a legacy,
+        // garantindo que não fique “2 compras” nem “receita dobrada”.
+        if (stableExists.rowCount && stableExists.rowCount > 0) {
+          await pool.query(
+            `
+              UPDATE purchases p
+              SET
+                customer_email = COALESCE(NULLIF(BTRIM(p.customer_email), ''), l.customer_email),
+                customer_phone = COALESCE(NULLIF(BTRIM(p.customer_phone), ''), l.customer_phone),
+                customer_name = COALESCE(NULLIF(BTRIM(p.customer_name), ''), l.customer_name),
+                fbc = COALESCE(NULLIF(BTRIM(p.fbc), ''), l.fbc),
+                fbp = COALESCE(NULLIF(BTRIM(p.fbp), ''), l.fbp),
+                utm_source = COALESCE(NULLIF(BTRIM(p.utm_source), ''), l.utm_source),
+                utm_medium = COALESCE(NULLIF(BTRIM(p.utm_medium), ''), l.utm_medium),
+                utm_campaign = COALESCE(NULLIF(BTRIM(p.utm_campaign), ''), l.utm_campaign),
+                buyer_email_hash = COALESCE(p.buyer_email_hash, l.buyer_email_hash),
+                raw_payload = COALESCE(p.raw_payload, l.raw_payload),
+                updated_at = NOW()
+              FROM purchases l
+              WHERE p.site_key = $1
+                AND p.order_id = $2
+                AND l.site_key = $1
+                AND l.order_id = $3
+            `,
+            [siteKey, stableId, legacyId]
+          );
+
+          await pool.query(
+            `DELETE FROM purchases WHERE site_key = $1 AND order_id = $2`,
+            [siteKey, legacyId]
+          );
+        } else {
+          // Se ainda não existe a linha estável, só renomeia a legacy para o id estável.
+          await pool.query(
+            `
+              UPDATE purchases p
+              SET order_id = $3, updated_at = NOW()
+              WHERE p.site_key = $1
+                AND p.order_id = $2
+                AND NOT EXISTS (
+                  SELECT 1 FROM purchases x WHERE x.site_key = $1 AND x.order_id = $3
+                )
+            `,
+            [siteKey, legacyId, stableId]
+          );
+        }
       } catch (err) {
         console.warn('[Hotmart] Falha ao migrar order_id legacy -> estável:', err);
       }
