@@ -388,15 +388,20 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
             pickFallback('utm_source'),
         };
 
-        await pool.query(
+        // Alguns snippets antigos podem reutilizar o mesmo event_id (bug/redirect/SPA).
+        // Para a auditoria, garantimos um event_id único mesmo que o client repita.
+        let auditEventId = eventId;
+        const tryInsertAudit = async (eid: string) =>
+          pool.query(
           `INSERT INTO web_events(
             site_key, event_id, event_name, event_time,
             event_source_url, user_data, custom_data, telemetry
           ) VALUES($1, $2, $3, $4, $5, $6, $7, $8)
-          ON CONFLICT(site_key, event_id) DO NOTHING`,
+          ON CONFLICT(site_key, event_id) DO NOTHING
+          RETURNING id`,
           [
             siteKey,
-            eventId,
+            eid,
             eventName,
             new Date(eventTimeSec * 1000),
             eventSourceUrlForAudit,
@@ -422,6 +427,12 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
             null,
           ]
         );
+
+        const ins0 = await tryInsertAudit(auditEventId);
+        if (!ins0.rowCount) {
+          auditEventId = `${auditEventId}_a${Math.random().toString(36).slice(2, 6)}`;
+          await tryInsertAudit(auditEventId);
+        }
 
         // Mantém no máximo 20 leads por site (auditoria)
         pool
