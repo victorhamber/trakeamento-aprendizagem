@@ -71,12 +71,12 @@ async function pruneOldLeadEvents(siteKey: string, keep = LEAD_AUDIT_KEEP_PER_SI
     `
     DELETE FROM web_events
     WHERE site_key = $1
-      AND event_name = 'Lead'
+      AND (custom_data->>'audit_kind') = 'lead_audit'
       AND id IN (
         SELECT id
         FROM web_events
         WHERE site_key = $1
-          AND event_name = 'Lead'
+          AND (custom_data->>'audit_kind') = 'lead_audit'
         ORDER BY event_time DESC, id DESC
         OFFSET $2
       )

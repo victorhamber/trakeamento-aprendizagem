@@ -621,26 +621,9 @@ router.post('/:siteId/checkout-simulator/lead', requireAuth, async (req, res) =>
     ]
   );
 
-  // Auditoria: mantém só os 20 Leads mais recentes por site.
-  // (Não mexe em outros eventos de rastreamento.)
-  pool
-    .query(
-      `
-      DELETE FROM web_events
-      WHERE site_key = $1
-        AND event_name = 'Lead'
-        AND id IN (
-          SELECT id
-          FROM web_events
-          WHERE site_key = $1
-            AND event_name = 'Lead'
-          ORDER BY event_time DESC, id DESC
-          OFFSET 20
-        )
-      `,
-      [siteKey]
-    )
-    .catch(() => {});
+  // Não aplicamos retenção de auditoria aqui (esta rota cria um Lead de teste do simulador).
+  // A retenção de auditoria é aplicada apenas a eventos marcados com custom_data.audit_kind = 'lead_audit'
+  // na submissão pública do formulário.
 
   capiService.sendEvent(siteKey, {
     event_name: 'Lead',
@@ -1661,7 +1644,7 @@ router.get('/:siteId/buyers', requireAuth, async (req, res) => {
 });
 
 /**
- * Lista leads capturados via formulário (eventos web_events: Lead).
+ * Lista leads de auditoria capturados via formulário (web_events com custom_data.audit_kind = 'lead_audit').
  * Retorna “best-effort” de dados do cadastro (custom_data), tag (site_visitors) e atribuição (UTMs → Meta).
  */
 router.get('/:siteId/leads', requireAuth, async (req, res) => {
@@ -1692,7 +1675,7 @@ router.get('/:siteId/leads', requireAuth, async (req, res) => {
           NULLIF(BTRIM(we.user_data->>'external_id'), '') AS external_id
         FROM web_events we
         WHERE we.site_key = $1
-          AND we.event_name = 'Lead'
+          AND (we.custom_data->>'audit_kind') = 'lead_audit'
         ORDER BY we.event_time DESC, we.id DESC
         LIMIT $2 OFFSET $3
       )
@@ -1789,7 +1772,7 @@ router.get('/:siteId/leads', requireAuth, async (req, res) => {
 });
 
 /**
- * Detalhe de lead (evento Lead do web_events) por event_id.
+ * Detalhe de lead (auditoria) por event_id.
  */
 router.get('/:siteId/leads/:eventId', requireAuth, async (req, res) => {
   const auth = req.auth!;
@@ -1815,7 +1798,7 @@ router.get('/:siteId/leads/:eventId', requireAuth, async (req, res) => {
         NULLIF(BTRIM(we.user_data->>'external_id'), '') AS external_id
       FROM web_events we
       WHERE we.site_key = $1
-        AND we.event_name = 'Lead'
+        AND (we.custom_data->>'audit_kind') = 'lead_audit'
         AND we.event_id = $2
       LIMIT 1
       `,

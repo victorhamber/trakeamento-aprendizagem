@@ -218,7 +218,17 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
         console.error(`[Forms] Failed to upsert site_visitors for form ${publicId}:`, err);
       }
 
-      // ── Auditoria: persiste o Lead com os campos do formulário ──
+      // Determine Event Name from Config (evento configurado para enviar ao Meta)
+      let eventName = 'Lead';
+      if (form.config?.event_type) {
+        if (form.config.event_type === 'Custom') {
+          eventName = form.config.custom_event_name || 'Lead';
+        } else {
+          eventName = form.config.event_type;
+        }
+      }
+
+      // ── Auditoria: persiste o cadastro (lead audit) com os campos do formulário ──
       // Mesmo quando o frontend rastreia via /ingest, a submissão pública é a fonte confiável dos dados preenchidos.
       try {
         const eventTimeSec = Math.floor(Date.now() / 1000);
@@ -248,7 +258,7 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
           [
             siteKey,
             eventId,
-            'Lead',
+            eventName,
             new Date(eventTimeSec * 1000),
             referer,
             {
@@ -259,6 +269,8 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
               fbc: typeof body.fbc === 'string' ? body.fbc : undefined,
             },
             {
+              audit_kind: 'lead_audit',
+              meta_event_name: eventName,
               form_id: publicId,
               form_name: form.name,
               group_tag: groupTag || null,
@@ -277,12 +289,12 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
             `
             DELETE FROM web_events
             WHERE site_key = $1
-              AND event_name = 'Lead'
+              AND (custom_data->>'audit_kind') = 'lead_audit'
               AND id IN (
                 SELECT id
                 FROM web_events
                 WHERE site_key = $1
-                  AND event_name = 'Lead'
+                  AND (custom_data->>'audit_kind') = 'lead_audit'
                 ORDER BY event_time DESC, id DESC
                 OFFSET 20
               )
@@ -292,16 +304,6 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
           .catch(() => {});
       } catch (err) {
         console.error(`[Forms] Failed to persist Lead audit event for form ${publicId}:`, err);
-      }
-
-      // Determine Event Name from Config
-      let eventName = 'Lead';
-      if (form.config?.event_type) {
-        if (form.config.event_type === 'Custom') {
-          eventName = form.config.custom_event_name || 'Lead';
-        } else {
-          eventName = form.config.event_type;
-        }
       }
 
       // ── CAPI INTEGRATION (Fallback if frontend tracking failed or blocked) ──
