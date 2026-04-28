@@ -238,6 +238,11 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
             : `lead_${eventTimeSec}_${Math.random().toString(36).slice(2, 8)}`;
 
         const referer = (req.headers.referer as string | undefined) || `https://form-submit.trakeamento.com/${publicId}`;
+        const pageLocation =
+          typeof (body as any)?.page_location === 'string' && String((body as any).page_location).trim()
+            ? String((body as any).page_location).trim()
+            : '';
+        const eventSourceUrlForAudit = pageLocation || referer;
 
         // Guarda os campos (sem mexer no resto do tracking). Isso é auditoria, não CRM.
         const fieldsRaw =
@@ -248,6 +253,25 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
         const safeFields = Object.fromEntries(
           Object.entries(fieldsRaw || {}).filter(([k]) => !['tracked_by_frontend'].includes(String(k)))
         );
+
+        const pickStr = (k: string) => (typeof (body as any)?.[k] === 'string' ? String((body as any)[k]).trim() : '');
+        const auditTopLevel = {
+          // Page context
+          page_title: pickStr('page_title'),
+          page_path: pickStr('page_path'),
+          page_location: pageLocation,
+          // IDs
+          fbclid: pickStr('fbclid'),
+          gclid: pickStr('gclid'),
+          click_id: pickStr('click_id'),
+          // UTMs
+          utm_source: pickStr('utm_source'),
+          utm_medium: pickStr('utm_medium'),
+          utm_campaign: pickStr('utm_campaign'),
+          utm_content: pickStr('utm_content'),
+          utm_term: pickStr('utm_term'),
+          traffic_source: pickStr('traffic_source'),
+        };
 
         await pool.query(
           `INSERT INTO web_events(
@@ -260,7 +284,7 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
             eventId,
             eventName,
             new Date(eventTimeSec * 1000),
-            referer,
+            eventSourceUrlForAudit,
             {
               client_ip_address: getClientIp(req),
               client_user_agent: req.headers['user-agent'] || undefined,
@@ -277,6 +301,7 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
               name: name || null,
               email: email || null,
               phone: phone || null,
+              ...auditTopLevel,
               fields: safeFields,
             },
             null,

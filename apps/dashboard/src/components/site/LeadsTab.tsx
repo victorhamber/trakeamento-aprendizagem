@@ -101,6 +101,16 @@ function pickString(data: Record<string, unknown> | null | undefined, key: strin
     const s = v.find((x) => typeof x === 'string' && x.trim());
     return typeof s === 'string' ? s.trim() : '';
   }
+  // Fallback: alguns campos podem estar dentro de `fields` (ex.: capturados do formulário)
+  const fields = (d as any)?.fields && typeof (d as any).fields === 'object' ? (d as any).fields : null;
+  if (fields && typeof fields === 'object') {
+    const fv = (fields as any)[key];
+    if (typeof fv === 'string') return fv.trim();
+    if (Array.isArray(fv)) {
+      const s2 = fv.find((x: any) => typeof x === 'string' && x.trim());
+      return typeof s2 === 'string' ? s2.trim() : '';
+    }
+  }
   return '';
 }
 
