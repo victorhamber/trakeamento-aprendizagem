@@ -59,6 +59,32 @@ const ingestLimiter = rateLimit({
 
 const router = Router();
 
+// ─── Auditoria de Leads (retenção curta) ─────────────────────────────────────
+// O produto não é CRM. Guardamos apenas uma janela pequena para auditoria.
+const LEAD_AUDIT_KEEP_PER_SITE = 20;
+
+async function pruneOldLeadEvents(siteKey: string, keep = LEAD_AUDIT_KEEP_PER_SITE) {
+  const k = Math.max(1, Number(keep || LEAD_AUDIT_KEEP_PER_SITE));
+  // Remove tudo que estiver "além" dos N mais recentes (por event_time + id).
+  // Usamos subquery para manter compatibilidade com Postgres.
+  await pool.query(
+    `
+    DELETE FROM web_events
+    WHERE site_key = $1
+      AND event_name = 'Lead'
+      AND id IN (
+        SELECT id
+        FROM web_events
+        WHERE site_key = $1
+          AND event_name = 'Lead'
+        ORDER BY event_time DESC, id DESC
+        OFFSET $2
+      )
+    `,
+    [siteKey, k]
+  );
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type EngagementBucket = 'low' | 'medium' | 'high';
@@ -887,6 +913,11 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
       return res.status(202).json({ status: 'ignored_duplicate' });
     }
 
+    // Auditoria: mantém só os 20 Leads mais recentes por site.
+    if (eventName === 'Lead') {
+      pruneOldLeadEvents(siteKey).catch(() => {});
+    }
+
     // ── Visitor profile + integrations_meta update (parallel, non-blocking for response) ──
     {
       // capiUser already built above (before INSERT)
@@ -1178,6 +1209,11 @@ router.post('/batch', cors(), ingestLimiter, async (req, res) => {
     const inserted = prepared.filter(p => insertedIds.has(p.eventId));
 
     if (inserted.length > 0) {
+      // Auditoria: mantém só os 20 Leads mais recentes por site (executa 1x por batch quando houver Lead inserido).
+      if (inserted.some((p) => p.eventName === 'Lead')) {
+        pruneOldLeadEvents(siteKey).catch(() => {});
+      }
+
       // Update integrations_meta once
       pool.query(
         `UPDATE integrations_meta i SET last_ingest_at = NOW() FROM sites s WHERE s.site_key = $1 AND i.site_id = s.id`,

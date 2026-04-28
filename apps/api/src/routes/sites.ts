@@ -620,6 +620,27 @@ router.post('/:siteId/checkout-simulator/lead', requireAuth, async (req, res) =>
     ]
   );
 
+  // Auditoria: mantém só os 20 Leads mais recentes por site.
+  // (Não mexe em outros eventos de rastreamento.)
+  pool
+    .query(
+      `
+      DELETE FROM web_events
+      WHERE site_key = $1
+        AND event_name = 'Lead'
+        AND id IN (
+          SELECT id
+          FROM web_events
+          WHERE site_key = $1
+            AND event_name = 'Lead'
+          ORDER BY event_time DESC, id DESC
+          OFFSET 20
+        )
+      `,
+      [siteKey]
+    )
+    .catch(() => {});
+
   capiService.sendEvent(siteKey, {
     event_name: 'Lead',
     event_time: eventTimeSec,

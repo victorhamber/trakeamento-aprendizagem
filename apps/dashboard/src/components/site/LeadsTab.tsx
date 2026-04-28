@@ -156,7 +156,7 @@ export function LeadsTab({ siteId }: { siteId: number }) {
         <div>
           <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Leads</h2>
           <p className="mt-0.5 text-xs text-zinc-600 dark:text-zinc-500 leading-relaxed">
-            Lista de cadastros do formulário. Atribuição tenta usar UTMs e/ou dados da Meta (quando existirem).
+            Leads aqui são apenas para auditoria (ver se o formulário e o rastreamento estão funcionando). Mantemos no máximo 20 por site; ao entrar um novo, os mais antigos são removidos.
           </p>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
