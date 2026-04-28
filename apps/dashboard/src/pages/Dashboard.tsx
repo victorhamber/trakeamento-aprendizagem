@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { Layout } from '../components/Layout';
@@ -208,6 +208,7 @@ export const DashboardPage = () => {
   const [currency, setCurrency] = useState('BRL');
   const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains('dark'));
   const [metaSyncBusy, setMetaSyncBusy] = useState(false);
+  const metaSyncBusyRef = useRef(false);
 
   useEffect(() => {
     const obs = new MutationObserver(() => {
@@ -249,11 +250,12 @@ export const DashboardPage = () => {
     const siteIdNum = Number(selectedSiteId);
     if (!Number.isFinite(siteIdNum)) return;
 
-    const syncOnce = async () => {
-      if (metaSyncBusy) return;
+    const syncOnce = async (force = false) => {
+      if (metaSyncBusyRef.current) return;
+      metaSyncBusyRef.current = true;
       setMetaSyncBusy(true);
       try {
-        await api.post('/meta/sync', { site_id: siteIdNum, date_preset: period });
+        await api.post('/meta/sync', { site_id: siteIdNum, date_preset: period, force });
         if (cancelled) return;
         const params: any = { period, currency, siteId: selectedSiteId };
         const refreshed = await api.get('/stats/overview', { params });
@@ -261,13 +263,14 @@ export const DashboardPage = () => {
       } catch {
         // silêncio: se falhar, mantemos o último snapshot (Meta pode estar desconectado).
       } finally {
+        metaSyncBusyRef.current = false;
         if (!cancelled) setMetaSyncBusy(false);
       }
     };
 
-    // Atualiza ao entrar/trocar período e depois mantém “auto refresh”.
-    void syncOnce();
-    const interval = window.setInterval(() => void syncOnce(), 5 * 60 * 1000);
+    // Atualiza ao entrar/trocar período e depois mantém “auto refresh” (1h).
+    void syncOnce(false);
+    const interval = window.setInterval(() => void syncOnce(false), 60 * 60 * 1000);
 
     return () => {
       cancelled = true;
@@ -275,6 +278,24 @@ export const DashboardPage = () => {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSiteId, period, currency]);
+
+  const handleMetaSyncNow = async () => {
+    const siteIdNum = Number(selectedSiteId);
+    if (!Number.isFinite(siteIdNum)) return;
+    try {
+      metaSyncBusyRef.current = true;
+      setMetaSyncBusy(true);
+      await api.post('/meta/sync', { site_id: siteIdNum, date_preset: period, force: true });
+      const params: any = { period, currency, siteId: selectedSiteId };
+      const refreshed = await api.get('/stats/overview', { params });
+      setData(refreshed.data);
+    } catch {
+      // noop
+    } finally {
+      metaSyncBusyRef.current = false;
+      setMetaSyncBusy(false);
+    }
+  };
 
   const fmtCurrency = (v: number) =>
     new Intl.NumberFormat(currency === 'BRL' ? 'pt-BR' : 'en-US', { style: 'currency', currency, maximumFractionDigits: 2 }).format(v);
@@ -362,6 +383,19 @@ export const DashboardPage = () => {
               <option value="last_30d">Últimos 30 dias</option>
               <option value="maximum">Máximo</option>
             </select>
+            <button
+              type="button"
+              disabled={!selectedSiteId || metaSyncBusy}
+              onClick={handleMetaSyncNow}
+              className={`text-xs rounded-lg px-3 py-2 border transition-colors ${
+                !selectedSiteId || metaSyncBusy
+                  ? 'opacity-50 cursor-not-allowed border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-500'
+                  : 'border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+              }`}
+              title={!selectedSiteId ? 'Selecione um site para sincronizar' : 'Forçar sincronização do Meta Ads'}
+            >
+              {metaSyncBusy ? 'Atualizando…' : 'Atualizar dados do Meta'}
+            </button>
             <select
               aria-label="Moeda do faturamento"
               value={currency}

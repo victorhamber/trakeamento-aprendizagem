@@ -14,6 +14,12 @@ import {
 
 const router = Router();
 
+// Cooldown simples para evitar sync excessivo (ex.: várias abas abertas).
+// Observação: é em memória (por processo). Para cluster/escala horizontal,
+// considerar persistir em DB/Redis.
+const META_SYNC_ENDPOINT_COOLDOWN_MS = 60 * 60 * 1000; // 1h
+const lastMetaSyncBySite = new Map<number, number>();
+
 // Evita martelar o sync quando o DB está vazio (ex.: site sem campanhas no período).
 // Isso reduz rate-limit (429) e deixa a UI mais leve sem afetar aprendizado/otimização.
 const META_SYNC_COOLDOWN_MS = 5 * 60_000;
@@ -1104,7 +1110,7 @@ router.get('/campaigns/funnel-breakdown', requireAuth, async (req, res) => {
 
 router.post('/sync', requireAuth, async (req, res) => {
   try {
-    const { date_preset, site_id } = req.body || {};
+    const { date_preset, site_id, force } = req.body || {};
     const siteId = Number(site_id);
     if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Missing site_id' });
 
@@ -1117,7 +1123,21 @@ router.post('/sync', requireAuth, async (req, res) => {
 
     const preset =
       typeof date_preset === 'string' && date_preset.trim() ? date_preset.trim() : 'last_7d';
+
+    const now = Date.now();
+    const last = lastMetaSyncBySite.get(siteId) || 0;
+    const isForced = force === true;
+    if (!isForced && last && (now - last) < META_SYNC_ENDPOINT_COOLDOWN_MS) {
+      return res.json({
+        status: 'skipped',
+        reason: 'cooldown',
+        cooldown_ms: META_SYNC_ENDPOINT_COOLDOWN_MS,
+        next_allowed_in_ms: Math.max(0, META_SYNC_ENDPOINT_COOLDOWN_MS - (now - last)),
+      });
+    }
+
     const result = await metaMarketingService.syncDailyInsights(siteId, preset);
+    lastMetaSyncBySite.set(siteId, now);
     res.json({ status: 'success', synced_records: result?.count });
   } catch (err: any) {
     console.error('meta/sync error:', err);
