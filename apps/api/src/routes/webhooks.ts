@@ -881,11 +881,14 @@ async function processPurchaseWebhook({
   const mergedFbpSafe = preserveMetaClickIds(mergedFbp);
   const mergedIp = clientIp || enriched?.clientIp;
   const mergedUa = clientUa || enriched?.clientUa;
-  // Prioridade: eid_ canônico do tracker > eid_ do enrichment > hash de email como fallback (Meta recomenda).
+  // Prioridade para "external_id" no CAPI: eid_ canônico do tracker > eid_ do enrichment > hash estável de PII.
+  // (Meta recomenda external_id estável; quando existir email/phone, preferimos a âncora por PII.)
+  const phoneDigitsForHash = phone ? String(phone).replace(/[^0-9]/g, '') : '';
+  const piiExternalId = (email ? CapiService.hash(String(email).toLowerCase().trim()) : '') || (phoneDigitsForHash ? CapiService.hash(phoneDigitsForHash) : '');
   const mergedExternalId =
     canonicalEid(finalExternalId) ||
     canonicalEid(enriched?.externalId) ||
-    (email ? CapiService.hash(email.toLowerCase()) : undefined);
+    (piiExternalId ? piiExternalId : undefined);
 
 
   // Location recovery: Priority Webhook > Enriched (history) > GeoIP (current IP)
@@ -1055,12 +1058,14 @@ async function processPurchaseWebhook({
   if (capi_test_event_code) capiPayload.test_event_code = capi_test_event_code;
 
   // 3. Database Persistence
-  const dbEmailHash = email ? CapiService.hash(email.toLowerCase()) : null;
-  const visitorExtId = mergedExternalId || `anon_purchase_${orderId}`;
+  // "external_id canônico" para perfil (site_visitors): quando houver PII, usamos hash estável (email > phone)
+  // para unificar o mesmo usuário mesmo trocando de aparelho/navegador.
+  const dbEmailHash = email ? CapiService.hash(String(email).toLowerCase().trim()) : null;
+  const dbPhoneHashBase = phoneDigitsForHash ? CapiService.hash(phoneDigitsForHash) : null;
+  const visitorExtId = (dbEmailHash || dbPhoneHashBase || mergedExternalId || `anon_purchase_${orderId}`) as string;
   let recoveredGroupTag: string | null = null;
   try {
-    const phoneDigits = phone ? String(phone).replace(/[^0-9]/g, '') : '';
-    const dbPhoneHash = phoneDigits ? CapiService.hash(phoneDigits) : null;
+    const dbPhoneHash = dbPhoneHashBase;
     const lookupRes = await pool.query(
       `
         SELECT last_group_tag
@@ -1113,7 +1118,7 @@ async function processPurchaseWebhook({
     effectiveEventSourceUrl || undefined
   );
 
-  if (!skipHotmartDuplicateSideEffects && (mergedExternalId || dbEmailHash || mergedFbpSafe || mergedFbcSafe)) {
+  if (!skipHotmartDuplicateSideEffects && (visitorExtId || dbEmailHash || dbPhoneHashBase || mergedFbpSafe || mergedFbcSafe)) {
     pool.query(`
       INSERT INTO site_visitors (
         site_key, external_id, fbc, fbp, email_hash, phone_hash,
@@ -1123,6 +1128,7 @@ async function processPurchaseWebhook({
         fbc = COALESCE(EXCLUDED.fbc, site_visitors.fbc),
         fbp = COALESCE(EXCLUDED.fbp, site_visitors.fbp),
         email_hash = COALESCE(EXCLUDED.email_hash, site_visitors.email_hash),
+        phone_hash = COALESCE(EXCLUDED.phone_hash, site_visitors.phone_hash),
         last_event_name = EXCLUDED.last_event_name,
         last_ip = COALESCE(EXCLUDED.last_ip, site_visitors.last_ip),
         last_user_agent = COALESCE(EXCLUDED.last_user_agent, site_visitors.last_user_agent),
@@ -1132,7 +1138,7 @@ async function processPurchaseWebhook({
         last_traffic_source = COALESCE(EXCLUDED.last_traffic_source, site_visitors.last_traffic_source),
         total_events = site_visitors.total_events + 1,
         last_seen_at = NOW()
-    `, [siteKey, visitorExtId, mergedFbcSafe, mergedFbpSafe, dbEmailHash, null, mergedIp, mergedUa, finalCity, finalState, visitorTrafficStr, capiEventName])
+    `, [siteKey, visitorExtId, mergedFbcSafe, mergedFbpSafe, dbEmailHash, dbPhoneHashBase, mergedIp, mergedUa, finalCity, finalState, visitorTrafficStr, capiEventName])
     .catch(err => console.error('[Webhook] Visitor UPSERT error:', err));
   }
 
@@ -1166,7 +1172,7 @@ async function processPurchaseWebhook({
   `, [
     siteKey, orderId, platform, value, resolvedCurrency, finalStatus,
     email, phone, `${firstName || ''} ${lastName || ''}`.trim(),
-    mergedFbcSafe, mergedFbpSafe, mergedExternalId, utmSource, utmMedium, utmCampaign,
+    mergedFbcSafe, mergedFbpSafe, visitorExtId, utmSource, utmMedium, utmCampaign,
     platformDate, JSON.stringify(capiPayload.user_data), JSON.stringify(purchaseCustomDataForDb),
     JSON.stringify(rawPayloadForDb),
     dbEmailHash
