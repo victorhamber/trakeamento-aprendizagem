@@ -280,13 +280,17 @@ export const DashboardPage = () => {
   }, [selectedSiteId, period, currency]);
 
   const handleMetaSyncNow = async () => {
-    const siteIdNum = Number(selectedSiteId);
-    if (!Number.isFinite(siteIdNum)) return;
     try {
       metaSyncBusyRef.current = true;
       setMetaSyncBusy(true);
-      await api.post('/meta/sync', { site_id: siteIdNum, date_preset: period, force: true });
-      const params: any = { period, currency, siteId: selectedSiteId };
+      const siteIdNum = Number(selectedSiteId);
+      await api.post('/meta/sync', {
+        site_id: Number.isFinite(siteIdNum) ? siteIdNum : undefined,
+        date_preset: period,
+        force: true,
+      });
+      const params: any = { period, currency };
+      if (selectedSiteId) params.siteId = selectedSiteId;
       const refreshed = await api.get('/stats/overview', { params });
       setData(refreshed.data);
     } catch {
@@ -469,15 +473,12 @@ export const DashboardPage = () => {
                 <button
                   type="button"
                   onClick={handleMetaSyncNow}
-                  disabled={!selectedSiteId || metaSyncBusy}
-                  className="text-xs px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-40"
-                  title={!selectedSiteId ? 'Selecione um site para atualizar o Meta' : 'Forçar sincronização do Meta Ads'}
+                  disabled={metaSyncBusy}
+                  className="text-xs px-3 py-2 rounded-lg border border-emerald-500/40 bg-emerald-500/15 text-emerald-900 dark:text-emerald-100 hover:bg-emerald-500/25 hover:border-emerald-500/60 disabled:opacity-40"
+                  title="Forçar sincronização do Meta Ads"
                 >
-                  {metaSyncBusy ? 'Carregando…' : 'Atualizar funil'}
+                  {metaSyncBusy ? 'Carregando…' : 'Atualizar métricas'}
                 </button>
-                <div className="text-[10px] uppercase tracking-widest font-semibold text-cyan-500 dark:text-cyan-400">
-                  Visão geral
-                </div>
               </div>
             </div>
             <FunnelChart data={funnelData} isDark={isDark} />

@@ -1111,34 +1111,49 @@ router.get('/campaigns/funnel-breakdown', requireAuth, async (req, res) => {
 router.post('/sync', requireAuth, async (req, res) => {
   try {
     const { date_preset, site_id, force } = req.body || {};
-    const siteId = Number(site_id);
-    if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Missing site_id' });
-
     const auth = req.auth!;
-    const owns = await pool.query(
-      'SELECT id FROM sites WHERE id = $1 AND account_id = $2',
-      [siteId, auth.accountId]
-    );
-    if (!owns.rowCount) return res.status(404).json({ error: 'Site not found' });
-
     const preset =
       typeof date_preset === 'string' && date_preset.trim() ? date_preset.trim() : 'last_7d';
 
-    const now = Date.now();
-    const last = lastMetaSyncBySite.get(siteId) || 0;
     const isForced = force === true;
-    if (!isForced && last && (now - last) < META_SYNC_ENDPOINT_COOLDOWN_MS) {
-      return res.json({
-        status: 'skipped',
-        reason: 'cooldown',
-        cooldown_ms: META_SYNC_ENDPOINT_COOLDOWN_MS,
-        next_allowed_in_ms: Math.max(0, META_SYNC_ENDPOINT_COOLDOWN_MS - (now - last)),
-      });
+    const now = Date.now();
+
+    const siteIdRaw = site_id === null || site_id === undefined || site_id === '' ? null : Number(site_id);
+    const sitesToSync = await (async () => {
+      if (siteIdRaw && Number.isFinite(siteIdRaw)) {
+        const owns = await pool.query(
+          'SELECT id FROM sites WHERE id = $1 AND account_id = $2',
+          [siteIdRaw, auth.accountId]
+        );
+        if (!owns.rowCount) return null;
+        return [siteIdRaw];
+      }
+      const all = await pool.query('SELECT id FROM sites WHERE account_id = $1 ORDER BY id ASC', [auth.accountId]);
+      return (all.rows || []).map((r: any) => Number(r.id)).filter((v: number) => Number.isFinite(v));
+    })();
+
+    if (!sitesToSync) return res.status(404).json({ error: 'Site not found' });
+    if (sitesToSync.length === 0) return res.json({ status: 'skipped', reason: 'no_sites' });
+
+    let totalSynced = 0;
+    let skippedCooldown = 0;
+    for (const siteId of sitesToSync) {
+      const last = lastMetaSyncBySite.get(siteId) || 0;
+      if (!isForced && last && (now - last) < META_SYNC_ENDPOINT_COOLDOWN_MS) {
+        skippedCooldown += 1;
+        continue;
+      }
+      const result = await metaMarketingService.syncDailyInsights(siteId, preset);
+      lastMetaSyncBySite.set(siteId, now);
+      totalSynced += Number(result?.count || 0);
     }
 
-    const result = await metaMarketingService.syncDailyInsights(siteId, preset);
-    lastMetaSyncBySite.set(siteId, now);
-    res.json({ status: 'success', synced_records: result?.count });
+    res.json({
+      status: 'success',
+      site_count: sitesToSync.length,
+      skipped_cooldown_sites: skippedCooldown,
+      synced_records: totalSynced,
+    });
   } catch (err: any) {
     console.error('meta/sync error:', err);
     res.status(500).json({ error: err.message });
