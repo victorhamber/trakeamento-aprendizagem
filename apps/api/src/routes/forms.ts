@@ -255,22 +255,62 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
         );
 
         const pickStr = (k: string) => (typeof (body as any)?.[k] === 'string' ? String((body as any)[k]).trim() : '');
+        const urlParams = (() => {
+          try {
+            const u = new URL(eventSourceUrlForAudit);
+            const p = u.searchParams;
+            return {
+              utm_source: p.get('utm_source') || '',
+              utm_medium: p.get('utm_medium') || '',
+              utm_campaign: p.get('utm_campaign') || '',
+              utm_content: p.get('utm_content') || '',
+              utm_term: p.get('utm_term') || '',
+              click_id: p.get('click_id') || '',
+              fbclid: p.get('fbclid') || '',
+              gclid: p.get('gclid') || '',
+              page_path: u.pathname || '',
+              page_location: u.toString(),
+            };
+          } catch {
+            return {
+              utm_source: '',
+              utm_medium: '',
+              utm_campaign: '',
+              utm_content: '',
+              utm_term: '',
+              click_id: '',
+              fbclid: '',
+              gclid: '',
+              page_path: '',
+              page_location: '',
+            };
+          }
+        })();
+
+        const fullNameFromFields =
+          typeof (safeFields as any).fullname === 'string'
+            ? String((safeFields as any).fullname).trim()
+            : typeof (safeFields as any).name === 'string'
+              ? String((safeFields as any).name).trim()
+              : '';
+
         const auditTopLevel = {
           // Page context
           page_title: pickStr('page_title'),
-          page_path: pickStr('page_path'),
-          page_location: pageLocation,
+          page_path: pickStr('page_path') || urlParams.page_path,
+          page_location: pageLocation || urlParams.page_location,
+          event_url: eventSourceUrlForAudit,
           // IDs
-          fbclid: pickStr('fbclid'),
-          gclid: pickStr('gclid'),
-          click_id: pickStr('click_id'),
+          fbclid: pickStr('fbclid') || urlParams.fbclid,
+          gclid: pickStr('gclid') || urlParams.gclid,
+          click_id: pickStr('click_id') || urlParams.click_id,
           // UTMs
-          utm_source: pickStr('utm_source'),
-          utm_medium: pickStr('utm_medium'),
-          utm_campaign: pickStr('utm_campaign'),
-          utm_content: pickStr('utm_content'),
-          utm_term: pickStr('utm_term'),
-          traffic_source: pickStr('traffic_source'),
+          utm_source: pickStr('utm_source') || urlParams.utm_source,
+          utm_medium: pickStr('utm_medium') || urlParams.utm_medium,
+          utm_campaign: pickStr('utm_campaign') || urlParams.utm_campaign,
+          utm_content: pickStr('utm_content') || urlParams.utm_content,
+          utm_term: pickStr('utm_term') || urlParams.utm_term,
+          traffic_source: pickStr('traffic_source') || pickStr('utm_source') || urlParams.utm_source,
         };
 
         await pool.query(
@@ -298,7 +338,7 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
               form_id: publicId,
               form_name: form.name,
               group_tag: groupTag || null,
-              name: name || null,
+              name: name || fullNameFromFields || null,
               email: email || null,
               phone: phone || null,
               ...auditTopLevel,
