@@ -174,7 +174,7 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
                 total_events, last_event_name, last_ip, last_user_agent,
                 city, state, country,
                 first_group_tag, last_group_tag, last_group_tag_at
-              ) VALUES ($1, $2, $3, $4, $5, $6, 1, $7, $8, $9, $10, $11, $12, $13, $14, CASE WHEN $14 IS NULL OR $14 = '' THEN NULL ELSE NOW() END)
+              ) VALUES ($1, $2, $3, $4, $5, $6, 1, $7, $8, $9, $10, $11, $12, $13, $14, CASE WHEN $14::text IS NULL OR $14::text = '' THEN NULL ELSE NOW() END)
               ON CONFLICT (site_key, external_id) DO UPDATE SET
                 fbc = COALESCE(EXCLUDED.fbc, site_visitors.fbc),
                 fbp = COALESCE(EXCLUDED.fbp, site_visitors.fbp),
