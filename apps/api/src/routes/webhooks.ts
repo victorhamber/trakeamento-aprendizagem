@@ -1173,6 +1173,36 @@ async function processPurchaseWebhook({
     .catch(err => console.error('[Webhook] Visitor UPSERT error:', err));
   }
 
+  // Hotmart (assinaturas): builds antigos podem ter salvo `order_id = transaction` (ex.: HP...).
+  // A lógica atual usa `sub_<subscriber>_r<rec>` para a mesma recorrência, então precisamos "migrar" a linha antiga
+  // para o id estável, evitando duplicar a compra e dobrar a receita no dashboard.
+  if (platform === 'hotmart' && typeof orderId === 'string' && orderId.startsWith('sub_')) {
+    const p0 = (payload && typeof payload === 'object') ? (payload as any) : null;
+    const legacyTx =
+      coerceWebhookStr(p0?.data?.purchase?.transaction) ||
+      coerceWebhookStr(p0?.data?.purchase?.transaction_id) ||
+      coerceWebhookStr(p0?.data?.transaction) ||
+      coerceWebhookStr(p0?.data?.transaction_id);
+    if (legacyTx && legacyTx !== orderId) {
+      try {
+        await pool.query(
+          `
+            UPDATE purchases p
+            SET order_id = $3, updated_at = NOW()
+            WHERE p.site_key = $1
+              AND p.order_id = $2
+              AND NOT EXISTS (
+                SELECT 1 FROM purchases x WHERE x.site_key = $1 AND x.order_id = $3
+              )
+          `,
+          [siteKey, legacyTx.slice(0, 100), orderId.slice(0, 100)]
+        );
+      } catch (err) {
+        console.warn('[Hotmart] Falha ao migrar order_id legacy -> estável:', err);
+      }
+    }
+  }
+
   await pool.query(`
     INSERT INTO purchases (
       site_key, order_id, platform, amount, currency, status, 
@@ -1188,7 +1218,10 @@ async function processPurchaseWebhook({
       platform_date = EXCLUDED.platform_date,
       fbc = COALESCE(NULLIF(BTRIM(EXCLUDED.fbc), ''), purchases.fbc),
       fbp = COALESCE(NULLIF(BTRIM(EXCLUDED.fbp), ''), purchases.fbp),
-      external_id = COALESCE(NULLIF(BTRIM(EXCLUDED.external_id::text), ''), purchases.external_id),
+      external_id = CASE
+        WHEN NULLIF(BTRIM(EXCLUDED.external_id::text), '') IS NOT NULL THEN EXCLUDED.external_id
+        ELSE purchases.external_id
+      END,
       utm_source = COALESCE(NULLIF(BTRIM(EXCLUDED.utm_source), ''), purchases.utm_source),
       utm_medium = COALESCE(NULLIF(BTRIM(EXCLUDED.utm_medium), ''), purchases.utm_medium),
       utm_campaign = COALESCE(NULLIF(BTRIM(EXCLUDED.utm_campaign), ''), purchases.utm_campaign),
