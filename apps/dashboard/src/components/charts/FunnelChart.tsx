@@ -93,9 +93,14 @@ export function FunnelChart({ data, isDark }: { data: FunnelPayload | null; isDa
     return fmtPctChain(pur, ic);
   };
 
+  // Para o mobile, a largura do card limita o SVG e deixa o funil “pequeno”.
+  // Cortamos as margens laterais do viewBox para aumentar a escala (sem alterar a geometria).
+  const vbX = leftX;
+  const vbW = rightX - leftX + skew;
+
   return (
-    <div className="h-[400px] sm:h-[430px] w-full select-none outline-none focus:outline-none">
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-full" role="img" preserveAspectRatio="xMidYMid meet">
+    <div className="w-full select-none outline-none focus:outline-none aspect-[782/520] max-h-[420px]">
+      <svg viewBox={`${vbX} 0 ${vbW} ${H}`} className="w-full h-full" role="img" preserveAspectRatio="xMidYMid meet">
         <defs>
           {SEG_GRADIENTS.map((st, i) => (
             <linearGradient key={i} id={`funnelSeg${i}`} x1="0%" y1="0%" x2="100%" y2="0%">

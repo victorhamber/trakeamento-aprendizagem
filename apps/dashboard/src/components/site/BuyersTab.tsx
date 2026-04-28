@@ -230,6 +230,9 @@ export function BuyersTab({ siteId }: { siteId: number }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [groupTagFilter, setGroupTagFilter] = useState('');
+  const [page, setPage] = useState(1);
+  const [hasNextPage, setHasNextPage] = useState(false);
+  const buyersPerPage = 20;
 
   const [selected, setSelected] = useState<null | { externalId: string | null; buyerKey: string; title?: string | null }>(null);
   const [detail, setDetail] = useState<BuyerDetail | null>(null);
@@ -240,14 +243,25 @@ export function BuyersTab({ siteId }: { siteId: number }) {
 
   const canOpen = useMemo(() => !!selected, [selected]);
 
-  const load = async () => {
+  const load = async (opts?: { page?: number }) => {
     setLoading(true);
     setError(null);
     try {
+      const nextPage = Math.max(1, Number(opts?.page || page || 1));
+      const offset = (nextPage - 1) * buyersPerPage;
       const res = await api.get(`/sites/${siteId}/buyers`, {
-        params: { limit: 100, purchase_status: purchaseListFilter, group_tag: groupTagFilter || undefined },
+        // +1 para saber se existe próxima página sem depender de total_count no backend
+        params: {
+          limit: buyersPerPage + 1,
+          offset,
+          purchase_status: purchaseListFilter,
+          group_tag: groupTagFilter || undefined,
+        },
       });
-      setRows((res.data?.buyers || []) as BuyerRow[]);
+      const received = (res.data?.buyers || []) as BuyerRow[];
+      setHasNextPage(received.length > buyersPerPage);
+      setRows(received.slice(0, buyersPerPage));
+      setPage(nextPage);
     } catch (e: any) {
       setError(e?.response?.data?.error || 'Erro ao carregar compradores.');
     } finally {
@@ -256,7 +270,9 @@ export function BuyersTab({ siteId }: { siteId: number }) {
   };
 
   useEffect(() => {
-    load();
+    setSelected(null);
+    setPage(1);
+    load({ page: 1 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [siteId, purchaseListFilter, groupTagFilter]);
 
@@ -387,7 +403,7 @@ export function BuyersTab({ siteId }: { siteId: number }) {
           </div>
           <button
             type="button"
-            onClick={() => load()}
+              onClick={() => load({ page })}
             disabled={loading}
             className="text-xs px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white/60 dark:bg-zinc-950/25 text-zinc-700 dark:text-zinc-200 hover:bg-white dark:hover:bg-zinc-950/40 disabled:opacity-40"
           >
@@ -456,6 +472,32 @@ export function BuyersTab({ siteId }: { siteId: number }) {
               ))}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="text-[11px] text-zinc-600 dark:text-zinc-500">
+          Página <span className="font-semibold tabular-nums text-zinc-800 dark:text-zinc-200">{page}</span>
+          <span className="text-zinc-500 dark:text-zinc-600"> · </span>
+          Mostrando até <span className="font-semibold tabular-nums text-zinc-800 dark:text-zinc-200">{buyersPerPage}</span> compradores por página
+        </div>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => load({ page: Math.max(1, page - 1) })}
+            disabled={page <= 1 || loading}
+            className="text-[11px] px-2.5 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white/60 dark:bg-zinc-950/25 text-zinc-700 dark:text-zinc-200 hover:bg-white dark:hover:bg-zinc-950/40 disabled:opacity-40"
+          >
+            Anterior
+          </button>
+          <button
+            type="button"
+            onClick={() => load({ page: page + 1 })}
+            disabled={!hasNextPage || loading}
+            className="text-[11px] px-2.5 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white/60 dark:bg-zinc-950/25 text-zinc-700 dark:text-zinc-200 hover:bg-white dark:hover:bg-zinc-950/40 disabled:opacity-40"
+          >
+            Próxima
+          </button>
         </div>
       </div>
 

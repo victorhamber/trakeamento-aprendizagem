@@ -1978,26 +1978,6 @@ ${scriptContent}
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     }).format(value);
-  /** URL com query codificada (RFC) — útil para testar no navegador; no Meta use `utmUrlForMeta`. */
-  const utmUrlEncoded = useMemo(() => {
-    if (!utmBaseUrl) return '';
-    try {
-      const url = new URL(utmBaseUrl);
-      const params: Record<string, string> = {};
-      if (utmSource) params.utm_source = utmSource;
-      if (utmMedium) params.utm_medium = utmMedium;
-      if (utmCampaign) params.utm_campaign = utmCampaign;
-      if (utmContent) params.utm_content = utmContent;
-      if (utmTerm) params.utm_term = utmTerm;
-      if (utmClickId) params.click_id = utmClickId;
-      Object.entries(params).forEach(([key, value]) => {
-        url.searchParams.set(key, value);
-      });
-      return url.toString();
-    } catch {
-      return '';
-    }
-  }, [utmBaseUrl, utmSource, utmMedium, utmCampaign, utmContent, utmTerm, utmClickId]);
 
   /** Para colar no campo «Parâmetros de URL» do Meta: manter `{{ }}` literal — URLSearchParams codifica para %7B e o Meta não substitui. */
   const metaAdsUrlParams = useMemo(() => {
@@ -3000,7 +2980,7 @@ ${scriptContent}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
-                      CAPI Token <span className="text-zinc-600 dark:text-zinc-500 font-normal">(Opcional)</span>
+                      CAPI Token
                     </label>
                     <input
                       name="capi_token"
@@ -3013,7 +2993,7 @@ ${scriptContent}
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
-                      Código de teste do servidor <span className="text-zinc-600 dark:text-zinc-500 font-normal">(Opcional)</span>
+                      Código de teste do servidor
                     </label>
                     <input
                       name="capi_test_event_code"
@@ -3022,7 +3002,7 @@ ${scriptContent}
                       className={inputCls}
                     />
                     <p className="mt-1.5 text-[11px] text-zinc-700 dark:text-zinc-500">
-                      Use o código de teste do Event Manager para validar eventos server-side.
+                      Use o código de teste do Events Manager para validar eventos server-side. Depois do teste, remova o código daqui para não enviar eventos de teste em produção.
                     </p>
                   </div>
                 </div>
@@ -3159,6 +3139,14 @@ ${scriptContent}
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
+                        disabled={!utmUrlForMeta}
+                        onClick={() => setShowSaveUtmModal(true)}
+                        className="text-[11px] border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/70 hover:bg-zinc-50 dark:hover:bg-zinc-900 text-zinc-700 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200 px-3 py-2 rounded-lg transition-colors disabled:opacity-40"
+                      >
+                        Salvar
+                      </button>
+                      <button
+                        type="button"
                         disabled={!metaAdsUrlParams}
                         onClick={() => {
                           if (!metaAdsUrlParams) return;
@@ -3178,62 +3166,6 @@ ${scriptContent}
                   <div className="text-xs text-zinc-800 dark:text-zinc-200 break-all font-mono bg-white dark:bg-black/20 p-3 rounded-lg border border-zinc-300 dark:border-zinc-800">
                     {metaAdsUrlParams || 'Preencha as UTMs para gerar os parâmetros.'}
                   </div>
-                </div>
-
-                <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/30 p-5 opacity-75 hover:opacity-100 transition-opacity">
-                  <div className="flex items-center justify-between gap-3 mb-3">
-                    <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-700 dark:text-zinc-400">
-                      URL final (Meta Ads)
-                    </h4>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        disabled={!utmUrlForMeta}
-                        onClick={() => setShowSaveUtmModal(true)}
-                        className="text-[11px] border border-zinc-700 bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 px-3 py-2 rounded-lg transition-colors disabled:opacity-40"
-                      >
-                        Salvar
-                      </button>
-                      <button
-                        type="button"
-                        disabled={!utmUrlForMeta}
-                        onClick={() => {
-                          if (!utmUrlForMeta) return;
-                          navigator.clipboard.writeText(utmUrlForMeta);
-                          showFlash('URL copiada!');
-                        }}
-                        className="text-[11px] border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/70 hover:bg-zinc-50 dark:hover:bg-zinc-900 text-zinc-700 dark:text-zinc-600 hover:text-zinc-900 dark:hover:text-zinc-200 px-3 py-2 rounded-lg transition-colors disabled:opacity-40"
-                      >
-                        Copiar URL
-                      </button>
-                    </div>
-                  </div>
-                  <p className="text-[11px] text-zinc-600 dark:text-zinc-400 mb-2">
-                    Versão com <code className="text-[10px]">{'{{'}…{'}}'}</code> literal para colar no Meta. Para testar no navegador, use a cópia codificada abaixo.
-                  </p>
-                  <div className="text-[11px] text-zinc-800 dark:text-zinc-200 break-all bg-white dark:bg-black/20 p-2 rounded border border-zinc-300 dark:border-zinc-800/50">
-                    {utmUrlForMeta || 'Preencha a URL base e UTMs para gerar o link.'}
-                  </div>
-                  {utmUrlEncoded ? (
-                    <div className="mt-3 pt-3 border-t border-zinc-200 dark:border-zinc-800">
-                      <div className="flex items-center justify-between gap-2 mb-1">
-                        <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-500">
-                          URL codificada (navegador)
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            navigator.clipboard.writeText(utmUrlEncoded);
-                            showFlash('URL codificada copiada!');
-                          }}
-                          className="text-[10px] text-blue-700 dark:text-blue-400 hover:underline"
-                        >
-                          Copiar
-                        </button>
-                      </div>
-                      <div className="text-[10px] text-zinc-600 dark:text-zinc-400 break-all font-mono">{utmUrlEncoded}</div>
-                    </div>
-                  ) : null}
                 </div>
               </div>
 
