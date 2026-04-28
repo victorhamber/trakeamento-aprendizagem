@@ -1034,6 +1034,8 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
                               { label: 'Valor da Compra', field: 'value' },
                               { label: 'Moeda (BRL, USD...)', field: 'currency' },
                               { label: 'ID do Pedido', field: 'order_id' },
+                              { label: 'Assinatura — Código do assinante (ex.: Hotmart subscriber.code)', field: 'subscription_code' },
+                              { label: 'Assinatura — Número da recorrência (ex.: Hotmart recurrence_number)', field: 'recurrence_number' },
                               { label: 'Status da Compra', field: 'status' },
                               { label: 'Método de pagamento (PIX / boleto — título do push)', field: 'payment_method' }
                             ].map(mapField => {

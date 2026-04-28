@@ -1816,7 +1816,15 @@ export async function customWebhookPostHandler(req: Request, res: Response) {
     typeof config.order_id === 'string' && config.order_id.trim()
       ? strOrUndef(getNested(payload, config.order_id.trim()))
       : undefined;
-  const orderId = orderFromPath || `c_${Date.now()}`;
+  const subscriptionCode = pick('subscription_code', 'subscription_code');
+  const recurrenceRaw = pick('recurrence_number', 'recurrence_number');
+  const recurrenceNumber =
+    recurrenceRaw != null && recurrenceRaw !== '' && !Number.isNaN(Number(recurrenceRaw)) ? String(Number(recurrenceRaw)) : undefined;
+
+  const orderId =
+    orderFromPath ||
+    (subscriptionCode && recurrenceNumber ? `sub_${subscriptionCode}_r${recurrenceNumber}`.slice(0, 100) : undefined) ||
+    `c_${Date.now()}`;
 
   let paymentMethodRaw: string | undefined;
   if (typeof config.payment_method === 'string' && config.payment_method.trim()) {
