@@ -662,7 +662,6 @@ export const ensureSchema = async (pool: Pool) => {
     await pool.query('ALTER TABLE purchases ADD COLUMN IF NOT EXISTS platform_date TIMESTAMP');
     await pool.query('ALTER TABLE site_visitors ADD COLUMN IF NOT EXISTS city VARCHAR(255)');
     await pool.query('ALTER TABLE site_visitors ADD COLUMN IF NOT EXISTS state VARCHAR(255)');
-    await pool.query('ALTER TABLE site_visitors ADD COLUMN IF NOT EXISTS country VARCHAR(255)');
     await pool.query('ALTER TABLE site_visitors ADD COLUMN IF NOT EXISTS first_traffic_source TEXT');
     await pool.query('ALTER TABLE purchases ADD COLUMN IF NOT EXISTS customer_email VARCHAR(255)');
     await pool.query('ALTER TABLE purchases ADD COLUMN IF NOT EXISTS customer_phone VARCHAR(120)');
@@ -679,6 +678,12 @@ export const ensureSchema = async (pool: Pool) => {
     await pool.query('ALTER TABLE recommendation_reports ALTER COLUMN site_key TYPE VARCHAR(100)');
     await pool.query('ALTER TABLE capi_outbox ALTER COLUMN site_key TYPE VARCHAR(100)');
     await pool.query('ALTER TABLE site_visitors ALTER COLUMN site_key TYPE VARCHAR(100)');
+  });
+
+  // site_key_lengths_and_purchase_cols já rodou em bancos antigos; por isso a coluna `country`
+  // precisa de uma migração separada para garantir criação em produção.
+  await migrate('site_visitors_country_col', async () => {
+    await pool.query('ALTER TABLE site_visitors ADD COLUMN IF NOT EXISTS country VARCHAR(255)');
   });
 
   await migrate('dead_letter_table', async () => {
