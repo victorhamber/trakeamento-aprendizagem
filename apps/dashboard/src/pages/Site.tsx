@@ -1336,6 +1336,25 @@ async function handleTrkSubmit(e) {
   data.event_id = eventId;
   data.tracked_by_frontend = !!window.tracker;
 
+  // Envia campos do formulário para auditoria (não é CRM; só para validar funcionamento)
+  try {
+    var fields = {};
+    var els = form.querySelectorAll('input,select,textarea');
+    for (var i = 0; i < els.length; i++) {
+      var el = els[i];
+      if (!el || !el.name) continue;
+      if (el.type === 'password') continue;
+      if ((el.type === 'checkbox' || el.type === 'radio') && !el.checked) continue;
+      var v = (el.value || '').toString();
+      if (!v) continue;
+      fields[el.name] = v;
+    }
+    data.fields = fields;
+    data.page_title = (document && document.title) ? document.title : '';
+    data.page_path = (location && location.pathname) ? location.pathname : '';
+    data.page_location = (location && location.href) ? location.href : '';
+  } catch(_e) {}
+
   // 1. Identify client
   if (window.tracker) {
     window.tracker.identify(data);

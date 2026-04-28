@@ -947,6 +947,7 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
       const geoPlain = geoFromGeoipLite(String(capiUser.client_ip_address || ''));
       const geoCity = (geoPlain.city || '').trim().slice(0, 255) || null;
       const geoState = (geoPlain.region || '').trim().slice(0, 255) || null;
+      const geoCountry = (geoPlain.country || '').trim().slice(0, 255) || null;
 
       // Run visitor UPSERT and integrations_meta update in parallel
       await Promise.all([
@@ -954,9 +955,9 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
           INSERT INTO site_visitors (
             site_key, external_id, fbc, fbp, email_hash, phone_hash, first_name_hash, last_name_hash,
             last_traffic_source, first_traffic_source, total_events, last_event_name, last_ip, last_user_agent,
-            city, state
+            city, state, country
           ) VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8, $9, $9, 1, $10, $11, $12, $13, $14
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $9, 1, $10, $11, $12, $13, $14, $15
           )
           ON CONFLICT (site_key, external_id) DO UPDATE SET
             fbc = COALESCE(EXCLUDED.fbc, site_visitors.fbc),
@@ -972,6 +973,7 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
             last_user_agent = COALESCE(EXCLUDED.last_user_agent, site_visitors.last_user_agent),
             city = COALESCE(site_visitors.city, EXCLUDED.city),
             state = COALESCE(site_visitors.state, EXCLUDED.state),
+            country = COALESCE(site_visitors.country, EXCLUDED.country),
             total_events = site_visitors.total_events + 1,
             last_seen_at = NOW()
           WHERE
@@ -986,6 +988,7 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
             OR (site_visitors.last_user_agent IS NULL AND EXCLUDED.last_user_agent IS NOT NULL)
             OR (site_visitors.city IS NULL AND EXCLUDED.city IS NOT NULL)
             OR (site_visitors.state IS NULL AND EXCLUDED.state IS NOT NULL)
+            OR (site_visitors.country IS NULL AND EXCLUDED.country IS NOT NULL)
             OR site_visitors.last_event_name IS DISTINCT FROM EXCLUDED.last_event_name
         `, [
           siteKey,
@@ -1002,6 +1005,7 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
           capiUser.client_user_agent,
           geoCity,
           geoState,
+          geoCountry,
         ]).catch(err => console.error('[Ingest] User Profile UPSERT error:', err)),
 
         pool.query(
@@ -1252,13 +1256,14 @@ router.post('/batch', cors(), ingestLimiter, async (req, res) => {
         const geoPlain = geoFromGeoipLite(String(capiUser.client_ip_address || ''));
         const geoCity = (geoPlain.city || '').trim().slice(0, 255) || null;
         const geoState = (geoPlain.region || '').trim().slice(0, 255) || null;
+        const geoCountry = (geoPlain.country || '').trim().slice(0, 255) || null;
 
         pool.query(`
           INSERT INTO site_visitors (
             site_key, external_id, fbc, fbp, email_hash, phone_hash, first_name_hash, last_name_hash,
             last_traffic_source, first_traffic_source, total_events, last_event_name, last_ip, last_user_agent,
-            city, state
-          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9,1,$10,$11,$12,$13,$14)
+            city, state, country
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9,1,$10,$11,$12,$13,$14,$15)
           ON CONFLICT (site_key, external_id) DO UPDATE SET
             fbc = COALESCE(EXCLUDED.fbc, site_visitors.fbc),
             fbp = COALESCE(EXCLUDED.fbp, site_visitors.fbp),
@@ -1273,6 +1278,7 @@ router.post('/batch', cors(), ingestLimiter, async (req, res) => {
             last_user_agent = COALESCE(EXCLUDED.last_user_agent, site_visitors.last_user_agent),
             city = COALESCE(site_visitors.city, EXCLUDED.city),
             state = COALESCE(site_visitors.state, EXCLUDED.state),
+            country = COALESCE(site_visitors.country, EXCLUDED.country),
             total_events = site_visitors.total_events + 1,
             last_seen_at = NOW()
           WHERE
@@ -1287,6 +1293,7 @@ router.post('/batch', cors(), ingestLimiter, async (req, res) => {
             OR (site_visitors.last_user_agent IS NULL AND EXCLUDED.last_user_agent IS NOT NULL)
             OR (site_visitors.city IS NULL AND EXCLUDED.city IS NOT NULL)
             OR (site_visitors.state IS NULL AND EXCLUDED.state IS NOT NULL)
+            OR (site_visitors.country IS NULL AND EXCLUDED.country IS NOT NULL)
             OR site_visitors.last_event_name IS DISTINCT FROM EXCLUDED.last_event_name
         `, [
           siteKey,
@@ -1303,6 +1310,7 @@ router.post('/batch', cors(), ingestLimiter, async (req, res) => {
           capiUser.client_user_agent,
           geoCity,
           geoState,
+          geoCountry,
         ]).catch(err => console.error('[Ingest/Batch] User Profile UPSERT error:', err));
 
         // CAPI payload (espelha POST /events: custom_data + referrer_url + action_source)

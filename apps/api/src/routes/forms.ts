@@ -3,6 +3,7 @@ import { pool } from '../db/pool';
 import { requireAuth } from '../middleware/auth';
 import { capiService, CapiService } from '../services/capi';
 import { getClientIp } from '../lib/ip';
+import { geoFromGeoipLite } from '../lib/request-geo';
 
 const router = Router();
 
@@ -161,14 +162,19 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
           const lastIp = getClientIp(req) || null;
           const lastUa = (req.headers['user-agent'] as string | undefined) || null;
           const lastEventName = 'form_submit';
+          const geo = lastIp ? geoFromGeoipLite(String(lastIp)) : null;
+          const geoCity = geo?.city ? String(geo.city).trim().slice(0, 255) : null;
+          const geoState = geo?.region ? String(geo.region).trim().slice(0, 255) : null;
+          const geoCountry = geo?.country ? String(geo.country).trim().slice(0, 255) : null;
 
           await pool.query(
             `
               INSERT INTO site_visitors (
                 site_key, external_id, fbc, fbp, email_hash, phone_hash,
                 total_events, last_event_name, last_ip, last_user_agent,
+                city, state, country,
                 first_group_tag, last_group_tag, last_group_tag_at
-              ) VALUES ($1, $2, $3, $4, $5, $6, 1, $7, $8, $9, $10, $11, CASE WHEN $11 IS NULL OR $11 = '' THEN NULL ELSE NOW() END)
+              ) VALUES ($1, $2, $3, $4, $5, $6, 1, $7, $8, $9, $10, $11, $12, $13, $14, CASE WHEN $14 IS NULL OR $14 = '' THEN NULL ELSE NOW() END)
               ON CONFLICT (site_key, external_id) DO UPDATE SET
                 fbc = COALESCE(EXCLUDED.fbc, site_visitors.fbc),
                 fbp = COALESCE(EXCLUDED.fbp, site_visitors.fbp),
@@ -177,6 +183,9 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
                 last_event_name = EXCLUDED.last_event_name,
                 last_ip = COALESCE(EXCLUDED.last_ip, site_visitors.last_ip),
                 last_user_agent = COALESCE(EXCLUDED.last_user_agent, site_visitors.last_user_agent),
+                city = COALESCE(site_visitors.city, EXCLUDED.city),
+                state = COALESCE(site_visitors.state, EXCLUDED.state),
+                country = COALESCE(site_visitors.country, EXCLUDED.country),
                 total_events = site_visitors.total_events + 1,
                 last_seen_at = NOW(),
                 first_group_tag = COALESCE(site_visitors.first_group_tag, EXCLUDED.first_group_tag),
@@ -197,6 +206,9 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
               lastEventName,
               lastIp,
               lastUa,
+              geoCity,
+              geoState,
+              geoCountry,
               groupTag || null,
               groupTag || null,
             ]
@@ -204,6 +216,82 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
         }
       } catch (err) {
         console.error(`[Forms] Failed to upsert site_visitors for form ${publicId}:`, err);
+      }
+
+      // ── Auditoria: persiste o Lead com os campos do formulário ──
+      // Mesmo quando o frontend rastreia via /ingest, a submissão pública é a fonte confiável dos dados preenchidos.
+      try {
+        const eventTimeSec = Math.floor(Date.now() / 1000);
+        const eventId =
+          (typeof body.event_id === 'string' && body.event_id.trim())
+            ? body.event_id.trim()
+            : `lead_${eventTimeSec}_${Math.random().toString(36).slice(2, 8)}`;
+
+        const referer = (req.headers.referer as string | undefined) || `https://form-submit.trakeamento.com/${publicId}`;
+
+        // Guarda os campos (sem mexer no resto do tracking). Isso é auditoria, não CRM.
+        const fieldsRaw =
+          body && typeof body === 'object' && !Array.isArray(body)
+            ? ((body as any).fields && typeof (body as any).fields === 'object' ? (body as any).fields : body)
+            : {};
+
+        const safeFields = Object.fromEntries(
+          Object.entries(fieldsRaw || {}).filter(([k]) => !['tracked_by_frontend'].includes(String(k)))
+        );
+
+        await pool.query(
+          `INSERT INTO web_events(
+            site_key, event_id, event_name, event_time,
+            event_source_url, user_data, custom_data, telemetry
+          ) VALUES($1, $2, $3, $4, $5, $6, $7, $8)
+          ON CONFLICT(site_key, event_id) DO NOTHING`,
+          [
+            siteKey,
+            eventId,
+            'Lead',
+            new Date(eventTimeSec * 1000),
+            referer,
+            {
+              client_ip_address: getClientIp(req),
+              client_user_agent: req.headers['user-agent'] || undefined,
+              external_id: userData.external_id,
+              fbp: typeof body.fbp === 'string' ? body.fbp : undefined,
+              fbc: typeof body.fbc === 'string' ? body.fbc : undefined,
+            },
+            {
+              form_id: publicId,
+              form_name: form.name,
+              group_tag: groupTag || null,
+              name: name || null,
+              email: email || null,
+              phone: phone || null,
+              fields: safeFields,
+            },
+            null,
+          ]
+        );
+
+        // Mantém no máximo 20 leads por site (auditoria)
+        pool
+          .query(
+            `
+            DELETE FROM web_events
+            WHERE site_key = $1
+              AND event_name = 'Lead'
+              AND id IN (
+                SELECT id
+                FROM web_events
+                WHERE site_key = $1
+                  AND event_name = 'Lead'
+                ORDER BY event_time DESC, id DESC
+                OFFSET 20
+              )
+            `,
+            [siteKey]
+          )
+          .catch(() => {});
+      } catch (err) {
+        console.error(`[Forms] Failed to persist Lead audit event for form ${publicId}:`, err);
       }
 
       // Determine Event Name from Config

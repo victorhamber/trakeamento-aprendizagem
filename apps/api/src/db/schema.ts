@@ -377,6 +377,7 @@ const schemaSql = `
   last_user_agent TEXT,
   city VARCHAR(255),
   state VARCHAR(255),
+  country VARCHAR(255),
   first_group_tag TEXT,
   last_group_tag TEXT,
   last_group_tag_at TIMESTAMP,
@@ -661,6 +662,7 @@ export const ensureSchema = async (pool: Pool) => {
     await pool.query('ALTER TABLE purchases ADD COLUMN IF NOT EXISTS platform_date TIMESTAMP');
     await pool.query('ALTER TABLE site_visitors ADD COLUMN IF NOT EXISTS city VARCHAR(255)');
     await pool.query('ALTER TABLE site_visitors ADD COLUMN IF NOT EXISTS state VARCHAR(255)');
+    await pool.query('ALTER TABLE site_visitors ADD COLUMN IF NOT EXISTS country VARCHAR(255)');
     await pool.query('ALTER TABLE site_visitors ADD COLUMN IF NOT EXISTS first_traffic_source TEXT');
     await pool.query('ALTER TABLE purchases ADD COLUMN IF NOT EXISTS customer_email VARCHAR(255)');
     await pool.query('ALTER TABLE purchases ADD COLUMN IF NOT EXISTS customer_phone VARCHAR(120)');
