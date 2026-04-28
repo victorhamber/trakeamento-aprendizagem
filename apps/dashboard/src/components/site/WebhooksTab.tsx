@@ -152,6 +152,15 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
     fillDummyData();
   }, [loadCustomWebhooks, fillDummyData]);
 
+  // UX: quando o usuário abre o mapeamento, puxa o último payload automaticamente.
+  // Isso evita o “preciso disparar duas vezes” quando o POST já chegou, mas a lista ainda está desatualizada.
+  useEffect(() => {
+    if (!editingWebhookId) return;
+    if (payloadRefreshHookId) return;
+    void handleRefreshWebhookPayload(editingWebhookId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingWebhookId]);
+
   const loadCheckoutSimulator = async () => {
     try {
       const res = await api.get(`/sites/${id}/checkout-simulator`);
