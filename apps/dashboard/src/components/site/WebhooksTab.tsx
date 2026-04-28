@@ -38,6 +38,7 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
   const [samplePayloadDraft, setSamplePayloadDraft] = useState<Record<string, string>>({});
   const [samplePayloadLoadingId, setSamplePayloadLoadingId] = useState<string | null>(null);
   const [payloadRefreshHookId, setPayloadRefreshHookId] = useState<string | null>(null);
+  const [aiSuggestLoadingId, setAiSuggestLoadingId] = useState<string | null>(null);
   /** Padrões quando o webhook (ex.: só boleto) não traz todos os campos — salvos em `mapping_config.defaults`. */
   const [mappingDefaultsState, setMappingDefaultsState] = useState<
     Record<string, Partial<Record<'currency' | 'status' | 'payment_method' | 'phone' | 'first_name' | 'last_name', string>>>
@@ -82,6 +83,46 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
       showFlash(ok ? 'Payload atualizado.' : 'Não foi possível atualizar o payload.', ok ? 'success' : 'error');
     } finally {
       setPayloadRefreshHookId(null);
+    }
+  };
+
+  const suggestExamplePath = useCallback((keys: string[], field: string): string | null => {
+    const k = keys || [];
+    const pickFirst = (pred: (x: string) => boolean) => k.find(pred) || null;
+
+    if (field === 'email') return pickFirst(x => /buyer\.email|customer\.email|email\b/i.test(x));
+    if (field === 'phone') return pickFirst(x => /buyer\.(checkout_phone|phone)|customer\.phone|phone\b/i.test(x));
+    if (field === 'first_name') return pickFirst(x => /buyer\.first_name|customer\.first_name|first_name\b|name\.first\b/i.test(x));
+    if (field === 'last_name') return pickFirst(x => /buyer\.last_name|customer\.last_name|last_name\b|name\.last\b/i.test(x));
+    if (field === 'value') return pickFirst(x => /purchase\.(price\.value|value)|order\.(total|amount)|amount\b|total\b/i.test(x));
+    if (field === 'currency') return pickFirst(x => /currency_value|currency\b/i.test(x));
+    if (field === 'order_id') return pickFirst(x => /purchase\.transaction|transaction_id|order(\.|_)?id\b|invoice\b/i.test(x));
+    if (field === 'status') return pickFirst(x => /purchase\.status|order\.status|status\b/i.test(x));
+    if (field === 'payment_method') return pickFirst(x => /purchase\.payment\.type|order\.payment\.method|payment(\.|_)?type\b|payment_method\b/i.test(x));
+    if (field === 'subscription_code') return pickFirst(x => /subscription\.subscriber\.code|subscriber\.code\b/i.test(x));
+    if (field === 'recurrence_number') return pickFirst(x => /purchase\.recurrence_number|recurrence_number\b|recurrency_number\b/i.test(x));
+    if (field === 'city') return pickFirst(x => /address\.city|city\b/i.test(x));
+    if (field === 'state') return pickFirst(x => /address\.state|state\b/i.test(x));
+    return null;
+  }, []);
+
+  const handleAiSuggestMapping = async (hookId: string) => {
+    try {
+      setAiSuggestLoadingId(hookId);
+      const res = await api.post(`/sites/${id}/custom-webhooks/${hookId}/ai-suggest-mapping`);
+      const cfg = res.data?.mapping_config;
+      if (!cfg || typeof cfg !== 'object') {
+        showFlash('A IA não conseguiu sugerir um mapeamento agora.', 'error');
+        return;
+      }
+      const { defaults, ...pathsOnly } = cfg as Record<string, unknown> & { defaults?: unknown };
+      setMappingState(prev => ({ ...prev, [hookId]: pathsOnly as Record<string, string> }));
+      showFlash('Mapeamento sugerido pela IA. Revise e salve.', 'success');
+    } catch (err) {
+      console.error('AI suggest mapping failed', err);
+      showFlash('Falha ao falar com a IA. Verifique a chave em Inteligência IA.', 'error');
+    } finally {
+      setAiSuggestLoadingId(null);
     }
   };
 
@@ -1042,6 +1083,7 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
                               const pathVal =
                                 typeof currentMap[mapField.field] === 'string' ? currentMap[mapField.field] : '';
                               const listMatch = hasPayload && availableKeys.includes(pathVal);
+                              const example = hasPayload ? suggestExamplePath(availableKeys, mapField.field) : null;
                               return (
                                 <div key={mapField.field}>
                                   <span className="block text-[10px] font-medium text-zinc-500 mb-1">{mapField.label}</span>
@@ -1072,7 +1114,7 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
                                     id={`dash-webhook-map-${hook.id}-${mapField.field}`}
                                     value={pathVal}
                                     onChange={e => setFieldMap(mapField.field, e.target.value)}
-                                    placeholder="Digite o caminho (ex.: data.customer.email)"
+                                    placeholder={example ? `Ex.: ${example}` : 'Digite o caminho (ex.: data.customer.email)'}
                                     autoComplete="off"
                                     spellCheck={false}
                                     className="w-full rounded bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 px-2 py-1.5 text-[11px] outline-none font-mono text-zinc-800 dark:text-zinc-200"
@@ -1150,6 +1192,15 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
                             </div>
                           </div>
                           <div className="mt-4 pt-4 border-t border-zinc-100 dark:border-zinc-800">
+                            <button
+                              type="button"
+                              disabled={aiSuggestLoadingId === hook.id || !hasPayload}
+                              onClick={() => handleAiSuggestMapping(hook.id)}
+                              className="w-full mb-2 bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 disabled:opacity-50 text-zinc-800 dark:text-zinc-200 py-2 rounded-lg text-xs font-medium transition-colors"
+                              title={!hasPayload ? 'Envie ou carregue um JSON bruto primeiro' : 'Usar IA para sugerir o mapeamento'}
+                            >
+                              {aiSuggestLoadingId === hook.id ? 'IA: analisando JSON…' : 'Preencher com IA (ChatGPT)'}
+                            </button>
                             <button
                               onClick={() => handleSaveWebhookMapping(hook.id)}
                               className="w-full bg-blue-600 hover:bg-blue-500 text-white py-2 rounded-lg text-xs font-medium transition-colors"

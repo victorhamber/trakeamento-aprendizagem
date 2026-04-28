@@ -11,8 +11,10 @@ import {
   parseStoredTrafficSource,
   utmRecordFromPurchaseRow,
 } from '../lib/visitorTrafficSource';
+import { LlmService } from '../services/llm';
 
 const router = Router();
+const llm = new LlmService();
 
 const randomKey = (bytes: number) => crypto.randomBytes(bytes).toString('base64url');
 const CANON_FIELDS = ['email', 'phone', 'fn', 'ln', 'ct', 'st', 'zp', 'db'] as const;
@@ -1259,6 +1261,118 @@ router.post('/:siteId/custom-webhooks/:hookId/sample-payload', requireAuth, asyn
   );
   if (!result.rowCount) return res.status(404).json({ error: 'Webhook not found' });
   return res.json({ webhook: result.rows[0] });
+});
+
+router.post('/:siteId/custom-webhooks/:hookId/ai-suggest-mapping', requireAuth, async (req, res) => {
+  const auth = req.auth!;
+  const siteId = Number(req.params.siteId);
+  const hookId = req.params.hookId;
+  if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
+
+  const site = await pool.query('SELECT site_key FROM sites WHERE id = $1 AND account_id = $2', [siteId, auth.accountId]);
+  if (!site.rowCount) return res.status(404).json({ error: 'Site not found' });
+  const siteKey = site.rows[0].site_key as string;
+
+  const hookRow = await pool.query(
+    'SELECT id, site_id, mapping_config, last_payload FROM custom_webhooks WHERE id = $1 AND site_id = $2',
+    [hookId, siteId]
+  );
+  if (!hookRow.rowCount) return res.status(404).json({ error: 'Webhook not found' });
+
+  const hook = hookRow.rows[0] as any;
+  const payload = (hook.last_payload && typeof hook.last_payload === 'object') ? hook.last_payload : null;
+  if (!payload) return res.status(400).json({ error: 'Nenhum payload salvo ainda para este webhook.' });
+
+  const flatten = (obj: any, prefix = '', out: string[] = []): string[] => {
+    if (!obj || typeof obj !== 'object') return out;
+    for (const key of Object.keys(obj)) {
+      const path = prefix ? `${prefix}.${key}` : key;
+      const val = obj[key];
+      out.push(path);
+      if (val && typeof val === 'object' && !Array.isArray(val)) flatten(val, path, out);
+    }
+    return out;
+  };
+
+  const availableKeys = Array.from(new Set(flatten(payload))).slice(0, 900);
+  const currentCfg =
+    hook.mapping_config && typeof hook.mapping_config === 'object' && !Array.isArray(hook.mapping_config)
+      ? (hook.mapping_config as Record<string, unknown>)
+      : {};
+
+  const systemPrompt = `
+Você é um especialista em integrações de webhooks e mapeamento de JSON.
+Sua tarefa é sugerir caminhos (dot paths) de um JSON bruto para preencher um "mapping_config" do Trajettu.
+
+Regras:
+- Responda SOMENTE com JSON válido (sem markdown).
+- Use apenas caminhos que existam na lista "available_keys".
+- Se não souber, use "" (string vazia).
+- Campos esperados: email, phone, first_name, last_name, value, currency, order_id, status, payment_method, subscription_code, recurrence_number, city, state.
+
+Objetivo:
+- Para assinatura: se existir subscription_code e recurrence_number, eles devem apontar para subscriber.code e recurrence_number.
+`;
+
+  const userContent = JSON.stringify(
+    {
+      available_keys: availableKeys,
+      payload_preview: payload,
+      current_mapping_config: currentCfg,
+    },
+    null,
+    2
+  ).slice(0, 55_000);
+
+  const safeParseJson = (raw: string): any | null => {
+    if (!raw || typeof raw !== 'string') return null;
+    const t = raw.trim();
+    try { return JSON.parse(t); } catch { /* ignore */ }
+    const m = t.match(/\{[\s\S]*\}/);
+    if (!m) return null;
+    try { return JSON.parse(m[0]); } catch { return null; }
+  };
+
+  const heuristicPick = (field: string): string => {
+    const k = availableKeys;
+    const pickFirst = (re: RegExp) => k.find((x) => re.test(x)) || '';
+    if (field === 'email') return pickFirst(/buyer\.email|customer\.email|email\b/i);
+    if (field === 'phone') return pickFirst(/buyer\.(checkout_phone|phone)|customer\.phone|phone\b/i);
+    if (field === 'first_name') return pickFirst(/buyer\.first_name|customer\.first_name|first_name\b/i);
+    if (field === 'last_name') return pickFirst(/buyer\.last_name|customer\.last_name|last_name\b/i);
+    if (field === 'value') return pickFirst(/purchase\.(price\.value|value)|order\.(total|amount)|amount\b|total\b/i);
+    if (field === 'currency') return pickFirst(/currency_value|currency\b/i);
+    if (field === 'order_id') return pickFirst(/purchase\.transaction|transaction_id|order(\.|_)?id\b/i);
+    if (field === 'status') return pickFirst(/purchase\.status|order\.status|status\b/i);
+    if (field === 'payment_method') return pickFirst(/purchase\.payment\.type|payment(\.|_)?type\b|payment_method\b/i);
+    if (field === 'subscription_code') return pickFirst(/subscription\.subscriber\.code|subscriber\.code\b/i);
+    if (field === 'recurrence_number') return pickFirst(/purchase\.recurrence_number|recurrence_number\b|recurrency_number\b/i);
+    if (field === 'city') return pickFirst(/address\.city|city\b/i);
+    if (field === 'state') return pickFirst(/address\.state|state\b/i);
+    return '';
+  };
+
+  let suggested: any | null = null;
+  try {
+    const raw = await llm.chatOnce(siteKey, systemPrompt, userContent, 1800);
+    suggested = safeParseJson(raw);
+  } catch (err) {
+    suggested = null;
+  }
+
+  const fields = [
+    'email', 'phone', 'first_name', 'last_name', 'value', 'currency', 'order_id',
+    'status', 'payment_method', 'subscription_code', 'recurrence_number', 'city', 'state',
+  ] as const;
+
+  const mapping_config: Record<string, string> = {};
+  for (const f of fields) {
+    const v = suggested && typeof suggested === 'object' ? (suggested as any)[f] : '';
+    const s = typeof v === 'string' ? v.trim() : '';
+    mapping_config[f] = (s && availableKeys.includes(s)) ? s : heuristicPick(f);
+  }
+
+  return res.json({ mapping_config });
 });
 
 router.delete('/:siteId/custom-webhooks/:hookId', requireAuth, async (req, res) => {
