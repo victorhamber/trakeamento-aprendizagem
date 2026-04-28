@@ -222,7 +222,11 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
       let eventName = 'Lead';
       if (form.config?.event_type) {
         if (form.config.event_type === 'Custom') {
-          eventName = form.config.custom_event_name || 'Lead';
+          const fromCfg = typeof form.config.custom_event_name === 'string' ? form.config.custom_event_name.trim() : '';
+          const fromBody =
+            typeof (req.body as any)?.meta_event_name === 'string' ? String((req.body as any).meta_event_name).trim() : '';
+          // Se o nome custom não estiver salvo (vazio), aceitamos o nome enviado pelo gerador do formulário.
+          eventName = fromCfg || fromBody || 'Lead';
         } else {
           eventName = form.config.event_type;
         }

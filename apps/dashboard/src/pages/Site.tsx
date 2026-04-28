@@ -1335,6 +1335,7 @@ async function handleTrkSubmit(e) {
   var eventId = 'evt_' + Math.floor(Date.now() / 1000) + '_' + Math.random().toString(36).slice(2);
   data.event_id = eventId;
   data.tracked_by_frontend = !!window.tracker;
+  data.meta_event_name = '${evtName}';
 
   // Envia campos do formulário para auditoria (não é CRM; só para validar funcionamento)
   try {
