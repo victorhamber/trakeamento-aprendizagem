@@ -299,6 +299,7 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
             const u = new URL(eventSourceUrlForAudit);
             const p = u.searchParams;
             return {
+              utm_id: p.get('utm_id') || '',
               utm_source: p.get('utm_source') || '',
               utm_medium: p.get('utm_medium') || '',
               utm_campaign: p.get('utm_campaign') || '',
@@ -312,6 +313,7 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
             };
           } catch {
             return {
+              utm_id: '',
               utm_source: '',
               utm_medium: '',
               utm_campaign: '',
@@ -364,6 +366,16 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
               ? String((safeFields as any).name).trim()
               : '';
 
+        // Inferência (mesma lógica do tracker): fbclid ⇒ facebook/cpc e click_id
+        const fbclidFinal = pickStr('fbclid') || urlParams.fbclid || pickFallback('fbclid');
+        const gclidFinal = pickStr('gclid') || urlParams.gclid || pickFallback('gclid');
+        const utmSourceRaw = pickStr('utm_source') || urlParams.utm_source || pickFallback('utm_source');
+        const utmMediumRaw = pickStr('utm_medium') || urlParams.utm_medium || pickFallback('utm_medium');
+        const inferredUtmSource = !utmSourceRaw && fbclidFinal ? 'facebook' : !utmSourceRaw && gclidFinal ? 'google' : '';
+        const inferredUtmMedium = inferredUtmSource && !utmMediumRaw ? 'cpc' : '';
+        const clickIdRaw = pickStr('click_id') || urlParams.click_id || pickFallback('click_id');
+        const inferredClickId = !clickIdRaw && fbclidFinal ? fbclidFinal : '';
+
         const auditTopLevel = {
           // Page context
           page_title: pickStr('page_title') || pickFallback('page_title'),
@@ -371,21 +383,23 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
           page_location: pageLocation || urlParams.page_location || pickFallback('page_location'),
           event_url: eventSourceUrlForAudit,
           // IDs
-          fbclid: pickStr('fbclid') || urlParams.fbclid || pickFallback('fbclid'),
-          gclid: pickStr('gclid') || urlParams.gclid || pickFallback('gclid'),
-          click_id: pickStr('click_id') || urlParams.click_id || pickFallback('click_id'),
+          fbclid: fbclidFinal,
+          gclid: gclidFinal,
+          click_id: clickIdRaw || inferredClickId,
           // UTMs
-          utm_source: pickStr('utm_source') || urlParams.utm_source || pickFallback('utm_source'),
-          utm_medium: pickStr('utm_medium') || urlParams.utm_medium || pickFallback('utm_medium'),
+          utm_id: pickStr('utm_id') || urlParams.utm_id || pickFallback('utm_id'),
+          utm_source: utmSourceRaw || inferredUtmSource,
+          utm_medium: utmMediumRaw || inferredUtmMedium,
           utm_campaign: pickStr('utm_campaign') || urlParams.utm_campaign || pickFallback('utm_campaign'),
           utm_content: pickStr('utm_content') || urlParams.utm_content || pickFallback('utm_content'),
           utm_term: pickStr('utm_term') || urlParams.utm_term || pickFallback('utm_term'),
           traffic_source:
             pickStr('traffic_source') ||
-            pickStr('utm_source') ||
-            urlParams.utm_source ||
+            utmSourceRaw ||
+            inferredUtmSource ||
             pickFallback('traffic_source') ||
-            pickFallback('utm_source'),
+            pickFallback('utm_source') ||
+            inferredUtmSource,
         };
 
         // Alguns snippets antigos podem reutilizar o mesmo event_id (bug/redirect/SPA).

@@ -390,6 +390,7 @@ export function LeadsTab({ siteId }: { siteId: number }) {
                         <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white/60 dark:bg-zinc-950/20 p-3">
                           <div className="text-[11px] font-semibold text-zinc-600 dark:text-zinc-400 mb-2">UTMs</div>
                           {([
+                            ['utm_id', 'utm_id'],
                             ['utm_source', 'utm_source'],
                             ['utm_medium', 'utm_medium'],
                             ['utm_campaign', 'utm_campaign'],
