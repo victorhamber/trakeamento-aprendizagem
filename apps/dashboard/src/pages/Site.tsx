@@ -646,10 +646,18 @@ export const SitePage = () => {
       return;
     }
 
-    const normalizedWebhookUrls = (formWebhookUrls || [])
-      .map((x) => String(x || '').trim())
-      .filter(Boolean)
-      .slice(0, 5);
+    const normalizedWebhookUrls = (() => {
+      const raw = (formWebhookUrls || []).map((x) => String(x || '').trim()).filter(Boolean);
+      const out: string[] = [];
+      const seen = new Set<string>();
+      for (const u of raw) {
+        if (seen.has(u)) continue;
+        seen.add(u);
+        out.push(u);
+        if (out.length >= 5) break;
+      }
+      return out;
+    })();
 
     const config = {
       fields: formFields,
@@ -722,7 +730,18 @@ export const SitePage = () => {
     const urls = Array.isArray(cfg.webhook_urls) ? cfg.webhook_urls : [];
     const cleaned = urls.map((x: any) => String(x || '').trim()).filter(Boolean);
     const fallback = typeof cfg.webhook_url === 'string' && cfg.webhook_url.trim() ? [cfg.webhook_url.trim()] : [];
-    const merged = [...cleaned, ...fallback].filter(Boolean).slice(0, 5);
+    const merged = (() => {
+      const raw = [...cleaned, ...fallback].filter(Boolean);
+      const out: string[] = [];
+      const seen = new Set<string>();
+      for (const u of raw) {
+        if (seen.has(u)) continue;
+        seen.add(u);
+        out.push(u);
+        if (out.length >= 5) break;
+      }
+      return out;
+    })();
     setFormWebhookUrls(merged.length ? merged : ['']);
     showFlash(`Formulário "${form.name}" carregado!`);
   };
