@@ -27,8 +27,32 @@ router.get('/sites/:siteId/forms', requireAuth, async (req, res) => {
   const site = await pool.query('SELECT id FROM sites WHERE id = $1 AND account_id = $2', [siteId, auth.accountId]);
   if (!site.rowCount) return res.status(404).json({ error: 'Site not found' });
 
-  const result = await pool.query('SELECT id, public_id, site_id, name, config, created_at, updated_at FROM site_forms WHERE site_id = $1 ORDER BY created_at DESC', [siteId]);
-  return res.json({ forms: result.rows });
+  const result = await pool.query(
+    'SELECT id, public_id, site_id, name, config, created_at, updated_at FROM site_forms WHERE site_id = $1 ORDER BY created_at DESC',
+    [siteId]
+  );
+
+  // Normaliza webhooks no payload de resposta para evitar duplicações em dashboards antigos
+  // (webhook_urls + webhook_url legado), sem precisar regravar no banco.
+  const forms = (result.rows || []).map((row: any) => {
+    const cfg = row?.config && typeof row.config === 'object' ? row.config : {};
+    const urlsRaw = Array.isArray(cfg.webhook_urls) ? cfg.webhook_urls : [];
+    const legacy = typeof cfg.webhook_url === 'string' ? cfg.webhook_url.trim() : '';
+    const cleaned = urlsRaw.map((x: any) => String(x || '').trim()).filter(Boolean);
+    const merged = legacy ? [...cleaned, legacy] : cleaned;
+    const out: string[] = [];
+    const seen = new Set<string>();
+    for (const u of merged) {
+      if (!u || seen.has(u)) continue;
+      seen.add(u);
+      out.push(u);
+      if (out.length >= 5) break;
+    }
+    const nextCfg = { ...cfg, webhook_urls: out, webhook_url: out[0] || '' };
+    return { ...row, config: nextCfg };
+  });
+
+  return res.json({ forms });
 });
 
 // Create Form
@@ -387,30 +411,71 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
       }
 
       // ── CAPI INTEGRATION (Fallback if frontend tracking failed or blocked) ──
-      // Se o formulário enviou a flag `tracked_by_frontend`, significa que o sdk.ts já
-      // enviou o evento para a rota /ingest com máxima qualidade (fbc, fbp, user_agent).
-      // Disparar outro CAPI aqui criaria redundância e derrubaria o Score por falta de cookies.
-      if (!body.tracked_by_frontend) {
-        // Remove raw PII from custom_data to avoid Hash Warnings from Meta
-        const piiKeys = ['email', 'mail', 'e_mail', 'phone', 'tel', 'telefone', 'celular', 'whatsapp', 'fn', 'firstname', 'first_name', 'primeironome', 'primeiro_nome', 'ln', 'lastname', 'last_name', 'sobrenome', 'ultimo_nome', 'name', 'nome', 'fullname', 'full_name', 'nomecompleto'];
-        const safeCustomData = Object.fromEntries(
-          Object.entries(body).filter(([k]) => !piiKeys.includes(k.toLowerCase().replace(/[^a-z0-9]/g, '')) && k !== 'event_id' && k !== 'tracked_by_frontend')
-        );
+      // O HTML antigo pode setar tracked_by_frontend=true só por existir window.tracker,
+      // mas não garantir que o /ingest foi enviado antes do redirect.
+      // Para não depender de trocar o HTML do site, checamos se o /ingest realmente chegou no banco.
+      // Se não chegou, enviamos CAPI por aqui (com o mesmo event_id) e o Meta dedup resolve.
+      try {
+        const eventIdRaw = typeof (body as any)?.event_id === 'string' ? String((body as any).event_id).trim() : '';
+        const eventIdSafe = eventIdRaw || `${eventName.toLowerCase()}_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 
-        // Send Event (async)
-        capiService.sendEventDetailed(siteKey, {
-          event_name: eventName,
-          event_time: Math.floor(Date.now() / 1000),
-          event_id: body.event_id || `${eventName.toLowerCase()}_${Date.now()}_${Math.random().toString(36).slice(2)}`,
-          event_source_url: req.headers.referer || `https://form-submit.trakeamento.com/${publicId}`,
-          action_source: 'website',
-          user_data: userData,
-          custom_data: {
-            form_name: form.name,
-            form_id: publicId,
-            ...safeCustomData
-          }
-        }).catch(err => console.error(`CAPI failed for form ${publicId}:`, err));
+        // Se existir um web_event "real" (não auditoria) com esse event_id, o /ingest já executou (inclui CAPI).
+        const ingestExists = await pool
+          .query(
+            `
+            SELECT 1
+            FROM web_events
+            WHERE site_key = $1
+              AND event_id = $2
+              AND COALESCE(custom_data->>'audit_kind', '') <> 'lead_audit'
+            LIMIT 1
+            `,
+            [siteKey, eventIdSafe]
+          )
+          .then((r) => (r.rowCount ?? 0) > 0)
+          .catch(() => false);
+
+        if (!ingestExists) {
+          // Remove raw PII from custom_data to avoid Hash Warnings from Meta
+          const piiKeys = [
+            'email', 'mail', 'e_mail',
+            'phone', 'tel', 'telefone', 'celular', 'whatsapp',
+            'fn', 'firstname', 'first_name', 'primeironome', 'primeiro_nome',
+            'ln', 'lastname', 'last_name', 'sobrenome', 'ultimo_nome',
+            'name', 'nome', 'fullname', 'full_name', 'nomecompleto'
+          ];
+          const safeCustomData = Object.fromEntries(
+            Object.entries(body).filter(([k]) => {
+              const nk = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+              return !piiKeys.includes(nk) && k !== 'event_id' && k !== 'tracked_by_frontend';
+            })
+          );
+
+          const pageLocation =
+            typeof (body as any)?.page_location === 'string' && String((body as any).page_location).trim()
+              ? String((body as any).page_location).trim()
+              : '';
+          const eventSourceUrl = pageLocation || (req.headers.referer as string | undefined) || `https://form-submit.trakeamento.com/${publicId}`;
+
+          capiService
+            .sendEventDetailed(siteKey, {
+              event_name: eventName,
+              event_time: Math.floor(Date.now() / 1000),
+              event_id: eventIdSafe,
+              event_source_url: eventSourceUrl,
+              action_source: 'website',
+              user_data: userData,
+              custom_data: {
+                form_name: form.name,
+                form_id: publicId,
+                meta_event_name: eventName,
+                ...safeCustomData,
+              },
+            })
+            .catch((err) => console.error(`CAPI failed for form ${publicId}:`, err));
+        }
+      } catch (err) {
+        console.error(`[Forms] CAPI fallback check failed for form ${publicId}:`, err);
       }
     }
 
