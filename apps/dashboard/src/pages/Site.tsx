@@ -1350,8 +1350,8 @@ async function handleTrkSubmit(e) {
   var phoneDigits = (phoneRaw || '').toString().replace(/[^0-9]/g, '');
   if (phoneDigits) data.phone = '+' + ddiDigits + phoneDigits;
 
-  // Prevent duplicates by generating a single event ID for both Tracker (browser) and API (server)
-  var eventId = 'evt_' + Math.floor(Date.now() / 1000) + '_' + Math.random().toString(36).slice(2);
+  // Gera um único event_id (mesmo formato do tracker) para dedup entre browser/server
+  var eventId = Math.random().toString(36).slice(2) + Date.now().toString(36);
   data.event_id = eventId;
   data.tracked_by_frontend = !!window.tracker;
   data.meta_event_name = '${evtName}';
@@ -1380,7 +1380,15 @@ async function handleTrkSubmit(e) {
     window.tracker.identify(data);
   }
 
-  // 2. Server-side submission
+  // 2. Dispara o evento no tracker imediatamente (garante /ingest + CAPI server-side antes de redirect)
+  if (window.tracker) {
+    var evtData = { event_id: eventId };
+    ${(event_value && !isNaN(parseFloat(event_value))) ? `evtData.value = ${parseFloat(event_value)};` : ''}
+    ${(event_currency) ? `evtData.currency = '${event_currency}';` : ''}
+    window.tracker.track('${evtName}', evtData);
+  }
+
+  // 3. Server-side submission (webhooks, auditoria, ações pós-cadastro)
   try {
     var res = await fetch('${endpoint}', {
       method: 'POST',
@@ -1390,12 +1398,6 @@ async function handleTrkSubmit(e) {
     var json = await res.json();
 
     if (json.action === 'redirect' && json.redirect_url) {
-      if (window.tracker) {
-        var evtData = { event_id: eventId };
-        ${(event_value && !isNaN(parseFloat(event_value))) ? `evtData.value = ${parseFloat(event_value)};` : ''}
-        ${(event_currency) ? `evtData.currency = '${event_currency}';` : ''}
-        window.tracker.track('${evtName}', evtData);
-      }
       setTimeout(function() {
         if (window.taDecorateUrl) {
           window.location.href = window.taDecorateUrl(json.redirect_url);
@@ -1406,12 +1408,6 @@ async function handleTrkSubmit(e) {
     } else if (json.message) {
       form.innerHTML = '<div style="padding:20px; text-align:center; color:${isDark ? '#fff' : '#000'};">' + json.message + '</div>';
     } else {
-       if (window.tracker) {
-         var evtData = { event_id: eventId };
-         ${(event_value && !isNaN(parseFloat(event_value))) ? `evtData.value = ${parseFloat(event_value)};` : ''}
-         ${(event_currency) ? `evtData.currency = '${event_currency}';` : ''}
-         window.tracker.track('${evtName}', evtData);
-       }
        form.reset();
        alert('Enviado com sucesso!');
        btn.disabled = false;

@@ -219,17 +219,28 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
       }
 
       // Determine Event Name from Config (evento configurado para enviar ao Meta)
+      // Observação: versões antigas salvavam event_type como "custom" (minúsculo) — tratamos case-insensitive.
+      const cfgTypeRaw = typeof form.config?.event_type === 'string' ? String(form.config.event_type).trim() : '';
+      const cfgTypeNorm = cfgTypeRaw.toLowerCase();
+      const cfgCustom =
+        typeof form.config?.custom_event_name === 'string' ? String(form.config.custom_event_name).trim() : '';
+      const fromBody =
+        typeof (req.body as any)?.meta_event_name === 'string' ? String((req.body as any).meta_event_name).trim() : '';
+
+      // Prioridade:
+      // 1) Nome custom salvo no formulário
+      // 2) Evento padrão salvo no formulário (event_type != Custom/custom)
+      // 3) Nome enviado pelo snippet (meta_event_name) quando for Custom/custom
+      // 4) Fallback Lead
       let eventName = 'Lead';
-      if (form.config?.event_type) {
-        if (form.config.event_type === 'Custom') {
-          const fromCfg = typeof form.config.custom_event_name === 'string' ? form.config.custom_event_name.trim() : '';
-          const fromBody =
-            typeof (req.body as any)?.meta_event_name === 'string' ? String((req.body as any).meta_event_name).trim() : '';
-          // Se o nome custom não estiver salvo (vazio), aceitamos o nome enviado pelo gerador do formulário.
-          eventName = fromCfg || fromBody || 'Lead';
-        } else {
-          eventName = form.config.event_type;
-        }
+      if (cfgCustom) {
+        eventName = cfgCustom;
+      } else if (cfgTypeRaw && cfgTypeNorm !== 'custom') {
+        eventName = cfgTypeRaw;
+      } else if (fromBody) {
+        eventName = fromBody;
+      } else if (cfgTypeRaw) {
+        eventName = cfgTypeRaw;
       }
 
       // ── Auditoria: persiste o cadastro (lead audit) com os campos do formulário ──
