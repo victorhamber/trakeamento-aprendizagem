@@ -207,6 +207,7 @@ export const DashboardPage = () => {
   const [period, setPeriod] = useState('last_7d');
   const [currency, setCurrency] = useState('BRL');
   const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains('dark'));
+  const [metaSyncBusy, setMetaSyncBusy] = useState(false);
 
   useEffect(() => {
     const obs = new MutationObserver(() => {
@@ -240,6 +241,40 @@ export const DashboardPage = () => {
       .catch(() => setFunnelData(null));
 
   }, [period, currency, selectedSiteId]);
+
+  useEffect(() => {
+    if (!selectedSiteId) return;
+
+    let cancelled = false;
+    const siteIdNum = Number(selectedSiteId);
+    if (!Number.isFinite(siteIdNum)) return;
+
+    const syncOnce = async () => {
+      if (metaSyncBusy) return;
+      setMetaSyncBusy(true);
+      try {
+        await api.post('/meta/sync', { site_id: siteIdNum, date_preset: period });
+        if (cancelled) return;
+        const params: any = { period, currency, siteId: selectedSiteId };
+        const refreshed = await api.get('/stats/overview', { params });
+        if (!cancelled) setData(refreshed.data);
+      } catch {
+        // silêncio: se falhar, mantemos o último snapshot (Meta pode estar desconectado).
+      } finally {
+        if (!cancelled) setMetaSyncBusy(false);
+      }
+    };
+
+    // Atualiza ao entrar/trocar período e depois mantém “auto refresh”.
+    void syncOnce();
+    const interval = window.setInterval(() => void syncOnce(), 5 * 60 * 1000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSiteId, period, currency]);
 
   const fmtCurrency = (v: number) =>
     new Intl.NumberFormat(currency === 'BRL' ? 'pt-BR' : 'en-US', { style: 'currency', currency, maximumFractionDigits: 2 }).format(v);
