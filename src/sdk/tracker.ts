@@ -24,6 +24,42 @@ function getCookie(name: string): string | undefined {
   return match ? decodeURIComponent(match[1]) : undefined
 }
 
+function setCookie(
+  name: string,
+  value: string,
+  opts: { days?: number; sameSite?: 'Lax' | 'Strict' | 'None'; secure?: boolean } = {},
+): void {
+  const days = Number.isFinite(opts.days) ? Number(opts.days) : 365
+  const expires = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toUTCString()
+  const sameSite = opts.sameSite || 'Lax'
+  const secure = opts.secure ?? (typeof location !== 'undefined' && location.protocol === 'https:')
+  const parts = [
+    `${encodeURIComponent(name)}=${encodeURIComponent(value)}`,
+    `Expires=${expires}`,
+    'Path=/',
+    `SameSite=${sameSite}`,
+  ]
+  if (secure) parts.push('Secure')
+  document.cookie = parts.join('; ')
+}
+
+function safeGetLocalStorage(key: string): string | undefined {
+  try {
+    const v = localStorage.getItem(key)
+    return v && v.trim() ? v : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function safeSetLocalStorage(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value)
+  } catch {
+    // ignore
+  }
+}
+
 function getLoadTimeMs(): number | undefined {
   const nav = performance.getEntriesByType('navigation')[0] as
     | PerformanceNavigationTiming
@@ -74,6 +110,27 @@ export function createTracker(config: TrackerConfig = {}) {
   const endpoint = config.endpoint || '/api/ingest/events'
   const siteKey = config.siteKey
 
+  const EXTERNAL_ID_COOKIE = '_ta_external_id'
+  const EXTERNAL_ID_LS = 'ta:external_id'
+
+  const getOrCreateExternalId = (): string | undefined => {
+    const fromCookie = getCookie(EXTERNAL_ID_COOKIE)
+    if (fromCookie) return fromCookie
+
+    const fromLs = safeGetLocalStorage(EXTERNAL_ID_LS)
+    if (fromLs) {
+      // re-hidrata cookie quando possível (mantém consistência para requests)
+      setCookie(EXTERNAL_ID_COOKIE, fromLs, { days: 365, sameSite: 'Lax' })
+      return fromLs
+    }
+
+    const id = createEventId()
+    // tenta persistir em ambos — alguns browsers bloqueiam cookie, outros bloqueiam storage
+    setCookie(EXTERNAL_ID_COOKIE, id, { days: 365, sameSite: 'Lax' })
+    safeSetLocalStorage(EXTERNAL_ID_LS, id)
+    return id
+  }
+
   const track = async (input: TrackEventInput): Promise<{ event_id: string }> => {
     const eventId = input.event_id || createEventId()
     const eventTime = input.event_time || Math.floor(Date.now() / 1000)
@@ -88,6 +145,8 @@ export function createTracker(config: TrackerConfig = {}) {
       load_time_ms: input.load_time_ms ?? getLoadTimeMs(),
       fbp: input.fbp || getCookie('_fbp'),
       fbc: input.fbc || getCookie('_fbc'),
+      // external_id persistente (por navegador) quando não fornecido pelo caller
+      external_id: input.external_id || getOrCreateExternalId(),
     }
 
     await sendEvent(endpoint, siteKey, payload)
@@ -96,6 +155,7 @@ export function createTracker(config: TrackerConfig = {}) {
 
   return {
     createEventId,
+    getExternalId: getOrCreateExternalId,
     track,
     pageView: (custom_data?: Record<string, unknown>) =>
       track({ event_name: 'PageView', custom_data }),
