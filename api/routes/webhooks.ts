@@ -1,7 +1,7 @@
 import express, { type Request, type Response } from 'express'
 import { getPool } from '../db/pool.js'
 import { hmacSha256Hex, safeEqualHex } from '../lib/crypto.js'
-import { buildCapiEvent, hashExternalId } from '../lib/metaCapi.js'
+import { buildCapiEvent, buildCrmQualificationCapiEvent, hashExternalId } from '../lib/metaCapi.js'
 
 type PurchaseWebhookBody = Record<string, unknown>
 
@@ -130,6 +130,21 @@ router.post('/purchase', async (req: Request, res: Response) => {
     },
   })
 
+  const crmQualifyPurchasesEnabled =
+    String(process.env.META_CRM_QUALIFY_PURCHASES || '1').trim() !== '0'
+
+  const crmLeadEvent =
+    crmQualifyPurchasesEnabled
+      ? buildCrmQualificationCapiEvent({
+          originalEvent: capiEvent,
+          label: 'Compra realizada',
+          includeValueAndCurrency:
+            value != null && currency
+              ? { value: Number(value) || 0, currency: String(currency) }
+              : undefined,
+        })
+      : null
+
   const pool = getPool()
   const client = await pool.connect()
 
@@ -180,6 +195,23 @@ router.post('/purchase', async (req: Request, res: Response) => {
         `,
         [siteKey, 'Purchase', Math.floor(eventTime), eventId, capiEvent],
       )
+
+      if (crmLeadEvent) {
+        await client.query(
+          `
+            INSERT INTO meta_outbox (
+              site_key,
+              event_name,
+              event_time,
+              event_id,
+              payload
+            )
+            VALUES ($1,$2,$3,$4,$5)
+            ON CONFLICT (site_key, event_id) DO NOTHING
+          `,
+          [siteKey, crmLeadEvent.event_name, crmLeadEvent.event_time, crmLeadEvent.event_id, crmLeadEvent],
+        )
+      }
     }
 
     await client.query('COMMIT')

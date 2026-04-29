@@ -5,7 +5,7 @@ export type MetaCapiEvent = {
   event_time: number
   event_id: string
   event_source_url?: string
-  action_source: 'website'
+  action_source: 'website' | 'system_generated'
   user_data: {
     client_ip_address?: string
     client_user_agent?: string
@@ -46,6 +46,37 @@ export function buildCapiEvent(input: {
       external_id: input.external_ids?.length ? input.external_ids : undefined,
     },
     custom_data: input.custom_data,
+  }
+}
+
+export function buildCrmQualificationCapiEvent(args: {
+  originalEvent: MetaCapiEvent
+  label: string
+  includeValueAndCurrency?: { value: number; currency: string }
+}): MetaCapiEvent {
+  const { originalEvent, label, includeValueAndCurrency } = args
+  const safeLabel =
+    typeof label === 'string' && label.trim().length
+      ? label.trim().slice(0, 120)
+      : originalEvent.event_name
+
+  const custom_data: Record<string, unknown> = {
+    event_source: 'crm',
+    lead_event_source: safeLabel,
+  }
+  if (includeValueAndCurrency) {
+    if (Number.isFinite(includeValueAndCurrency.value)) custom_data.value = includeValueAndCurrency.value
+    if (includeValueAndCurrency.currency) custom_data.currency = includeValueAndCurrency.currency
+  }
+
+  return {
+    event_name: 'Lead',
+    event_time: originalEvent.event_time,
+    event_id: `${originalEvent.event_id}_crm`,
+    event_source_url: originalEvent.event_source_url,
+    action_source: 'system_generated',
+    user_data: originalEvent.user_data,
+    custom_data,
   }
 }
 
