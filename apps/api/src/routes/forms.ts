@@ -3,7 +3,7 @@ import { pool } from '../db/pool';
 import { requireAuth } from '../middleware/auth';
 import { capiService, CapiService } from '../services/capi';
 import { getClientIp } from '../lib/ip';
-import { geoFromGeoipLite } from '../lib/request-geo';
+import { geoFromGeoipLite, resolveServerGeoHint } from '../lib/request-geo';
 
 const router = Router();
 
@@ -383,6 +383,9 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
         const clickIdRaw = pickStr('click_id') || urlParams.click_id || pickFallback('click_id');
         const inferredClickId = !clickIdRaw && fbclidFinal ? fbclidFinal : '';
 
+        const submitClientIp = getClientIp(req);
+        const submitGeoHint = await resolveServerGeoHint(req, submitClientIp);
+
         const auditTopLevel = {
           // Page context
           page_title: pickStr('page_title') || pickFallback('page_title'),
@@ -427,7 +430,7 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
             new Date(eventTimeSec * 1000),
             eventSourceUrlForAudit,
             {
-              client_ip_address: getClientIp(req),
+              client_ip_address: submitClientIp || undefined,
               client_user_agent: req.headers['user-agent'] || undefined,
               external_id: userData.external_id,
               fbp: typeof body.fbp === 'string' ? body.fbp : undefined,
@@ -442,6 +445,13 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
               name: name || fullNameFromFields || fullNameFromFnLn || null,
               email: email || null,
               phone: phone || null,
+              // Geo no momento do POST (headers CDN + geoip-lite + GEO_IP_LOOKUP_URL).
+              // lead_audit não passa pelo /ingest — sem isso a lista dependia só de geoip IPv4.
+              audit_geo: {
+                city: submitGeoHint.city?.trim() || null,
+                region: submitGeoHint.region?.trim() || null,
+                country: submitGeoHint.country?.trim() || null,
+              },
               ...auditTopLevel,
               fields: safeFields,
             },

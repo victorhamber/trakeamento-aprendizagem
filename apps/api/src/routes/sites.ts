@@ -73,6 +73,70 @@ function buildBuyerUserAgentSummary(opts: {
   };
 }
 
+type AuditGeoHint = { city?: string; region?: string; country?: string };
+
+function pickAuditGeoFromCustomData(cd: unknown): AuditGeoHint {
+  if (!cd || typeof cd !== 'object') return {};
+  const o = cd as Record<string, unknown>;
+  const g = o.audit_geo;
+  if (!g || typeof g !== 'object' || Array.isArray(g)) return {};
+  const rec = g as Record<string, unknown>;
+  const city = typeof rec.city === 'string' ? rec.city.trim() : '';
+  const region = typeof rec.region === 'string' ? rec.region.trim() : '';
+  const country = typeof rec.country === 'string' ? rec.country.trim() : '';
+  return {
+    ...(city ? { city } : {}),
+    ...(region ? { region } : {}),
+    ...(country ? { country } : {}),
+  };
+}
+
+function geoFromIpBestEffort(ipRaw: string | null | undefined) {
+  const ip = ipRaw && String(ipRaw).trim() ? String(ipRaw).trim() : '';
+  if (!ip) return null;
+  const g = geoFromGeoipLite(ip);
+  if (!g || (!g.city && !g.region && !g.country)) return null;
+  return g;
+}
+
+function mergeLeadAuditLocation(opts: {
+  visitorCity: string | null | undefined;
+  visitorState: string | null | undefined;
+  visitorCountry: string | null | undefined;
+  auditGeo: AuditGeoHint;
+  ipFromEvent: string | null | undefined;
+  ipFromVisitor: string | null | undefined;
+}): { city: string | null; state: string | null; country: string | null } {
+  const geoFromEventIp = geoFromIpBestEffort(opts.ipFromEvent);
+  const geoFromVisitorIp =
+    geoFromEventIp && (geoFromEventIp.city || geoFromEventIp.region || geoFromEventIp.country)
+      ? null
+      : geoFromIpBestEffort(opts.ipFromVisitor);
+  const geo = geoFromEventIp || geoFromVisitorIp;
+
+  const city =
+    (opts.visitorCity && String(opts.visitorCity).trim()) ||
+    opts.auditGeo.city ||
+    (geo?.city ? String(geo.city) : '') ||
+    '';
+  const state =
+    (opts.visitorState && String(opts.visitorState).trim()) ||
+    opts.auditGeo.region ||
+    (geo?.region ? String(geo.region) : '') ||
+    '';
+  const country =
+    (opts.visitorCountry && String(opts.visitorCountry).trim()) ||
+    opts.auditGeo.country ||
+    (geo?.country ? String(geo.country) : '') ||
+    '';
+
+  return {
+    city: city ? city.slice(0, 255) : null,
+    state: state ? state.slice(0, 255) : null,
+    country: country ? country.slice(0, 255) : null,
+  };
+}
+
 /** Meta Purchase exige currency + value (Pixel / CAPI). */
 const BUTTON_RULE_HREF_MAX = 500;
 const BUTTON_RULE_CLASS_MAX = 200;
@@ -1858,6 +1922,8 @@ router.get('/:siteId/leads', requireAuth, async (req, res) => {
         b.user_data,
         sv.city,
         sv.state,
+        sv.country,
+        sv.last_ip AS visitor_last_ip,
         sv.last_group_tag AS group_tag,
         sv.last_user_agent AS visitor_user_agent
       FROM base b
@@ -1903,12 +1969,18 @@ router.get('/:siteId/leads', requireAuth, async (req, res) => {
       const hit = key ? metaCache.get(key) : null;
       const meta = hit?.row ?? null;
       const source = hit?.source ?? null;
-      const ip =
+      const ipFromEvent =
         (typeof (r.user_data || {}) === 'object' && r.user_data ? (r.user_data as any).client_ip_address : null) || null;
-      const geo = ip ? geoFromGeoipLite(String(ip)) : null;
-      const cityFallback = geo?.city ? String(geo.city) : null;
-      const stateFallback = geo?.region ? String(geo.region) : null;
-      const country = geo?.country ? String(geo.country) : null;
+      const ipFromVisitor = (r as any).visitor_last_ip ? String((r as any).visitor_last_ip) : null;
+      const auditGeo = pickAuditGeoFromCustomData(r.custom_data);
+      const loc = mergeLeadAuditLocation({
+        visitorCity: r.city,
+        visitorState: r.state,
+        visitorCountry: (r as any).country,
+        auditGeo,
+        ipFromEvent: ipFromEvent ? String(ipFromEvent) : null,
+        ipFromVisitor,
+      });
       const leadUa =
         (typeof (r.user_data || {}) === 'object' && r.user_data ? (r.user_data as any).client_user_agent : null) || null;
       const uaSummary = buildBuyerUserAgentSummary({
@@ -1922,9 +1994,9 @@ router.get('/:siteId/leads', requireAuth, async (req, res) => {
         event_source_url: r.event_source_url,
         external_id: r.external_id,
         group_tag: r.group_tag || null,
-        city: r.city || cityFallback || null,
-        state: r.state || stateFallback || null,
-        country,
+        city: loc.city,
+        state: loc.state,
+        country: loc.country,
         device: uaSummary?.device_hint || 'unknown',
         utm,
         meta_attribution: meta,
@@ -1979,7 +2051,7 @@ router.get('/:siteId/leads/:eventId', requireAuth, async (req, res) => {
     const externalId = row.external_id ? String(row.external_id) : null;
     const visitorRes = externalId
       ? await pool.query(
-          `SELECT external_id, city, state, last_group_tag, last_user_agent, last_ip, last_seen_at
+          `SELECT external_id, city, state, country, last_group_tag, last_user_agent, last_ip, last_seen_at
            FROM site_visitors
            WHERE site_key = $1 AND external_id = $2
            LIMIT 1`,
@@ -1991,12 +2063,17 @@ router.get('/:siteId/leads/:eventId', requireAuth, async (req, res) => {
     const eventSourceUrl = typeof row.event_source_url === 'string' ? String(row.event_source_url) : null;
     const utm = mergePageviewUtm(row.custom_data, eventSourceUrl);
     const { row: meta, source } = await resolveMetaAttributionFromUtm(siteId, utm);
-    const ip =
+    const ipFromEvent =
       (typeof (row.user_data || {}) === 'object' && row.user_data ? (row.user_data as any).client_ip_address : null) || null;
-    const geo = ip ? geoFromGeoipLite(String(ip)) : null;
-    const cityFallback = geo?.city ? String(geo.city) : null;
-    const stateFallback = geo?.region ? String(geo.region) : null;
-    const country = geo?.country ? String(geo.country) : null;
+    const auditGeo = pickAuditGeoFromCustomData(row.custom_data);
+    const loc = mergeLeadAuditLocation({
+      visitorCity: v?.city,
+      visitorState: v?.state,
+      visitorCountry: v?.country,
+      auditGeo,
+      ipFromEvent: ipFromEvent ? String(ipFromEvent) : null,
+      ipFromVisitor: v?.last_ip ? String(v.last_ip) : null,
+    });
     const leadUa =
       (typeof (row.user_data || {}) === 'object' && row.user_data ? (row.user_data as any).client_user_agent : null) || null;
     const uaSummary = buildBuyerUserAgentSummary({
@@ -2012,9 +2089,9 @@ router.get('/:siteId/leads/:eventId', requireAuth, async (req, res) => {
         event_source_url: row.event_source_url,
         external_id: externalId,
         group_tag: v?.last_group_tag || null,
-        city: v?.city || cityFallback || null,
-        state: v?.state || stateFallback || null,
-        country,
+        city: loc.city,
+        state: loc.state,
+        country: loc.country,
         device: uaSummary?.device_hint || 'unknown',
         utm,
         meta_attribution: meta,
