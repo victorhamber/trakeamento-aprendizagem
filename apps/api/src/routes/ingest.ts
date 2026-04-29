@@ -14,6 +14,10 @@ import { mergeUserDataWithMetaParamBuilder } from '../lib/meta-param-builder-ing
 import { normalizeMetaCurrencyCode } from '../lib/meta-currency';
 import { buildVisitorTrafficSourceString } from '../lib/visitorTrafficSource';
 import { checkEventQuota } from '../lib/quota';
+import {
+  buildCrmQualificationCapiPayload,
+  getCrmQualifyForRule,
+} from '../lib/crm-qualification';
 
 const LRUCache = require('lru-cache').LRUCache || require('lru-cache');
 
@@ -1046,6 +1050,43 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
       // Fire-and-forget com retry — não bloqueia a resposta HTTP
       sendCapiWithRetry(siteKey, capiPayload).catch(() => { });
 
+      // ── 2b. Qualificação CRM (estilo Meta) — aditivo, opt-in por regra ──
+      // Quando uma regra (URL/clique) é marcada com `_crm_qualify=true` no painel,
+      // dispara um 2º evento CAPI estilo CRM em paralelo (event_id = <orig>_crm).
+      // Usa o `_taRuleId` que o SDK já injeta no custom_data quando uma regra casa
+      // (apps/api/src/routes/sdk.ts L1524). NÃO modifica o evento original.
+      try {
+        const ruleIdRaw = (event.custom_data ?? {})['_taRuleId'];
+        const ruleId =
+          typeof ruleIdRaw === 'number'
+            ? ruleIdRaw
+            : typeof ruleIdRaw === 'string'
+              ? Number(ruleIdRaw)
+              : NaN;
+        if (Number.isFinite(ruleId)) {
+          const qual = await getCrmQualifyForRule(siteKey, ruleId);
+          if (qual?.enabled) {
+            const includeValueAndCurrency =
+              eventName === 'Purchase' &&
+              typeof metaCustomData.value === 'number' &&
+              typeof metaCustomData.currency === 'string'
+                ? {
+                    value: Number(metaCustomData.value),
+                    currency: String(metaCustomData.currency),
+                  }
+                : undefined;
+            const crmPayload = buildCrmQualificationCapiPayload({
+              originalCapiEvent: capiPayload,
+              label: qual.label || eventName,
+              includeValueAndCurrency,
+            });
+            sendCapiWithRetry(siteKey, crmPayload).catch(() => {});
+          }
+        }
+      } catch (err) {
+        console.warn('[Ingest] CRM qualification hook error (non-fatal):', err);
+      }
+
       // ── 3. Envio GA4 (Server-side) ───────────────────────────────────────
       // Também assíncrono para não impactar latência
       ga4Service.sendEvent(
@@ -1320,14 +1361,51 @@ router.post('/batch', cors(), ingestLimiter, async (req, res) => {
 
         const actionSrc = actionSourceForCapi(p.event.action_source);
 
-        sendCapiWithRetry(siteKey, {
-          event_name: p.eventName, event_time: p.eventTimeSec, event_id: p.eventId,
+        const batchCapiPayload: CapiEvent = {
+          event_name: p.eventName,
+          event_time: p.eventTimeSec,
+          event_id: p.eventId,
           event_source_url: p.eventSourceUrl,
           ...(actionSrc ? { action_source: actionSrc } : {}),
           ...(refUrl ? { referrer_url: refUrl } : {}),
           user_data: capiUser,
           ...(Object.keys(metaCustomData).length > 0 ? { custom_data: metaCustomData } : {}),
-        }).catch(() => {});
+        };
+
+        sendCapiWithRetry(siteKey, batchCapiPayload).catch(() => {});
+
+        // ── Qualificação CRM (estilo Meta) — aditivo, opt-in por regra ──
+        try {
+          const ruleIdRaw = (p.event.custom_data ?? {})['_taRuleId'];
+          const ruleId =
+            typeof ruleIdRaw === 'number'
+              ? ruleIdRaw
+              : typeof ruleIdRaw === 'string'
+                ? Number(ruleIdRaw)
+                : NaN;
+          if (Number.isFinite(ruleId)) {
+            const qual = await getCrmQualifyForRule(siteKey, ruleId);
+            if (qual?.enabled) {
+              const includeValueAndCurrency =
+                p.eventName === 'Purchase' &&
+                typeof metaCustomData.value === 'number' &&
+                typeof metaCustomData.currency === 'string'
+                  ? {
+                      value: Number(metaCustomData.value),
+                      currency: String(metaCustomData.currency),
+                    }
+                  : undefined;
+              const crmPayload = buildCrmQualificationCapiPayload({
+                originalCapiEvent: batchCapiPayload,
+                label: qual.label || p.eventName,
+                includeValueAndCurrency,
+              });
+              sendCapiWithRetry(siteKey, crmPayload).catch(() => {});
+            }
+          }
+        } catch (err) {
+          console.warn('[Ingest/Batch] CRM qualification hook error (non-fatal):', err);
+        }
 
         ga4Service.sendEvent(siteKey, p.eventName, { ...p.event.custom_data, ...p.event.telemetry }, {
           client_id: p.event.user_data?.external_id || undefined, user_id: undefined,

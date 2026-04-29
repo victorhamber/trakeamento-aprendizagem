@@ -716,6 +716,16 @@ export const ensureSchema = async (pool: Pool) => {
     await pool.query('CREATE INDEX IF NOT EXISTS idx_mentor_chat_account_site ON mentor_chat_history(account_id, site_key, created_at DESC)');
   });
 
+  // Qualificação CRM (estilo Meta): toggle por site para enviar Purchase como qualificação máxima
+  // (event_name=Lead, action_source=system_generated, custom_data.event_source=crm) automaticamente.
+  // Default TRUE — ativa para clientes existentes, mas eles podem desligar pela aba Meta.
+  // Aditivo: NÃO altera coluna alguma já em uso, NÃO mexe em token/Pixel/SDK.
+  await migrate('integrations_meta_crm_qualify_purchases', async () => {
+    await pool.query(
+      'ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS crm_qualify_purchases BOOLEAN DEFAULT TRUE'
+    );
+  });
+
   if (!process.env.DATABASE_URL) {
     const existing = await pool.query('SELECT id FROM users LIMIT 1');
     if (!(existing.rowCount || 0)) {

@@ -14,6 +14,10 @@ import type { SaleNotifyKind } from '../services/sale-notification';
 import { DDI_LIST } from '../lib/ddi';
 import { buildVisitorTrafficSourceString } from '../lib/visitorTrafficSource';
 import { createLogger } from '../lib/logger';
+import {
+  buildCrmQualificationCapiPayload,
+  shouldQualifyPurchasesForSite,
+} from '../lib/crm-qualification';
 
 const log = createLogger('Webhook');
 const router = Router();
@@ -1346,6 +1350,35 @@ async function processPurchaseWebhook({
           log.info('Pending payment → sending as InitiateCheckout', { order_id: orderId });
         }
         sendCapiWithRetry(siteKey, capiPayload).catch(err => log.error('CAPI send error', { order_id: orderId, error: String(err) }));
+
+        // ── Qualificação CRM (estilo Meta) — automática para Purchase ──
+        // Só dispara para Purchase (não para InitiateCheckout pendente) e respeita o toggle
+        // global `integrations_meta.crm_qualify_purchases` (default TRUE — ligado para
+        // todos os clientes existentes, mas desligável pela aba Meta do painel).
+        // event_id derivado (`<purchase>_crm`) → não duplica com o evento original no Meta.
+        if (!isPending) {
+          shouldQualifyPurchasesForSite(siteKey)
+            .then((enabled) => {
+              if (!enabled) return;
+              const valueNum = Number(value);
+              const safeValue = Number.isFinite(valueNum) && valueNum >= 0 ? valueNum : 0;
+              const crmPayload = buildCrmQualificationCapiPayload({
+                originalCapiEvent: capiPayload,
+                label: 'Compra realizada',
+                includeValueAndCurrency: {
+                  value: safeValue,
+                  currency: String(resolvedCurrency || 'BRL'),
+                },
+              });
+              return sendCapiWithRetry(siteKey, crmPayload);
+            })
+            .catch((err) =>
+              log.error('CRM qualification (purchase) error', {
+                order_id: orderId,
+                error: String(err),
+              })
+            );
+        }
       }
     }
   }

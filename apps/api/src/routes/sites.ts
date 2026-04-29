@@ -11,6 +11,7 @@ import {
   parseStoredTrafficSource,
   utmRecordFromPurchaseRow,
 } from '../lib/visitorTrafficSource';
+import { invalidateCrmCaches } from '../lib/crm-qualification';
 import { LlmService } from '../services/llm';
 
 const router = Router();
@@ -98,6 +99,32 @@ function sanitizeButtonMatchParameters(raw: Record<string, unknown>): Record<str
   return out;
 }
 
+// Qualificação CRM (estilo Meta) — campos opcionais armazenados no parameters JSONB.
+// Mantemos compatibilidade total: se ausentes, regra se comporta como antes.
+const CRM_LABEL_MAX = 120;
+function sanitizeCrmQualifyParameters(raw: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...raw };
+  const qualifyRaw = out._crm_qualify;
+  const isEnabled =
+    qualifyRaw === true ||
+    qualifyRaw === 'true' ||
+    qualifyRaw === 1 ||
+    qualifyRaw === '1';
+  if (isEnabled) {
+    out._crm_qualify = true;
+    const labelRaw = typeof out._crm_label === 'string' ? out._crm_label.trim() : '';
+    if (labelRaw) {
+      out._crm_label = labelRaw.length > CRM_LABEL_MAX ? labelRaw.slice(0, CRM_LABEL_MAX) : labelRaw;
+    } else {
+      delete out._crm_label;
+    }
+  } else {
+    delete out._crm_qualify;
+    delete out._crm_label;
+  }
+  return out;
+}
+
 function buttonRuleHasMatch(match_text: unknown, parameters: unknown): boolean {
   const textOk = typeof match_text === 'string' && match_text.trim().length > 0;
   const p =
@@ -118,7 +145,9 @@ function normalizeEventRuleParameters(
 ): { ok: true; parameters: Record<string, unknown> } | { ok: false; error: string } {
   const base =
     parameters && typeof parameters === 'object' && !Array.isArray(parameters)
-      ? sanitizeButtonMatchParameters({ ...(parameters as Record<string, unknown>) })
+      ? sanitizeCrmQualifyParameters(
+          sanitizeButtonMatchParameters({ ...(parameters as Record<string, unknown>) })
+        )
       : {};
 
   if (eventName !== 'Purchase') {
@@ -1009,6 +1038,15 @@ router.post('/:siteId/event-rules', requireAuth, async (req, res) => {
     ]
   );
 
+  // Invalida cache CRM para refletir flag _crm_qualify imediatamente
+  try {
+    const siteKeyRow = await pool.query('SELECT site_key FROM sites WHERE id = $1', [siteId]);
+    const siteKey = siteKeyRow.rows[0]?.site_key;
+    if (siteKey) invalidateCrmCaches(String(siteKey), Number(result.rows[0]?.id));
+  } catch {
+    // não crítico — cache expira em 60s
+  }
+
   return res.status(201).json({ rule: result.rows[0] });
 });
 
@@ -1056,6 +1094,14 @@ router.put('/:siteId/event-rules/:id', requireAuth, async (req, res) => {
 
   if (!result.rowCount) return res.status(404).json({ error: 'Rule not found' });
 
+  try {
+    const siteKeyRow = await pool.query('SELECT site_key FROM sites WHERE id = $1', [siteId]);
+    const siteKey = siteKeyRow.rows[0]?.site_key;
+    if (siteKey) invalidateCrmCaches(String(siteKey), id);
+  } catch {
+    // não crítico
+  }
+
   return res.json({ rule: result.rows[0] });
 });
 
@@ -1068,6 +1114,15 @@ router.delete('/:siteId/event-rules/:id', requireAuth, async (req, res) => {
   if (!site.rowCount) return res.status(404).json({ error: 'Site not found' });
 
   await pool.query('DELETE FROM site_url_rules WHERE id = $1 AND site_id = $2', [id, siteId]);
+
+  try {
+    const siteKeyRow = await pool.query('SELECT site_key FROM sites WHERE id = $1', [siteId]);
+    const siteKey = siteKeyRow.rows[0]?.site_key;
+    if (siteKey) invalidateCrmCaches(String(siteKey), id);
+  } catch {
+    // não crítico
+  }
+
   return res.json({ ok: true });
 });
 

@@ -52,6 +52,7 @@ interface MetaConfig {
   last_ingest_event_name?: string | null;
   last_ingest_event_id?: string | null;
   last_ingest_event_source_url?: string | null;
+  crm_qualify_purchases?: boolean | null;
 };
 type GaConfig = {
   measurement_id?: string | null;
@@ -368,6 +369,9 @@ export const SitePage = () => {
   const [urlRuleCustomName, setUrlRuleCustomName] = useState('');
   const [urlRuleEventValue, setUrlRuleEventValue] = useState('');
   const [urlRuleEventCurrency, setUrlRuleEventCurrency] = useState('BRL');
+  // Qualificação CRM (estilo Meta) — opcional por regra, sem mudar token/Pixel/SDK
+  const [urlRuleCrmQualify, setUrlRuleCrmQualify] = useState(false);
+  const [urlRuleCrmLabel, setUrlRuleCrmLabel] = useState('');
 
   const [buttonRuleUrl, setButtonRuleUrl] = useState('');
   /** URL completa para abrir seletor/teste na página (independente do “Se a URL contém” da regra). */
@@ -380,6 +384,8 @@ export const SitePage = () => {
   const [buttonRuleCustomName, setButtonRuleCustomName] = useState('');
   const [buttonRuleEventValue, setButtonRuleEventValue] = useState('');
   const [buttonRuleEventCurrency, setButtonRuleEventCurrency] = useState('BRL');
+  const [buttonRuleCrmQualify, setButtonRuleCrmQualify] = useState(false);
+  const [buttonRuleCrmLabel, setButtonRuleCrmLabel] = useState('');
 
   const [eventSubTab, setEventSubTab] = useState<'url' | 'button' | 'form'>('url');
   const [formFields, setFormFields] = useState({ name: true, email: true, phone: true });
@@ -1037,6 +1043,13 @@ export const SitePage = () => {
         payload.parameters.currency = String(urlRuleEventCurrency).trim().toUpperCase();
       }
 
+      if (urlRuleCrmQualify) {
+        payload.parameters._crm_qualify = true;
+        if (urlRuleCrmLabel.trim()) {
+          payload.parameters._crm_label = urlRuleCrmLabel.trim();
+        }
+      }
+
       if (selectedRuleId) {
         await api.put(`/sites/${id}/event-rules/${selectedRuleId}`, payload);
         showFlash('Regra de URL atualizada!');
@@ -1050,6 +1063,8 @@ export const SitePage = () => {
       setUrlRuleCustomName('');
       setUrlRuleEventValue('');
       setUrlRuleEventCurrency('BRL');
+      setUrlRuleCrmQualify(false);
+      setUrlRuleCrmLabel('');
       setSelectedRuleId(null);
       await loadEventRules();
     } catch (err: unknown) {
@@ -1124,6 +1139,13 @@ export const SitePage = () => {
         payload.parameters.currency = String(buttonRuleEventCurrency).trim().toUpperCase();
       }
 
+      if (buttonRuleCrmQualify) {
+        payload.parameters._crm_qualify = true;
+        if (buttonRuleCrmLabel.trim()) {
+          payload.parameters._crm_label = buttonRuleCrmLabel.trim();
+        }
+      }
+
       if (selectedRuleId) {
         await api.put(`/sites/${id}/event-rules/${selectedRuleId}`, payload);
         showFlash('Regra de botão atualizada!');
@@ -1136,6 +1158,8 @@ export const SitePage = () => {
       setButtonRuleCustomName('');
       setButtonRuleEventValue('');
       setButtonRuleEventCurrency('BRL');
+      setButtonRuleCrmQualify(false);
+      setButtonRuleCrmLabel('');
       setSelectedRuleId(null);
       await loadEventRules();
     } catch (err: unknown) {
@@ -1150,6 +1174,8 @@ export const SitePage = () => {
 
   const handleEditRule = (rule: any) => {
     setSelectedRuleId(rule.id);
+    const crmEnabled = rule.parameters?._crm_qualify === true;
+    const crmLabel = typeof rule.parameters?._crm_label === 'string' ? rule.parameters._crm_label : '';
     if (rule.rule_type === 'path_is_root') {
       setUrlRuleUrlMatchKind('home');
       setUrlRuleValue('');
@@ -1158,6 +1184,8 @@ export const SitePage = () => {
       setUrlRuleCustomName(isCustom ? rule.event_name : '');
       setUrlRuleEventValue(rule.parameters?.value?.toString() || '');
       setUrlRuleEventCurrency(rule.parameters?.currency || 'BRL');
+      setUrlRuleCrmQualify(crmEnabled);
+      setUrlRuleCrmLabel(crmLabel);
       setEventSubTab('url');
     } else if (rule.rule_type === 'url_contains' || rule.rule_type === 'url_equals' || !rule.rule_type) {
       setUrlRuleUrlMatchKind('contains');
@@ -1167,6 +1195,8 @@ export const SitePage = () => {
       setUrlRuleCustomName(isCustom ? rule.event_name : '');
       setUrlRuleEventValue(rule.parameters?.value?.toString() || '');
       setUrlRuleEventCurrency(rule.parameters?.currency || 'BRL');
+      setUrlRuleCrmQualify(crmEnabled);
+      setUrlRuleCrmLabel(crmLabel);
       setEventSubTab('url');
     } else if (rule.rule_type === 'button_click') {
       setButtonRuleUrl(rule.match_value);
@@ -1179,6 +1209,8 @@ export const SitePage = () => {
       setButtonRuleCustomName(isCustom ? rule.event_name : '');
       setButtonRuleEventValue(rule.parameters?.value?.toString() || '');
       setButtonRuleEventCurrency(rule.parameters?.currency || 'BRL');
+      setButtonRuleCrmQualify(crmEnabled);
+      setButtonRuleCrmLabel(crmLabel);
       setEventSubTab('button');
     }
     showFlash('Regra carregada para edição');
@@ -1200,6 +1232,10 @@ export const SitePage = () => {
     setButtonRuleCustomName('');
     setButtonRuleEventValue('');
     setButtonRuleEventCurrency('BRL');
+    setUrlRuleCrmQualify(false);
+    setUrlRuleCrmLabel('');
+    setButtonRuleCrmQualify(false);
+    setButtonRuleCrmLabel('');
     showFlash('Edição cancelada');
   };
 
@@ -1612,6 +1648,7 @@ ${scriptContent}
     const form = e.target as HTMLFormElement;
     const formData = new FormData(form);
     const enabledInput = form.elements.namedItem('enabled') as HTMLInputElement | null;
+    const crmQualifyInput = form.elements.namedItem('crm_qualify_purchases') as HTMLInputElement | null;
     const data: Record<string, any> = {
       site_id: id,
       ad_account_id: formData.get('ad_account_id'),
@@ -1622,6 +1659,7 @@ ${scriptContent}
     if (capi && capi.trim().length >= 20) data.capi_token = capi;
     const testCode = formData.get('capi_test_event_code');
     data.capi_test_event_code = testCode;
+    if (crmQualifyInput) data.crm_qualify_purchases = crmQualifyInput.checked;
     try {
       await api.put(`/integrations/sites/${id}/meta`, data);
       showFlash('Configurações salvas com sucesso!');
@@ -3043,6 +3081,32 @@ ${scriptContent}
                     </p>
                   </div>
                 </div>
+
+                {/* Qualificação CRM (estilo Meta) — toggle global por site */}
+                <div className="flex items-start gap-3 pt-4 border-t border-zinc-200 dark:border-zinc-800">
+                  <input
+                    id="meta-crm-qualify-purchases"
+                    name="crm_qualify_purchases"
+                    type="checkbox"
+                    defaultChecked={meta?.crm_qualify_purchases ?? true}
+                    key={meta?.crm_qualify_purchases ? 'on' : 'off'}
+                    className="mt-1 w-4 h-4 rounded border-zinc-700 bg-zinc-200 dark:bg-zinc-800 text-blue-500 focus:ring-blue-500/30"
+                  />
+                  <div className="flex-1">
+                    <label htmlFor="meta-crm-qualify-purchases" className="text-sm font-medium text-zinc-800 dark:text-zinc-200 block cursor-pointer">
+                      Compra qualifica como Lead máxima (CRM) automaticamente
+                      <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-300 border border-emerald-500/20 align-middle">
+                        recomendado
+                      </span>
+                    </label>
+                    <p className="text-[11px] text-zinc-700 dark:text-zinc-500 mt-1">
+                      Quando ligado, toda <strong>Compra recebida via webhook</strong> (Hotmart, Kiwify, custom) envia
+                      automaticamente — em paralelo ao Purchase normal — um evento <code className="text-[11px]">Lead</code>
+                      com <code className="text-[11px]">action_source: system_generated</code> e
+                      <code className="text-[11px]"> lead_event_source: "Compra realizada"</code>. Não muda Pixel ID nem token CAPI.
+                    </p>
+                  </div>
+                </div>
               </div>
 
               <div className="pt-2 flex flex-wrap items-center gap-2">
@@ -3479,6 +3543,48 @@ ${scriptContent}
                         </div>
                       </div>
                     )}
+                    {/* Qualificação CRM (estilo Meta) — opcional, aditiva, sem mudar token/Pixel */}
+                    <div className="md:col-span-12 border-t border-zinc-200 dark:border-zinc-800 pt-4 mt-1">
+                      <div className="flex items-start gap-3">
+                        <input
+                          id="dash-site-url-rule-crm-qualify"
+                          type="checkbox"
+                          checked={urlRuleCrmQualify}
+                          onChange={(e) => setUrlRuleCrmQualify(e.target.checked)}
+                          className="mt-1 h-4 w-4 rounded border-zinc-300 dark:border-zinc-700 text-blue-600 focus:ring-blue-500"
+                        />
+                        <div className="flex-1">
+                          <label htmlFor="dash-site-url-rule-crm-qualify" className="block text-sm font-medium text-zinc-700 dark:text-zinc-200 cursor-pointer">
+                            Qualificar lead na Meta (CRM)
+                            <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-300 border border-emerald-500/20 align-middle">
+                              opcional
+                            </span>
+                          </label>
+                          <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                            Quando marcada, esta regra continua disparando o evento normal e, em paralelo,
+                            envia um evento <code className="text-[11px]">Lead</code> CRM-style à Meta
+                            (<code className="text-[11px]">action_source: system_generated</code>) com o rótulo escolhido.
+                            Não muda Pixel ID nem token CAPI.
+                          </p>
+                          {urlRuleCrmQualify && (
+                            <div className="mt-3">
+                              <label htmlFor="dash-site-url-rule-crm-label" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">
+                                Rótulo da qualificação (lead_event_source):
+                              </label>
+                              <input
+                                id="dash-site-url-rule-crm-label"
+                                value={urlRuleCrmLabel}
+                                onChange={(e) => setUrlRuleCrmLabel(e.target.value)}
+                                placeholder={`Ex: Lead qualificado, Demo agendada, MQL... (padrão: ${urlRuleEventType === 'Custom' ? urlRuleCustomName || 'Custom' : urlRuleEventType})`}
+                                maxLength={120}
+                                className={inputCls}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
                     <div className="md:col-span-2 flex gap-2">
                       <button
                         onClick={handleAddUrlRule}
@@ -3541,6 +3647,14 @@ ${scriptContent}
                                 <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-500/10 text-blue-300 border border-blue-500/20">
                                   {rule.event_name}
                                 </span>
+                                {rule.parameters?._crm_qualify === true && (
+                                  <span
+                                    className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-300 border border-emerald-500/20"
+                                    title={`Envia também como qualificação CRM ao Meta (lead_event_source: ${rule.parameters?._crm_label || rule.event_name})`}
+                                  >
+                                    + CRM
+                                  </span>
+                                )}
                               </td>
                               <td className="px-4 py-3 text-right whitespace-nowrap">
                                 <div className="flex justify-end gap-3">
@@ -3796,6 +3910,47 @@ ${scriptContent}
                         </div>
                       </div>
                     </div>
+                    {/* Qualificação CRM (estilo Meta) — opcional, sem mudar token/Pixel */}
+                    <div className="md:col-span-12 border-t border-zinc-200 dark:border-zinc-800 pt-4">
+                      <div className="flex items-start gap-3">
+                        <input
+                          id="dash-site-btn-rule-crm-qualify"
+                          type="checkbox"
+                          checked={buttonRuleCrmQualify}
+                          onChange={(e) => setButtonRuleCrmQualify(e.target.checked)}
+                          className="mt-1 h-4 w-4 rounded border-zinc-300 dark:border-zinc-700 text-blue-600 focus:ring-blue-500"
+                        />
+                        <div className="flex-1">
+                          <label htmlFor="dash-site-btn-rule-crm-qualify" className="block text-sm font-medium text-zinc-700 dark:text-zinc-200 cursor-pointer">
+                            Qualificar lead na Meta (CRM)
+                            <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-300 border border-emerald-500/20 align-middle">
+                              opcional
+                            </span>
+                          </label>
+                          <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                            Quando o botão for clicado, o evento normal continua igual e, em paralelo, é
+                            enviado um <code className="text-[11px]">Lead</code> CRM-style à Meta
+                            (<code className="text-[11px]">action_source: system_generated</code>) com o rótulo escolhido.
+                            Não muda Pixel ID nem token CAPI.
+                          </p>
+                          {buttonRuleCrmQualify && (
+                            <div className="mt-3">
+                              <label htmlFor="dash-site-btn-rule-crm-label" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">
+                                Rótulo da qualificação (lead_event_source):
+                              </label>
+                              <input
+                                id="dash-site-btn-rule-crm-label"
+                                value={buttonRuleCrmLabel}
+                                onChange={(e) => setButtonRuleCrmLabel(e.target.value)}
+                                placeholder={`Ex: Lead qualificado, Carrinho avançado, Clique em CTA... (padrão: ${buttonRuleEventType === 'Custom' ? buttonRuleCustomName || 'Custom' : buttonRuleEventType})`}
+                                maxLength={120}
+                                className={inputCls}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
                     <div className="md:col-span-3 md:col-start-1 flex gap-2">
                       <button
                         onClick={handleAddButtonRule}
@@ -3866,6 +4021,14 @@ ${scriptContent}
                                 <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-500/10 text-blue-300 border border-blue-500/20">
                                   {rule.event_name}
                                 </span>
+                                {rule.parameters?._crm_qualify === true && (
+                                  <span
+                                    className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-300 border border-emerald-500/20"
+                                    title={`Envia também como qualificação CRM ao Meta (lead_event_source: ${rule.parameters?._crm_label || rule.event_name})`}
+                                  >
+                                    + CRM
+                                  </span>
+                                )}
                               </td>
                               <td className="px-4 py-3 text-right whitespace-nowrap">
                                 <div className="flex justify-end gap-3">
