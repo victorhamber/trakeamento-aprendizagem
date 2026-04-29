@@ -251,10 +251,10 @@ async function runDataRetentionCleanup() {
       } catch (err) {
         console.error('Background CAPI worker error:', err);
       } finally {
-        setTimeout(runOutboxWorker, 60 * 1000); // Schedule next run AFTER completion
+        setTimeout(runOutboxWorker, 15 * 1000); // Schedule next run AFTER completion
       }
     };
-    setTimeout(runOutboxWorker, 60 * 1000); // First run 1 minute after boot
+    setTimeout(runOutboxWorker, 15 * 1000); // First run shortly after boot
 
     // Start 30-Day Garbage Collector
     setTimeout(() => {

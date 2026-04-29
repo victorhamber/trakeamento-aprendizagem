@@ -383,6 +383,16 @@ function getTimeDimensions(eventTimeSec: number) {
   };
 }
 
+async function resolveGeoPlainForStorage(req: Request, clientIpRaw: string): Promise<{ city: string | null; state: string | null; country: string | null }> {
+  const ip = String(clientIpRaw || '').trim();
+  if (!ip) return { city: null, state: null, country: null };
+  const hint = await resolveServerGeoHint(req, ip);
+  const city = (hint.city || '').trim().slice(0, 255) || null;
+  const state = (hint.region || '').trim().slice(0, 255) || null;
+  const country = (hint.country || '').trim().slice(0, 255) || null;
+  return { city, state, country };
+}
+
 // ─── Deduplication (in-memory fallback + Postgres) ───────────────────────────
 // Aumentado para 100k e TTL 48h para cobrir janelas maiores de duplicidade
 const recentEventIds = new LRUCache({
@@ -948,10 +958,10 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
         eventSourceUrl
       );
 
-      const geoPlain = geoFromGeoipLite(String(capiUser.client_ip_address || ''));
-      const geoCity = (geoPlain.city || '').trim().slice(0, 255) || null;
-      const geoState = (geoPlain.region || '').trim().slice(0, 255) || null;
-      const geoCountry = (geoPlain.country || '').trim().slice(0, 255) || null;
+      const geoPlain = await resolveGeoPlainForStorage(req, String(capiUser.client_ip_address || ''));
+      const geoCity = geoPlain.city;
+      const geoState = geoPlain.state;
+      const geoCountry = geoPlain.country;
 
       // Run visitor UPSERT and integrations_meta update in parallel
       await Promise.all([
@@ -1294,10 +1304,10 @@ router.post('/batch', cors(), ingestLimiter, async (req, res) => {
           p.eventSourceUrl
         );
 
-        const geoPlain = geoFromGeoipLite(String(capiUser.client_ip_address || ''));
-        const geoCity = (geoPlain.city || '').trim().slice(0, 255) || null;
-        const geoState = (geoPlain.region || '').trim().slice(0, 255) || null;
-        const geoCountry = (geoPlain.country || '').trim().slice(0, 255) || null;
+        const geoPlain = await resolveGeoPlainForStorage(req, String(capiUser.client_ip_address || ''));
+        const geoCity = geoPlain.city;
+        const geoState = geoPlain.state;
+        const geoCountry = geoPlain.country;
 
         pool.query(`
           INSERT INTO site_visitors (

@@ -49,6 +49,10 @@ type CapiSendResult =
 
 export class CapiService {
   private static disabledUntil = new Map<string, number>();
+  private static readonly AXIOS_TIMEOUT_MS = 8000;
+  private static readonly OUTBOX_INITIAL_DELAY_SEC = 30;
+  private static readonly OUTBOX_BASE_DELAY_SEC = 30;
+  private static readonly OUTBOX_MAX_DELAY_SEC = 30 * 60; // 30 min
 
   // Função auxiliar para hash SHA256
   public static hash(input: string): string {
@@ -256,8 +260,8 @@ export class CapiService {
     try {
       await pool.query(
         `INSERT INTO capi_outbox (site_key, payload, last_error, next_attempt_at)
-         VALUES ($1, $2, $3, NOW() + INTERVAL '5 minutes')`,
-        [siteKey, JSON.stringify(event), errorStr]
+         VALUES ($1, $2, $3, NOW() + ($4::int * INTERVAL '1 second'))`,
+        [siteKey, JSON.stringify(event), errorStr, CapiService.OUTBOX_INITIAL_DELAY_SEC]
       );
     } catch (e) {
       log.error('Failed to save to capi_outbox', { error: String(e) });
@@ -298,7 +302,7 @@ export class CapiService {
       const { rows } = await pool.query(
         `SELECT id, site_key, payload, last_error, attempts FROM capi_outbox 
          WHERE next_attempt_at <= NOW() AND attempts < 5 
-         ORDER BY site_key, id ASC LIMIT 100`
+         ORDER BY site_key, id ASC LIMIT 500`
       );
 
       // Agrupa por site_key para envio em batch
@@ -342,9 +346,11 @@ export class CapiService {
               } else {
                 await pool.query(
                   `UPDATE capi_outbox 
-                   SET attempts = attempts + 1, last_error = $1, next_attempt_at = NOW() + (INTERVAL '1 minutes' * POWER(2, attempts))
+                   SET attempts = attempts + 1,
+                       last_error = $1,
+                       next_attempt_at = NOW() + ((LEAST($3::int, $2::int * POWER(2, attempts)))::int * INTERVAL '1 second')
                    WHERE id = $2`,
-                  [res.error, r.id]
+                  [res.error, r.id, CapiService.OUTBOX_MAX_DELAY_SEC, CapiService.OUTBOX_BASE_DELAY_SEC]
                 );
               }
             }
@@ -361,9 +367,11 @@ export class CapiService {
           } else {
             await pool.query(
               `UPDATE capi_outbox 
-               SET attempts = attempts + 1, last_error = $1, next_attempt_at = NOW() + (INTERVAL '1 minutes' * POWER(2, attempts))
+               SET attempts = attempts + 1,
+                   last_error = $1,
+                   next_attempt_at = NOW() + ((LEAST($3::int, $2::int * POWER(2, attempts)))::int * INTERVAL '1 second')
                WHERE id = $2`,
-              [result.error, r.id]
+              [result.error, r.id, CapiService.OUTBOX_MAX_DELAY_SEC, CapiService.OUTBOX_BASE_DELAY_SEC]
             );
           }
         }
@@ -439,7 +447,8 @@ export class CapiService {
     try {
       const response = await axios.post(
         `https://graph.facebook.com/${META_GRAPH_API_VERSION}/${cfg.pixelId}/events`,
-        payload
+        payload,
+        { timeout: CapiService.AXIOS_TIMEOUT_MS }
       );
       log.info('Batch send success', {
         site_key: siteKey,
@@ -495,7 +504,8 @@ export class CapiService {
     try {
       const response = await axios.post(
         `https://graph.facebook.com/${META_GRAPH_API_VERSION}/${cfg.pixelId}/events`,
-        payload
+        payload,
+        { timeout: CapiService.AXIOS_TIMEOUT_MS }
       );
       const result = { ok: true, data: response.data } as const;
       await this.updateLastStatus(siteKey, result);
@@ -542,7 +552,8 @@ export class CapiService {
     try {
       const response = await axios.post(
         `https://graph.facebook.com/${META_GRAPH_API_VERSION}/${cfg.pixelId}/events`,
-        payload
+        payload,
+        { timeout: CapiService.AXIOS_TIMEOUT_MS }
       );
       log.info(`Success ${event.event_name}`, {
         event_id: event.event_id,

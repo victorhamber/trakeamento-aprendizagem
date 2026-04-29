@@ -129,6 +129,14 @@ function pickString(data: Record<string, unknown> | null | undefined, key: strin
   return '';
 }
 
+function pickStringAny(key: string, ...sources: Array<Record<string, unknown> | null | undefined>): string {
+  for (const s of sources) {
+    const v = pickString(s as any, key);
+    if (v) return v;
+  }
+  return '';
+}
+
 function ValueRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between gap-3 py-1">
@@ -427,9 +435,9 @@ export function LeadsTab({ siteId }: { siteId: number }) {
 
                         <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white/60 dark:bg-zinc-950/20 p-3">
                           <div className="text-[11px] font-semibold text-zinc-600 dark:text-zinc-400 mb-2">IDs</div>
-                          <ValueRow label="fbclid" value={pickString(detail.lead.data, 'fbclid')} />
-                          <ValueRow label="fbc" value={pickString(detail.lead.data, 'fbc')} />
-                          <ValueRow label="fbp" value={pickString(detail.lead.data, 'fbp')} />
+                          <ValueRow label="fbclid" value={pickStringAny('fbclid', detail.lead.data, detail.lead.user_data)} />
+                          <ValueRow label="fbc" value={pickStringAny('fbc', detail.lead.data, detail.lead.user_data)} />
+                          <ValueRow label="fbp" value={pickStringAny('fbp', detail.lead.data, detail.lead.user_data)} />
                         </div>
 
                         <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white/60 dark:bg-zinc-950/20 p-3">
