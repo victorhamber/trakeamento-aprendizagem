@@ -142,6 +142,7 @@ export function createTracker(config: TrackerConfig = {}) {
   const EXTERNAL_ID_LS = 'ta:external_id'
   const FBP_COOKIE = '_fbp'
   const FBC_COOKIE = '_fbc'
+  const TA_FBP_COOKIE = '_ta_fbp'
 
   const getOrCreateExternalId = (): string | undefined => {
     const fromCookie = getCookie(EXTERNAL_ID_COOKIE)
@@ -162,11 +163,18 @@ export function createTracker(config: TrackerConfig = {}) {
   }
 
   const getOrCreateFbp = (): string | undefined => {
-    const fromCookie = getCookie(FBP_COOKIE)
-    if (fromCookie) return fromCookie
+    // 1) Preferência absoluta: cookie oficial do Meta Pixel (_fbp)
+    const official = getCookie(FBP_COOKIE)
+    if (official) return official
+
+    // 2) Fallback: nosso cookie próprio (_ta_fbp) quando Pixel/cookie foi bloqueado
+    const existingFallback = getCookie(TA_FBP_COOKIE)
+    if (existingFallback) return existingFallback
+
+    // 3) Último caso: gerar fallback próprio (NÃO sobrescreve _fbp)
     const now = Date.now()
     const fbp = buildFbp(now)
-    setCookie(FBP_COOKIE, fbp, { days: 90, sameSite: 'Lax' })
+    setCookie(TA_FBP_COOKIE, fbp, { days: 365 * 2, sameSite: 'Lax' })
     return fbp
   }
 
@@ -185,6 +193,11 @@ export function createTracker(config: TrackerConfig = {}) {
     const eventId = input.event_id || createEventId()
     const eventTime = input.event_time || Math.floor(Date.now() / 1000)
     const eventSourceUrl = input.event_source_url || window.location.href
+
+    // Dá uma chance curta para o Pixel setar cookies antes do primeiro envio.
+    if (!input.fbp && !getCookie(FBP_COOKIE)) {
+      await new Promise<void>((r) => setTimeout(r, 120))
+    }
     const fbpResolved = input.fbp || getCookie(FBP_COOKIE) || getOrCreateFbp()
     const fbcResolved = input.fbc || getCookie(FBC_COOKIE) || getOrCreateFbc(eventSourceUrl)
 
