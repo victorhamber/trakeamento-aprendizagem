@@ -60,6 +60,34 @@ function safeSetLocalStorage(key: string, value: string): void {
   }
 }
 
+function pickFbclidFromUrl(url: string): string | undefined {
+  try {
+    const u = new URL(url)
+    const v = u.searchParams.get('fbclid')
+    return v && v.trim() ? v.trim() : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function randomDigits(len: number): string {
+  const c = (globalThis as unknown as { crypto?: Crypto }).crypto
+  if (!c?.getRandomValues) return Math.floor(Math.random() * 10 ** len).toString().padStart(len, '0')
+  const buf = new Uint8Array(len)
+  c.getRandomValues(buf)
+  return Array.from(buf).map((b) => String(b % 10)).join('')
+}
+
+function buildFbp(nowMs: number): string {
+  // Formato padrão observado: fb.1.<ms>.<random>
+  return `fb.1.${nowMs}.${randomDigits(10)}`
+}
+
+function buildFbc(nowMs: number, fbclid: string): string {
+  // Formato padrão: fb.1.<ms>.<fbclid>
+  return `fb.1.${nowMs}.${fbclid}`
+}
+
 function getLoadTimeMs(): number | undefined {
   const nav = performance.getEntriesByType('navigation')[0] as
     | PerformanceNavigationTiming
@@ -112,6 +140,8 @@ export function createTracker(config: TrackerConfig = {}) {
 
   const EXTERNAL_ID_COOKIE = '_ta_external_id'
   const EXTERNAL_ID_LS = 'ta:external_id'
+  const FBP_COOKIE = '_fbp'
+  const FBC_COOKIE = '_fbc'
 
   const getOrCreateExternalId = (): string | undefined => {
     const fromCookie = getCookie(EXTERNAL_ID_COOKIE)
@@ -131,20 +161,43 @@ export function createTracker(config: TrackerConfig = {}) {
     return id
   }
 
+  const getOrCreateFbp = (): string | undefined => {
+    const fromCookie = getCookie(FBP_COOKIE)
+    if (fromCookie) return fromCookie
+    const now = Date.now()
+    const fbp = buildFbp(now)
+    setCookie(FBP_COOKIE, fbp, { days: 90, sameSite: 'Lax' })
+    return fbp
+  }
+
+  const getOrCreateFbc = (eventSourceUrl: string): string | undefined => {
+    const fromCookie = getCookie(FBC_COOKIE)
+    if (fromCookie) return fromCookie
+    const fbclid = pickFbclidFromUrl(eventSourceUrl)
+    if (!fbclid) return undefined
+    const now = Date.now()
+    const fbc = buildFbc(now, fbclid)
+    setCookie(FBC_COOKIE, fbc, { days: 90, sameSite: 'Lax' })
+    return fbc
+  }
+
   const track = async (input: TrackEventInput): Promise<{ event_id: string }> => {
     const eventId = input.event_id || createEventId()
     const eventTime = input.event_time || Math.floor(Date.now() / 1000)
+    const eventSourceUrl = input.event_source_url || window.location.href
+    const fbpResolved = input.fbp || getCookie(FBP_COOKIE) || getOrCreateFbp()
+    const fbcResolved = input.fbc || getCookie(FBC_COOKIE) || getOrCreateFbc(eventSourceUrl)
 
     const payload: TrackEventInput = {
       ...input,
       event_id: eventId,
       event_time: eventTime,
-      event_source_url: input.event_source_url || window.location.href,
+      event_source_url: eventSourceUrl,
       event_url: input.event_url || window.location.href,
       page_title: input.page_title || document.title,
       load_time_ms: input.load_time_ms ?? getLoadTimeMs(),
-      fbp: input.fbp || getCookie('_fbp'),
-      fbc: input.fbc || getCookie('_fbc'),
+      fbp: fbpResolved,
+      fbc: fbcResolved,
       // external_id persistente (por navegador) quando não fornecido pelo caller
       external_id: input.external_id || getOrCreateExternalId(),
     }

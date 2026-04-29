@@ -137,6 +137,16 @@ function pickStringAny(key: string, ...sources: Array<Record<string, unknown> | 
   return '';
 }
 
+function TagBadge({ value }: { value: string }) {
+  const v = (value || '').trim();
+  if (!v) return <span className="text-zinc-500 dark:text-zinc-500">—</span>;
+  return (
+    <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold bg-emerald-500/15 text-emerald-700 dark:bg-emerald-400/15 dark:text-emerald-200 border border-emerald-500/20 dark:border-emerald-400/20">
+      {v}
+    </span>
+  );
+}
+
 function ValueRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between gap-3 py-1">
@@ -308,7 +318,7 @@ export function LeadsTab({ siteId }: { siteId: number }) {
                       <div className="text-[11px] text-zinc-600 dark:text-zinc-500 truncate max-w-[360px]">{phone}</div>
                     </td>
                     <td className="px-4 py-3 text-zinc-700 dark:text-zinc-200 truncate max-w-[220px]" title={r.group_tag || ''}>
-                      {r.group_tag || '—'}
+                      <TagBadge value={r.group_tag || ''} />
                     </td>
                     <td className="px-4 py-3 text-zinc-700 dark:text-zinc-200 truncate max-w-[420px]" title={origin}>
                       {origin}
@@ -403,7 +413,9 @@ export function LeadsTab({ siteId }: { siteId: number }) {
                         <div className="mt-1 text-[11px] text-zinc-600 dark:text-zinc-400">
                           Localização: {[detail.lead.city, detail.lead.state, detail.lead.country].filter(Boolean).join(', ') || '—'}
                         </div>
-                        <div className="mt-1 text-[11px] text-zinc-600 dark:text-zinc-400">Tag: {detail.lead.group_tag || '—'}</div>
+                        <div className="mt-1 text-[11px] text-zinc-600 dark:text-zinc-400 flex items-center gap-2">
+                          <span>Tag:</span> <TagBadge value={detail.lead.group_tag || ''} />
+                        </div>
                       </div>
                     </div>
 
