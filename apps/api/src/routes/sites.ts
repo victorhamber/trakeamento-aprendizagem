@@ -2051,7 +2051,7 @@ router.get('/:siteId/leads/:eventId', requireAuth, async (req, res) => {
     const externalId = row.external_id ? String(row.external_id) : null;
     const visitorRes = externalId
       ? await pool.query(
-          `SELECT external_id, city, state, country, last_group_tag, last_user_agent, last_ip, last_seen_at
+          `SELECT external_id, city, state, country, last_group_tag, last_user_agent, last_ip, last_seen_at, fbp, fbc
            FROM site_visitors
            WHERE site_key = $1 AND external_id = $2
            LIMIT 1`,
@@ -2059,6 +2059,43 @@ router.get('/:siteId/leads/:eventId', requireAuth, async (req, res) => {
         )
       : { rows: [] as any[] };
     const v = visitorRes.rows[0] || null;
+
+    const ud = (row.user_data && typeof row.user_data === 'object' ? { ...row.user_data } : {}) as Record<string, unknown>;
+    if (v) {
+      const fbpV = v.fbp != null && String(v.fbp).trim() ? String(v.fbp).trim() : '';
+      const fbcV = v.fbc != null && String(v.fbc).trim() ? String(v.fbc).trim() : '';
+      if (fbpV && (ud.fbp == null || String(ud.fbp).trim() === '')) ud.fbp = fbpV;
+      if (fbcV && (ud.fbc == null || String(ud.fbc).trim() === '')) ud.fbc = fbcV;
+    }
+
+    const needFbp = ud.fbp == null || String(ud.fbp).trim() === '';
+    const needFbc = ud.fbc == null || String(ud.fbc).trim() === '';
+    if (externalId && (needFbp || needFbc)) {
+      try {
+        const rEv = await pool.query(
+          `
+          SELECT
+            NULLIF(BTRIM(we.user_data->>'fbp'), '') AS fbp,
+            NULLIF(BTRIM(we.user_data->>'fbc'), '') AS fbc
+          FROM web_events we
+          WHERE we.site_key = $1
+            AND NULLIF(BTRIM(we.user_data->>'external_id'), '') = $2
+            AND COALESCE(we.custom_data->>'audit_kind', '') <> 'lead_audit'
+            AND (NULLIF(BTRIM(we.user_data->>'fbp'), '') IS NOT NULL OR NULLIF(BTRIM(we.user_data->>'fbc'), '') IS NOT NULL)
+          ORDER BY we.event_time DESC, we.id DESC
+          LIMIT 1
+          `,
+          [siteKey, externalId]
+        );
+        const ev = rEv.rows[0] as { fbp?: string | null; fbc?: string | null } | undefined;
+        if (ev) {
+          if (needFbp && ev.fbp) ud.fbp = ev.fbp;
+          if (needFbc && ev.fbc) ud.fbc = ev.fbc;
+        }
+      } catch {
+        /* ignora */
+      }
+    }
 
     const eventSourceUrl = typeof row.event_source_url === 'string' ? String(row.event_source_url) : null;
     const utm = mergePageviewUtm(row.custom_data, eventSourceUrl);
@@ -2097,11 +2134,13 @@ router.get('/:siteId/leads/:eventId', requireAuth, async (req, res) => {
         meta_attribution: meta,
         meta_attribution_source: source,
         data: row.custom_data || {},
-        user_data: row.user_data || {},
+        user_data: ud,
         visitor: v
           ? {
               last_ip: v.last_ip || null,
               last_seen_at: v.last_seen_at || null,
+              fbp: v.fbp != null && String(v.fbp).trim() ? String(v.fbp) : null,
+              fbc: v.fbc != null && String(v.fbc).trim() ? String(v.fbc) : null,
             }
           : null,
       },
