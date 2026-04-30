@@ -755,8 +755,14 @@ async function buildCapiUserData(
   const countryCapi =
     normalizeAndHash('country', pickRawWithAliases('country', ['pais', 'nacionalidade', 'paisdeorigem']), { ip: clientIp, country: countryForPh }) ??
     (geoHint.country ? hashPii(normalizers.country(geoHint.country)) : undefined);
-  const fbp = preserveMetaClickIds(userData.fbp || pickCustom('fbp'));
+  let fbp = preserveMetaClickIds(userData.fbp || pickCustom('fbp'));
   const fbc = preserveMetaClickIds(userData.fbc || pickCustom('fbc'));
+  // Se temos fbc (clique Meta) mas faltou fbp (browser id), gera um fallback mínimo para CAPI.
+  // Isso não depende do Pixel e melhora match/dedup em cenários onde o cookie _fbp não veio.
+  if (!fbp && fbc) {
+    const rnd = String(Math.floor(Math.random() * 1_000_000_000_000)).padStart(10, '0');
+    fbp = `fb.1.${Date.now()}.${rnd}`;
+  }
   const externalIdRaw = userData.external_id || pickCustom('external_id');
   const zp = pick('zp');
   const db = pick('db');
