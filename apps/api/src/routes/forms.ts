@@ -4,6 +4,7 @@ import { requireAuth } from '../middleware/auth';
 import { capiService, CapiService } from '../services/capi';
 import { getClientIp } from '../lib/ip';
 import { geoFromGeoipLite, resolveServerGeoHint } from '../lib/request-geo';
+import { mergeUserDataWithMetaParamBuilder } from '../lib/meta-param-builder-ingest';
 
 const router = Router();
 
@@ -132,6 +133,15 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
       const siteKey = siteRes.rows[0].site_key;
       const body = req.body || {};
 
+      // URL da land (igual /ingest) — Param Builder lê fbclid na query + _fbc/_fbp nos cookies do POST.
+      const refererForParams =
+        (req.headers.referer as string | undefined) || `https://form-submit.trakeamento.com/${publicId}`;
+      const pageLocationParam =
+        typeof (body as any)?.page_location === 'string' && String((body as any).page_location).trim()
+          ? String((body as any).page_location).trim()
+          : '';
+      const eventSourceUrlForParamBuilder = pageLocationParam || refererForParams;
+
       // Normalize keys to lowercase + stripped
       const data: Record<string, string> = {};
       Object.keys(body).forEach(k => {
@@ -170,6 +180,24 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
       // Se o frontend mandar cookies/ids, aproveita no fallback server-side.
       if (typeof body.fbp === 'string') userData.fbp = body.fbp;
       if (typeof body.fbc === 'string') userData.fbc = body.fbc;
+
+      // Mesma lógica do /ingest: reconstrói fbc a partir de fbclid (URL) + cookies; preenche fbp quando faltar.
+      const userDataMerged = mergeUserDataWithMetaParamBuilder(
+        req,
+        eventSourceUrlForParamBuilder,
+        userData
+      ) as typeof userData;
+      if (userDataMerged.fbc) userData.fbc = userDataMerged.fbc;
+      if (userDataMerged.fbp) userData.fbp = userDataMerged.fbp;
+
+      // POST cross-site costuma NÃO enviar cookie _fbp. Se já temos fbc (clique Meta) e ainda faltou fbp, gera um browser id mínimo para CAPI.
+      if (!userData.fbp || !String(userData.fbp).trim()) {
+        const fbcOk = userData.fbc && String(userData.fbc).trim();
+        if (fbcOk) {
+          const rnd = String(Math.floor(Math.random() * 1_000_000_000_000)).padStart(10, '0');
+          userData.fbp = `fb.1.${Date.now()}.${rnd}`;
+        }
+      }
 
       // ── Visitor Profile (site_visitors) ──
       // Sempre grava o perfil do lead (independente de tracked_by_frontend),
@@ -223,8 +251,8 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
             [
               siteKey,
               externalId,
-              typeof body.fbc === 'string' ? body.fbc : null,
-              typeof body.fbp === 'string' ? body.fbp : null,
+              typeof userData.fbc === 'string' && userData.fbc.trim() ? userData.fbc : null,
+              typeof userData.fbp === 'string' && userData.fbp.trim() ? userData.fbp : null,
               emailHash,
               phoneHash,
               lastEventName,
@@ -276,12 +304,9 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
             ? body.event_id.trim()
             : `lead_${eventTimeSec}_${Math.random().toString(36).slice(2, 8)}`;
 
-        const referer = (req.headers.referer as string | undefined) || `https://form-submit.trakeamento.com/${publicId}`;
-        const pageLocation =
-          typeof (body as any)?.page_location === 'string' && String((body as any).page_location).trim()
-            ? String((body as any).page_location).trim()
-            : '';
-        const eventSourceUrlForAudit = pageLocation || referer;
+        const referer = refererForParams;
+        const pageLocation = pageLocationParam;
+        const eventSourceUrlForAudit = eventSourceUrlForParamBuilder;
 
         // Guarda os campos (sem mexer no resto do tracking). Isso é auditoria, não CRM.
         const fieldsRaw =
@@ -433,8 +458,8 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
               client_ip_address: submitClientIp || undefined,
               client_user_agent: req.headers['user-agent'] || undefined,
               external_id: userData.external_id,
-              fbp: typeof body.fbp === 'string' ? body.fbp : undefined,
-              fbc: typeof body.fbc === 'string' ? body.fbc : undefined,
+              fbp: typeof userData.fbp === 'string' && userData.fbp.trim() ? userData.fbp : undefined,
+              fbc: typeof userData.fbc === 'string' && userData.fbc.trim() ? userData.fbc : undefined,
             },
             {
               audit_kind: 'lead_audit',
