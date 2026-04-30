@@ -23,12 +23,20 @@ type LeadRow = {
   };
   meta_attribution_source: string | null;
   data: Record<string, unknown>;
+  user_data?: Record<string, unknown>;
 };
 
 type LeadDetail = {
   lead: LeadRow & {
     user_data?: Record<string, unknown>;
     visitor?: { last_ip?: string | null; last_seen_at?: string | null } | null;
+    history?: Array<{
+      event_time: string;
+      page_path?: string | null;
+      page_title?: string | null;
+      page_location?: string | null;
+      event_url?: string | null;
+    }>;
   };
 };
 
@@ -459,6 +467,48 @@ export function LeadsTab({ siteId }: { siteId: number }) {
                           <ValueRow label="tag" value={detail.lead.group_tag || '—'} />
                         </div>
                       </div>
+
+                      {Array.isArray((detail.lead as any).history) && (detail.lead as any).history.length ? (
+                        <div className="mt-4 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white/60 dark:bg-zinc-950/20 p-3">
+                          <div className="text-[11px] font-semibold text-zinc-600 dark:text-zinc-400 mb-2">
+                            Histórico (páginas visitadas)
+                          </div>
+                          <div className="max-h-[260px] overflow-auto rounded-md border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-950/20">
+                            <table className="w-full text-[11px]">
+                              <thead className="sticky top-0 bg-white dark:bg-zinc-950 border-b border-zinc-200 dark:border-zinc-800">
+                                <tr>
+                                  <th className="text-left font-semibold px-3 py-2 text-zinc-600 dark:text-zinc-400 w-[170px]">Quando</th>
+                                  <th className="text-left font-semibold px-3 py-2 text-zinc-600 dark:text-zinc-400">Página</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {(detail.lead as any).history.slice(0, 30).map((h: any, idx: number) => {
+                                  const when = dt(String(h?.event_time || ''));
+                                  const page =
+                                    String(h?.page_path || '').trim() ||
+                                    String(h?.event_url || '').trim() ||
+                                    String(h?.page_location || '').trim() ||
+                                    '—';
+                                  const title = String(h?.page_title || '').trim();
+                                  return (
+                                    <tr key={idx} className="border-b border-zinc-100 dark:border-zinc-900/60 last:border-0">
+                                      <td className="px-3 py-2 text-zinc-600 dark:text-zinc-400 whitespace-nowrap">{when}</td>
+                                      <td className="px-3 py-2 text-zinc-800 dark:text-zinc-200">
+                                        <div className="truncate max-w-[720px]" title={page}>{page}</div>
+                                        {title ? (
+                                          <div className="text-[10px] text-zinc-500 dark:text-zinc-500 truncate max-w-[720px]" title={title}>
+                                            {title}
+                                          </div>
+                                        ) : null}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      ) : null}
 
                       <details className="mt-4">
                         <summary className="cursor-pointer text-[11px] text-zinc-600 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200">

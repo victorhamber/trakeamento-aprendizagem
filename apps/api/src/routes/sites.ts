@@ -1923,6 +1923,8 @@ router.get('/:siteId/leads', requireAuth, async (req, res) => {
         sv.city,
         sv.state,
         sv.country,
+        sv.fbp,
+        sv.fbc,
         sv.last_ip AS visitor_last_ip,
         sv.last_group_tag AS group_tag,
         sv.last_user_agent AS visitor_user_agent
@@ -1962,6 +1964,45 @@ router.get('/:siteId/leads', requireAuth, async (req, res) => {
       metaCache.set(k, resolved);
     }
 
+    const extIds = Array.from(
+      new Set(
+        (result.rows || [])
+          .map((r: any) => (r?.external_id != null ? String(r.external_id).trim() : ''))
+          .filter(Boolean)
+      )
+    ).slice(0, 300);
+    const lastIdsByExt = new Map<string, { fbp?: string | null; fbc?: string | null }>();
+    if (extIds.length) {
+      try {
+        const rEv = await pool.query(
+          `
+          SELECT DISTINCT ON (ext)
+            ext,
+            NULLIF(BTRIM(we.user_data->>'fbp'), '') AS fbp,
+            NULLIF(BTRIM(we.user_data->>'fbc'), '') AS fbc
+          FROM (
+            SELECT NULLIF(BTRIM(we.user_data->>'external_id'), '') AS ext, we.*
+            FROM web_events we
+            WHERE we.site_key = $1
+              AND NULLIF(BTRIM(we.user_data->>'external_id'), '') = ANY($2)
+              AND COALESCE(we.custom_data->>'audit_kind', '') <> 'lead_audit'
+              AND (NULLIF(BTRIM(we.user_data->>'fbp'), '') IS NOT NULL OR NULLIF(BTRIM(we.user_data->>'fbc'), '') IS NOT NULL)
+          ) we
+          WHERE ext IS NOT NULL
+          ORDER BY ext, we.event_time DESC, we.id DESC
+          `,
+          [siteKey, extIds]
+        );
+        for (const row of rEv.rows || []) {
+          const ext = row?.ext ? String(row.ext).trim() : '';
+          if (!ext) continue;
+          lastIdsByExt.set(ext, { fbp: row.fbp ?? null, fbc: row.fbc ?? null });
+        }
+      } catch {
+        /* ignora */
+      }
+    }
+
     const enriched = [];
     for (const r of result.rows) {
       const utm = utmByEventId.get(String(r.event_id)) ?? null;
@@ -1987,6 +2028,23 @@ router.get('/:siteId/leads', requireAuth, async (req, res) => {
         visitorUa: r.visitor_user_agent ? String(r.visitor_user_agent) : null,
         lastPageviewUa: leadUa ? String(leadUa) : null,
       });
+
+      const ud = (r.user_data && typeof r.user_data === 'object' ? { ...(r.user_data as any) } : {}) as Record<string, unknown>;
+      const needFbp = ud.fbp == null || String(ud.fbp).trim() === '';
+      const needFbc = ud.fbc == null || String(ud.fbc).trim() === '';
+      const fbpV = r.fbp != null && String(r.fbp).trim() ? String(r.fbp).trim() : '';
+      const fbcV = r.fbc != null && String(r.fbc).trim() ? String(r.fbc).trim() : '';
+      if (needFbp && fbpV) ud.fbp = fbpV;
+      if (needFbc && fbcV) ud.fbc = fbcV;
+      const ext = r.external_id != null ? String(r.external_id).trim() : '';
+      if (ext && (needFbp || needFbc)) {
+        const last = lastIdsByExt.get(ext);
+        if (last) {
+          if (needFbp && last.fbp) ud.fbp = last.fbp;
+          if (needFbc && last.fbc) ud.fbc = last.fbc;
+        }
+      }
+
       enriched.push({
         id: r.id,
         event_id: r.event_id,
@@ -2002,6 +2060,7 @@ router.get('/:siteId/leads', requireAuth, async (req, res) => {
         meta_attribution: meta,
         meta_attribution_source: source,
         data: r.custom_data || {},
+        user_data: ud,
       });
     }
 
@@ -2118,6 +2177,30 @@ router.get('/:siteId/leads/:eventId', requireAuth, async (req, res) => {
       lastPageviewUa: leadUa ? String(leadUa) : null,
     });
 
+    const history = externalId
+      ? await pool
+          .query(
+            `
+            SELECT
+              we.event_time,
+              NULLIF(BTRIM(we.custom_data->>'page_path'), '')     AS page_path,
+              NULLIF(BTRIM(we.custom_data->>'page_title'), '')    AS page_title,
+              NULLIF(BTRIM(we.custom_data->>'page_location'), '') AS page_location,
+              NULLIF(BTRIM(we.custom_data->>'event_url'), '')     AS event_url
+            FROM web_events we
+            WHERE we.site_key = $1
+              AND NULLIF(BTRIM(we.user_data->>'external_id'), '') = $2
+              AND COALESCE(we.custom_data->>'audit_kind', '') <> 'lead_audit'
+              AND we.event_name = 'PageView'
+            ORDER BY we.event_time DESC, we.id DESC
+            LIMIT 30
+            `,
+            [siteKey, externalId]
+          )
+          .then((r) => r.rows || [])
+          .catch(() => [])
+      : [];
+
     return res.json({
       lead: {
         id: row.id,
@@ -2135,6 +2218,7 @@ router.get('/:siteId/leads/:eventId', requireAuth, async (req, res) => {
         meta_attribution_source: source,
         data: row.custom_data || {},
         user_data: ud,
+        history,
         visitor: v
           ? {
               last_ip: v.last_ip || null,
