@@ -1288,6 +1288,18 @@ async function handleTrkSubmit(e) {
   data.event_id = eventId;
   data.tracked_by_frontend = !!window.tracker;
 
+  try {
+    function taGetCookie(n) {
+      var p = ('; ' + document.cookie).split('; ' + n + '=');
+      if (p.length < 2) return '';
+      return decodeURIComponent(p.pop().split(';').shift() || '').trim();
+    }
+    var ckFbp = taGetCookie('_fbp') || taGetCookie('_ta_fbp');
+    var ckFbc = taGetCookie('_fbc');
+    if (ckFbp) data.fbp = ckFbp;
+    if (ckFbc) data.fbc = ckFbc;
+  } catch (_e) {}
+
   // 1. Identify client
   if (window.tracker) {
     window.tracker.identify(data);
@@ -1371,6 +1383,18 @@ function handleTrkSubmit(e) {
   var phoneRaw2 = fPhone2 && fPhone2.value != null ? fPhone2.value : (form.phone && form.phone.value != null ? form.phone.value : '');
   var phoneDigits2 = (phoneRaw2 || '').toString().replace(/[^0-9]/g, '');
   if (phoneDigits2) data.phone = '+' + ddiDigits2 + phoneDigits2;
+
+  try {
+    function taGetCookie2(n) {
+      var p = ('; ' + document.cookie).split('; ' + n + '=');
+      if (p.length < 2) return '';
+      return decodeURIComponent(p.pop().split(';').shift() || '').trim();
+    }
+    var ckFbp2 = taGetCookie2('_fbp') || taGetCookie2('_ta_fbp');
+    var ckFbc2 = taGetCookie2('_fbc');
+    if (ckFbp2) data.fbp = ckFbp2;
+    if (ckFbc2) data.fbc = ckFbc2;
+  } catch (_e) {}
 
   if (window.tracker) {
     window.tracker.identify(data);
