@@ -1257,20 +1257,29 @@ async function handleTrkSubmit(e) {
   btn.innerText = 'Enviando...';
 
   var data = {};
-  // Meta CAPI requer: fn (first_name) e ln (last_name) em lowercase
-  var nameInput = form.fullname || form.name || form.fn;
-  if (nameInput && nameInput.value) {
-    var fullName = nameInput.value.trim().toLowerCase();
-    var parts = fullName.split(/\s+/);
-    data.fn = parts[0];
-    if (parts.length > 1) data.ln = parts.slice(1).join(' ');
+  var fe = function (n) { return form.querySelector('[name=' + JSON.stringify(n) + ']'); };
+  var t = function (v) { return v == null || v === '' ? '' : String(v).trim().toLowerCase(); };
+  var fFirst = fe('firstname') || fe('first_name') || fe('fn') || fe('primeiro_nome') || fe('primeironome');
+  var fLast = fe('lastname') || fe('last_name') || fe('ln') || fe('ultimo_nome') || fe('ultimonome') || fe('sobrenome');
+  if (fFirst && t(fFirst.value) && fLast && t(fLast.value)) {
+    data.fn = t(fFirst.value);
+    data.ln = t(fLast.value);
+  } else {
+    var fFull = fe('fullname') || fe('name') || fe('fn') || fe('nome') || fe('nomecompleto') || fe('full_name') || fe('fullName');
+    if (fFull && t(fFull.value)) {
+      var parts = t(fFull.value).split(/\\s+/);
+      if (parts[0]) data.fn = parts[0];
+      if (parts.length > 1) data.ln = parts.slice(1).join(' ');
+    }
   }
-  // Meta CAPI requer: em (email) em lowercase
-  if (form.email && form.email.value) data.email = form.email.value.trim().toLowerCase();
-  var ddi = form.ddi ? form.ddi.value : '+55';
+  var fEmail = fe('email') || fe('mail') || fe('e_mail');
+  if (fEmail && t(fEmail.value)) data.email = t(fEmail.value);
+  var ddiNode = fe('ddi');
+  var ddi = ddiNode && ddiNode.value != null && ddiNode.value !== '' ? ddiNode.value : (form.ddi && form.ddi.value ? form.ddi.value : '+55');
   var ddiDigits = (ddi || '').toString().replace(/[^0-9]/g, '');
   if (!ddiDigits) ddiDigits = '55';
-  var phoneRaw = form.phone ? form.phone.value : '';
+  var fPhone = fe('phone') || fe('telefone') || fe('tel') || fe('celular') || fe('whatsapp') || fe('whats') || fe('zap');
+  var phoneRaw = fPhone && fPhone.value != null ? fPhone.value : (form.phone && form.phone.value != null ? form.phone.value : '');
   var phoneDigits = (phoneRaw || '').toString().replace(/[^0-9]/g, '');
   if (phoneDigits) data.phone = '+' + ddiDigits + phoneDigits;
 
@@ -1337,22 +1346,31 @@ function handleTrkSubmit(e) {
   e.preventDefault();
   var form = e.target;
   var data = {};
-  // Meta CAPI requer: fn (first_name) e ln (last_name) em lowercase
-  var nameInput = form.fullname || form.name || form.fn;
-  if (nameInput && nameInput.value) {
-    var fullName = nameInput.value.trim().toLowerCase();
-    var parts = fullName.split(/\s+/);
-    data.fn = parts[0];
-    if (parts.length > 1) data.ln = parts.slice(1).join(' ');
+  var fe = function (n) { return form.querySelector('[name=' + JSON.stringify(n) + ']'); };
+  var t = function (v) { return v == null || v === '' ? '' : String(v).trim().toLowerCase(); };
+  var fFirst = fe('firstname') || fe('first_name') || fe('fn') || fe('primeiro_nome') || fe('primeironome');
+  var fLast = fe('lastname') || fe('last_name') || fe('ln') || fe('ultimo_nome') || fe('ultimonome') || fe('sobrenome');
+  if (fFirst && t(fFirst.value) && fLast && t(fLast.value)) {
+    data.fn = t(fFirst.value);
+    data.ln = t(fLast.value);
+  } else {
+    var fFull = fe('fullname') || fe('name') || fe('fn') || fe('nome') || fe('nomecompleto') || fe('full_name') || fe('fullName');
+    if (fFull && t(fFull.value)) {
+      var parts2 = t(fFull.value).split(/\\s+/);
+      if (parts2[0]) data.fn = parts2[0];
+      if (parts2.length > 1) data.ln = parts2.slice(1).join(' ');
+    }
   }
-  // Meta CAPI requer: em (email) em lowercase
-  if (form.email && form.email.value) data.email = form.email.value.trim().toLowerCase();
-  var ddi = form.ddi ? form.ddi.value : '+55';
-  var ddiDigits = (ddi || '').toString().replace(/[^0-9]/g, '');
-  if (!ddiDigits) ddiDigits = '55';
-  var phoneRaw = form.phone ? form.phone.value : '';
-  var phoneDigits = (phoneRaw || '').toString().replace(/[^0-9]/g, '');
-  if (phoneDigits) data.phone = '+' + ddiDigits + phoneDigits;
+  var fEmail = fe('email') || fe('mail') || fe('e_mail');
+  if (fEmail && t(fEmail.value)) data.email = t(fEmail.value);
+  var ddiNode2 = fe('ddi');
+  var ddi2 = ddiNode2 && ddiNode2.value != null && ddiNode2.value !== '' ? ddiNode2.value : (form.ddi && form.ddi.value ? form.ddi.value : '+55');
+  var ddiDigits2 = (ddi2 || '').toString().replace(/[^0-9]/g, '');
+  if (!ddiDigits2) ddiDigits2 = '55';
+  var fPhone2 = fe('phone') || fe('telefone') || fe('tel') || fe('celular') || fe('whatsapp') || fe('whats') || fe('zap');
+  var phoneRaw2 = fPhone2 && fPhone2.value != null ? fPhone2.value : (form.phone && form.phone.value != null ? form.phone.value : '');
+  var phoneDigits2 = (phoneRaw2 || '').toString().replace(/[^0-9]/g, '');
+  if (phoneDigits2) data.phone = '+' + ddiDigits2 + phoneDigits2;
 
   if (window.tracker) {
     window.tracker.identify(data);
@@ -1376,6 +1394,10 @@ function handleTrkSubmit(e) {
 
     const html = `
 <!-- Início do Formulário de Captura (${isDark ? 'Tema Escuro' : 'Tema Claro'}) -->
+<!-- Atributo name (reconhecidos pelo script e pela API):
+     Nome completo em 1 campo: fullname (padrão), name, fn, nome, nomecompleto, full_name
+     OU nome+sobrenome em 2 campos: firstname+lastname, first_name+last_name, fn+ln, primeiro_nome+sobrenome, etc.
+     E-mail: email (ou mail, e_mail) | Telefone: phone (ou telefone, tel, celular, whatsapp) + select ddi (opcional) -->
 <form id="${formId}" onsubmit="handleTrkSubmit(event)" style="max-width:400px; margin:0 auto; font-family:sans-serif;">
 ${fieldsHtml.join('\n')}
   <button type="submit" style="${buttonStyle} ${buttonColor}">${button_text}</button>

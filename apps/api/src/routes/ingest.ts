@@ -710,18 +710,50 @@ async function buildCapiUserData(
     return fromCustom ? fromCustom : undefined;
   };
 
+  const countryForPh = pickCustom('country') || pickCustom('pais');
+
+  const pickRawWithAliases = (primary: string, extra: string[]) => {
+    for (const k of [primary, ...extra]) {
+      const v = pickRaw(k);
+      if (v) return v;
+    }
+    return undefined;
+  };
+
   // Monta campos com prioridade: payload hasheado > payload raw > geo
   const pick = (field: string) =>
-    normalizeAndHash(field, pickRaw(field), { ip: clientIp, country: pickCustom('country') });
+    normalizeAndHash(field, pickRaw(field), { ip: clientIp, country: countryForPh });
+
+  let fn1 = normalizeAndHash('fn', pickRawWithAliases('fn', ['firstname', 'first_name', 'primeironome', 'namefirst', 'name_first']), {
+    ip: clientIp,
+    country: countryForPh,
+  });
+  let ln1 = normalizeAndHash('ln', pickRawWithAliases('ln', ['lastname', 'last_name', 'ultimonome', 'ultimo_nome', 'sobrenome', 'surname']), {
+    ip: clientIp,
+    country: countryForPh,
+  });
+  if (!fn1 && !ln1) {
+    const nameRaw = pickRawWithAliases('name', ['nome', 'fullname', 'full_name', 'nomecompleto', 'fullName']);
+    const nameStr = Array.isArray(nameRaw) ? nameRaw[0] : nameRaw;
+    if (typeof nameStr === 'string' && nameStr.trim()) {
+      const parts = nameStr.trim().split(/\s+/);
+      if (parts.length >= 2) {
+        fn1 = normalizeAndHash('fn', parts[0], { ip: clientIp, country: countryForPh });
+        ln1 = normalizeAndHash('ln', parts.slice(1).join(' '), { ip: clientIp, country: countryForPh });
+      } else if (parts.length === 1) {
+        fn1 = normalizeAndHash('fn', parts[0], { ip: clientIp, country: countryForPh });
+      }
+    }
+  }
 
   const ct =
-    pick('ct') ??
+    normalizeAndHash('ct', pickRawWithAliases('ct', ['cidade', 'city', 'municipio', 'town']), { ip: clientIp, country: countryForPh }) ??
     (geoHint.city ? hashPii(normalizers.ct(geoHint.city)) : undefined);
   const st =
-    pick('st') ??
+    normalizeAndHash('st', pickRawWithAliases('st', ['estado', 'state', 'uf', 'regiao', 'region']), { ip: clientIp, country: countryForPh }) ??
     (geoHint.region ? hashPii(normalizers.st(geoHint.region)) : undefined);
-  const country =
-    pick('country') ??
+  const countryCapi =
+    normalizeAndHash('country', pickRawWithAliases('country', ['pais', 'nacionalidade', 'paisdeorigem']), { ip: clientIp, country: countryForPh }) ??
     (geoHint.country ? hashPii(normalizers.country(geoHint.country)) : undefined);
   const fbp = preserveMetaClickIds(userData.fbp || pickCustom('fbp'));
   const fbc = preserveMetaClickIds(userData.fbc || pickCustom('fbc'));
@@ -744,11 +776,11 @@ async function buildCapiUserData(
     client_user_agent: clientUserAgent,
     em: wrap(em1),
     ph: wrap(ph1),
-    fn: wrap(pick('fn')),
-    ln: wrap(pick('ln')),
+    fn: wrap(fn1),
+    ln: wrap(ln1),
     ct: wrap(ct),
     st: wrap(st),
-    country: wrap(country),
+    country: wrap(countryCapi),
     zp: wrap(zp),
     db: wrap(db),
     fbp,

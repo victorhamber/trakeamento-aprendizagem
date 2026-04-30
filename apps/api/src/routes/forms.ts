@@ -142,35 +142,69 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
           : '';
       const eventSourceUrlForParamBuilder = pageLocationParam || refererForParams;
 
-      // Normalize keys to lowercase + stripped
+      // Normalize keys: só [a-z0-9] — ex.: "first_name" e "first-name" viram "firstname" (NÃO use data['first_name']).
       const data: Record<string, string> = {};
       Object.keys(body).forEach(k => {
         data[k.toLowerCase().replace(/[^a-z0-9]/g, '')] = String(body[k]);
       });
 
+      const formIp = getClientIp(req);
+      const geoHintCapi = await resolveServerGeoHint(req, formIp);
+
       // Extract User Data
       const email = data['email'] || data['mail'] || data['e_mail'];
       const phone = data['phone'] || data['tel'] || data['telefone'] || data['celular'] || data['whatsapp'];
 
-      let fn = data['fn'] || data['firstname'] || data['first_name'] || data['primeironome'] || data['primeiro_nome'];
-      let ln = data['ln'] || data['lastname'] || data['last_name'] || data['sobrenome'] || data['ultimo_nome'];
-      const name = data['name'] || data['nome'] || data['fullname'] || data['full_name'] || data['nomecompleto'];
+      let fn = data['fn'] || data['firstname'] || data['primeironome'];
+      let ln = data['ln'] || data['lastname'] || data['ultimonome'] || data['sobrenome'] || data['surname'];
 
-      if (!fn && !ln && name) {
-        const parts = splitName(name);
-        if (parts.fn) fn = parts.fn;
-        if (parts.ln) ln = parts.ln;
+      const hasNomeESobrenomeEmCamposSeparados =
+        Boolean((data['nome'] || '').trim()) &&
+        Boolean((data['sobrenome'] || data['ultimonome'] || '').trim()) &&
+        !data['nomecompleto'] &&
+        !data['fullname'] &&
+        !data['name'];
+
+      if (hasNomeESobrenomeEmCamposSeparados) {
+        fn = (data['nome'] || fn || '').trim();
+        ln = (data['sobrenome'] || data['ultimonome'] || ln || '').trim();
+      } else if (!fn && !ln) {
+        const nameOne =
+          data['name'] || data['nome'] || data['fullname'] || data['nomecompleto'] || data['full_name'];
+        if (nameOne) {
+          const parts = splitName(String(nameOne));
+          if (parts.fn) fn = parts.fn;
+          if (parts.ln) ln = parts.ln;
+        }
       }
+
+      const name =
+        data['name'] ||
+        data['nome'] ||
+        data['fullname'] ||
+        data['nomecompleto'] ||
+        [fn, ln].filter(Boolean).join(' ').trim() ||
+        undefined;
 
       const userData: any = {
         client_ip_address: getClientIp(req),
         client_user_agent: req.headers['user-agent'] || undefined,
       };
 
-      if (email) userData.em = CapiService.hash(email);
+      if (email) userData.em = CapiService.hash(String(email).trim().toLowerCase());
       if (phone) userData.ph = CapiService.hash(phone.replace(/\D/g, ''));
       if (fn) userData.fn = CapiService.hash(fn);
       if (ln) userData.ln = CapiService.hash(ln);
+
+      const ctForm = data['ct'] || data['city'] || data['cidade'] || data['municipio'] || data['town'];
+      const stForm = data['st'] || data['estado'] || data['state'] || data['uf'] || data['regiao'] || data['region'];
+      const countryForm = data['country'] || data['pais'] || data['nacionalidade'];
+      const useCt = (ctForm || geoHintCapi.city || '').toString().trim() || null;
+      const useSt = (stForm || geoHintCapi.region || '').toString().trim() || null;
+      const useCountry = (countryForm || geoHintCapi.country || '').toString().trim() || null;
+      if (useCt) userData.ct = CapiService.hash(useCt);
+      if (useSt) userData.st = CapiService.hash(useSt);
+      if (useCountry) userData.country = CapiService.hash(useCountry);
       // Maximizar correspondência: external_id estável (hash) quando houver email/phone.
       // (CapiService.externalIdForCapiPayload não re-hasheia se já for 64-hex.)
       userData.external_id =

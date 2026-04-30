@@ -98,16 +98,18 @@ export async function geoFromHttpLookup(clientIp: string): Promise<ServerGeoHint
 }
 
 /**
- * Melhor estimativa servidor: headers do proxy > geoip-lite.
- * Opcionalmente enriquece com GEO_IP_LOOKUP_URL (HTTP).
+ * Melhor estimativa servidor (tudo aproximado por IP, nunca 100% preciso):
+ * 1) Se `GEO_IP_LOOKUP_URL` estiver definido: **prioridade** — APIs pagas (ipinfo, MaxMind, etc.)
+ *    costumam ter cidade/estado melhores que geoip-lite.
+ * 2) Senão: geoip-lite (IPv4) + headers de CDN (Cloudflare/Vercel) quando o IP passa no edge.
+ * 3) O que ainda faltar, preenche a partir de geoip-lite/headers.
  */
 export async function resolveServerGeoHint(req: Request, clientIp?: string): Promise<ServerGeoHint> {
   const ip = (clientIp || '').trim() || getClientIp(req);
   const hdr = geoFromProxyHeaders(req);
   const lite = geoFromGeoipLite(ip);
 
-  // Mesma prioridade que ingest/CAPI: geoip-lite > headers CDN > HTTP externo
-  let merged: ServerGeoHint = {
+  const fromLocal: ServerGeoHint = {
     city: lite.city || hdr.city,
     region: lite.region || hdr.region,
     country: lite.country || hdr.country,
@@ -116,15 +118,16 @@ export async function resolveServerGeoHint(req: Request, clientIp?: string): Pro
   if (process.env.GEO_IP_LOOKUP_URL) {
     try {
       const ext = await geoFromHttpLookup(ip);
-      merged = {
-        city: merged.city || ext.city,
-        region: merged.region || ext.region,
-        country: merged.country || ext.country,
+      // API externa primeiro (se retornou algo), depois fallback local
+      return {
+        city: ext.city || fromLocal.city,
+        region: ext.region || fromLocal.region,
+        country: ext.country || fromLocal.country,
       };
     } catch {
-      /* mantém merged */
+      /* ignora e usa só local */
     }
   }
 
-  return merged;
+  return fromLocal;
 }

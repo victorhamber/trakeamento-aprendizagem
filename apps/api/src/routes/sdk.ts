@@ -1136,7 +1136,7 @@ router.get('/tracker.js', async (req, res) => {
   function buildUserData() {
     var metaUser  = getMetaUserDataFromCookies();
     var externalId = getOrCreateExternalId();
-    return {
+    var out = {
       client_user_agent: navigator.userAgent,
       fbp:        getFbp(),
       fbc:        getFbc(),
@@ -1151,6 +1151,34 @@ router.get('/tracker.js', async (req, res) => {
       db:  metaUser.db,
       country: metaUser.country
     };
+    /**
+     * taIdentify/applyIdentify grava cookies PII *assíncronas* (SHA-256). O track(Lead) costuma
+     * correr no ms seguinte — cookies ainda vazias → CAPI/ingest sem fn/ln enquanto em ph às
+     * vezes vinha de visita antiga. Mescla __TA_IDENTIFY (dados crus do último identify) se o
+     * hash ainda não está no cookie. A API aplica o mesmo normalizador/hash.
+     */
+    try {
+      var I = window.__TA_IDENTIFY;
+      if (I && typeof I === 'object') {
+        function pickId(keys) {
+          for (var j = 0; j < keys.length; j++) {
+            if (!Object.prototype.hasOwnProperty.call(I, keys[j])) continue;
+            var t = (I[keys[j]] == null) ? '' : String(I[keys[j]]).trim();
+            if (t) return t;
+          }
+          return '';
+        }
+        if (!out.em)  { var e0 = pickId(['email', 'e-mail', 'mail']);   if (e0) out.em  = e0; }
+        if (!out.ph)  { var p0 = pickId(['phone', 'telefone', 'cel', 'celular', 'whats', 'whatsapp', 'whatsap', 'fone', 'zap', 'tel']); if (p0) out.ph = p0; }
+        if (!out.fn)  { var f0 = pickId(['fn', 'first_name', 'firstname', 'nome', 'name']);   if (f0) out.fn  = f0; }
+        if (!out.ln)  { var l0 = pickId(['ln', 'last_name', 'lastname', 'sobrenome', 'surname', 'ultimo_nome', 'ultimonome']);   if (l0) out.ln  = l0; }
+        if (!out.ct)  { var c0 = pickId(['ct', 'city', 'cidade', 'municipio']);  if (c0) out.ct  = c0; }
+        if (!out.st)  { var s0 = pickId(['st', 'estado', 'state', 'uf', 'regiao', 'region']);  if (s0) out.st  = s0; }
+        if (!out.country)  { var co0 = pickId(['country', 'pais', 'país', 'countryCode', 'country_code']);  if (co0) out.country  = co0; }
+        if (!out.zp)  { var z0 = pickId(['zip', 'cep', 'postal', 'postalcode', 'postal_code']);  if (z0) out.zp  = z0; }
+      }
+    } catch(_e) {}
+    return out;
   }
 
   function buildTelemetry(extra) {
