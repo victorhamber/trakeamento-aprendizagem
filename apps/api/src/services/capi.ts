@@ -2,6 +2,7 @@ import axios from 'axios';
 import crypto from 'crypto';
 import { pool } from '../db/pool';
 import { decryptString } from '../lib/crypto';
+import { summarizeMetaMarketingError } from '../lib/meta-api-error';
 import { preserveMetaClickIds } from '../lib/meta-attribution';
 import { META_GRAPH_API_VERSION } from '../lib/meta-graph-version';
 import { createLogger } from '../lib/logger';
@@ -461,13 +462,24 @@ export class CapiService {
       if (axios.isAxiosError(error)) {
         const code = (error.response?.data as { error?: { code?: number } } | undefined)?.error?.code;
         const message = (error.response?.data as { error?: { message?: string } } | undefined)?.error?.message;
+        const summary = summarizeMetaMarketingError(error);
+        const firstEvent = chunk[0];
+        const firstEventId = firstEvent?.event_id;
+        const firstEventName = firstEvent?.event_name;
         if (code === 190) {
           CapiService.disabledUntil.set(siteKey, Date.now() + 60 * 60 * 1000);
-          log.error('Batch send failed - token invalid', { site_key: siteKey });
+          log.error('Batch send failed - token invalid', { site_key: siteKey, summary });
           await this.updateLastStatus(siteKey, { ok: false, error: `Token inválido no Meta. ${message || ''}`.trim(), details: error.response?.data });
           return { ok: false, error: `Token inválido no Meta. ${message || ''}`.trim(), details: error.response?.data };
         }
-        log.error('Batch send failed', { site_key: siteKey, error: message });
+        log.error('Batch send failed', {
+          site_key: siteKey,
+          error: message,
+          summary,
+          first_event_name: firstEventName,
+          first_event_id: firstEventId,
+          count: chunk.length,
+        });
         await this.updateLastStatus(siteKey, { ok: false, error: message || 'Erro ao enviar para o Meta', details: error.response?.data });
         return { ok: false, error: message || 'Erro ao enviar para o Meta', details: error.response?.data };
       }
