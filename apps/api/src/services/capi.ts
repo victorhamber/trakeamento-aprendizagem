@@ -348,7 +348,7 @@ export class CapiService {
                   `UPDATE capi_outbox 
                    SET attempts = attempts + 1,
                        last_error = $1,
-                       next_attempt_at = NOW() + ((LEAST($3::int, $2::int * POWER(2, attempts)))::int * INTERVAL '1 second')
+                       next_attempt_at = NOW() + ((LEAST($3::int, $4::int * POWER(2, attempts)))::int * INTERVAL '1 second')
                    WHERE id = $2`,
                   [res.error, r.id, CapiService.OUTBOX_MAX_DELAY_SEC, CapiService.OUTBOX_BASE_DELAY_SEC]
                 );
@@ -369,7 +369,7 @@ export class CapiService {
               `UPDATE capi_outbox 
                SET attempts = attempts + 1,
                    last_error = $1,
-                   next_attempt_at = NOW() + ((LEAST($3::int, $2::int * POWER(2, attempts)))::int * INTERVAL '1 second')
+                   next_attempt_at = NOW() + ((LEAST($3::int, $4::int * POWER(2, attempts)))::int * INTERVAL '1 second')
                WHERE id = $2`,
               [result.error, r.id, CapiService.OUTBOX_MAX_DELAY_SEC, CapiService.OUTBOX_BASE_DELAY_SEC]
             );
