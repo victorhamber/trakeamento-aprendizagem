@@ -1,5 +1,24 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Mail } from 'lucide-react';
 import { api } from '../../lib/api';
+import {
+  BarChart3,
+  JourneyModalFrame,
+  JourneyModalHeader,
+  JourneyTimeline,
+  LastAdPanel,
+  LeadPathFlow,
+  Megaphone,
+  MetricCard,
+  MetricGrid4,
+  OriginSaleCard,
+  Smartphone,
+  StatusPill,
+  TechnicalAccordion,
+  TopPagesGradientBars,
+  initialsFromName,
+  timelineIconFromPageSlug,
+} from './VisitorJourneyModalLayout';
 
 type LeadRow = {
   id: number;
@@ -28,18 +47,20 @@ type LeadRow = {
   user_data?: Record<string, unknown>;
 };
 
+type LeadHistoryItem = {
+  event_time: string;
+  page_path?: string | null;
+  page_title?: string | null;
+  page_location?: string | null;
+  event_url?: string | null;
+};
+
 type LeadDetail = {
   lead: LeadRow & {
     group_tags?: string[];
     user_data?: Record<string, unknown>;
     visitor?: { last_ip?: string | null; last_seen_at?: string | null } | null;
-    history?: Array<{
-      event_time: string;
-      page_path?: string | null;
-      page_title?: string | null;
-      page_location?: string | null;
-      event_url?: string | null;
-    }>;
+    history?: LeadHistoryItem[];
   };
 };
 
@@ -186,6 +207,249 @@ function attributionLine(row: LeadRow): string {
   if (uCamp || uCont) return [uCamp || '—', uCont].filter(Boolean).join(' · ');
   if (uSrc || uMed) return [uSrc, uMed].filter(Boolean).join(' · ');
   return '—';
+}
+
+function leadPathLabelFromPath(raw: string | null | undefined): string {
+  const s = (raw || '').trim();
+  if (!s) return 'página principal';
+  const clean = s.replace(/^\/+|\/+$/g, '');
+  if (!clean) return 'página principal';
+  const seg = clean.split('/').filter(Boolean)[0] || '';
+  if (!seg) return 'página principal';
+  try {
+    return decodeURIComponent(seg);
+  } catch {
+    return seg;
+  }
+}
+
+function leadHistoryStepLabel(h: LeadHistoryItem): string {
+  const raw =
+    String(h.page_path || '').trim() ||
+    String(h.page_location || '').trim() ||
+    String(h.event_url || '').trim() ||
+    '';
+  if (!raw) return 'página principal';
+  if (/^https?:\/\//i.test(raw)) {
+    try {
+      return leadPathLabelFromPath(new URL(raw).pathname);
+    } catch {
+      return leadPathLabelFromPath(raw);
+    }
+  }
+  return leadPathLabelFromPath(raw);
+}
+
+function leadProbableSource(row: LeadRow): string {
+  if (row.meta_attribution) return 'Meta Ads';
+  const u = row.utm;
+  const src = (u?.utm_source || '').trim();
+  const med = (u?.utm_medium || '').trim();
+  if (src || med) return [src, med].filter(Boolean).join(' · ') || '—';
+  return '—';
+}
+
+function LeadJourneyDetailView({ lead }: { lead: LeadDetail['lead'] }) {
+  const history = Array.isArray(lead.history) ? lead.history : [];
+  const slugSteps: string[] = [];
+  for (const h of history) {
+    const label = leadHistoryStepLabel(h);
+    if (slugSteps[slugSteps.length - 1] !== label) slugSteps.push(label);
+  }
+  const pathSteps = [...slugSteps, 'Lead'];
+
+  const counts = new Map<string, number>();
+  for (const h of history) {
+    const label = leadHistoryStepLabel(h);
+    counts.set(label, (counts.get(label) || 0) + 1);
+  }
+  const topRows = [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([label, count]) => ({ label, count }));
+
+  const timelineItems = history.slice(0, 40).map((h, idx) => {
+    const slug = leadHistoryStepLabel(h);
+    const title = idx === 0 ? `Entrou por ${slug}` : `Visitou ${slug}`;
+    const subtitle = String(h.page_title || '').trim() || undefined;
+    return {
+      at: dt(String(h.event_time || '')),
+      title,
+      subtitle,
+      highlight: false,
+      icon: timelineIconFromPageSlug(slug, idx),
+    };
+  });
+  const leadEmail = leadPrimaryEmail(lead.data || {});
+  timelineItems.push({
+    at: dt(String(lead.event_time || '')),
+    title: 'Lead capturado',
+    subtitle: leadEmail !== '—' ? leadEmail : undefined,
+    highlight: true,
+    icon: 'check',
+  });
+
+  const m = lead.meta_attribution;
+  const u = lead.utm;
+  const originStr =
+    u?.utm_source || u?.utm_medium
+      ? [u?.utm_source, u?.utm_medium].filter(Boolean).join(' / ')
+      : pickStringAny('fbc', lead.data, lead.user_data)
+        ? 'fb / paid_social (estimado)'
+        : '—';
+
+  return (
+    <>
+      <MetricGrid4>
+        <MetricCard
+          icon={Mail}
+          iconClass="bg-violet-500/15 text-violet-300"
+          label="Contato"
+          value={leadPrimaryEmail(lead.data || {})}
+        />
+        <MetricCard
+          icon={Megaphone}
+          iconClass="bg-teal-500/15 text-teal-300"
+          label="Origem provável"
+          value={leadProbableSource(lead)}
+        />
+        <MetricCard
+          icon={BarChart3}
+          iconClass="bg-sky-500/15 text-sky-300"
+          label="Jornada"
+          value={`${history.length} interações`}
+        />
+        <MetricCard
+          icon={Smartphone}
+          iconClass="bg-emerald-500/15 text-emerald-300"
+          label="Dispositivo"
+          value={deviceLabel(lead.device)}
+        />
+      </MetricGrid4>
+
+      <OriginSaleCard
+        heading="Origem do cadastro"
+        campaign={m?.campaign_name || m?.campaign_id || (u?.utm_campaign || '—')}
+        adset={m?.adset_name || m?.adset_id || '—'}
+        ad={m?.ad_name || m?.ad_id || (u?.utm_content || '—')}
+        footerNote="Associado ao último toque registrado antes do envio do formulário."
+      />
+
+      <LeadPathFlow steps={pathSteps} footer={`${history.length} interações antes do cadastro`} />
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+        <JourneyTimeline title="Linha do tempo da jornada" items={timelineItems} />
+        <div className="space-y-4">
+          <TopPagesGradientBars title="Top páginas antes do cadastro" rows={topRows} />
+          <LastAdPanel
+            platform={m ? 'Meta Ads' : '—'}
+            origin={originStr}
+            campaign={m?.campaign_name || m?.campaign_id || u?.utm_campaign || '—'}
+            content={m?.ad_name || m?.ad_id || u?.utm_content || '—'}
+            audience={m?.adset_name || m?.adset_id || '—'}
+          />
+        </div>
+      </div>
+
+      <TechnicalAccordion>
+        <div className="space-y-4 pt-3">
+          <div className="rounded-lg border border-slate-800 bg-[#0B0E14] p-3">
+            <div className="text-[11px] font-semibold text-slate-300 mb-2">Cadastro</div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-slate-400">
+              <div>
+                <span className="text-slate-500">Nome:</span> <span className="text-slate-200">{leadPrimaryName(lead.data || {})}</span>
+              </div>
+              <div>
+                <span className="text-slate-500">Telefone:</span> <span className="text-slate-200">{leadPrimaryPhone(lead.data || {})}</span>
+              </div>
+              <div className="sm:col-span-2">
+                <span className="text-slate-500">Local:</span>{' '}
+                <span className="text-slate-200">{[lead.city, lead.state, lead.country].filter(Boolean).join(', ') || '—'}</span>
+              </div>
+              {lead.meta_attribution_source ? (
+                <div className="sm:col-span-2">
+                  <span className="text-slate-500">Fonte da atribuição:</span>{' '}
+                  <span className="text-slate-200">{lead.meta_attribution_source}</span>
+                </div>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-slate-800 bg-[#0B0E14] p-3">
+            <div className="text-[11px] font-semibold text-slate-300 mb-2">UTMs (payload)</div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+              {(['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'click_id'] as const).map((k) => (
+                <div key={k} className="flex justify-between gap-2 border-b border-slate-800/60 pb-1">
+                  <span className="text-slate-500">{k}</span>
+                  <span className="text-slate-200 truncate max-w-[55%]" title={pickString(lead.data, k)}>
+                    {pickString(lead.data, k) || '—'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-slate-800 bg-[#0B0E14] p-3">
+            <div className="text-[11px] font-semibold text-slate-300 mb-2">IDs</div>
+            <div className="space-y-1 text-[11px]">
+              <ValueRow label="fbclid" value={pickStringAny('fbclid', lead.data, lead.user_data)} />
+              <ValueRow label="fbc" value={pickStringAny('fbc', lead.data, lead.user_data)} />
+              <ValueRow label="fbp" value={pickStringAny('fbp', lead.data, lead.user_data)} />
+            </div>
+          </div>
+
+          {history.length ? (
+            <div className="rounded-lg border border-slate-800 bg-[#0B0E14] p-3">
+              <div className="text-[11px] font-semibold text-slate-300 mb-2">Histórico completo (tabela)</div>
+              <div className="max-h-[240px] overflow-auto rounded-md border border-slate-800">
+                <table className="w-full text-[11px]">
+                  <thead className="sticky top-0 bg-[#12161F] border-b border-slate-800">
+                    <tr>
+                      <th className="text-left font-semibold px-3 py-2 text-slate-400 w-[160px]">Quando</th>
+                      <th className="text-left font-semibold px-3 py-2 text-slate-400">Página</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {history.slice(0, 40).map((h, idx) => {
+                      const when = dt(String(h?.event_time || ''));
+                      const page =
+                        String(h?.page_path || '').trim() ||
+                        String(h?.event_url || '').trim() ||
+                        String(h?.page_location || '').trim() ||
+                        '—';
+                      const title = String(h?.page_title || '').trim();
+                      return (
+                        <tr key={idx} className="border-b border-slate-800/60 last:border-0">
+                          <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{when}</td>
+                          <td className="px-3 py-2 text-slate-200">
+                            <div className="truncate max-w-[480px]" title={page}>
+                              {page}
+                            </div>
+                            {title ? (
+                              <div className="text-[10px] text-slate-500 truncate max-w-[480px]" title={title}>
+                                {title}
+                              </div>
+                            ) : null}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : null}
+
+          <details className="rounded-lg border border-slate-800 bg-[#0B0E14] p-3">
+            <summary className="cursor-pointer text-[11px] text-slate-400 hover:text-slate-200">Ver JSON bruto</summary>
+            <pre className="mt-2 max-h-[280px] overflow-auto rounded-md border border-slate-800 bg-slate-950/50 p-2 text-[10px] text-slate-400 whitespace-pre-wrap break-all">
+              {JSON.stringify(lead.data || {}, null, 2)}
+            </pre>
+          </details>
+        </div>
+      </TechnicalAccordion>
+    </>
+  );
 }
 
 export function LeadsTab({ siteId }: { siteId: number }) {
@@ -388,176 +652,26 @@ export function LeadsTab({ siteId }: { siteId: number }) {
       </div>
 
       {canOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <button type="button" className="absolute inset-0 bg-black/60" onClick={() => setSelectedEventId(null)} aria-label="Fechar" />
-
-          <div className="relative w-full max-w-5xl">
-            <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 shadow-xl overflow-hidden max-h-[calc(100vh-64px)] flex flex-col">
-              <div className="flex items-start justify-between gap-3 px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/60 dark:bg-zinc-950/40">
-                <div className="min-w-0">
-                  <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 truncate">
-                    {detail?.lead ? leadPrimaryName(detail.lead.data || {}) : 'Lead'}
-                  </div>
-                  <div className="text-[11px] text-zinc-600 dark:text-zinc-400 truncate">event_id: {selectedEventId}</div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setSelectedEventId(null)}
-                  className="text-xs px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white/80 dark:bg-zinc-950/25 text-zinc-700 dark:text-zinc-200 hover:bg-white dark:hover:bg-zinc-950/40"
-                >
-                  Fechar
-                </button>
-              </div>
-
-              <div className="p-4 overflow-auto flex-1">
-                {detailLoading ? (
-                  <div className="text-sm text-zinc-600 dark:text-zinc-400">Carregando…</div>
-                ) : detailError ? (
-                  <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{detailError}</div>
-                ) : detail?.lead ? (
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-                      <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-950/25 p-3">
-                        <div className="text-[11px] font-semibold text-zinc-600 dark:text-zinc-400">Contato</div>
-                        <div className="mt-1 text-xs text-zinc-800 dark:text-zinc-200 truncate">{leadPrimaryEmail(detail.lead.data || {})}</div>
-                        <div className="mt-1 text-[11px] text-zinc-600 dark:text-zinc-400 truncate">{leadPrimaryPhone(detail.lead.data || {})}</div>
-                      </div>
-                      <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-950/25 p-3">
-                        <div className="text-[11px] font-semibold text-zinc-600 dark:text-zinc-400">Origem (Meta/UTM)</div>
-                        <div className="mt-1 text-[11px] text-zinc-700 dark:text-zinc-300">{attributionLine(detail.lead)}</div>
-                        {detail.lead.meta_attribution_source ? (
-                          <div className="mt-1 text-[10px] text-zinc-500 dark:text-zinc-500">Fonte: {detail.lead.meta_attribution_source}</div>
-                        ) : null}
-                      </div>
-                      <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-950/25 p-3">
-                        <div className="text-[11px] font-semibold text-zinc-600 dark:text-zinc-400">Contexto</div>
-                        <div className="mt-1 text-[11px] text-zinc-600 dark:text-zinc-400">Dispositivo: {deviceLabel(detail.lead.device)}</div>
-                        <div className="mt-1 text-[11px] text-zinc-600 dark:text-zinc-400">
-                          Localização: {[detail.lead.city, detail.lead.state, detail.lead.country].filter(Boolean).join(', ') || '—'}
-                        </div>
-                        <div className="mt-1 text-[11px] text-zinc-600 dark:text-zinc-400">
-                          <span className="font-medium text-zinc-700 dark:text-zinc-300">Tags (sequência):</span>
-                          <div className="mt-1 flex flex-wrap gap-1">
-                            {(() => {
-                              const seq =
-                                detail.lead.group_tags && detail.lead.group_tags.length
-                                  ? detail.lead.group_tags
-                                  : detail.lead.group_tag
-                                    ? [detail.lead.group_tag]
-                                    : [];
-                              if (!seq.length) return <TagBadge value="" />;
-                              return seq.map((t, i) => <TagBadge key={`${t}-${i}`} value={t} />);
-                            })()}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-950/25 p-4">
-                      <div className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-2">Dados do cadastro (formatado)</div>
-                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                        <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white/60 dark:bg-zinc-950/20 p-3">
-                          <div className="text-[11px] font-semibold text-zinc-600 dark:text-zinc-400 mb-2">UTMs</div>
-                          {([
-                            ['utm_id', 'utm_id'],
-                            ['utm_source', 'utm_source'],
-                            ['utm_medium', 'utm_medium'],
-                            ['utm_campaign', 'utm_campaign'],
-                            ['utm_content', 'utm_content'],
-                            ['utm_term', 'utm_term'],
-                            ['click_id', 'click_id'],
-                          ] as const).map(([k, label]) => (
-                            <ValueRow key={k} label={label} value={pickString(detail.lead.data, k)} />
-                          ))}
-                        </div>
-
-                        <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white/60 dark:bg-zinc-950/20 p-3">
-                          <div className="text-[11px] font-semibold text-zinc-600 dark:text-zinc-400 mb-2">Página</div>
-                          <ValueRow label="page_title" value={pickString(detail.lead.data, 'page_title')} />
-                          <ValueRow label="page_path" value={pickString(detail.lead.data, 'page_path')} />
-                          <ValueRow label="page_location" value={pickString(detail.lead.data, 'page_location')} />
-                          <ValueRow label="event_url" value={pickString(detail.lead.data, 'event_url')} />
-                        </div>
-
-                        <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white/60 dark:bg-zinc-950/20 p-3">
-                          <div className="text-[11px] font-semibold text-zinc-600 dark:text-zinc-400 mb-2">IDs</div>
-                          <ValueRow label="fbclid" value={pickStringAny('fbclid', detail.lead.data, detail.lead.user_data)} />
-                          <ValueRow label="fbc" value={pickStringAny('fbc', detail.lead.data, detail.lead.user_data)} />
-                          <ValueRow label="fbp" value={pickStringAny('fbp', detail.lead.data, detail.lead.user_data)} />
-                        </div>
-
-                        <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white/60 dark:bg-zinc-950/20 p-3">
-                          <div className="text-[11px] font-semibold text-zinc-600 dark:text-zinc-400 mb-2">Outros</div>
-                          <ValueRow label="traffic_source" value={pickString(detail.lead.data, 'traffic_source')} />
-                          <ValueRow label="device" value={deviceLabel(detail.lead.device)} />
-                          <ValueRow
-                            label="tag"
-                            value={
-                              detail.lead.group_tags && detail.lead.group_tags.length
-                                ? detail.lead.group_tags.join(' → ')
-                                : detail.lead.group_tag || '—'
-                            }
-                          />
-                        </div>
-                      </div>
-
-                      {Array.isArray((detail.lead as any).history) && (detail.lead as any).history.length ? (
-                        <div className="mt-4 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white/60 dark:bg-zinc-950/20 p-3">
-                          <div className="text-[11px] font-semibold text-zinc-600 dark:text-zinc-400 mb-2">
-                            Histórico (páginas visitadas)
-                          </div>
-                          <div className="max-h-[260px] overflow-auto rounded-md border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-950/20">
-                            <table className="w-full text-[11px]">
-                              <thead className="sticky top-0 bg-white dark:bg-zinc-950 border-b border-zinc-200 dark:border-zinc-800">
-                                <tr>
-                                  <th className="text-left font-semibold px-3 py-2 text-zinc-600 dark:text-zinc-400 w-[170px]">Quando</th>
-                                  <th className="text-left font-semibold px-3 py-2 text-zinc-600 dark:text-zinc-400">Página</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {(detail.lead as any).history.slice(0, 30).map((h: any, idx: number) => {
-                                  const when = dt(String(h?.event_time || ''));
-                                  const page =
-                                    String(h?.page_path || '').trim() ||
-                                    String(h?.event_url || '').trim() ||
-                                    String(h?.page_location || '').trim() ||
-                                    '—';
-                                  const title = String(h?.page_title || '').trim();
-                                  return (
-                                    <tr key={idx} className="border-b border-zinc-100 dark:border-zinc-900/60 last:border-0">
-                                      <td className="px-3 py-2 text-zinc-600 dark:text-zinc-400 whitespace-nowrap">{when}</td>
-                                      <td className="px-3 py-2 text-zinc-800 dark:text-zinc-200">
-                                        <div className="truncate max-w-[720px]" title={page}>{page}</div>
-                                        {title ? (
-                                          <div className="text-[10px] text-zinc-500 dark:text-zinc-500 truncate max-w-[720px]" title={title}>
-                                            {title}
-                                          </div>
-                                        ) : null}
-                                      </td>
-                                    </tr>
-                                  );
-                                })}
-                              </tbody>
-                            </table>
-                          </div>
-                        </div>
-                      ) : null}
-
-                      <details className="mt-4">
-                        <summary className="cursor-pointer text-[11px] text-zinc-600 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200">
-                          Ver JSON bruto
-                        </summary>
-                        <pre className="mt-2 max-h-[360px] overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 p-3 text-[11px] text-zinc-700 dark:text-zinc-200 whitespace-pre-wrap break-all">
-                          {JSON.stringify(detail.lead.data || {}, null, 2)}
-                        </pre>
-                      </details>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            </div>
-          </div>
-        </div>
+        <JourneyModalFrame
+          onClose={() => setSelectedEventId(null)}
+          header={
+            <JourneyModalHeader
+              initials={initialsFromName(detail?.lead ? leadPrimaryName(detail.lead.data || {}) : 'Lead')}
+              name={detail?.lead ? leadPrimaryName(detail.lead.data || {}) : 'Lead'}
+              subtitle="Resumo do cadastro e jornada até a conversão"
+              badge={<StatusPill variant="info">Lead capturado</StatusPill>}
+              onClose={() => setSelectedEventId(null)}
+            />
+          }
+        >
+          {detailLoading ? (
+            <div className="text-sm text-slate-400 py-8 text-center">Carregando…</div>
+          ) : detailError ? (
+            <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{detailError}</div>
+          ) : detail?.lead ? (
+            <LeadJourneyDetailView lead={detail.lead} />
+          ) : null}
+        </JourneyModalFrame>
       ) : null}
     </div>
   );

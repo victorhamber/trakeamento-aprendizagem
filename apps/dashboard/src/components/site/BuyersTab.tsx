@@ -1,5 +1,24 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../lib/api';
+import {
+  BarChart3,
+  JourneyModalFrame,
+  JourneyModalHeader,
+  JourneyTimeline,
+  LastAdPanel,
+  Megaphone,
+  MetricCard,
+  MetricGrid4,
+  OriginSaleCard,
+  PurchasePathFlow,
+  ShoppingBag,
+  Smartphone,
+  StatusPill,
+  TechnicalAccordion,
+  TopPagesGradientBars,
+  initialsFromName,
+  timelineIconFromPageSlug,
+} from './VisitorJourneyModalLayout';
 
 type BuyerRow = {
   buyer_key: string;
@@ -205,32 +224,6 @@ function pageSlugLabelFromUrl(rawUrl: string): string {
   }
 }
 
-function PageSlugTag({
-  url,
-  visitCount,
-  className,
-}: {
-  url: string;
-  /** Acima de 1, mostra “N×” no badge (ex.: oferta-liberada 2×). */
-  visitCount?: number;
-  className?: string;
-}) {
-  const label = pageSlugLabelFromUrl(url);
-  const suffix = visitCount != null && visitCount > 1 ? ` ${visitCount}×` : '';
-  return (
-    <span
-      className={
-        className ||
-        'inline-flex max-w-full items-center truncate rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-100/90 dark:bg-zinc-800/70 px-2 py-0.5 text-[10px] font-semibold text-zinc-800 dark:text-zinc-100'
-      }
-      title={url}
-    >
-      {label}
-      {suffix}
-    </span>
-  );
-}
-
 function GroupTagBadge({ value }: { value: string }) {
   const v = (value || '').trim();
   if (!v) return null;
@@ -279,6 +272,308 @@ function dt(iso: string | null | undefined) {
   } catch {
     return iso;
   }
+}
+
+function buyerProbableSource(d: BuyerDetail): string {
+  const lt = (d.buyer.last_traffic_source || '').trim();
+  if (lt) return lt;
+  if (d.behavior.meta_attribution) return 'Meta Ads';
+  const u = d.behavior.last_touch;
+  const src = (u?.utm_source || '').trim();
+  const med = (u?.utm_medium || '').trim();
+  if (src || med) return [src, med].filter(Boolean).join(' · ') || '—';
+  return '—';
+}
+
+function buyerPathSteps(d: BuyerDetail): string[] {
+  const timeline = d.behavior.pageviews_timeline_before_last_purchase || [];
+  const slugs = timeline.map((pv) => pageSlugLabelFromUrl(pv.url));
+  const out: string[] = [];
+  for (const s of slugs) {
+    if (out[out.length - 1] !== s) out.push(s);
+  }
+  out.push('Compra');
+  return out;
+}
+
+function BuyerJourneyDetailView({
+  detail,
+  purchasesPage,
+  setPurchasesPage,
+  purchasesPerPage,
+  detailLoading,
+}: {
+  detail: BuyerDetail;
+  purchasesPage: number;
+  setPurchasesPage: (n: number | ((p: number) => number)) => void;
+  purchasesPerPage: number;
+  detailLoading: boolean;
+}) {
+  const last = detail.purchases?.[0];
+  const st = String(last?.status || '').toLowerCase();
+  const approved = ['approved', 'paid', 'completed', 'active'].includes(st);
+
+  const timelineItems = (detail.behavior.pageviews_timeline_before_last_purchase || []).slice(0, 50).map((pv, idx) => {
+    const slug = pageSlugLabelFromUrl(pv.url);
+    const utmS = formatPageviewAttributionSummary(pv.utm);
+    const metaL = formatJourneyMetaAttribution(pv.meta_attribution);
+    const subtitle = metaL ? metaL : utmS || undefined;
+    const title = idx === 0 ? `Entrou por ${slug}` : `Visitou ${slug}`;
+    return {
+      at: dt(pv.at),
+      title,
+      subtitle,
+      highlight: false,
+      icon: timelineIconFromPageSlug(slug, idx),
+    };
+  });
+  if (last) {
+    timelineItems.push({
+      at: dt(last.purchased_at),
+      title: approved ? 'Compra aprovada' : `Compra · ${purchaseStatusLabel(last.status)}`,
+      subtitle: last.order_id ? `Pedido ${last.order_id}` : undefined,
+      highlight: true,
+      icon: 'check',
+    });
+  }
+
+  const topRows = detail.behavior.top_pages_before_last_purchase.slice(0, 8).map((p) => ({
+    label: pageSlugLabelFromUrl(p.url),
+    count: p.count,
+  }));
+
+  const m = detail.behavior.meta_attribution;
+  const lt = detail.behavior.last_touch;
+  const originStr =
+    lt?.utm_source || lt?.utm_medium
+      ? [lt?.utm_source, lt?.utm_medium].filter(Boolean).join(' / ')
+      : detail.buyer.fbc
+        ? 'fb / paid_social (estimado)'
+        : '—';
+
+  const pathSteps = buyerPathSteps(detail);
+  const interactions = detail.behavior.pageviews_before_last_purchase;
+
+  return (
+    <>
+      <MetricGrid4>
+        <MetricCard
+          icon={ShoppingBag}
+          iconClass="bg-violet-500/15 text-violet-300"
+          label="Valor da compra"
+          value={last?.amount != null ? formatMoney(Number(last.amount), last.currency) : '—'}
+        />
+        <MetricCard
+          icon={Megaphone}
+          iconClass="bg-teal-500/15 text-teal-300"
+          label="Origem provável"
+          value={buyerProbableSource(detail)}
+        />
+        <MetricCard
+          icon={BarChart3}
+          iconClass="bg-sky-500/15 text-sky-300"
+          label="Jornada"
+          value={`${interactions} interações`}
+        />
+        <MetricCard
+          icon={Smartphone}
+          iconClass="bg-emerald-500/15 text-emerald-300"
+          label="Dispositivo"
+          value={deviceHintLabel(detail.behavior.user_agent?.device_hint)}
+        />
+      </MetricGrid4>
+
+      <OriginSaleCard
+        campaign={m?.campaign_name || m?.campaign_id || '—'}
+        adset={m?.adset_name || m?.adset_id || '—'}
+        ad={m?.ad_name || m?.ad_id || '—'}
+        footerNote="Associado ao último toque detectado antes da compra."
+      />
+
+      <PurchasePathFlow
+        steps={pathSteps}
+        footer={`${interactions} interações antes da compra`}
+      />
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+        <JourneyTimeline title="Linha do tempo da jornada" items={timelineItems} />
+        <div className="space-y-4">
+          <TopPagesGradientBars title="Top páginas pré-compra" rows={topRows} />
+          <LastAdPanel
+            platform={m ? 'Meta Ads' : '—'}
+            origin={originStr}
+            campaign={m?.campaign_name || m?.campaign_id || '—'}
+            content={m?.ad_name || m?.ad_id || '—'}
+            audience={m?.adset_name || m?.adset_id || '—'}
+          />
+        </div>
+      </div>
+
+      <TechnicalAccordion>
+        <div className="space-y-4 pt-3">
+          <div className="rounded-lg border border-slate-800 bg-[#0B0E14] p-3">
+            <div className="text-[11px] font-semibold text-slate-300 mb-2">Identificação</div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-slate-400">
+              <div>
+                <span className="text-slate-500">external_id:</span>{' '}
+                <span className="text-slate-200 font-mono break-all">{detail.buyer.external_id || '—'}</span>
+              </div>
+              <div>
+                <span className="text-slate-500">buyer_key:</span>{' '}
+                <span className="text-slate-200 font-mono break-all">{detail.buyer.buyer_key || '—'}</span>
+              </div>
+              <div>
+                <span className="text-slate-500">fbp:</span>{' '}
+                <span className="text-slate-200 font-mono break-all">{detail.buyer.fbp || '—'}</span>
+              </div>
+              <div>
+                <span className="text-slate-500">fbc:</span>{' '}
+                <span className="text-slate-200 font-mono break-all">{detail.buyer.fbc || '—'}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-slate-800 bg-[#0B0E14] p-3">
+            <div className="text-[11px] font-semibold text-slate-300 mb-2">Contato (webhook)</div>
+            <div className="text-[11px] text-slate-300 space-y-1">
+              <div>{detail.buyer.customer_name || '—'}</div>
+              <div className="text-slate-400">{detail.buyer.customer_email || '—'}</div>
+              <div className="text-slate-400">{detail.buyer.customer_phone || '—'}</div>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-slate-800 bg-[#0B0E14] p-3">
+            <div className="text-[11px] font-semibold text-slate-300 mb-2">User-Agent</div>
+            {detail.behavior.user_agent?.effective_user_agent ? (
+              <pre className="max-h-32 overflow-auto rounded-md border border-slate-800 bg-slate-950/50 p-2 text-[10px] text-slate-400 whitespace-pre-wrap break-all">
+                {detail.behavior.user_agent.effective_user_agent}
+              </pre>
+            ) : (
+              <div className="text-[11px] text-slate-500">Sem UA nos eventos ligados.</div>
+            )}
+          </div>
+
+          {detail.behavior.last_touch ? (
+            <div className="rounded-lg border border-slate-800 bg-[#0B0E14] p-3">
+              <div className="text-[11px] font-semibold text-slate-300 mb-2">Último toque (UTMs)</div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                {(['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'click_id'] as const).map((k) => (
+                  <div key={k} className="flex justify-between gap-2 border-b border-slate-800/60 pb-1">
+                    <span className="text-slate-500">{k}</span>
+                    <span className="text-slate-200 truncate max-w-[55%]" title={detail.behavior.last_touch?.[k] || ''}>
+                      {detail.behavior.last_touch?.[k] || '—'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {(detail.behavior.meta_ad_touch_trail?.length ?? 0) > 0 ? (
+            <div className="rounded-lg border border-slate-800 bg-[#0B0E14] p-3">
+              <div className="text-[11px] font-semibold text-slate-300 mb-2">Trilha de toques (detalhe)</div>
+              <div className="space-y-2 max-h-48 overflow-y-auto text-[10px] text-slate-400">
+                {(detail.behavior.meta_ad_touch_trail || []).map((seg, idx) => (
+                  <div key={`${seg.started_at}-${idx}`} className="rounded border border-slate-800/80 p-2">
+                    <div className="font-semibold text-slate-300">
+                      {idx + 1}. {trailSegmentKindLabel(seg.kind)} · {seg.pageview_hits} PV
+                    </div>
+                    <div className="text-slate-500">{dt(seg.started_at)}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          <div className="rounded-lg border border-slate-800 bg-[#0B0E14] p-3">
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <div className="text-[11px] font-semibold text-slate-300">Compras (todas)</div>
+              <div className="text-[10px] text-slate-500">
+                Total: <span className="font-semibold tabular-nums text-slate-300">{detail.purchases_total ?? 0}</span>
+              </div>
+            </div>
+            <div className="overflow-auto">
+              <table className="w-full text-[11px]">
+                <thead className="text-slate-500">
+                  <tr>
+                    <th className="text-left py-2 pr-3">Data</th>
+                    <th className="text-left py-2 pr-3">Pedido</th>
+                    <th className="text-right py-2 pr-3">Valor</th>
+                    <th className="text-left py-2">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {detail.purchases.map((p) => (
+                    <tr key={p.id} className="border-t border-slate-800">
+                      <td className="py-2 pr-3 text-slate-400 whitespace-nowrap">{dt(p.purchased_at)}</td>
+                      <td className="py-2 pr-3 text-slate-200 truncate max-w-[200px]" title={p.order_id}>
+                        {p.order_id || '—'}
+                      </td>
+                      <td className="py-2 pr-3 text-right tabular-nums text-slate-200 whitespace-nowrap">
+                        {p.amount != null ? formatMoney(Number(p.amount), p.currency) : '—'}
+                      </td>
+                      <td className="py-2 text-slate-400">{purchaseStatusLabel(p.status)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {(() => {
+              const total = Number(detail.purchases_total ?? 0);
+              const pages = Math.max(1, Math.ceil(total / purchasesPerPage));
+              if (pages <= 1) return null;
+              const current = purchasesPage;
+              const start = Math.max(1, current - 3);
+              const end = Math.min(pages, start + 6);
+              const pageNums = [];
+              for (let i = start; i <= end; i++) pageNums.push(i);
+              return (
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setPurchasesPage((p) => Math.max(1, p - 1))}
+                      disabled={current <= 1 || detailLoading}
+                      className="text-[11px] px-2 py-1 rounded-lg border border-slate-700 bg-slate-900/50 text-slate-200 disabled:opacity-40"
+                    >
+                      Anterior
+                    </button>
+                    {pageNums.map((n) => (
+                      <button
+                        key={n}
+                        type="button"
+                        onClick={() => setPurchasesPage(n)}
+                        disabled={detailLoading}
+                        className={`text-[11px] px-2 py-1 rounded-lg border ${
+                          n === current
+                            ? 'border-indigo-500/60 bg-indigo-500/20 text-indigo-200'
+                            : 'border-slate-700 bg-slate-900/50 text-slate-200'
+                        } disabled:opacity-40`}
+                      >
+                        {n}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setPurchasesPage((p) => Math.min(pages, p + 1))}
+                      disabled={current >= pages || detailLoading}
+                      className="text-[11px] px-2 py-1 rounded-lg border border-slate-700 bg-slate-900/50 text-slate-200 disabled:opacity-40"
+                    >
+                      Próxima
+                    </button>
+                  </div>
+                  <div className="text-[11px] text-slate-500">
+                    Página <span className="font-semibold tabular-nums">{current}</span> de{' '}
+                    <span className="font-semibold tabular-nums">{pages}</span>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+      </TechnicalAccordion>
+    </>
+  );
 }
 
 export function BuyersTab({ siteId }: { siteId: number }) {
@@ -570,434 +865,54 @@ export function BuyersTab({ siteId }: { siteId: number }) {
       </div>
 
       {canOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <button
-            type="button"
-            className="absolute inset-0 bg-black/60"
-            onClick={() => setSelected(null)}
-            aria-label="Fechar"
-          />
-
-          <div className="relative w-full max-w-5xl">
-            <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 shadow-xl overflow-hidden max-h-[calc(100vh-64px)] flex flex-col">
-              <div className="flex items-start justify-between gap-3 px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/60 dark:bg-zinc-950/40">
-                <div className="min-w-0">
-                  <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 truncate">
-                    {detail?.buyer?.customer_name || detail?.buyer?.customer_email || selected?.title || selected?.externalId || selected?.buyerKey}
-                  </div>
-                  <div className="text-[11px] text-zinc-600 dark:text-zinc-400 truncate">
-                    {selected?.externalId ? `external_id: ${selected.externalId}` : `buyer_key: ${selected?.buyerKey}`}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setSelected(null)}
-                  className="text-xs px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white/80 dark:bg-zinc-950/25 text-zinc-700 dark:text-zinc-200 hover:bg-white dark:hover:bg-zinc-950/40"
-                >
-                  Fechar
-                </button>
-              </div>
-
-              <div className="p-4 overflow-auto flex-1">
-                {detailLoading ? (
-                  <div className="text-sm text-zinc-600 dark:text-zinc-400">Carregando…</div>
-                ) : detailError ? (
-                  <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
-                    {detailError}
-                  </div>
-                ) : detail ? (
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-                      <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-950/25 p-3">
-                        <div className="text-[11px] font-semibold text-zinc-600 dark:text-zinc-400">Compra (última)</div>
-                        <div className="mt-1 text-xs text-zinc-800 dark:text-zinc-200">
-                          {detail.purchases?.[0]?.amount != null
-                            ? formatMoney(Number(detail.purchases[0].amount), detail.purchases[0].currency)
-                            : '—'}{' '}
-                          · {dt(detail.purchases?.[0]?.purchased_at)}
-                        </div>
-                        <div className="mt-1 text-[11px] text-zinc-600 dark:text-zinc-400 truncate">
-                          Pedido: {detail.purchases?.[0]?.order_id || '—'}
-                        </div>
-                        {(detail.purchases?.[0]?.group_tag || '').trim() ? (
-                          <div className="mt-1 text-[11px] text-zinc-600 dark:text-zinc-400 truncate" title={detail.purchases?.[0]?.group_tag || ''}>
-                            Grupo (última compra): {detail.purchases?.[0]?.group_tag}
-                          </div>
-                        ) : null}
-                        {detail.buyer.group_tags && detail.buyer.group_tags.length ? (
-                          <div className="mt-2">
-                            <div className="text-[11px] font-semibold text-zinc-600 dark:text-zinc-400">Grupos (sequência no site)</div>
-                            <div className="mt-1 flex flex-wrap gap-1">
-                              {detail.buyer.group_tags.map((t, i) => (
-                                <GroupTagBadge key={`${t}-${i}`} value={t} />
-                              ))}
-                            </div>
-                          </div>
-                        ) : null}
-                      </div>
-                      <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-950/25 p-3">
-                        <div className="text-[11px] font-semibold text-zinc-600 dark:text-zinc-400">Contato (webhook)</div>
-                        <div className="mt-1 text-xs text-zinc-800 dark:text-zinc-200 truncate">
-                          {detail.buyer.customer_name || '—'}
-                        </div>
-                        <div className="mt-1 text-[11px] text-zinc-600 dark:text-zinc-400 truncate">
-                          {detail.buyer.customer_email || '—'}
-                        </div>
-                        <div className="mt-1 text-[11px] text-zinc-600 dark:text-zinc-400 truncate">
-                          {detail.buyer.customer_phone || '—'}
-                        </div>
-                      </div>
-                      <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-950/25 p-3">
-                        <div className="text-[11px] font-semibold text-zinc-600 dark:text-zinc-400">Atribuição (melhor esforço)</div>
-                        {detail.behavior.meta_attribution ? (
-                          <div className="mt-1 space-y-1 text-[11px] text-zinc-600 dark:text-zinc-400">
-                            <div className="text-[10px] text-zinc-500 dark:text-zinc-500">
-                              Tentamos atribuir pela combinação de UTMs e dados da Meta (quando disponíveis).
-                            </div>
-                            <div>
-                              <span className="font-medium text-zinc-800 dark:text-zinc-200">Campanha:</span>{' '}
-                              {detail.behavior.meta_attribution.campaign_name || detail.behavior.meta_attribution.campaign_id || '—'}
-                            </div>
-                            <div>
-                              <span className="font-medium text-zinc-800 dark:text-zinc-200">Conjunto:</span>{' '}
-                              {detail.behavior.meta_attribution.adset_name || detail.behavior.meta_attribution.adset_id || '—'}
-                            </div>
-                            <div>
-                              <span className="font-medium text-zinc-800 dark:text-zinc-200">Anúncio:</span>{' '}
-                              {detail.behavior.meta_attribution.ad_name || detail.behavior.meta_attribution.ad_id || '—'}
-                            </div>
-                            {detail.behavior.meta_attribution_source ? (
-                              <div className="text-[10px] text-zinc-500 dark:text-zinc-500">Fonte: {detail.behavior.meta_attribution_source}</div>
-                            ) : null}
-                          </div>
-                        ) : (
-                          <div className="mt-1 text-[11px] text-zinc-600 dark:text-zinc-400">
-                            <div className="text-[10px] text-zinc-500 dark:text-zinc-500">
-                              Atribuição aparece quando existe UTM (ex.: `utm_content`/`utm_campaign`) ou quando conseguimos casar com a Meta.
-                            </div>
-                            <div className="mt-1">Sem atribuição para essa compra.</div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-950/25 p-3">
-                      <div className="text-[11px] font-semibold text-zinc-600 dark:text-zinc-400">Dispositivo (User-Agent)</div>
-                      <div className="mt-1 text-[10px] text-zinc-500 dark:text-zinc-500">
-                        Estimativa a partir do navegador no último PageView antes da compra (quando existir) ou do perfil do visitante no site.
-                      </div>
-                      {detail.behavior.user_agent?.effective_user_agent ? (
-                        <>
-                          <div className="mt-2 flex flex-wrap items-center gap-2">
-                            <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
-                              {deviceHintLabel(detail.behavior.user_agent?.device_hint)}
-                            </span>
-                            <span className="text-[10px] px-2 py-0.5 rounded-full border border-zinc-200 dark:border-zinc-700 text-zinc-500 dark:text-zinc-400">
-                              {detail.behavior.user_agent?.device_hint === 'unknown' ? 'UA vazio' : 'heurística'}
-                            </span>
-                          </div>
-                          {detail.behavior.user_agent?.from_last_pageview_before_purchase ? (
-                            <div className="mt-1 text-[10px] text-zinc-500 dark:text-zinc-500">Fonte: último pageview antes da compra</div>
-                          ) : detail.behavior.user_agent?.from_visitor_profile ? (
-                            <div className="mt-1 text-[10px] text-zinc-500 dark:text-zinc-500">Fonte: último evento registrado no perfil</div>
-                          ) : null}
-                          <pre className="mt-2 max-h-24 overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 p-2 text-[10px] text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap break-all">
-                            {detail.behavior.user_agent.effective_user_agent}
-                          </pre>
-                        </>
-                      ) : (
-                        <div className="mt-2 text-[11px] text-zinc-600 dark:text-zinc-400">
-                          Sem User-Agent nos dados ligados a este comprador. Verifique se o rastreador envia{' '}
-                          <code className="text-[10px]">client_user_agent</code> nos eventos.
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-950/25 p-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="text-xs font-semibold text-zinc-600 dark:text-zinc-400">Compras (todas)</div>
-                        <div className="text-[11px] text-zinc-500 dark:text-zinc-500">
-                          Total: <span className="font-semibold tabular-nums">{detail.purchases_total ?? 0}</span>
-                        </div>
-                      </div>
-
-                      <div className="mt-3 overflow-auto">
-                        <table className="w-full text-[11px]">
-                          <thead className="text-zinc-500 dark:text-zinc-500">
-                            <tr>
-                              <th className="text-left py-2 pr-3">Data</th>
-                              <th className="text-left py-2 pr-3">Pedido</th>
-                              <th className="text-right py-2 pr-3">Valor</th>
-                              <th className="text-left py-2">Status</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {detail.purchases.map((p) => (
-                              <tr key={p.id} className="border-t border-zinc-200 dark:border-zinc-800">
-                                <td className="py-2 pr-3 text-zinc-600 dark:text-zinc-400 whitespace-nowrap">{dt(p.purchased_at)}</td>
-                                <td className="py-2 pr-3 text-zinc-800 dark:text-zinc-200 truncate max-w-[360px]" title={p.order_id}>
-                                  {p.order_id || '—'}
-                                </td>
-                                <td className="py-2 pr-3 text-right tabular-nums text-zinc-800 dark:text-zinc-200 whitespace-nowrap">
-                                  {p.amount != null ? formatMoney(Number(p.amount), p.currency) : '—'}
-                                </td>
-                                <td className="py-2 text-zinc-600 dark:text-zinc-400">{purchaseStatusLabel(p.status)}</td>
-                              </tr>
-                            ))}
-                            {detail.purchases.length === 0 ? (
-                              <tr>
-                                <td colSpan={4} className="py-4 text-center text-zinc-500 dark:text-zinc-500">
-                                  Nenhuma compra encontrada.
-                                </td>
-                              </tr>
-                            ) : null}
-                          </tbody>
-                        </table>
-                      </div>
-
-                      {(() => {
-                        const total = Number(detail.purchases_total ?? 0);
-                        const pages = Math.max(1, Math.ceil(total / purchasesPerPage));
-                        if (pages <= 1) return null;
-                        const current = purchasesPage;
-                        const start = Math.max(1, current - 3);
-                        const end = Math.min(pages, start + 6);
-                        const pageNums = [];
-                        for (let i = start; i <= end; i++) pageNums.push(i);
-                        return (
-                          <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-                            <div className="flex items-center gap-1">
-                              <button
-                                type="button"
-                                onClick={() => setPurchasesPage((p) => Math.max(1, p - 1))}
-                                disabled={current <= 1 || detailLoading}
-                                className="text-[11px] px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-950/25 text-zinc-700 dark:text-zinc-200 disabled:opacity-40"
-                              >
-                                Anterior
-                              </button>
-                              {pageNums.map((n) => (
-                                <button
-                                  key={n}
-                                  type="button"
-                                  onClick={() => setPurchasesPage(n)}
-                                  disabled={detailLoading}
-                                  className={
-                                    `text-[11px] px-2 py-1 rounded-lg border ${
-                                      n === current
-                                        ? 'border-indigo-500/60 bg-indigo-500/15 text-indigo-200'
-                                        : 'border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-950/25 text-zinc-700 dark:text-zinc-200'
-                                    } disabled:opacity-40`
-                                  }
-                                >
-                                  {n}
-                                </button>
-                              ))}
-                              <button
-                                type="button"
-                                onClick={() => setPurchasesPage((p) => Math.min(pages, p + 1))}
-                                disabled={current >= pages || detailLoading}
-                                className="text-[11px] px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-950/25 text-zinc-700 dark:text-zinc-200 disabled:opacity-40"
-                              >
-                                Próxima
-                              </button>
-                            </div>
-                            <div className="text-[11px] text-zinc-500 dark:text-zinc-500">
-                              Página <span className="font-semibold tabular-nums">{current}</span> de{' '}
-                              <span className="font-semibold tabular-nums">{pages}</span>
-                            </div>
-                          </div>
-                        );
-                      })()}
-                    </div>
-
-                    {(detail.behavior.meta_ad_touch_trail?.length ?? 0) > 0 ? (
-                      <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-950/25 p-4">
-                        <div className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-1">
-                          Trilha de toques (anúncios / UTMs / orgânico)
-                        </div>
-                        <p className="text-[11px] text-zinc-600 dark:text-zinc-400 mb-3 leading-snug">
-                          Ordem cronológica até a última compra. Passos consecutivos com o mesmo anúncio, UTMs ou cookie{' '}
-                          <span className="font-mono text-[10px]">fbc</span> aparecem agrupados (quantidade de PageViews).
-                          Mudança de UTMs ou de <span className="font-mono text-[10px]">fbc</span> abre um novo passo — útil para ver captura +
-                          remarketing mesmo quando o último toque difere da atribuição da Meta na compra.
-                        </p>
-                        <div className="space-y-2">
-                          {(detail.behavior.meta_ad_touch_trail || []).map((seg, idx) => {
-                            const metaLine = formatJourneyMetaAttribution(seg.meta_attribution);
-                            const utmLine = formatPageviewAttributionSummary(seg.utm);
-                            return (
-                              <div
-                                key={`${seg.started_at}-${seg.ended_at}-${idx}`}
-                                className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white/60 dark:bg-zinc-950/20 px-3 py-2"
-                              >
-                                <div className="flex flex-wrap items-center gap-2 text-[11px]">
-                                  <span className="font-semibold tabular-nums text-zinc-800 dark:text-zinc-200">{idx + 1}.</span>
-                                  <span
-                                    className="rounded-md border border-indigo-200/70 dark:border-indigo-800/60 bg-indigo-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-800 dark:text-indigo-200"
-                                    title={trailSegmentKindLabel(seg.kind)}
-                                  >
-                                    {trailSegmentKindLabel(seg.kind)}
-                                  </span>
-                                  <span className="text-zinc-600 dark:text-zinc-400 tabular-nums">
-                                    {dt(seg.started_at)}
-                                    {seg.ended_at !== seg.started_at ? (
-                                      <>
-                                        {' '}
-                                        → {dt(seg.ended_at)}
-                                      </>
-                                    ) : null}
-                                  </span>
-                                  <span className="text-zinc-500 dark:text-zinc-500">
-                                    · {seg.pageview_hits} PageView{seg.pageview_hits !== 1 ? 's' : ''}
-                                  </span>
-                                </div>
-                                {metaLine ? (
-                                  <div
-                                    className="mt-1.5 text-[10px] leading-snug text-indigo-700/95 dark:text-indigo-300/90"
-                                    title={seg.meta_attribution_source ? `Fonte: ${seg.meta_attribution_source}` : undefined}
-                                  >
-                                    <span className="font-semibold text-zinc-600 dark:text-zinc-400">Meta: </span>
-                                    {metaLine}
-                                  </div>
-                                ) : seg.kind === 'fbc_only' ? (
-                                  <div className="mt-1.5 text-[10px] text-amber-800/95 dark:text-amber-200/90">
-                                    Cookie de clique presente, mas sem cruzamento com insights importados (ou limite de buscas).
-                                    {seg.meta_attribution_source === 'lookup_limit' ? ' (limite de lookups na trilha.)' : null}
-                                  </div>
-                                ) : seg.kind === 'utm' && utmLine ? (
-                                  <div className="mt-1.5 text-[10px] text-zinc-700 dark:text-zinc-300">{utmLine}</div>
-                                ) : seg.kind === 'organic' ? (
-                                  <div className="mt-1.5 text-[10px] text-zinc-600 dark:text-zinc-400">
-                                    Sem UTMs detectáveis na URL e sem <span className="font-mono">fbc</span> no evento (ex.: tráfego direto ou
-                                    links sem parâmetros).
-                                  </div>
-                                ) : utmLine ? (
-                                  <div className="mt-1.5 text-[10px] text-zinc-700 dark:text-zinc-300">{utmLine}</div>
-                                ) : null}
-                                {seg.page_slugs.length ? (
-                                  <div className="mt-1 flex flex-wrap gap-1">
-                                    {seg.page_slugs.map((slug) => (
-                                      <span
-                                        key={slug}
-                                        className="inline-flex rounded border border-zinc-200 dark:border-zinc-700 bg-zinc-100/80 dark:bg-zinc-800/60 px-1.5 py-0.5 text-[10px] text-zinc-800 dark:text-zinc-100"
-                                      >
-                                        {slug}
-                                      </span>
-                                    ))}
-                                  </div>
-                                ) : null}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    ) : null}
-
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                      <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-950/25 p-4">
-                        <div className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-2">Jornada (PageViews antes da compra)</div>
-                        <div className="text-[11px] text-zinc-600 dark:text-zinc-400">
-                          Total: <span className="font-semibold tabular-nums text-zinc-800 dark:text-zinc-200">{detail.behavior.pageviews_before_last_purchase}</span>
-                          <span className="text-zinc-500 dark:text-zinc-500">
-                            {' '}
-                            · Tag = slug da página (passe o mouse para ver a URL completa). Mesmo slug repetido vira uma linha com contagem (ex.: 2×). Com UTMs alinhados à Meta, mostramos campanha, conjunto e anúncio.
-                          </span>
-                        </div>
-                        {(detail.behavior.pageviews_timeline_before_last_purchase || []).length === 0 ? (
-                          <div className="mt-3 text-[11px] text-zinc-500 dark:text-zinc-500">
-                            Sem dados de navegação para esse comprador. Isso acontece quando não conseguimos ligar a compra a um `external_id` usado nos eventos do site.
-                          </div>
-                        ) : null}
-                        <div className="mt-3 space-y-2">
-                          {(detail.behavior.pageviews_timeline_before_last_purchase || []).slice(0, 120).map((pv, idx) => (
-                            <div
-                              key={`${pv.at}-${pageSlugLabelFromUrl(pv.url)}-${idx}`}
-                              className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white/60 dark:bg-zinc-950/20 px-3 py-2"
-                            >
-                              <div className="flex items-center justify-between gap-3 text-[11px] text-zinc-600 dark:text-zinc-400">
-                                <span className="font-medium text-zinc-800 dark:text-zinc-200">{dt(pv.at)}</span>
-                                {(() => {
-                                  const summary = formatPageviewAttributionSummary(pv.utm);
-                                  return summary ? (
-                                    <span className="truncate max-w-[50%]" title={summary}>
-                                      {summary}
-                                    </span>
-                                  ) : (
-                                    <span className="text-zinc-500 dark:text-zinc-500">sem utm</span>
-                                  );
-                                })()}
-                              </div>
-                              <div className="mt-1 flex flex-wrap items-center gap-2">
-                                <PageSlugTag url={pv.url} visitCount={pv.visit_count} />
-                              </div>
-                              {(() => {
-                                const metaLine = formatJourneyMetaAttribution(pv.meta_attribution);
-                                return metaLine ? (
-                                  <div
-                                    className="mt-1.5 text-[10px] leading-snug text-indigo-700/95 dark:text-indigo-300/90"
-                                    title={pv.meta_attribution_source ? `Fonte: ${pv.meta_attribution_source}` : undefined}
-                                  >
-                                    <span className="font-semibold text-zinc-600 dark:text-zinc-400">Meta: </span>
-                                    {metaLine}
-                                  </div>
-                                ) : null;
-                              })()}
-                            </div>
-                          ))}
-                          {(detail.behavior.pageviews_timeline_before_last_purchase || []).length > 120 ? (
-                            <div className="text-[11px] text-zinc-500 dark:text-zinc-500">
-                              Mostrando 120 de {(detail.behavior.pageviews_timeline_before_last_purchase || []).length}.
-                            </div>
-                          ) : null}
-                        </div>
-                      </div>
-
-                      <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-950/25 p-4">
-                        <div className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-2">Top páginas (pré-compra)</div>
-                        <div className="space-y-1">
-                          {detail.behavior.top_pages_before_last_purchase.slice(0, 15).map((p) => (
-                            <div key={p.url} className="flex items-center justify-between gap-3 text-[11px]">
-                              <PageSlugTag
-                                url={p.url}
-                                className="inline-flex min-w-0 max-w-[calc(100%-2.5rem)] items-center truncate rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-100/90 dark:bg-zinc-800/70 px-2 py-0.5 text-[10px] font-semibold text-zinc-800 dark:text-zinc-100"
-                              />
-                              <span className="shrink-0 tabular-nums text-zinc-700 dark:text-zinc-200">{p.count}</span>
-                            </div>
-                          ))}
-                        </div>
-                        <div className="mt-4 text-xs font-semibold text-zinc-600 dark:text-zinc-400">Último toque (UTMs)</div>
-                        {detail.behavior.last_touch ? (
-                          <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
-                            {([
-                              ['utm_source', 'Origem'],
-                              ['utm_medium', 'Mídia'],
-                              ['utm_campaign', 'Campanha'],
-                              ['utm_content', 'Conteúdo'],
-                              ['utm_term', 'Termo'],
-                              ['click_id', 'Click ID'],
-                            ] as const).map(([k, label]) => (
-                              <div
-                                key={k}
-                                className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white/60 dark:bg-zinc-950/20 px-3 py-2 flex items-center justify-between gap-3"
-                              >
-                                <span className="text-zinc-600 dark:text-zinc-400">{label}</span>
-                                <span className="font-medium text-zinc-800 dark:text-zinc-200 truncate max-w-[60%]" title={detail.behavior.last_touch?.[k] || ''}>
-                                  {detail.behavior.last_touch?.[k] || '—'}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="mt-2 text-[11px] text-zinc-500 dark:text-zinc-500">Sem UTMs detectáveis.</div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            </div>
-          </div>
-        </div>
+        <JourneyModalFrame
+          onClose={() => setSelected(null)}
+          header={
+            <JourneyModalHeader
+              initials={initialsFromName(
+                detail?.buyer?.customer_name ||
+                  detail?.buyer?.customer_email ||
+                  selected?.title ||
+                  selected?.externalId ||
+                  selected?.buyerKey ||
+                  ''
+              )}
+              name={
+                detail?.buyer?.customer_name ||
+                detail?.buyer?.customer_email ||
+                selected?.title ||
+                selected?.externalId ||
+                selected?.buyerKey ||
+                'Comprador'
+              }
+              subtitle="Resumo da compra e jornada até a conversão"
+              badge={
+                detail?.purchases?.[0] ? (
+                  ['approved', 'paid', 'completed', 'active'].includes(String(detail.purchases[0].status || '').toLowerCase()) ? (
+                    <StatusPill variant="success">Compra aprovada</StatusPill>
+                  ) : (
+                    <StatusPill variant="warning">{purchaseStatusLabel(detail.purchases[0].status)}</StatusPill>
+                  )
+                ) : null
+              }
+              onClose={() => setSelected(null)}
+            />
+          }
+        >
+          {detailLoading ? (
+            <div className="text-sm text-slate-400 py-8 text-center">Carregando…</div>
+          ) : detailError ? (
+            <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{detailError}</div>
+          ) : detail ? (
+            <BuyerJourneyDetailView
+              detail={detail}
+              purchasesPage={purchasesPage}
+              setPurchasesPage={setPurchasesPage}
+              purchasesPerPage={purchasesPerPage}
+              detailLoading={detailLoading}
+            />
+          ) : null}
+        </JourneyModalFrame>
       ) : null}
     </div>
   );
