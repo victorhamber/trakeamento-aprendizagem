@@ -916,15 +916,42 @@ async function processPurchaseWebhook({
   const mergedFbpSafe = preserveMetaClickIds(mergedFbp);
   const mergedIp = clientIp || enriched?.clientIp;
   const mergedUa = clientUa || enriched?.clientUa;
-  // Prioridade para "external_id" no CAPI: eid_ canônico do tracker > eid_ do enrichment > hash estável de PII.
-  // (Meta recomenda external_id estável; quando existir email/phone, preferimos a âncora por PII.)
+  // Hashes de PII (sempre úteis no UPSERT de site_visitors, mesmo quando a chave do perfil é eid_).
   const phoneDigitsForHash = phone ? String(phone).replace(/[^0-9]/g, '') : '';
   const piiExternalId = (email ? CapiService.hash(String(email).toLowerCase().trim()) : '') || (phoneDigitsForHash ? CapiService.hash(phoneDigitsForHash) : '');
-  const mergedExternalId =
+  const dbEmailHash = email ? CapiService.hash(String(email).toLowerCase().trim()) : null;
+  const dbPhoneHashBase = phoneDigitsForHash ? CapiService.hash(phoneDigitsForHash) : null;
+
+  // CAPI + purchases + site_visitors: preferir eid_ do checkout/trk/enriquecimento.
+  // Se o payload não trouxe eid_ mas temos fbp/fbc/email já ligados a uma sessão eid_ no site, reaproveitamos esse perfil (evita dois "usuários").
+  let mergedExternalId: string | undefined =
     canonicalEid(finalExternalId) ||
     canonicalEid(enriched?.externalId) ||
     (piiExternalId ? piiExternalId : undefined);
 
+  if (!canonicalEid(mergedExternalId) && (mergedFbpSafe || mergedFbcSafe || dbEmailHash)) {
+    try {
+      const eidRow = await pool.query(
+        `SELECT external_id
+         FROM site_visitors
+         WHERE site_key = $1
+           AND position('eid_' in external_id::text) = 1
+           AND (
+             ($2::text IS NOT NULL AND BTRIM($2::text) <> '' AND fbp IS NOT NULL AND fbp = $2)
+             OR ($3::text IS NOT NULL AND BTRIM($3::text) <> '' AND fbc IS NOT NULL AND fbc = $3)
+             OR ($4::text IS NOT NULL AND BTRIM($4::text) <> '' AND email_hash IS NOT NULL AND email_hash = $4)
+           )
+         ORDER BY last_seen_at DESC NULLS LAST
+         LIMIT 1`,
+        [siteKey, mergedFbpSafe ?? null, mergedFbcSafe ?? null, dbEmailHash],
+      );
+      const hit = eidRow.rows[0]?.external_id;
+      const fromVisitor = canonicalEid(hit);
+      if (fromVisitor) mergedExternalId = fromVisitor;
+    } catch (_eidLookup) {
+      // não bloqueia webhook
+    }
+  }
 
   // Location recovery: Priority Webhook > Enriched (history) > GeoIP (current IP)
   let finalCity = city || enriched?.city;
@@ -1093,11 +1120,15 @@ async function processPurchaseWebhook({
   if (capi_test_event_code) capiPayload.test_event_code = capi_test_event_code;
 
   // 3. Database Persistence
-  // "external_id canônico" para perfil (site_visitors): quando houver PII, usamos hash estável (email > phone)
-  // para unificar o mesmo usuário mesmo trocando de aparelho/navegador.
-  const dbEmailHash = email ? CapiService.hash(String(email).toLowerCase().trim()) : null;
-  const dbPhoneHashBase = phoneDigitsForHash ? CapiService.hash(phoneDigitsForHash) : null;
-  const visitorExtId = (dbEmailHash || dbPhoneHashBase || mergedExternalId || `anon_purchase_${orderId}`) as string;
+  // Chave do perfil (site_visitors / purchases.external_id): mesmo critério do CAPI — eid_ primeiro;
+  // só caímos em hash de email/telefone quando não há como amarrar à sessão Trajettu.
+  const visitorExtId = (
+    canonicalEid(mergedExternalId) ||
+    mergedExternalId ||
+    dbEmailHash ||
+    dbPhoneHashBase ||
+    `anon_purchase_${orderId}`
+  ) as string;
   let recoveredGroupTag: string | null = null;
   try {
     const dbPhoneHash = dbPhoneHashBase;
