@@ -179,15 +179,32 @@ export function mergeUtmFillGaps(
   return has ? out : null;
 }
 
+/**
+ * UTMs persistidos na compra: colunas principais + `custom_data` do webhook (ex.: utm_content, utm_term, click_id/fbclid).
+ * Usado só para **preencher lacunas** no último toque (ver mergeUtmFillGaps) — não sobrescreve o que já veio do PageView.
+ */
 export function utmRecordFromPurchaseRow(row: {
   utm_source?: string | null;
   utm_medium?: string | null;
   utm_campaign?: string | null;
+  custom_data?: unknown;
 }): UtmRecord | null {
   const r = emptyUtmRecord();
   r.utm_source = (row.utm_source || '').trim();
   r.utm_medium = (row.utm_medium || '').trim();
   r.utm_campaign = (row.utm_campaign || '').trim();
-  if (!r.utm_source && !r.utm_medium && !r.utm_campaign) return null;
+
+  const cd =
+    row.custom_data && typeof row.custom_data === 'object'
+      ? recordFromCustomData(row.custom_data as Record<string, unknown>)
+      : null;
+
+  if (cd) {
+    for (const k of UTM_KEYS) {
+      if (!(r[k] || '').trim()) r[k] = (cd[k] || '').trim();
+    }
+  }
+
+  if (!r.utm_source && !r.utm_medium && !r.utm_campaign && !r.utm_content && !r.utm_term && !r.click_id) return null;
   return r;
 }

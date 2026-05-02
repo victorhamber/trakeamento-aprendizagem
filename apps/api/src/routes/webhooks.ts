@@ -12,7 +12,7 @@ import { notifyAccountNewSale } from '../services/expo-push';
 import { notifyAccountWebPushSale } from '../services/web-push-notify';
 import type { SaleNotifyKind } from '../services/sale-notification';
 import { DDI_LIST } from '../lib/ddi';
-import { buildVisitorTrafficSourceString } from '../lib/visitorTrafficSource';
+import { buildVisitorTrafficSourceString, parseStoredTrafficSource } from '../lib/visitorTrafficSource';
 import { createLogger } from '../lib/logger';
 import {
   buildCrmQualificationCapiPayload,
@@ -1062,6 +1062,26 @@ async function processPurchaseWebhook({
     }
   })();
 
+  /** fbclid/gclid na query da página de checkout/referrer → grava em custom_data como click_id (último toque no dashboard). */
+  const checkoutClickIdFromUrls = (() => {
+    for (const raw of [effectiveEventSourceUrl, capiReferrerUrl]) {
+      const s = String(raw || '').trim();
+      if (!s) continue;
+      try {
+        const q = new URL(s).search;
+        const rec = parseStoredTrafficSource(q);
+        if (rec?.click_id) return rec.click_id;
+      } catch {
+        const idx = s.indexOf('?');
+        if (idx >= 0) {
+          const rec = parseStoredTrafficSource(s.slice(idx));
+          if (rec?.click_id) return rec.click_id;
+        }
+      }
+    }
+    return '';
+  })();
+
   const isPending = finalStatus === 'pending_payment';
   const capiEventName = isPending ? 'InitiateCheckout' : 'Purchase';
   const capiEventId = isPending ? `checkout_pending_${orderId}` : `purchase_${orderId}`;
@@ -1114,6 +1134,7 @@ async function processPurchaseWebhook({
       utm_campaign: utmCampaign || undefined,
       utm_content: utmContent || undefined,
       utm_term: utmTerm || undefined,
+      ...(checkoutClickIdFromUrls ? { click_id: checkoutClickIdFromUrls } : {}),
     },
   };
 

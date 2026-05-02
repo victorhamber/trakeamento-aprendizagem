@@ -1624,7 +1624,12 @@ function utmFromVisitorTrafficSource(raw: string): Record<string, string> | null
 function enrichBuyerLastTouchFromProfileAndPurchase(
   lastTouchUtm: Record<string, string> | null,
   visitors: Array<{ first_traffic_source?: string | null } | null | undefined>,
-  purchaseRow: { utm_source?: string | null; utm_medium?: string | null; utm_campaign?: string | null } | null | undefined
+  purchaseRow: {
+    utm_source?: string | null;
+    utm_medium?: string | null;
+    utm_campaign?: string | null;
+    custom_data?: unknown;
+  } | null | undefined
 ): Record<string, string> | null {
   let u = lastTouchUtm;
   for (const vis of visitors) {
@@ -2409,6 +2414,7 @@ router.get('/:siteId/buyers/by-key/:buyerKey', requireAuth, async (req, res) => 
         fbc,
         buyer_email_hash,
         utm_source, utm_medium, utm_campaign,
+        custom_data,
         NULLIF(btrim(custom_data->>'group_tag'), '') AS group_tag,
         COALESCE(platform_date, created_at) AS purchased_at,
         COUNT(*) OVER()::int AS total_count
@@ -2602,6 +2608,7 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
         customer_name, customer_email, customer_phone,
         external_id, fbp, fbc, buyer_email_hash,
         utm_source, utm_medium, utm_campaign,
+        custom_data,
         NULLIF(btrim(custom_data->>'group_tag'), '') AS group_tag,
         COALESCE(platform_date, created_at) AS purchased_at,
         COUNT(*) OVER()::int AS total_count
