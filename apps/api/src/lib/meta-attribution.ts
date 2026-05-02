@@ -8,3 +8,16 @@ export function preserveMetaClickIds(val: unknown): string | undefined {
   const t = val.trim();
   return t || undefined;
 }
+
+/**
+ * Cookie/formato `fbc` enviado ao CAPI: `fb.<subdomain>.<creation_time>.<fbclid>`.
+ * Usado no painel para preencher Click ID quando a URL/custom_data não trazem fbclid.
+ */
+export function fbclidFromFbcCookie(fbc: string | null | undefined): string | undefined {
+  const t = typeof fbc === 'string' ? fbc.trim() : '';
+  if (!t.toLowerCase().startsWith('fb.')) return undefined;
+  const parts = t.split('.');
+  if (parts.length < 4) return undefined;
+  const fbclid = parts.slice(3).join('.');
+  return fbclid || undefined;
+}

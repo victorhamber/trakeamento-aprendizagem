@@ -3,6 +3,8 @@
  * Prioriza query string da URL (landing real); completa com custom_data do pixel.
  */
 
+import { fbclidFromFbcCookie } from './meta-attribution';
+
 const UTM_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'click_id'] as const;
 export type UtmRecord = Record<(typeof UTM_KEYS)[number], string>;
 
@@ -206,5 +208,14 @@ export function utmRecordFromPurchaseRow(row: {
   }
 
   if (!r.utm_source && !r.utm_medium && !r.utm_campaign && !r.utm_content && !r.utm_term && !r.click_id) return null;
+  return r;
+}
+
+/** Preenche só `click_id` a partir do cookie `fbc` (para mergeUtmFillGaps no último toque do comprador). */
+export function utmRecordFromFbcCookie(fbc: string | null | undefined): UtmRecord | null {
+  const id = fbclidFromFbcCookie(fbc);
+  if (!id) return null;
+  const r = emptyUtmRecord();
+  r.click_id = id;
   return r;
 }

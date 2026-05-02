@@ -6,9 +6,11 @@ import { encryptString, decryptString } from '../lib/crypto';
 import { capiService, CapiService } from '../services/capi';
 import { getClientIp } from '../lib/ip';
 import { geoFromGeoipLite } from '../lib/request-geo';
+import { fbclidFromFbcCookie } from '../lib/meta-attribution';
 import {
   mergeUtmFillGaps,
   parseStoredTrafficSource,
+  utmRecordFromFbcCookie,
   utmRecordFromPurchaseRow,
 } from '../lib/visitorTrafficSource';
 import { invalidateCrmCaches } from '../lib/crm-qualification';
@@ -1593,20 +1595,37 @@ function utmFromPageviewCustomData(cd: unknown): Record<string, string> | null {
 
 const BUYER_UTM_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'click_id'] as const;
 
-/** Prioriza query da URL (utm_* da landing); completa com custom_data (ex.: só fbclid no pixel). */
-function mergePageviewUtm(customData: unknown, eventSourceUrl: string | null | undefined): Record<string, string> | null {
+/**
+ * Prioriza query da URL (utm_* da landing); completa com custom_data e com user_data do evento (ex.: cookie `fbc` → fbclid).
+ */
+function mergePageviewUtm(
+  customData: unknown,
+  eventSourceUrl: string | null | undefined,
+  userData?: unknown
+): Record<string, string> | null {
   const fromUrl =
     typeof eventSourceUrl === 'string' && eventSourceUrl.trim()
       ? utmFromEventSourceUrl(eventSourceUrl.trim())
       : null;
   const fromCd = utmFromPageviewCustomData(customData);
-  if (!fromUrl && !fromCd) return null;
+  const fromUd =
+    userData && typeof userData === 'object' ? utmFromPageviewCustomData(userData as Record<string, unknown>) : null;
+
   const out: Record<string, string> = {};
   for (const k of BUYER_UTM_KEYS) {
     const vu = (fromUrl?.[k] || '').trim();
     const vc = (fromCd?.[k] || '').trim();
-    out[k] = vu || vc || '';
+    const vud = (fromUd?.[k] || '').trim();
+    out[k] = vu || vc || vud || '';
   }
+
+  if (!out.click_id && userData && typeof userData === 'object') {
+    const ud = userData as Record<string, unknown>;
+    const fbcRaw = typeof ud.fbc === 'string' ? ud.fbc.trim() : '';
+    const fromFbc = fbclidFromFbcCookie(fbcRaw);
+    if (fromFbc) out.click_id = fromFbc;
+  }
+
   const has = out.utm_source || out.utm_campaign || out.utm_content || out.click_id;
   return has ? out : null;
 }
@@ -1620,15 +1639,16 @@ function utmFromVisitorTrafficSource(raw: string): Record<string, string> | null
   return parseTrafficSourceQuery(s.startsWith('?') ? s : `?${s}`);
 }
 
-/** Completa Último toque com primeiro toque gravado no perfil + UTMs da compra (webhook). */
+/** Completa Último toque com primeiro toque gravado no perfil + UTMs da compra (webhook) + fbclid derivado do `fbc` do visitante. */
 function enrichBuyerLastTouchFromProfileAndPurchase(
   lastTouchUtm: Record<string, string> | null,
-  visitors: Array<{ first_traffic_source?: string | null } | null | undefined>,
+  visitors: Array<{ first_traffic_source?: string | null; fbc?: string | null } | null | undefined>,
   purchaseRow: {
     utm_source?: string | null;
     utm_medium?: string | null;
     utm_campaign?: string | null;
     custom_data?: unknown;
+    fbc?: string | null;
   } | null | undefined
 ): Record<string, string> | null {
   let u = lastTouchUtm;
@@ -1640,6 +1660,12 @@ function enrichBuyerLastTouchFromProfileAndPurchase(
   }
   if (purchaseRow) {
     u = mergeUtmFillGaps(u, utmRecordFromPurchaseRow(purchaseRow));
+    const pfbc = purchaseRow.fbc != null ? String(purchaseRow.fbc).trim() : '';
+    if (pfbc) u = mergeUtmFillGaps(u, utmRecordFromFbcCookie(pfbc));
+  }
+  for (const vis of visitors) {
+    const fbc = vis?.fbc != null ? String(vis.fbc).trim() : '';
+    if (fbc) u = mergeUtmFillGaps(u, utmRecordFromFbcCookie(fbc));
   }
   return u;
 }
@@ -2183,7 +2209,7 @@ router.get('/:siteId/leads', requireAuth, async (req, res) => {
 
     for (const r of result.rows) {
       const eventSourceUrl = typeof r.event_source_url === 'string' ? String(r.event_source_url) : null;
-      const utm = mergePageviewUtm(r.custom_data, eventSourceUrl);
+      const utm = mergePageviewUtm(r.custom_data, eventSourceUrl, r.user_data);
       utmByEventId.set(String(r.event_id), utm);
       const k = metaAttributionCacheKey(utm);
       if (k && !keyToUtm.has(k)) {
@@ -2395,7 +2421,7 @@ router.get('/:siteId/leads/:eventId', requireAuth, async (req, res) => {
     }
 
     const eventSourceUrl = typeof row.event_source_url === 'string' ? String(row.event_source_url) : null;
-    const utm = mergePageviewUtm(row.custom_data, eventSourceUrl);
+    const utm = mergePageviewUtm(row.custom_data, eventSourceUrl, row.user_data);
     const { row: meta, source } = await resolveMetaAttributionFromUtm(siteId, utm);
     const ipFromEvent =
       (typeof (row.user_data || {}) === 'object' && row.user_data ? (row.user_data as any).client_ip_address : null) || null;
@@ -2558,6 +2584,7 @@ router.get('/:siteId/buyers/by-key/:buyerKey', requireAuth, async (req, res) => 
             event_time,
             event_source_url,
             custom_data,
+            NULLIF(BTRIM(user_data->>'fbc'), '') AS event_user_fbc,
             user_data->>'client_user_agent' AS client_user_agent
            FROM web_events
            WHERE site_key = $1
@@ -2584,7 +2611,11 @@ router.get('/:siteId/buyers/by-key/:buyerKey', requireAuth, async (req, res) => 
         if (e.event_name === 'PageView' && typeof e.event_source_url === 'string' && e.event_source_url) {
           pvCountBefore += 1;
           pvBefore[e.event_source_url] = (pvBefore[e.event_source_url] || 0) + 1;
-          const mergedUtm = mergePageviewUtm(e.custom_data, e.event_source_url);
+          const fbcOnly =
+            e.event_user_fbc != null && String(e.event_user_fbc).trim()
+              ? { fbc: String(e.event_user_fbc).trim() }
+              : undefined;
+          const mergedUtm = mergePageviewUtm(e.custom_data, e.event_source_url, fbcOnly);
           if (!lastPageviewBeforePurchase) {
             lastPageviewBeforePurchase = { url: e.event_source_url, at: String(e.event_time) };
             lastTouchUtm = mergedUtm;
@@ -2758,6 +2789,7 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
             event_time,
             event_source_url,
             custom_data,
+            NULLIF(BTRIM(user_data->>'fbc'), '') AS event_user_fbc,
             user_data->>'client_user_agent' AS client_user_agent
            FROM web_events
            WHERE site_key = $1
@@ -2785,7 +2817,11 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
         if (e.event_name === 'PageView' && typeof e.event_source_url === 'string' && e.event_source_url) {
           pvCountBefore += 1;
           pvBefore[e.event_source_url] = (pvBefore[e.event_source_url] || 0) + 1;
-          const mergedUtm = mergePageviewUtm(e.custom_data, e.event_source_url);
+          const fbcOnly =
+            e.event_user_fbc != null && String(e.event_user_fbc).trim()
+              ? { fbc: String(e.event_user_fbc).trim() }
+              : undefined;
+          const mergedUtm = mergePageviewUtm(e.custom_data, e.event_source_url, fbcOnly);
           if (!lastPageviewBeforePurchase) {
             lastPageviewBeforePurchase = { url: e.event_source_url, at: String(e.event_time) };
             lastTouchUtm = mergedUtm;
