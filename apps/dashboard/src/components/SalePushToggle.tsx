@@ -1,4 +1,3 @@
-import { useTheme } from '../state/theme';
 import { useAuth } from '../state/auth';
 import { useWebPush } from '../hooks/useWebPush';
 
@@ -13,12 +12,9 @@ const IconSaleAlert = () => (
 
 export function SalePushToggle() {
   const { token } = useAuth();
-  const { theme } = useTheme();
   const webPush = useWebPush(!!token);
 
   if (!token) return null;
-
-  const isDark = theme === 'dark';
 
   const disabled =
     webPush.busy ||
@@ -49,12 +45,8 @@ export function SalePushToggle() {
         aria-label={title}
         className={`h-9 w-9 rounded-xl border flex items-center justify-center transition-all hover:scale-105 disabled:opacity-40 disabled:hover:scale-100 disabled:cursor-not-allowed ${
           webPush.subscribed
-            ? isDark
-              ? 'border-emerald-500/50 bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25'
-              : 'border-emerald-500/40 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-            : isDark
-              ? 'border-white/10 bg-white/5 text-zinc-400 hover:text-emerald-400 hover:bg-emerald-500/10'
-              : 'border-border bg-muted text-muted-foreground hover:text-emerald-700 hover:bg-emerald-50'
+            ? 'border-emerald-500/50 bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25'
+            : 'border-white/10 bg-white/5 text-zinc-400 hover:text-emerald-400 hover:bg-emerald-500/10'
         }`}
       >
         <IconSaleAlert />

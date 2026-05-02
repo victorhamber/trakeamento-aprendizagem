@@ -2343,11 +2343,11 @@ ${scriptContent}
   const selectedCampaign = selectedCampaignId ? campaigns.find((c) => c.id === selectedCampaignId) : null;
 
   const inputCls =
-    'w-full rounded-lg bg-white dark:bg-zinc-900/60 border border-zinc-300 dark:border-zinc-800 px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-200 outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500/35 transition-all placeholder:text-zinc-500';
+    'w-full rounded-lg bg-[#0B0E14] border border-[#1E232D] px-3.5 py-2.5 text-sm text-zinc-200 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/35 transition-all placeholder:text-zinc-500';
   const selectClsCompact =
-    'rounded-lg bg-white dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-800 px-3 py-2 text-xs text-zinc-900 dark:text-zinc-200 outline-none focus:border-zinc-500 transition-colors';
+    'rounded-lg bg-[#0B0E14] border border-[#1E232D] px-3 py-2 text-xs text-zinc-200 outline-none focus:border-indigo-500 transition-colors';
   const selectCls =
-    'w-full rounded-lg bg-white dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-800 px-3.5 py-2.5 text-sm text-zinc-900 dark:text-zinc-200 outline-none focus:border-zinc-500 transition-colors';
+    'w-full rounded-lg bg-[#0B0E14] border border-[#1E232D] px-3.5 py-2.5 text-sm text-zinc-200 outline-none focus:border-indigo-500 transition-colors';
 
   const periodSelector = (
     <div className="flex flex-wrap items-center gap-2">
@@ -2399,7 +2399,7 @@ ${scriptContent}
         <div>
           <Link
             to="/sites"
-            className="inline-flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-500 hover:text-zinc-700 dark:text-zinc-300 transition-colors"
+            className="inline-flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-200 transition-colors"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -2419,14 +2419,14 @@ ${scriptContent}
           {site?.domain && (
             <div className="mt-1.5 flex items-center gap-2">
               <div className="w-1.5 h-1.5 rounded-full bg-zinc-600" />
-              <span className="text-xs text-zinc-600 dark:text-zinc-500 font-mono">{site.domain}</span>
+              <span className="text-xs text-zinc-500 font-mono">{site.domain}</span>
             </div>
           )}
         </div>
         {site && (
-          <div className="hidden sm:flex items-center gap-1.5 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/40 px-3 py-1.5">
-            <span className="text-[10px] text-zinc-600 dark:text-zinc-500 uppercase tracking-widest">Key</span>
-            <code className="text-[11px] text-zinc-600 dark:text-zinc-400 font-mono">{site.site_key}</code>
+          <div className="hidden sm:flex items-center gap-1.5 rounded-lg border border-[#1E232D] bg-[#12161F] px-3 py-1.5">
+            <span className="text-[10px] text-zinc-500 uppercase tracking-widest">Key</span>
+            <code className="text-[11px] text-zinc-400 font-mono">{site.site_key}</code>
           </div>
         )}
       </div>
@@ -2478,9 +2478,9 @@ ${scriptContent}
       )}
 
       {/* ── Tab Panel ── */}
-      <div className="mt-5 rounded-2xl border border-zinc-300 dark:border-zinc-800 bg-white dark:bg-zinc-950/60 overflow-hidden">
-        {/* Tab bar */}
-        <div className="border-b border-zinc-300 dark:border-zinc-800 px-3 pt-3 pb-0 flex flex-wrap gap-1">
+      <div className="mt-5 rounded-2xl border border-[#1E232D] bg-[#12161F] overflow-hidden shadow-lg shadow-black/20">
+        {/* Tab bar — alto contraste */}
+        <div className="border-b border-[#1E232D] bg-[#0B0E14] px-2 sm:px-3 pt-2 pb-0 flex flex-wrap gap-1.5">
           {tabs.map((t) => (
             <button
               key={t.key}
@@ -2490,15 +2490,12 @@ ${scriptContent}
                 searchParams.set('tab', t.key);
                 setSearchParams(searchParams, { replace: true });
               }}
-              className={`relative px-3.5 py-2 text-[13px] font-medium rounded-t-lg transition-all ${tab === t.key
-                ? 'text-zinc-900 dark:text-zinc-100 bg-zinc-100 dark:bg-zinc-900/80'
-                : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-900/40'
+              className={`relative px-4 py-2.5 text-sm rounded-t-lg transition-all border border-b-0 mb-[-1px] ${tab === t.key
+                ? 'font-semibold text-white bg-[#12161F] border-[#1E232D] z-[1] shadow-[inset_0_3px_0_0_rgb(99,102,241)]'
+                : 'font-medium text-zinc-400 border-transparent hover:text-zinc-100 hover:bg-white/[0.06]'
                 }`}
             >
               {t.label}
-              {tab === t.key && (
-                <span className="absolute bottom-0 left-3 right-3 h-[2px] bg-blue-500 rounded-full" />
-              )}
             </button>
           ))}
         </div>
@@ -2507,14 +2504,14 @@ ${scriptContent}
         <div className="p-6">
           {tab === 'snippet' && (
             <div className="max-w-3xl space-y-6">
-              <div className="flex items-center gap-2">
+              <div className="inline-flex items-center gap-1 p-1 rounded-xl bg-[#0B0E14] border border-[#1E232D]">
                 <button
                   type="button"
                   onClick={() => setInstallSubTab('snippet')}
-                  className={`text-xs px-3 py-1.5 rounded-lg border ${
+                  className={`text-sm px-4 py-2 rounded-lg font-medium transition-colors ${
                     installSubTab === 'snippet'
-                      ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300'
-                      : 'border-zinc-300 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/40 text-zinc-700 dark:text-zinc-400'
+                      ? 'bg-[#12161F] text-white border border-[#1E232D] shadow-sm'
+                      : 'text-zinc-400 hover:text-white border border-transparent'
                   }`}
                 >
                   Snippet
@@ -2522,10 +2519,10 @@ ${scriptContent}
                 <button
                   type="button"
                   onClick={() => setInstallSubTab('extras')}
-                  className={`text-xs px-3 py-1.5 rounded-lg border ${
+                  className={`text-sm px-4 py-2 rounded-lg font-medium transition-colors ${
                     installSubTab === 'extras'
-                      ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300'
-                      : 'border-zinc-300 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/40 text-zinc-700 dark:text-zinc-400'
+                      ? 'bg-[#12161F] text-white border border-[#1E232D] shadow-sm'
+                      : 'text-zinc-400 hover:text-white border border-transparent'
                   }`}
                 >
                   Códigos extras
@@ -3466,10 +3463,10 @@ ${scriptContent}
           {tab === 'matching' && (
             <div className="space-y-10 max-w-5xl">
 
-              <div className="flex border-b border-zinc-200 dark:border-zinc-800">
-                <button type="button" onClick={() => setEventSubTab('url')} className={`px-4 py-2 font-medium text-sm transition-colors ${eventSubTab === 'url' ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400' : 'text-zinc-600 dark:text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'}`}>Eventos por URL</button>
-                <button type="button" onClick={() => setEventSubTab('button')} className={`px-4 py-2 font-medium text-sm transition-colors ${eventSubTab === 'button' ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400' : 'text-zinc-600 dark:text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'}`}>Eventos por Botão</button>
-                <button type="button" onClick={() => setEventSubTab('form')} className={`px-4 py-2 font-medium text-sm transition-colors ${eventSubTab === 'form' ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400' : 'text-zinc-600 dark:text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'}`}>Formulários</button>
+              <div className="inline-flex flex-wrap items-center gap-1 p-1.5 rounded-xl bg-[#0B0E14] border border-[#1E232D]">
+                <button type="button" onClick={() => setEventSubTab('url')} className={`px-4 py-2.5 font-semibold text-sm rounded-lg transition-colors ${eventSubTab === 'url' ? 'bg-[#12161F] text-white border border-[#1E232D] shadow-[inset_0_2px_0_0_rgb(99,102,241)]' : 'text-zinc-400 hover:text-zinc-100 border border-transparent'}`}>Eventos por URL</button>
+                <button type="button" onClick={() => setEventSubTab('button')} className={`px-4 py-2.5 font-semibold text-sm rounded-lg transition-colors ${eventSubTab === 'button' ? 'bg-[#12161F] text-white border border-[#1E232D] shadow-[inset_0_2px_0_0_rgb(99,102,241)]' : 'text-zinc-400 hover:text-zinc-100 border border-transparent'}`}>Eventos por Botão</button>
+                <button type="button" onClick={() => setEventSubTab('form')} className={`px-4 py-2.5 font-semibold text-sm rounded-lg transition-colors ${eventSubTab === 'form' ? 'bg-[#12161F] text-white border border-[#1E232D] shadow-[inset_0_2px_0_0_rgb(99,102,241)]' : 'text-zinc-400 hover:text-zinc-100 border border-transparent'}`}>Formulários</button>
               </div>
 
               {/* Seção 1: Configuração de Eventos por URL */}

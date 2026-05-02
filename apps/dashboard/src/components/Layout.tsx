@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import { useAuth } from '../state/auth';
-import { useTheme } from '../state/theme';
 import { api } from '../lib/api';
 import { SalePushToggle } from './SalePushToggle';
 
@@ -41,19 +40,6 @@ const IconTraining = ({ className }: { className?: string }) => (
   </svg>
 );
 
-const IconSun = () => (
-  <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="12" r="4" />
-    <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
-  </svg>
-);
-
-const IconMoon = () => (
-  <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-  </svg>
-);
-
 const IconBell = () => (
   <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
     <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
@@ -69,8 +55,8 @@ const NavItem = ({ to, label, icon: IconComp, onNavigate }: { to: string; label:
     onClick={() => onNavigate?.()}
     className={({ isActive }) =>
       `group relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all duration-200 ${isActive
-        ? 'bg-indigo-50 dark:bg-white/10 text-indigo-900 dark:text-white font-medium border border-indigo-200/90 dark:border-white/10 shadow-sm dark:shadow-[0_10px_30px_rgba(0,0,0,0.35)]'
-        : 'text-muted-foreground hover:text-foreground dark:hover:text-white hover:bg-muted dark:hover:bg-white/5 border border-transparent'
+        ? 'bg-white/10 text-white font-medium border border-white/10 shadow-[0_10px_30px_rgba(0,0,0,0.35)]'
+        : 'text-zinc-400 hover:text-white hover:bg-white/5 border border-transparent'
       }`
     }
   >
@@ -104,7 +90,6 @@ type Notification = {
 
 export const Layout = ({ title, children, right }: { title: string; children: React.ReactNode; right?: React.ReactNode }) => {
   const auth = useAuth();
-  const { theme, toggleTheme } = useTheme();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -134,49 +119,44 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
     } catch { /* silent */ }
   };
 
-  const isDark = theme === 'dark';
-
   return (
-    <div className="min-h-screen transition-colors duration-300 bg-background text-foreground grid grid-cols-1 lg:grid-cols-[260px_1fr]">
+    <div className="min-h-screen bg-[#0B0E14] text-slate-100 grid grid-cols-1 lg:grid-cols-[260px_1fr]">
 
       {/* ── Desktop Sidebar ── */}
-      <aside className="hidden lg:flex flex-col bg-card dark:bg-neutral-950 border-r border-border p-5 transition-colors duration-300 select-none">
+      <aside className="hidden lg:flex flex-col bg-[#0B0E14] border-r border-[#1E232D] p-5 select-none">
         <Link to="/dashboard" className="flex items-center gap-3 px-2 mb-7 select-none">
           <img src="/logo-icon.png?v=2" alt="Trajettu" className="h-12 w-12 object-contain pointer-events-none" />
           <div className="leading-tight">
-            <div className="font-bold text-xl tracking-tight text-zinc-900 dark:text-transparent dark:bg-clip-text dark:bg-gradient-to-r dark:from-white dark:to-zinc-400">Trajettu</div>
-            <div className="text-[10px] uppercase tracking-[0.2em] text-indigo-500 dark:text-indigo-400 font-bold">AI Analytics</div>
+            <div className="font-bold text-xl tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-white to-zinc-400">Trajettu</div>
+            <div className="text-[10px] uppercase tracking-[0.2em] text-indigo-400 font-bold">AI Analytics</div>
           </div>
         </Link>
 
         <nav className="space-y-1.5 flex-1">
-          <div className="text-[9px] uppercase tracking-[0.2em] font-bold px-3 mb-2 text-zinc-400 dark:text-zinc-600">Menu Principal</div>
+          <div className="text-[9px] uppercase tracking-[0.2em] font-bold px-3 mb-2 text-zinc-500">Menu Principal</div>
           <NavItem to="/dashboard" label="Dashboard" icon={IconDashboard} />
           <NavItem to="/sites" label="Meus Sites" icon={IconSites} />
           <NavItem to="/ai" label="Inteligência IA" icon={IconBrain} />
 
           <div className="pt-5">
-            <div className="text-[9px] uppercase tracking-[0.2em] font-bold px-3 mb-2 text-zinc-400 dark:text-zinc-600">Recursos</div>
+            <div className="text-[9px] uppercase tracking-[0.2em] font-bold px-3 mb-2 text-zinc-500">Recursos</div>
             <NavItem to="/treinamentos" label="Treinamentos" icon={IconTraining} />
           </div>
         </nav>
 
-        <div className={`pt-5 border-t ${isDark ? 'border-white/5' : 'border-border'}`}>
-          <div className={`flex items-center gap-3 px-3 py-3 rounded-2xl ${isDark ? 'bg-white/[0.02] border border-white/5' : 'bg-background border border-border'}`}>
+        <div className="pt-5 border-t border-white/5">
+          <div className="flex items-center gap-3 px-3 py-3 rounded-2xl bg-white/[0.02] border border-white/5">
             <div className="h-8 w-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-xs font-bold text-white shadow-sm">
               {auth.user?.email?.charAt(0).toUpperCase()}
             </div>
             <div className="flex-1 min-w-0">
-              <div className={`text-sm font-medium truncate ${isDark ? 'text-zinc-200' : 'text-zinc-800'}`}>{auth.user?.email}</div>
-              <div className={`text-[10px] ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>Plano Pro</div>
+              <div className="text-sm font-medium truncate text-zinc-200">{auth.user?.email}</div>
+              <div className="text-[10px] text-zinc-500">Plano Pro</div>
             </div>
           </div>
           <button
             onClick={() => auth.logout()}
-            className={`mt-3 w-full text-xs font-semibold rounded-xl px-3 py-2.5 transition-all ${isDark
-              ? 'text-zinc-400 hover:text-white hover:bg-white/5 border border-white/5'
-              : 'text-muted-foreground hover:text-foreground hover:bg-muted border border-border'
-              }`}
+            className="mt-3 w-full text-xs font-semibold rounded-xl px-3 py-2.5 transition-all text-zinc-400 hover:text-white hover:bg-white/5 border border-white/5"
           >
             Sair da conta
           </button>
@@ -184,14 +164,14 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
       </aside>
 
       {/* ── Main ── */}
-      <main className="flex flex-col min-w-0">
-        <header className={`sticky top-0 z-10 backdrop-blur-xl border-b border-border ${isDark ? 'bg-neutral-950/85' : 'bg-card/80'} select-none`}>
+      <main className="flex flex-col min-w-0 bg-[#0B0E14]">
+        <header className="sticky top-0 z-10 backdrop-blur-xl border-b border-[#1E232D] bg-[#0B0E14]/90 select-none">
           <div className="w-full px-4 sm:px-8 py-3 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <button
                 type="button"
                 onClick={() => setMobileOpen((open) => !open)}
-                className={`lg:hidden h-9 w-9 rounded-xl border flex items-center justify-center ${isDark ? 'border-white/10 bg-white/5' : 'border-border bg-muted'}`}
+                className="lg:hidden h-9 w-9 rounded-xl border flex items-center justify-center border-white/10 bg-white/5"
                 aria-label={mobileOpen ? 'Fechar menu' : 'Abrir menu'}
                 title={mobileOpen ? 'Fechar menu' : 'Abrir menu'}
               >
@@ -199,34 +179,16 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
                   <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
                 </svg>
               </button>
-              <h1 className={`text-base sm:text-lg font-bold tracking-tight ${isDark ? 'text-white' : 'text-zinc-900'}`}>{title}</h1>
+              <h1 className="text-base sm:text-lg font-bold tracking-tight text-white">{title}</h1>
             </div>
 
             <div className="flex items-center gap-2">
-              {/* Theme toggle */}
-              <button
-                type="button"
-                onClick={toggleTheme}
-                className={`h-9 w-9 rounded-xl border flex items-center justify-center transition-all hover:scale-105 ${isDark
-                  ? 'border-white/10 bg-white/5 text-zinc-400 hover:text-amber-300 hover:bg-amber-500/10'
-                  : 'border-border bg-muted text-muted-foreground hover:text-primary hover:bg-blue-50'
-                  }`}
-                aria-label={isDark ? 'Mudar para tema claro' : 'Mudar para tema escuro'}
-                title={isDark ? 'Mudar para tema claro' : 'Mudar para tema escuro'}
-              >
-                {isDark ? <IconSun /> : <IconMoon />}
-              </button>
-
               {auth.token ? <SalePushToggle /> : null}
 
-              {/* Notification bell */}
               <div className="relative">
                 <button
                   onClick={() => setNotifOpen(!notifOpen)}
-                  className={`h-9 w-9 rounded-xl border flex items-center justify-center transition-all hover:scale-105 ${isDark
-                    ? 'border-white/10 bg-white/5 text-zinc-400 hover:text-white hover:bg-white/10'
-                    : 'border-border bg-muted text-muted-foreground hover:text-foreground hover:bg-zinc-200'
-                    }`}
+                  className="h-9 w-9 rounded-xl border flex items-center justify-center transition-all hover:scale-105 border-white/10 bg-white/5 text-zinc-400 hover:text-white hover:bg-white/10"
                   title="Notificações"
                 >
                   <IconBell />
@@ -246,15 +208,12 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
                       aria-label="Fechar lista de notificações"
                       title="Fechar"
                     />
-                    <div className={`absolute right-0 mt-2 w-80 max-h-96 overflow-y-auto rounded-2xl border shadow-2xl z-40 ${isDark
-                      ? 'bg-zinc-900 border-zinc-800 shadow-black/50'
-                      : 'bg-card border-border shadow-zinc-300/40'
-                      }`}>
-                      <div className={`px-4 py-3 border-b text-sm font-semibold ${isDark ? 'text-zinc-200 border-zinc-800' : 'text-foreground border-border'}`}>
+                    <div className="absolute right-0 mt-2 w-80 max-h-96 overflow-y-auto rounded-2xl border shadow-2xl z-40 bg-[#12161F] border-[#1E232D] shadow-black/50">
+                      <div className="px-4 py-3 border-b text-sm font-semibold text-zinc-200 border-[#1E232D]">
                         Notificações
                       </div>
                       {notifications.length === 0 ? (
-                        <div className={`px-4 py-8 text-center text-xs ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
+                        <div className="px-4 py-8 text-center text-xs text-zinc-500">
                           Nenhuma notificação
                         </div>
                       ) : (
@@ -267,17 +226,14 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
                                 setSelectedNotification(n);
                                 setNotifOpen(false);
                               }}
-                              className={`w-full text-left px-4 py-3 border-b transition-colors ${isDark
-                                ? `border-zinc-800/50 ${n.is_read ? 'opacity-50' : 'hover:bg-white/5'}`
-                                : `border-zinc-50 ${n.is_read ? 'opacity-50' : 'hover:bg-zinc-50'}`
-                                }`}
+                              className={`w-full text-left px-4 py-3 border-b transition-colors border-[#1E232D]/80 ${n.is_read ? 'opacity-50' : 'hover:bg-white/5'}`}
                             >
                               <div className="flex items-start gap-2">
                                 {!n.is_read && <div className="mt-1.5 w-2 h-2 rounded-full bg-blue-500 shrink-0" />}
                                 <div className="min-w-0">
-                                  <div className={`text-sm font-semibold ${isDark ? 'text-white' : 'text-zinc-900'}`}>{n.title}</div>
-                                  <div className={`text-xs mt-1 leading-snug ${isDark ? 'text-zinc-300' : 'text-zinc-600'}`}>{n.message}</div>
-                                  <div className={`text-[11px] mt-2 font-medium ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>{new Date(n.created_at).toLocaleDateString('pt-BR')}</div>
+                                  <div className="text-sm font-semibold text-white">{n.title}</div>
+                                  <div className="text-xs mt-1 leading-snug text-zinc-300">{n.message}</div>
+                                  <div className="text-[11px] mt-2 font-medium text-zinc-500">{new Date(n.created_at).toLocaleDateString('pt-BR')}</div>
                                 </div>
                               </div>
                             </button>
@@ -309,17 +265,17 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
             aria-label="Fechar menu"
             title="Fechar"
           />
-          <div className={`absolute inset-y-0 left-0 w-72 max-w-full p-4 flex flex-col ${isDark ? 'bg-neutral-950 border-r border-white/10' : 'bg-card border-r border-border'} select-none`}>
+          <div className="absolute inset-y-0 left-0 w-72 max-w-full p-4 flex flex-col bg-[#0B0E14] border-r border-white/10 select-none">
             <Link
               to="/dashboard"
               onClick={() => setMobileOpen(false)}
-              className={`flex items-center gap-3 px-3 py-3 rounded-2xl border ${isDark ? 'bg-white/[0.02] border-white/5' : 'bg-background border-border'}`}
+              className="flex items-center gap-3 px-3 py-3 rounded-2xl border bg-white/[0.02] border-white/5"
             >
               <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
                 <div className="h-2 w-2 rounded-full bg-white animate-pulse" />
               </div>
               <div className="leading-tight">
-                <div className={`font-semibold tracking-tight ${isDark ? 'text-white' : 'text-zinc-900'}`}>Trajettu</div>
+                <div className="font-semibold tracking-tight text-white">Trajettu</div>
                 <div className="text-[10px] text-indigo-400 font-bold">AI Analytics</div>
               </div>
             </Link>
@@ -329,17 +285,17 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
               <NavItem to="/sites" label="Meus Sites" icon={IconSites} onNavigate={() => setMobileOpen(false)} />
               <NavItem to="/ai" label="Inteligência IA" icon={IconBrain} onNavigate={() => setMobileOpen(false)} />
               <div className="pt-4">
-                <div className={`text-[9px] uppercase tracking-[0.2em] font-bold px-3 mb-2 ${isDark ? 'text-zinc-600' : 'text-zinc-400'}`}>Recursos</div>
+                <div className="text-[9px] uppercase tracking-[0.2em] font-bold px-3 mb-2 text-zinc-500">Recursos</div>
                 <NavItem to="/treinamentos" label="Treinamentos" icon={IconTraining} onNavigate={() => setMobileOpen(false)} />
               </div>
             </nav>
 
-            <div className={`mt-auto pt-4 border-t ${isDark ? 'border-white/5' : 'border-border'}`}>
-              <div className={`text-xs ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>Conta</div>
-              <div className={`text-sm truncate ${isDark ? 'text-zinc-200' : 'text-zinc-800'}`}>{auth.user?.email}</div>
+            <div className="mt-auto pt-4 border-t border-white/5">
+              <div className="text-xs text-zinc-500">Conta</div>
+              <div className="text-sm truncate text-zinc-200">{auth.user?.email}</div>
               <button
                 onClick={() => { setMobileOpen(false); auth.logout(); }}
-                className={`mt-3 w-full text-sm rounded-xl px-3 py-2 transition-colors ${isDark ? 'bg-white/5 hover:bg-white/10 border border-white/10' : 'bg-muted hover:bg-zinc-200 border border-border'}`}
+                className="mt-3 w-full text-sm rounded-xl px-3 py-2 transition-colors bg-white/5 hover:bg-white/10 border border-white/10"
               >
                 Sair
               </button>
@@ -358,23 +314,19 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
             aria-label="Fechar notificação"
             title="Fechar"
           />
-          <div
-            className={`relative w-full max-w-lg rounded-3xl shadow-2xl p-6 sm:p-8 animate-in fade-in zoom-in-95 duration-200 ${isDark ? 'bg-zinc-900 border border-zinc-800' : 'bg-card border border-border'
-              }`}
-          >
+          <div className="relative w-full max-w-lg rounded-3xl shadow-2xl p-6 sm:p-8 animate-in fade-in zoom-in-95 duration-200 bg-[#12161F] border border-[#1E232D]">
             <div className="flex items-start justify-between gap-4 mb-6">
               <div className="flex-1 min-w-0">
-                <div className={`text-xs font-bold tracking-wider mb-2 ${isDark ? 'text-indigo-400' : 'text-indigo-600'}`}>
+                <div className="text-xs font-bold tracking-wider mb-2 text-indigo-400">
                   {new Date(selectedNotification.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                 </div>
-                <h3 className={`text-xl sm:text-2xl font-bold leading-tight ${isDark ? 'text-white' : 'text-zinc-900'}`}>
+                <h3 className="text-xl sm:text-2xl font-bold leading-tight text-white">
                   {selectedNotification.title}
                 </h3>
               </div>
               <button
                 onClick={() => setSelectedNotification(null)}
-                className={`flex-shrink-0 h-10 w-10 flex items-center justify-center rounded-xl transition-colors ${isDark ? 'bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white' : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-500 hover:text-zinc-900'
-                  }`}
+                className="flex-shrink-0 h-10 w-10 flex items-center justify-center rounded-xl transition-colors bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white"
                 aria-label="Fechar notificação"
                 title="Fechar"
               >
@@ -384,10 +336,9 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
               </button>
             </div>
 
-            {/* Default gap adjustments based on whether image is present */}
             <div className={`-mt-2 ${selectedNotification.image_url ? 'mb-6' : 'mb-6'}`}>
               {selectedNotification.image_url && (
-                <div className="mb-6 -mx-6 sm:-mx-8 overflow-hidden rounded-none border-y border-zinc-200 dark:border-zinc-800">
+                <div className="mb-6 -mx-6 sm:-mx-8 overflow-hidden rounded-none border-y border-[#1E232D]">
                   {selectedNotification.image_link ? (
                     <a href={selectedNotification.image_link} target="_blank" rel="noopener noreferrer" className="block w-full bg-black/5">
                       <img src={selectedNotification.image_url} alt="Cover" className="w-full h-auto max-h-[250px] object-cover" />
@@ -400,7 +351,7 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
                 </div>
               )}
 
-              <div className={`prose prose-sm sm:prose-base max-w-none ${isDark ? 'prose-invert text-zinc-300' : 'prose-zinc text-zinc-700'}`}>
+              <div className="prose prose-sm sm:prose-base max-w-none prose-invert text-zinc-300">
                 {selectedNotification.message.split('\n').map((paragraph, idx) => (
                   <p key={idx} className="mb-4 last:mb-0 leading-relaxed">
                     {paragraph}

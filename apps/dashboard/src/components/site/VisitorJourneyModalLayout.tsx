@@ -183,53 +183,42 @@ export function OriginSaleCard({
   );
 }
 
-export function PurchasePathFlow({ steps, footer }: { steps: string[]; footer: string }) {
-  if (!steps.length) return null;
-  return (
-    <div className={`rounded-xl ${border} border ${cardBg} p-4`}>
-      <div className="text-xs font-semibold text-slate-200 mb-3">Caminho até a compra</div>
-      <div className="flex flex-wrap items-center gap-1 justify-center">
-        {steps.map((s, i) => (
-          <span key={`${s}-${i}`} className="flex items-center gap-1">
-            {i > 0 ? <ChevronRight className="h-3.5 w-3.5 text-slate-600 shrink-0" /> : null}
-            <span
-              className={
-                s === 'Compra'
-                  ? 'inline-flex rounded-lg border border-emerald-500/35 bg-emerald-500/15 px-2.5 py-1 text-[11px] font-semibold text-emerald-200'
-                  : 'inline-flex rounded-lg border border-slate-600/50 bg-slate-800/60 px-2.5 py-1 text-[11px] font-medium text-slate-200'
-              }
-            >
-              {s}
-            </span>
-          </span>
-        ))}
-      </div>
-      <div className={`text-center text-[11px] ${muted} mt-3`}>{footer}</div>
-    </div>
-  );
-}
+export type JourneyUniquePath = {
+  steps: string[];
+  footer: string;
+  variant: 'purchase' | 'lead';
+};
 
-export function LeadPathFlow({ steps, footer }: { steps: string[]; footer: string }) {
+function UniquePathStrip({ steps, footer, variant }: JourneyUniquePath) {
   if (!steps.length) return null;
   const lastIdx = steps.length - 1;
   return (
-    <div className={`rounded-xl ${border} border ${cardBg} p-4`}>
-      <div className="text-xs font-semibold text-slate-200 mb-3">Caminho até o cadastro</div>
+    <div className="mb-5 pb-5 border-b border-slate-800/80">
+      <div className={`text-[10px] font-semibold uppercase tracking-wide ${muted} mb-1`}>Resumo do funil</div>
+      <p className={`text-[11px] ${muted} mb-3 leading-relaxed`}>
+        {variant === 'purchase'
+          ? 'Ordem das páginas na primeira vez em que aparecem (sem repetir). Abaixo, cada visita com data e detalhes — inclusive quando a mesma página é acessada mais de uma vez.'
+          : 'Ordem dos passos únicos até o formulário. Abaixo, o histórico cronológico de cada página vista.'}
+      </p>
       <div className="flex flex-wrap items-center gap-1 justify-center">
-        {steps.map((s, i) => (
-          <span key={`${s}-${i}`} className="flex items-center gap-1">
-            {i > 0 ? <ChevronRight className="h-3.5 w-3.5 text-slate-600 shrink-0" /> : null}
-            <span
-              className={
-                i === lastIdx && s === 'Lead'
-                  ? 'inline-flex rounded-lg border border-emerald-500/35 bg-emerald-500/15 px-2.5 py-1 text-[11px] font-semibold text-emerald-200'
-                  : 'inline-flex rounded-lg border border-slate-600/50 bg-slate-800/60 px-2.5 py-1 text-[11px] font-medium text-slate-200'
-              }
-            >
-              {s}
+        {steps.map((s, i) => {
+          const highlight =
+            variant === 'purchase' ? s === 'Compra' : i === lastIdx && s === 'Lead';
+          return (
+            <span key={`${s}-${i}`} className="flex items-center gap-1">
+              {i > 0 ? <ChevronRight className="h-3.5 w-3.5 text-slate-600 shrink-0" /> : null}
+              <span
+                className={
+                  highlight
+                    ? 'inline-flex rounded-lg border border-emerald-500/35 bg-emerald-500/15 px-2.5 py-1 text-[11px] font-semibold text-emerald-200'
+                    : 'inline-flex rounded-lg border border-slate-600/50 bg-slate-800/60 px-2.5 py-1 text-[11px] font-medium text-slate-200'
+                }
+              >
+                {s}
+              </span>
             </span>
-          </span>
-        ))}
+          );
+        })}
       </div>
       <div className={`text-center text-[11px] ${muted} mt-3`}>{footer}</div>
     </div>
@@ -321,42 +310,57 @@ export type TimelineItem = {
   icon?: TimelineIconKind;
 };
 
-export function JourneyTimeline({ title, items }: { title: string; items: TimelineItem[] }) {
+export function JourneyTimeline({
+  title,
+  items,
+  uniquePath,
+}: {
+  title: string;
+  items: TimelineItem[];
+  /** Passos únicos (funil) no topo do mesmo card; a lista abaixo é o detalhe cronológico. */
+  uniquePath?: JourneyUniquePath | null;
+}) {
   return (
     <div className={`rounded-xl ${border} border ${cardBg} p-4`}>
       <div className="text-xs font-semibold text-slate-200 mb-3">{title}</div>
+      {uniquePath ? <UniquePathStrip {...uniquePath} /> : null}
       {items.length === 0 ? (
         <div className={`text-sm ${muted}`}>Nenhum evento na linha do tempo ainda.</div>
       ) : (
-        <ul className="relative space-y-0">
-          {items.map((it, idx) => {
-            const kind: TimelineIconKind = it.highlight ? 'check' : it.icon ?? 'chart';
-            const Icon = timelineIconMap[kind];
-            const iconWrap = it.highlight
-              ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-200 shadow-[0_0_14px_rgba(52,211,153,0.35)]'
-              : 'border-slate-600/55 bg-slate-800/90 text-indigo-200';
-            return (
-              <li key={`${it.at}-${idx}`} className="relative flex gap-3 pb-6 last:pb-0">
-                <div className="flex flex-col items-center shrink-0 w-9">
-                  <div
-                    className={`h-9 w-9 rounded-lg flex items-center justify-center border ${iconWrap}`}
-                    aria-hidden
-                  >
-                    <Icon className="h-4 w-4" strokeWidth={2} />
+        <>
+          {uniquePath ? (
+            <div className={`text-[10px] font-semibold uppercase tracking-wide ${muted} mb-3`}>Visitas e marcos</div>
+          ) : null}
+          <ul className="relative space-y-0">
+            {items.map((it, idx) => {
+              const kind: TimelineIconKind = it.highlight ? 'check' : it.icon ?? 'chart';
+              const Icon = timelineIconMap[kind];
+              const iconWrap = it.highlight
+                ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-200 shadow-[0_0_14px_rgba(52,211,153,0.35)]'
+                : 'border-slate-600/55 bg-slate-800/90 text-indigo-200';
+              return (
+                <li key={`${it.at}-${idx}`} className="relative flex gap-3 pb-6 last:pb-0">
+                  <div className="flex flex-col items-center shrink-0 w-9">
+                    <div
+                      className={`h-9 w-9 rounded-lg flex items-center justify-center border ${iconWrap}`}
+                      aria-hidden
+                    >
+                      <Icon className="h-4 w-4" strokeWidth={2} />
+                    </div>
+                    {idx < items.length - 1 ? (
+                      <div className="w-px flex-1 min-h-[22px] bg-slate-700/85 mt-1.5" />
+                    ) : null}
                   </div>
-                  {idx < items.length - 1 ? (
-                    <div className="w-px flex-1 min-h-[22px] bg-slate-700/85 mt-1.5" />
-                  ) : null}
-                </div>
-                <div className="min-w-0 pt-1">
-                  <div className={`text-[10px] font-medium tabular-nums ${muted}`}>{it.at}</div>
-                  <div className={`text-sm font-medium ${it.highlight ? 'text-emerald-200' : 'text-white'}`}>{it.title}</div>
-                  {it.subtitle ? <div className={`text-[11px] ${muted} mt-0.5`}>{it.subtitle}</div> : null}
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+                  <div className="min-w-0 pt-1">
+                    <div className={`text-[10px] font-medium tabular-nums ${muted}`}>{it.at}</div>
+                    <div className={`text-sm font-medium ${it.highlight ? 'text-emerald-200' : 'text-white'}`}>{it.title}</div>
+                    {it.subtitle ? <div className={`text-[11px] ${muted} mt-0.5`}>{it.subtitle}</div> : null}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </>
       )}
     </div>
   );

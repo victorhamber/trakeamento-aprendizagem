@@ -10,7 +10,6 @@ import {
   MetricCard,
   MetricGrid4,
   OriginSaleCard,
-  PurchasePathFlow,
   ShoppingBag,
   Smartphone,
   StatusPill,
@@ -390,13 +389,16 @@ function BuyerJourneyDetailView({
         footerNote="Associado ao último toque detectado antes da compra."
       />
 
-      <PurchasePathFlow
-        steps={pathSteps}
-        footer={`${interactions} interações antes da compra`}
-      />
-
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
-        <JourneyTimeline title="Linha do tempo da jornada" items={timelineItems} />
+        <JourneyTimeline
+          title="Linha do tempo da jornada"
+          items={timelineItems}
+          uniquePath={{
+            steps: pathSteps,
+            footer: `${interactions} interações antes da compra`,
+            variant: 'purchase',
+          }}
+        />
         <div className="space-y-4">
           <TopPagesGradientBars title="Top páginas pré-compra" rows={topRows} />
           <LastAdPanel

@@ -7,7 +7,6 @@ import {
   JourneyModalHeader,
   JourneyTimeline,
   LastAdPanel,
-  LeadPathFlow,
   Megaphone,
   MetricCard,
   MetricGrid4,
@@ -335,10 +334,16 @@ function LeadJourneyDetailView({ lead }: { lead: LeadDetail['lead'] }) {
         footerNote="Associado ao último toque registrado antes do envio do formulário."
       />
 
-      <LeadPathFlow steps={pathSteps} footer={`${history.length} interações antes do cadastro`} />
-
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
-        <JourneyTimeline title="Linha do tempo da jornada" items={timelineItems} />
+        <JourneyTimeline
+          title="Linha do tempo da jornada"
+          items={timelineItems}
+          uniquePath={{
+            steps: pathSteps,
+            footer: `${history.length} interações antes do cadastro`,
+            variant: 'lead',
+          }}
+        />
         <div className="space-y-4">
           <TopPagesGradientBars title="Top páginas antes do cadastro" rows={topRows} />
           <LastAdPanel
