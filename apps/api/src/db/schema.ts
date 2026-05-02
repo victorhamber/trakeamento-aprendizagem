@@ -569,6 +569,27 @@ export const ensureSchema = async (pool: Pool) => {
     await pool.query('ALTER TABLE site_visitors ADD COLUMN IF NOT EXISTS last_group_tag_at TIMESTAMP');
   });
 
+  await migrate('site_visitors_group_tags_history', async () => {
+    await pool.query(`ALTER TABLE site_visitors ADD COLUMN IF NOT EXISTS group_tags_history JSONB DEFAULT '[]'::jsonb`);
+    await pool.query(`
+      UPDATE site_visitors
+      SET group_tags_history = CASE
+        WHEN first_group_tag IS NOT NULL AND BTRIM(first_group_tag) <> ''
+             AND last_group_tag IS NOT NULL AND BTRIM(last_group_tag) <> ''
+             AND BTRIM(first_group_tag) IS DISTINCT FROM BTRIM(last_group_tag)
+          THEN jsonb_build_array(BTRIM(first_group_tag), BTRIM(last_group_tag))
+        WHEN last_group_tag IS NOT NULL AND BTRIM(last_group_tag) <> ''
+          THEN jsonb_build_array(BTRIM(last_group_tag))
+        ELSE '[]'::jsonb
+      END
+      WHERE COALESCE(jsonb_array_length(group_tags_history), 0) = 0
+        AND (
+          (last_group_tag IS NOT NULL AND BTRIM(last_group_tag) <> '')
+          OR (first_group_tag IS NOT NULL AND BTRIM(first_group_tag) <> '')
+        )
+    `);
+  });
+
   await migrate('fk_cascade_events', async () => {
     await pool.query(`
       DO $$

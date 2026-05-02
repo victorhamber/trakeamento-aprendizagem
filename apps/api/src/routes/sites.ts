@@ -1714,16 +1714,82 @@ function metaAttributionCacheKey(utm: Record<string, string> | null | undefined)
   return null;
 }
 
+function normalizeGroupTagsList(history: unknown, fallbackLast: string | null | undefined): string[] {
+  const out: string[] = [];
+  if (history != null && Array.isArray(history)) {
+    for (const x of history) {
+      const s = typeof x === 'string' ? x.trim() : String(x ?? '').trim();
+      if (s) out.push(s);
+    }
+  }
+  if (out.length) return out;
+  const f = fallbackLast ? String(fallbackLast).trim() : '';
+  return f ? [f] : [];
+}
+
+/** Chave de slug (1º segmento do path) para agregar repetições de PageView na jornada. */
+function pageSlugKeyForBuyerTimeline(url: string): string {
+  const s = (url || '').trim();
+  if (!s) return '__empty__';
+  try {
+    const u = new URL(s);
+    const path = u.pathname.replace(/^\/+|\/+$/g, '');
+    const segment = path.split('/').filter(Boolean)[0] || '';
+    if (!segment) return '__root__';
+    try {
+      return decodeURIComponent(segment).toLowerCase();
+    } catch {
+      return segment.toLowerCase();
+    }
+  } catch {
+    const q = s.indexOf('?');
+    const withoutQuery = q >= 0 ? s.slice(0, q) : s;
+    const afterHost = withoutQuery.replace(/^[^:]+:\/\//, '').replace(/^[^/]+/, '');
+    const path = afterHost.replace(/^\/+|\/+$/g, '');
+    const segment = path.split('/').filter(Boolean)[0] || '';
+    return segment ? segment.toLowerCase() : '__root__';
+  }
+}
+
+/**
+ * Uma linha por slug: horário = visita mais recente àquela página; visit_count = total de PageViews (pré-compra).
+ */
+function aggregateBuyerPageviewTimeline(
+  timeline: Array<{ at: string; url: string; utm?: Record<string, string> | null }>,
+): Array<{ at: string; url: string; utm?: Record<string, string> | null; visit_count: number }> {
+  const bySlug = new Map<string, { at: string; url: string; utm?: Record<string, string> | null; count: number }>();
+  for (const row of timeline) {
+    const slug = pageSlugKeyForBuyerTimeline(row.url);
+    const prev = bySlug.get(slug);
+    if (!prev) {
+      bySlug.set(slug, { at: row.at, url: row.url, utm: row.utm ?? null, count: 1 });
+    } else {
+      prev.count += 1;
+      const tNew = new Date(row.at).getTime();
+      const tOld = new Date(prev.at).getTime();
+      if (tNew > tOld) {
+        prev.at = row.at;
+        prev.url = row.url;
+        prev.utm = row.utm ?? null;
+      }
+    }
+  }
+  return Array.from(bySlug.values())
+    .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+    .map((v) => ({ at: v.at, url: v.url, utm: v.utm, visit_count: v.count }));
+}
+
 /** Anexa campanha/conjunto/anúncio (Meta) a cada PageView da jornada; cache por combinação UTM, limite de lookups. */
 async function enrichPageviewTimelineWithMetaAttribution(
   siteId: number,
-  timeline: Array<{ at: string; url: string; utm?: Record<string, string> | null }>,
+  timeline: Array<{ at: string; url: string; utm?: Record<string, string> | null; visit_count?: number }>,
   maxUniqueLookups: number
 ): Promise<
   Array<{
     at: string;
     url: string;
     utm?: Record<string, string> | null;
+    visit_count?: number;
     meta_attribution: BuyerMetaInsightRow | null;
     meta_attribution_source: string | null;
   }>
@@ -1803,7 +1869,32 @@ router.get('/:siteId/buyers', requireAuth, async (req, res) => {
         FROM purchases p
         WHERE p.site_key = $1
           AND p.status IN ${statusInList}
-          AND ($4::text IS NULL OR $4::text = '' OR (p.custom_data->>'group_tag') ILIKE ('%' || $4::text || '%'))
+          AND (
+            $4::text IS NULL OR $4::text = ''
+            OR (p.custom_data->>'group_tag') ILIKE ('%' || $4::text || '%')
+            OR EXISTS (
+              SELECT 1
+              FROM site_visitors sv
+              WHERE sv.site_key = $1
+                AND (
+                  (p.buyer_email_hash IS NOT NULL AND sv.email_hash = p.buyer_email_hash)
+                  OR (p.fbp IS NOT NULL AND sv.fbp = p.fbp)
+                  OR (p.fbc IS NOT NULL AND sv.fbc = p.fbc)
+                  OR (
+                    NULLIF(BTRIM(p.external_id::text), '') IS NOT NULL
+                    AND sv.external_id = NULLIF(BTRIM(p.external_id::text), '')
+                  )
+                )
+                AND (
+                  COALESCE(sv.last_group_tag, '') ILIKE ('%' || $4::text || '%')
+                  OR EXISTS (
+                    SELECT 1
+                    FROM jsonb_array_elements_text(COALESCE(sv.group_tags_history, '[]'::jsonb)) AS grp(tag)
+                    WHERE grp.tag ILIKE ('%' || $4::text || '%')
+                  )
+                )
+            )
+          )
       ),
       buyers AS (
         SELECT
@@ -1832,7 +1923,8 @@ router.get('/:siteId/buyers', requireAuth, async (req, res) => {
           v.email_hash,
           v.fbp AS v_fbp,
           v.fbc AS v_fbc,
-          v.last_group_tag AS v_group_tag
+          v.last_group_tag AS v_group_tag,
+          v.group_tags_history AS v_group_tags_history
         FROM buyers b
         LEFT JOIN LATERAL (
           SELECT
@@ -1840,7 +1932,8 @@ router.get('/:siteId/buyers', requireAuth, async (req, res) => {
             sv.email_hash,
             sv.fbp,
             sv.fbc,
-            sv.last_group_tag
+            sv.last_group_tag,
+            sv.group_tags_history
           FROM site_visitors sv
           WHERE sv.site_key = $1
             AND (
@@ -1865,6 +1958,9 @@ router.get('/:siteId/buyers', requireAuth, async (req, res) => {
         buyer_key,
         COALESCE(external_id, last_purchase_external_id) AS external_id,
         COALESCE(NULLIF(BTRIM(last_group_tag), ''), NULLIF(BTRIM(v_group_tag), '')) AS group_tag,
+        last_group_tag,
+        v_group_tags_history,
+        v_group_tag,
         COALESCE(
           NULLIF(BTRIM(last_customer_name), ''),
           NULLIF(BTRIM(last_customer_email), ''),
@@ -1888,7 +1984,22 @@ router.get('/:siteId/buyers', requireAuth, async (req, res) => {
       [siteKey, limit, offset, groupTagFilter || null]
     );
 
-    return res.json({ buyers: result.rows });
+    const buyers = result.rows.map((row: Record<string, unknown>) => {
+      const raw = row as Record<string, unknown>;
+      let tags = normalizeGroupTagsList(raw.v_group_tags_history, raw.v_group_tag as string | null | undefined);
+      const purchaseLast = raw.last_group_tag ? String(raw.last_group_tag).trim() : '';
+      if (!tags.length && purchaseLast) tags = [purchaseLast];
+      const displayRecent =
+        (tags.length ? tags[tags.length - 1] : null) || purchaseLast || (raw.group_tag ? String(raw.group_tag).trim() : '') || null;
+      const { v_group_tags_history: _h, v_group_tag: _v, last_group_tag: _lt, ...pub } = raw;
+      return {
+        ...pub,
+        group_tag: displayRecent,
+        group_tags: tags,
+      };
+    });
+
+    return res.json({ buyers });
   } catch (err) {
     console.error('Buyers list error:', err);
     return res.status(500).json({ error: 'Internal server error' });
@@ -1946,13 +2057,21 @@ router.get('/:siteId/leads', requireAuth, async (req, res) => {
         sv.fbc,
         sv.last_ip AS visitor_last_ip,
         sv.last_group_tag AS group_tag,
+        sv.group_tags_history AS group_tags_history,
         sv.last_user_agent AS visitor_user_agent
       FROM base b
       LEFT JOIN site_visitors sv
         ON sv.site_key = $1
         AND b.external_id IS NOT NULL
         AND sv.external_id = b.external_id
-      WHERE ($4::text IS NULL OR $4::text = '' OR COALESCE(sv.last_group_tag, '') ILIKE ('%' || $4::text || '%'))
+      WHERE (
+        $4::text IS NULL OR $4::text = '' OR COALESCE(sv.last_group_tag, '') ILIKE ('%' || $4::text || '%')
+        OR EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements_text(COALESCE(sv.group_tags_history, '[]'::jsonb)) AS grp(tag)
+          WHERE grp.tag ILIKE ('%' || $4::text || '%')
+        )
+      )
       ORDER BY b.event_time DESC, b.id DESC
       `,
       [siteKey, limit, offset, groupTagFilter || null]
@@ -2064,13 +2183,15 @@ router.get('/:siteId/leads', requireAuth, async (req, res) => {
         }
       }
 
+      const leadTags = normalizeGroupTagsList((r as any).group_tags_history, r.group_tag as string | null | undefined);
       enriched.push({
         id: r.id,
         event_id: r.event_id,
         event_time: r.event_time,
         event_source_url: r.event_source_url,
         external_id: r.external_id,
-        group_tag: r.group_tag || null,
+        group_tag: leadTags.length ? leadTags[leadTags.length - 1] : r.group_tag || null,
+        group_tags: leadTags,
         city: loc.city,
         state: loc.state,
         country: loc.country,
@@ -2129,7 +2250,7 @@ router.get('/:siteId/leads/:eventId', requireAuth, async (req, res) => {
     const externalId = row.external_id ? String(row.external_id) : null;
     const visitorRes = externalId
       ? await pool.query(
-          `SELECT external_id, city, state, country, last_group_tag, last_user_agent, last_ip, last_seen_at, fbp, fbc
+          `SELECT external_id, city, state, country, last_group_tag, group_tags_history, last_user_agent, last_ip, last_seen_at, fbp, fbc
            FROM site_visitors
            WHERE site_key = $1 AND external_id = $2
            LIMIT 1`,
@@ -2220,6 +2341,8 @@ router.get('/:siteId/leads/:eventId', requireAuth, async (req, res) => {
           .catch(() => [])
       : [];
 
+    const leadGroupTags = normalizeGroupTagsList(v?.group_tags_history, v?.last_group_tag);
+
     return res.json({
       lead: {
         id: row.id,
@@ -2227,7 +2350,8 @@ router.get('/:siteId/leads/:eventId', requireAuth, async (req, res) => {
         event_time: row.event_time,
         event_source_url: row.event_source_url,
         external_id: externalId,
-        group_tag: v?.last_group_tag || null,
+        group_tag: leadGroupTags.length ? leadGroupTags[leadGroupTags.length - 1] : v?.last_group_tag || null,
+        group_tags: leadGroupTags,
         city: loc.city,
         state: loc.state,
         country: loc.country,
@@ -2306,7 +2430,8 @@ router.get('/:siteId/buyers/by-key/:buyerKey', requireAuth, async (req, res) => 
 
     // best-effort: encontrar um visitor que corresponda ao buyer_key (só faz sentido para email_hash/fbp/fbc)
     const visitorRes = await pool.query(
-      `SELECT site_key, external_id, email_hash, fbp, fbc, last_seen_at, last_traffic_source, first_traffic_source, last_user_agent
+      `SELECT site_key, external_id, email_hash, fbp, fbc, last_seen_at, last_traffic_source, first_traffic_source, last_user_agent,
+              last_group_tag, group_tags_history
        FROM site_visitors
        WHERE site_key = $1
          AND (
@@ -2392,12 +2517,15 @@ router.get('/:siteId/buyers/by-key/:buyerKey', requireAuth, async (req, res) => 
       siteId,
       lastTouchUtm
     );
-    const pageviewTimelineWithMetaByKey = await enrichPageviewTimelineWithMetaAttribution(siteId, pageviewTimeline, 30);
+    const pageviewTimelineAgg = aggregateBuyerPageviewTimeline(pageviewTimeline);
+    const pageviewTimelineWithMetaByKey = await enrichPageviewTimelineWithMetaAttribution(siteId, pageviewTimelineAgg, 30);
 
     const uaSummary = buildBuyerUserAgentSummary({
       visitorUa: v?.last_user_agent as string | undefined,
       lastPageviewUa: lastPageviewUaBeforePurchase,
     });
+
+    const buyerGroupTags = normalizeGroupTagsList(v?.group_tags_history, v?.last_group_tag);
 
     return res.json({
       buyer: {
@@ -2411,6 +2539,7 @@ router.get('/:siteId/buyers/by-key/:buyerKey', requireAuth, async (req, res) => 
         fbc: v?.fbc || null,
         last_seen_at: v?.last_seen_at || null,
         last_traffic_source: v?.last_traffic_source || null,
+        group_tags: buyerGroupTags,
       },
       purchases: purchasesRes.rows,
       purchases_total: purchasesRes.rows[0]?.total_count ?? 0,
@@ -2457,7 +2586,8 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
     // 0) Se existir visitor para esse external_id, usamos as chaves dele (email_hash/fbp/fbc)
     // para encontrar compras do checkout — mesmo quando purchases.external_id não bate.
     const visitorByExternalRes = await pool.query(
-      `SELECT site_key, external_id, email_hash, fbp, fbc, last_seen_at, last_traffic_source, first_traffic_source, last_user_agent
+      `SELECT site_key, external_id, email_hash, fbp, fbc, last_seen_at, last_traffic_source, first_traffic_source, last_user_agent,
+              last_group_tag, group_tags_history
        FROM site_visitors
        WHERE site_key = $1 AND external_id = $2
        LIMIT 1`,
@@ -2499,7 +2629,8 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
     const pEmailHash = p0?.buyer_email_hash ? String(p0.buyer_email_hash) : null;
 
     const visitorRes = await pool.query(
-      `SELECT site_key, external_id, email_hash, fbp, fbc, last_seen_at, last_traffic_source, first_traffic_source, last_user_agent
+      `SELECT site_key, external_id, email_hash, fbp, fbc, last_seen_at, last_traffic_source, first_traffic_source, last_user_agent,
+              last_group_tag, group_tags_history
        FROM site_visitors
        WHERE site_key = $1
          AND (
@@ -2584,7 +2715,8 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
       .map(([url, count]) => ({ url, count }));
 
     const { row: attribution, source: attributionSource } = await resolveMetaAttributionFromUtm(siteId, lastTouchUtm);
-    const pageviewTimelineWithMeta = await enrichPageviewTimelineWithMetaAttribution(siteId, pageviewTimeline, 30);
+    const pageviewTimelineAggExt = aggregateBuyerPageviewTimeline(pageviewTimeline);
+    const pageviewTimelineWithMeta = await enrichPageviewTimelineWithMetaAttribution(siteId, pageviewTimelineAggExt, 30);
 
     const visitorUa =
       (v?.last_user_agent != null ? String(v.last_user_agent) : '') ||
@@ -2593,6 +2725,8 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
       visitorUa: visitorUa.trim() || null,
       lastPageviewUa: lastPageviewUaBeforePurchase,
     });
+
+    const buyerGroupTagsExt = normalizeGroupTagsList(v?.group_tags_history ?? v0?.group_tags_history, v?.last_group_tag ?? v0?.last_group_tag);
 
     return res.json({
       buyer: {
@@ -2606,6 +2740,7 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
         customer_phone: purchasesRes.rows[0]?.customer_phone || null,
         last_seen_at: v?.last_seen_at || null,
         last_traffic_source: v?.last_traffic_source || null,
+        group_tags: buyerGroupTagsExt,
       },
       purchases: purchasesRes.rows,
       purchases_total: purchasesRes.rows[0]?.total_count ?? 0,

@@ -8,6 +8,8 @@ type LeadRow = {
   event_source_url: string | null;
   external_id: string | null;
   group_tag: string | null;
+  /** Histórico ordenado de grupos do visitante (sem substituir tag antiga). */
+  group_tags?: string[];
   city: string | null;
   state: string | null;
   country: string | null;
@@ -28,6 +30,7 @@ type LeadRow = {
 
 type LeadDetail = {
   lead: LeadRow & {
+    group_tags?: string[];
     user_data?: Record<string, unknown>;
     visitor?: { last_ip?: string | null; last_seen_at?: string | null } | null;
     history?: Array<{
@@ -325,8 +328,19 @@ export function LeadsTab({ siteId }: { siteId: number }) {
                       <div className="text-[11px] text-zinc-600 dark:text-zinc-500 truncate max-w-[360px]">{email}</div>
                       <div className="text-[11px] text-zinc-600 dark:text-zinc-500 truncate max-w-[360px]">{phone}</div>
                     </td>
-                    <td className="px-4 py-3 text-zinc-700 dark:text-zinc-200 truncate max-w-[220px]" title={r.group_tag || ''}>
-                      <TagBadge value={r.group_tag || ''} />
+                    <td className="px-4 py-3 max-w-[240px]">
+                      {(() => {
+                        const tags =
+                          r.group_tags && r.group_tags.length ? r.group_tags : r.group_tag ? [r.group_tag] : [];
+                        if (!tags.length) return <TagBadge value="" />;
+                        return (
+                          <div className="flex flex-wrap gap-1" title={tags.join(' → ')}>
+                            {tags.map((t, i) => (
+                              <TagBadge key={`${t}-${i}`} value={t} />
+                            ))}
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td className="px-4 py-3 text-zinc-700 dark:text-zinc-200 truncate max-w-[420px]" title={origin}>
                       {origin}
@@ -421,8 +435,20 @@ export function LeadsTab({ siteId }: { siteId: number }) {
                         <div className="mt-1 text-[11px] text-zinc-600 dark:text-zinc-400">
                           Localização: {[detail.lead.city, detail.lead.state, detail.lead.country].filter(Boolean).join(', ') || '—'}
                         </div>
-                        <div className="mt-1 text-[11px] text-zinc-600 dark:text-zinc-400 flex items-center gap-2">
-                          <span>Tag:</span> <TagBadge value={detail.lead.group_tag || ''} />
+                        <div className="mt-1 text-[11px] text-zinc-600 dark:text-zinc-400">
+                          <span className="font-medium text-zinc-700 dark:text-zinc-300">Tags (sequência):</span>
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {(() => {
+                              const seq =
+                                detail.lead.group_tags && detail.lead.group_tags.length
+                                  ? detail.lead.group_tags
+                                  : detail.lead.group_tag
+                                    ? [detail.lead.group_tag]
+                                    : [];
+                              if (!seq.length) return <TagBadge value="" />;
+                              return seq.map((t, i) => <TagBadge key={`${t}-${i}`} value={t} />);
+                            })()}
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -464,7 +490,14 @@ export function LeadsTab({ siteId }: { siteId: number }) {
                           <div className="text-[11px] font-semibold text-zinc-600 dark:text-zinc-400 mb-2">Outros</div>
                           <ValueRow label="traffic_source" value={pickString(detail.lead.data, 'traffic_source')} />
                           <ValueRow label="device" value={deviceLabel(detail.lead.device)} />
-                          <ValueRow label="tag" value={detail.lead.group_tag || '—'} />
+                          <ValueRow
+                            label="tag"
+                            value={
+                              detail.lead.group_tags && detail.lead.group_tags.length
+                                ? detail.lead.group_tags.join(' → ')
+                                : detail.lead.group_tag || '—'
+                            }
+                          />
                         </div>
                       </div>
 

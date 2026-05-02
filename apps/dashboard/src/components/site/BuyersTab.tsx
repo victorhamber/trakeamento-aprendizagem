@@ -5,6 +5,8 @@ type BuyerRow = {
   buyer_key: string;
   external_id: string | null;
   group_tag?: string | null;
+  /** Sequência de grupos do visitante (ordem de entrada); lista pode exibir todas as badges. */
+  group_tags?: string[];
   display_name?: string | null;
   last_customer_name?: string | null;
   last_customer_email?: string | null;
@@ -29,6 +31,7 @@ type BuyerDetail = {
     fbc: string | null;
     last_seen_at?: string | null;
     last_traffic_source?: string | null;
+    group_tags?: string[];
   };
   purchases: Array<{
     id: number;
@@ -52,6 +55,8 @@ type BuyerDetail = {
     pageviews_timeline_before_last_purchase?: Array<{
       at: string;
       url: string;
+      /** Quantidade de PageViews da mesma página (slug) antes da última compra; linha = visita mais recente. */
+      visit_count?: number;
       utm?: Record<string, string> | null;
       meta_attribution?: null | {
         campaign_id?: string | null;
@@ -169,8 +174,18 @@ function pageSlugLabelFromUrl(rawUrl: string): string {
   }
 }
 
-function PageSlugTag({ url, className }: { url: string; className?: string }) {
+function PageSlugTag({
+  url,
+  visitCount,
+  className,
+}: {
+  url: string;
+  /** Acima de 1, mostra “N×” no badge (ex.: oferta-liberada 2×). */
+  visitCount?: number;
+  className?: string;
+}) {
   const label = pageSlugLabelFromUrl(url);
+  const suffix = visitCount != null && visitCount > 1 ? ` ${visitCount}×` : '';
   return (
     <span
       className={
@@ -180,6 +195,17 @@ function PageSlugTag({ url, className }: { url: string; className?: string }) {
       title={url}
     >
       {label}
+      {suffix}
+    </span>
+  );
+}
+
+function GroupTagBadge({ value }: { value: string }) {
+  const v = (value || '').trim();
+  if (!v) return null;
+  return (
+    <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold bg-emerald-500/15 text-emerald-700 dark:bg-emerald-400/15 dark:text-emerald-200 border border-emerald-500/20 dark:border-emerald-400/20">
+      {v}
     </span>
   );
 }
@@ -453,8 +479,19 @@ export function BuyersTab({ siteId }: { siteId: number }) {
                       <div className="text-[11px] text-amber-600 dark:text-amber-400">Sem external_id (abrindo por buyer_key)</div>
                     ) : null}
                   </td>
-                  <td className="px-4 py-3 text-zinc-700 dark:text-zinc-200 truncate max-w-[260px]" title={r.group_tag || ''}>
-                    {r.group_tag || '—'}
+                  <td className="px-4 py-3 max-w-[280px]">
+                    {(() => {
+                      const tags =
+                        r.group_tags && r.group_tags.length ? r.group_tags : r.group_tag ? [String(r.group_tag)] : [];
+                      if (!tags.length) return <span className="text-zinc-500 dark:text-zinc-500">—</span>;
+                      return (
+                        <div className="flex flex-wrap gap-1" title={tags.join(' → ')}>
+                          {tags.map((t, i) => (
+                            <GroupTagBadge key={`${t}-${i}`} value={t} />
+                          ))}
+                        </div>
+                      );
+                    })()}
                   </td>
                   <td className="px-4 py-3 text-right tabular-nums text-zinc-700 dark:text-zinc-200">{r.purchases_count}</td>
                   <td
@@ -553,7 +590,17 @@ export function BuyersTab({ siteId }: { siteId: number }) {
                         </div>
                         {(detail.purchases?.[0]?.group_tag || '').trim() ? (
                           <div className="mt-1 text-[11px] text-zinc-600 dark:text-zinc-400 truncate" title={detail.purchases?.[0]?.group_tag || ''}>
-                            Grupo: {detail.purchases?.[0]?.group_tag}
+                            Grupo (última compra): {detail.purchases?.[0]?.group_tag}
+                          </div>
+                        ) : null}
+                        {detail.buyer.group_tags && detail.buyer.group_tags.length ? (
+                          <div className="mt-2">
+                            <div className="text-[11px] font-semibold text-zinc-600 dark:text-zinc-400">Grupos (sequência no site)</div>
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {detail.buyer.group_tags.map((t, i) => (
+                                <GroupTagBadge key={`${t}-${i}`} value={t} />
+                              ))}
+                            </div>
                           </div>
                         ) : null}
                       </div>
@@ -739,7 +786,7 @@ export function BuyersTab({ siteId }: { siteId: number }) {
                           Total: <span className="font-semibold tabular-nums text-zinc-800 dark:text-zinc-200">{detail.behavior.pageviews_before_last_purchase}</span>
                           <span className="text-zinc-500 dark:text-zinc-500">
                             {' '}
-                            · Tag = slug da página (passe o mouse para ver a URL completa). Com UTMs alinhados à Meta, mostramos campanha, conjunto e anúncio.
+                            · Tag = slug da página (passe o mouse para ver a URL completa). Mesmo slug repetido vira uma linha com contagem (ex.: 2×). Com UTMs alinhados à Meta, mostramos campanha, conjunto e anúncio.
                           </span>
                         </div>
                         {(detail.behavior.pageviews_timeline_before_last_purchase || []).length === 0 ? (
@@ -749,7 +796,10 @@ export function BuyersTab({ siteId }: { siteId: number }) {
                         ) : null}
                         <div className="mt-3 space-y-2">
                           {(detail.behavior.pageviews_timeline_before_last_purchase || []).slice(0, 120).map((pv, idx) => (
-                            <div key={`${pv.at}-${idx}`} className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white/60 dark:bg-zinc-950/20 px-3 py-2">
+                            <div
+                              key={`${pv.at}-${pageSlugLabelFromUrl(pv.url)}-${idx}`}
+                              className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white/60 dark:bg-zinc-950/20 px-3 py-2"
+                            >
                               <div className="flex items-center justify-between gap-3 text-[11px] text-zinc-600 dark:text-zinc-400">
                                 <span className="font-medium text-zinc-800 dark:text-zinc-200">{dt(pv.at)}</span>
                                 {(() => {
@@ -764,7 +814,7 @@ export function BuyersTab({ siteId }: { siteId: number }) {
                                 })()}
                               </div>
                               <div className="mt-1 flex flex-wrap items-center gap-2">
-                                <PageSlugTag url={pv.url} />
+                                <PageSlugTag url={pv.url} visitCount={pv.visit_count} />
                               </div>
                               {(() => {
                                 const metaLine = formatJourneyMetaAttribution(pv.meta_attribution);

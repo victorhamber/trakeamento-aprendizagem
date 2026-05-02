@@ -253,14 +253,18 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
           const geoState = geo?.region ? String(geo.region).trim().slice(0, 255) : null;
           const geoCountry = geo?.country ? String(geo.country).trim().slice(0, 255) : null;
 
+          const groupTagSql =
+            groupTag && String(groupTag).trim() ? String(groupTag).trim().slice(0, 160) : '';
+          const groupTagsHistoryInsert = groupTagSql ? JSON.stringify([groupTagSql]) : '[]';
+
           await pool.query(
             `
               INSERT INTO site_visitors (
                 site_key, external_id, fbc, fbp, email_hash, phone_hash,
                 total_events, last_event_name, last_ip, last_user_agent,
                 city, state, country,
-                first_group_tag, last_group_tag, last_group_tag_at
-              ) VALUES ($1, $2, $3, $4, $5, $6, 1, $7, $8, $9, $10, $11, $12, $13, $14, CASE WHEN $14::text IS NULL OR $14::text = '' THEN NULL ELSE NOW() END)
+                first_group_tag, last_group_tag, last_group_tag_at, group_tags_history
+              ) VALUES ($1, $2, $3, $4, $5, $6, 1, $7, $8, $9, $10, $11, $12, $13, $14, CASE WHEN $14::text IS NULL OR $14::text = '' THEN NULL ELSE NOW() END, $15::jsonb)
               ON CONFLICT (site_key, external_id) DO UPDATE SET
                 fbc = COALESCE(EXCLUDED.fbc, site_visitors.fbc),
                 fbp = COALESCE(EXCLUDED.fbp, site_visitors.fbp),
@@ -275,11 +279,23 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
                 total_events = site_visitors.total_events + 1,
                 last_seen_at = NOW(),
                 first_group_tag = COALESCE(site_visitors.first_group_tag, EXCLUDED.first_group_tag),
-                last_group_tag = COALESCE(NULLIF(EXCLUDED.last_group_tag, ''), site_visitors.last_group_tag),
+                last_group_tag = COALESCE(NULLIF(TRIM(EXCLUDED.last_group_tag::text), ''), site_visitors.last_group_tag),
                 last_group_tag_at = CASE
-                  WHEN NULLIF(EXCLUDED.last_group_tag, '') IS NULL THEN site_visitors.last_group_tag_at
+                  WHEN NULLIF(TRIM(EXCLUDED.last_group_tag::text), '') IS NULL THEN site_visitors.last_group_tag_at
                   WHEN site_visitors.last_group_tag IS DISTINCT FROM EXCLUDED.last_group_tag THEN NOW()
                   ELSE site_visitors.last_group_tag_at
+                END,
+                group_tags_history = CASE
+                  WHEN NULLIF(TRIM(EXCLUDED.last_group_tag::text), '') IS NULL THEN COALESCE(site_visitors.group_tags_history, '[]'::jsonb)
+                  WHEN COALESCE(jsonb_array_length(COALESCE(site_visitors.group_tags_history, '[]'::jsonb)), 0) = 0
+                       AND NULLIF(TRIM(site_visitors.last_group_tag::text), '') IS NOT NULL
+                       AND TRIM(site_visitors.last_group_tag::text) IS DISTINCT FROM TRIM(EXCLUDED.last_group_tag::text)
+                    THEN jsonb_build_array(TRIM(site_visitors.last_group_tag::text), TRIM(EXCLUDED.last_group_tag::text))
+                  WHEN COALESCE(jsonb_array_length(COALESCE(site_visitors.group_tags_history, '[]'::jsonb)), 0) = 0
+                    THEN jsonb_build_array(TRIM(EXCLUDED.last_group_tag::text))
+                  WHEN (site_visitors.group_tags_history->>-1) IS DISTINCT FROM TRIM(EXCLUDED.last_group_tag::text)
+                    THEN COALESCE(site_visitors.group_tags_history, '[]'::jsonb) || jsonb_build_array(TRIM(EXCLUDED.last_group_tag::text))
+                  ELSE COALESCE(site_visitors.group_tags_history, '[]'::jsonb)
                 END
             `,
             [
@@ -295,8 +311,9 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
               geoCity,
               geoState,
               geoCountry,
-              groupTag || null,
-              groupTag || null,
+              groupTagSql || null,
+              groupTagSql || null,
+              groupTagsHistoryInsert,
             ]
           );
         }
