@@ -1502,15 +1502,81 @@ router.get('/tracker.js', async (req, res) => {
     } catch(_e) {}
   }
 
+  /** Remove UTMs e parâmetros de tracking de URLSearchParams (pathname fica de fora). */
+  function stripTrackingSearchParams(u) {
+    var stripExact = [
+      'ta_pick', 'ta_origin', 'ta_test', 'ta_rule',
+      'fbclid', 'gclid', 'gbraid', 'wbraid', 'msclkid', 'ttclid',
+      'fbp', 'fbc',
+      'igshid', 'mc_cid', 'mc_eid'
+    ];
+    var toDelete = [];
+    u.forEach(function(_v, k) {
+      try {
+        var key = (k || '').toString().toLowerCase().trim();
+        if (!key) return;
+        if (key.indexOf('utm_') === 0) { toDelete.push(k); return; }
+        for (var i = 0; i < stripExact.length; i++) {
+          if (key === stripExact[i]) { toDelete.push(k); return; }
+        }
+      } catch (_e2) {}
+    });
+    for (var di = 0; di < toDelete.length; di++) u.delete(toDelete[di]);
+  }
+
+  /** Comparação "contém" tolerante a barra final (ex.: regra /foo/ vs página /foo?utm=). */
+  function ruleNeedleMatchesHaystack(haystack, needle) {
+    try {
+      if (needle == null) return false;
+      var n0 = String(needle).toLowerCase().trim();
+      if (!n0) return false;
+      var h = String(haystack || '').toLowerCase();
+      if (h.indexOf(n0) >= 0) return true;
+      var n2 = n0;
+      while (n2.length > 1 && n2.slice(-1) === '/') {
+        n2 = n2.slice(0, -1);
+        if (h.indexOf(n2) >= 0) return true;
+      }
+      return false;
+    } catch (_e) {
+      return false;
+    }
+  }
+
+  function normalizePathQueryForEquals(s) {
+    try {
+      var t = String(s || '').toLowerCase().trim();
+      if (!t) return '';
+      var qIdx = t.indexOf('?');
+      var p = qIdx >= 0 ? t.slice(0, qIdx) : t;
+      var q = qIdx >= 0 ? t.slice(qIdx) : '';
+      if (p.length > 1 && p.slice(-1) === '/') p = p.slice(0, -1);
+      return p + q;
+    } catch (_e2) {
+      return String(s || '').toLowerCase().trim();
+    }
+  }
+
+  /** URL absoluta sem params de tracking — para casar match_href_contains salvo sem UTM. */
+  function normalizeAbsUrlForMatch(absUrlStr) {
+    try {
+      var u = new URL(String(absUrlStr || ''), location.href);
+      stripTrackingSearchParams(u.searchParams);
+      return u.href.toLowerCase();
+    } catch (_e) {
+      return String(absUrlStr || '').toLowerCase();
+    }
+  }
+
   // ─── URL rule engine (SPA support) ───────────────────────────────────────
   function checkUrlRules() {
     try {
       var cfg = window.TRACKING_CONFIG;
       if (!cfg || !cfg.eventRules || !cfg.eventRules.length) return;
-      
-      var currentPath = location.pathname + location.search;
-      // Normalização simples
-      currentPath = currentPath.toLowerCase();
+
+      var pathQ = pagePathForButtonRule();
+      var currentPath = pathQ.toLowerCase();
+      var fullUrl = (location.origin + pathQ + (location.hash || '')).toLowerCase();
 
       // Evita loop infinito se a regra for muito genérica, mas permite re-check em navegação
       // if (currentPath === lastPath) return; 
@@ -1522,8 +1588,6 @@ router.get('/tracker.js', async (req, res) => {
         
         var matchVal = (rule.match_value || '').toLowerCase();
         var isMatch = false;
-        
-        var fullUrl = location.href.toLowerCase();
 
         if (rule.rule_type === 'url_contains') {
           // Legado: "contém /" casava com toda URL; tratamos só "/" como página inicial.
@@ -1533,12 +1597,17 @@ router.get('/tracker.js', async (req, res) => {
               if (pnx.length > 1 && pnx.slice(-1) === '/') pnx = pnx.slice(0, -1);
               isMatch = pnx === '' || pnx === '/';
             } catch (_px) { isMatch = false; }
-          } else if (currentPath.indexOf(matchVal) >= 0 || fullUrl.indexOf(matchVal) >= 0) {
+          } else if (ruleNeedleMatchesHaystack(currentPath, matchVal) || ruleNeedleMatchesHaystack(fullUrl, matchVal)) {
             isMatch = true;
           }
         }
-        else if (rule.rule_type === 'url_equals' && (currentPath === matchVal || fullUrl === matchVal)) {
-          isMatch = true;
+        else if (rule.rule_type === 'url_equals') {
+          var mvEq = normalizePathQueryForEquals(matchVal);
+          isMatch =
+            normalizePathQueryForEquals(currentPath) === mvEq ||
+            normalizePathQueryForEquals(fullUrl) === mvEq ||
+            currentPath === matchVal ||
+            fullUrl === matchVal;
         }
         else if (rule.rule_type === 'path_is_root') {
           try {
@@ -1604,6 +1673,9 @@ router.get('/tracker.js', async (req, res) => {
       }
       var role = el.getAttribute && el.getAttribute('role');
       if (role === 'button') return el;
+      if (el.getAttribute && el.getAttribute('onclick')) return el;
+      var clsWalk = ((el.className && el.className.toString) ? el.className.toString() : String(el.className || '')).toLowerCase();
+      if (/\b(btn|button|cta)\b/.test(clsWalk)) return el;
       if (tag === 'BODY' || tag === 'HTML') break;
       el = el.parentElement;
     }
@@ -1616,8 +1688,9 @@ router.get('/tracker.js', async (req, res) => {
       if (!cfg || !cfg.eventRules || !cfg.eventRules.length) return;
       if (!target) return;
 
-      var currentPath = (location.pathname + location.search).toLowerCase();
-      var fullUrl = location.href.toLowerCase();
+      var pathQBtn = pagePathForButtonRule();
+      var currentPath = pathQBtn.toLowerCase();
+      var fullUrl = (location.origin + pathQBtn + (location.hash || '')).toLowerCase();
 
       var el = findClickableRoot(target);
       if (!el) return;
@@ -1631,12 +1704,12 @@ router.get('/tracker.js', async (req, res) => {
 
       var clickedNorm = clickedText ? normButtonMatchText(clickedText) : '';
 
-      var hrefNorm = '';
+      var hrefForMatch = '';
       if (el.tagName && el.tagName.toUpperCase() === 'A' && el.href) {
         try {
-          hrefNorm = new URL(el.href, location.href).href.toLowerCase();
+          hrefForMatch = normalizeAbsUrlForMatch(new URL(el.href, location.href).href);
         } catch (_u) {
-          hrefNorm = String(el.href).toLowerCase();
+          hrefForMatch = normalizeAbsUrlForMatch(String(el.href));
         }
       }
 
@@ -1654,7 +1727,7 @@ router.get('/tracker.js', async (req, res) => {
           if (pnRoot !== '/' && pnRoot !== '') continue;
         } else {
           if (!ruleUrl) continue;
-          if (!(currentPath.indexOf(ruleUrl) >= 0 || fullUrl.indexOf(ruleUrl) >= 0)) continue;
+          if (!(ruleNeedleMatchesHaystack(currentPath, ruleUrl) || ruleNeedleMatchesHaystack(fullUrl, ruleUrl))) continue;
         }
 
         var params = (rule.parameters && typeof rule.parameters === 'object') ? rule.parameters : {};
@@ -1667,7 +1740,7 @@ router.get('/tracker.js', async (req, res) => {
         var ruleTextNorm = textActive ? normButtonMatchText(rawRuleText) : '';
 
         var textMatch = !!(textActive && clickedNorm && ruleTextNorm && clickedNorm.indexOf(ruleTextNorm) >= 0);
-        var hrefMatch = !!(hrefNeed && hrefNorm && hrefNorm.indexOf(hrefNeed) >= 0);
+        var hrefMatch = !!(hrefNeed && hrefForMatch && hrefForMatch.indexOf(hrefNeed) >= 0);
         var classMatch = !!(classNeed && clsNorm && clsNorm.indexOf(classNeed) >= 0);
         var cssMatch = false;
         if (cssSel) {
@@ -1688,7 +1761,7 @@ router.get('/tracker.js', async (req, res) => {
         var matched = true;
         if (textActive) matched = matched && textMatch;
         if (hrefNeed) {
-          if (hrefNorm) matched = matched && hrefMatch;
+          if (hrefForMatch) matched = matched && hrefMatch;
           else if (!(textActive || classNeed || cssSel)) matched = false;
         }
         if (classNeed) matched = matched && classMatch;
@@ -2037,7 +2110,13 @@ router.get('/tracker.js', async (req, res) => {
     }
   }
 
-  /** Path (+ query útil) para regra "URL contém": sem parâmetros internos do Trajettu. */
+  /**
+   * Path (+ query útil) para regras de URL/botão:
+   * - remove parâmetros internos do Trajettu (ta_pick/ta_origin/ta_test/ta_rule)
+   * - remove parâmetros de tracking comuns (utm_*, fbclid, gclid, etc.)
+   *
+   * Objetivo: a presença de UTMs não pode quebrar o matching de regras no modo seletor/teste.
+   */
   function pagePathForButtonRule() {
     try {
       var path = location.pathname || '';
@@ -2045,8 +2124,7 @@ router.get('/tracker.js', async (req, res) => {
       if (!q) return path;
       var raw = q.charAt(0) === '?' ? q.slice(1) : q;
       var u = new URLSearchParams(raw);
-      var strip = ['ta_pick', 'ta_origin', 'ta_test', 'ta_rule'];
-      for (var si = 0; si < strip.length; si++) u.delete(strip[si]);
+      stripTrackingSearchParams(u);
       var s = u.toString();
       return s ? path + '?' + s : path;
     } catch (_e) {
@@ -2287,10 +2365,11 @@ router.get('/tracker.js', async (req, res) => {
           if (root.tagName && root.tagName.toUpperCase() === 'A' && root.href) {
             try { hrefNorm = new URL(root.href, location.href).href.toLowerCase(); } catch (_u) { hrefNorm = String(root.href).toLowerCase(); }
           }
+          var hrefForTest = hrefNorm ? normalizeAbsUrlForMatch(hrefNorm) : '';
           var clsNorm = ((root.className && root.className.toString) ? root.className.toString() : String(root.className || '')).toLowerCase();
 
           var textMatch = !!(textActive && clickedNorm && ruleNorm && clickedNorm.indexOf(ruleNorm) >= 0);
-          var hrefMatch = !!(hrefNeed && hrefNorm && hrefNorm.indexOf(hrefNeed) >= 0);
+          var hrefMatch = !!(hrefNeed && hrefForTest && hrefForTest.indexOf(hrefNeed) >= 0);
           var classMatch = !!(classNeed && clsNorm && clsNorm.indexOf(classNeed) >= 0);
           var cssMatch = false;
           if (cssSel) {
@@ -2305,7 +2384,7 @@ router.get('/tracker.js', async (req, res) => {
           var matched = true;
           if (textActive) matched = matched && textMatch;
           if (hrefNeed) {
-            if (hrefNorm) matched = matched && hrefMatch;
+            if (hrefForTest) matched = matched && hrefMatch;
             else if (!(textActive || classNeed || cssSel)) matched = false;
           }
           if (classNeed) matched = matched && classMatch;
