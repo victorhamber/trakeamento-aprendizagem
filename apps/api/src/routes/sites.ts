@@ -1653,7 +1653,7 @@ type BuyerMetaInsightRow = {
   ad_name?: string | null;
 };
 
-/** Mesma lógica do cartão “Atribuição”: meta_insights_daily por ad_id (utm_content numérico) ou nome de campanha. */
+/** Mesma lógica do cartão “Atribuição”: meta_insights_daily por ad_id (utm_content numérico), depois campanha+conjunto (utm_term≈adset), depois campanha+anúncio. */
 async function resolveMetaAttributionFromUtm(
   siteId: number,
   utm: Record<string, string> | null | undefined
@@ -1661,6 +1661,8 @@ async function resolveMetaAttributionFromUtm(
   if (!utm) return { row: null, source: null };
   const utmContent = String(utm.utm_content || '').trim();
   const utmCampaign = String(utm.utm_campaign || '').trim();
+  const utmTerm = String(utm.utm_term || '').trim();
+  const clickId = String(utm.click_id || '').trim();
 
   if (utmContent && /^\d+$/.test(utmContent)) {
     try {
@@ -1681,13 +1683,101 @@ async function resolveMetaAttributionFromUtm(
     }
   }
 
+  /** Alguns pixels gravam id de anúncio/conteúdo em click_id (só dígitos) mesmo quando utm_content vem como nome. */
+  if (clickId && /^\d+$/.test(clickId) && clickId !== utmContent) {
+    try {
+      const metaRes = await pool.query(
+        `SELECT campaign_id, campaign_name, adset_id, adset_name, ad_id, ad_name
+         FROM meta_insights_daily
+         WHERE site_id = $1
+           AND ad_id::text = $2
+         ORDER BY date_start DESC
+         LIMIT 1`,
+        [siteId, clickId]
+      );
+      if (metaRes.rowCount) {
+        return { row: metaRes.rows[0] as BuyerMetaInsightRow, source: 'click_id(ad_id)' };
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  /** UTMs da Meta costumam mapear utm_term → nome do conjunto; sem isso, LIMIT 1 pega outro conjunto da mesma campanha. */
+  if (utmCampaign && utmTerm) {
+    try {
+      const campPat = `%${utmCampaign}%`;
+      const adsetPat = `%${utmTerm}%`;
+      const tryWithAdName = async (): Promise<BuyerMetaInsightRow | null> => {
+        if (!utmContent) return null;
+        const adNumeric = /^\d+$/.test(utmContent);
+        const r = await pool.query(
+          adNumeric
+            ? `SELECT campaign_id, campaign_name, adset_id, adset_name, ad_id, ad_name
+               FROM meta_insights_daily
+               WHERE site_id = $1
+                 AND campaign_name ILIKE $2
+                 AND adset_name ILIKE $3
+                 AND ad_id::text = $4
+               ORDER BY date_start DESC
+               LIMIT 1`
+            : `SELECT campaign_id, campaign_name, adset_id, adset_name, ad_id, ad_name
+               FROM meta_insights_daily
+               WHERE site_id = $1
+                 AND campaign_name ILIKE $2
+                 AND adset_name ILIKE $3
+                 AND ad_name ILIKE $4
+               ORDER BY date_start DESC
+               LIMIT 1`,
+          adNumeric
+            ? [siteId, campPat, adsetPat, utmContent]
+            : [siteId, campPat, adsetPat, `%${utmContent}%`]
+        );
+        return r.rowCount ? (r.rows[0] as BuyerMetaInsightRow) : null;
+      };
+      const tryAdsetOnly = async (): Promise<BuyerMetaInsightRow | null> => {
+        const r = await pool.query(
+          `SELECT campaign_id, campaign_name, adset_id, adset_name, ad_id, ad_name
+           FROM meta_insights_daily
+           WHERE site_id = $1
+             AND campaign_name ILIKE $2
+             AND adset_name ILIKE $3
+           ORDER BY date_start DESC
+           LIMIT 1`,
+          [siteId, campPat, adsetPat]
+        );
+        return r.rowCount ? (r.rows[0] as BuyerMetaInsightRow) : null;
+      };
+
+      let row: BuyerMetaInsightRow | null = await tryWithAdName();
+      let source: string | null = null;
+      if (row) source = 'utm_campaign+utm_term(adset)+utm_content(ad)';
+      if (!row) {
+        row = await tryAdsetOnly();
+        if (row) source = 'utm_campaign+utm_term(adset)';
+      }
+      if (row) return { row, source };
+      /** Não cair no match só campanha+anúncio quando já temos utm_term — evita conjunto errado (ex.: 01 vs 02). */
+      return { row: null, source: null };
+    } catch {
+      /* ignore */
+    }
+    /** Evita fallback campanha+anúncio sem conjunto após erro SQL no bloco utm_term. */
+    return { row: null, source: null };
+  }
+
   if (utmCampaign) {
     try {
       const params: unknown[] = [siteId, `%${utmCampaign}%`];
       let extra = '';
       if (utmContent) {
-        params.push(`%${utmContent}%`);
-        extra = `AND (ad_name ILIKE $3 OR ad_id = $3)`;
+        if (/^\d+$/.test(utmContent)) {
+          params.push(utmContent);
+          extra = `AND ad_id::text = $3`;
+        } else {
+          params.push(`%${utmContent}%`);
+          extra = `AND ad_name ILIKE $3`;
+        }
       }
       const metaRes = await pool.query(
         `SELECT campaign_id, campaign_name, adset_id, adset_name, ad_id, ad_name
@@ -1714,8 +1804,11 @@ function metaAttributionCacheKey(utm: Record<string, string> | null | undefined)
   if (!utm) return null;
   const c = String(utm.utm_content || '').trim();
   const camp = String(utm.utm_campaign || '').trim();
+  const term = String(utm.utm_term || '').trim();
+  const clk = String(utm.click_id || '').trim();
   if (c && /^\d+$/.test(c)) return `ad:${c}`;
-  if (camp) return `camp:${camp}\x1e${c}`;
+  if (clk && /^\d+$/.test(clk)) return `click:${clk}\x1e${camp}\x1e${term}\x1e${c}`;
+  if (camp) return `camp:${camp}\x1e${term}\x1e${c}`;
   return null;
 }
 
