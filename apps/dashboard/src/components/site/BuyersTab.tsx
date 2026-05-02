@@ -84,6 +84,24 @@ type BuyerDetail = {
       from_visitor_profile: string | null;
       effective_user_agent: string | null;
     } | null;
+    /** Trilha cronológica (do mais antigo ao mais recente): passos iguais em sequência são agrupados. */
+    meta_ad_touch_trail?: Array<{
+      started_at: string;
+      ended_at: string;
+      pageview_hits: number;
+      page_slugs: string[];
+      kind: 'meta' | 'utm' | 'fbc_only' | 'organic';
+      utm: Record<string, string> | null;
+      meta_attribution: null | {
+        campaign_id?: string | null;
+        campaign_name?: string | null;
+        adset_id?: string | null;
+        adset_name?: string | null;
+        ad_id?: string | null;
+        ad_name?: string | null;
+      };
+      meta_attribution_source?: string | null;
+    }>;
   };
 };
 
@@ -123,6 +141,19 @@ function formatJourneyMetaAttribution(
 }
 
 /** Resumo na linha da jornada (UTMs vêm da API: URL + custom_data). Campanha quando existir; senão origem/mídia/click. */
+function trailSegmentKindLabel(kind: 'meta' | 'utm' | 'fbc_only' | 'organic'): string {
+  switch (kind) {
+    case 'meta':
+      return 'Meta (insights)';
+    case 'utm':
+      return 'UTMs na URL';
+    case 'fbc_only':
+      return 'Clique Meta (fbc)';
+    default:
+      return 'Orgânico';
+  }
+}
+
 function formatPageviewAttributionSummary(utm: Record<string, string> | null | undefined): string | null {
   if (!utm) return null;
   const camp = (utm.utm_campaign || '').trim();
@@ -778,6 +809,89 @@ export function BuyersTab({ siteId }: { siteId: number }) {
                         );
                       })()}
                     </div>
+
+                    {(detail.behavior.meta_ad_touch_trail?.length ?? 0) > 0 ? (
+                      <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-950/25 p-4">
+                        <div className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-1">
+                          Trilha de toques (anúncios / UTMs / orgânico)
+                        </div>
+                        <p className="text-[11px] text-zinc-600 dark:text-zinc-400 mb-3 leading-snug">
+                          Ordem cronológica até a última compra. Passos consecutivos com o mesmo anúncio, UTMs ou cookie{' '}
+                          <span className="font-mono text-[10px]">fbc</span> aparecem agrupados (quantidade de PageViews).
+                          Mudança de UTMs ou de <span className="font-mono text-[10px]">fbc</span> abre um novo passo — útil para ver captura +
+                          remarketing mesmo quando o último toque difere da atribuição da Meta na compra.
+                        </p>
+                        <div className="space-y-2">
+                          {(detail.behavior.meta_ad_touch_trail || []).map((seg, idx) => {
+                            const metaLine = formatJourneyMetaAttribution(seg.meta_attribution);
+                            const utmLine = formatPageviewAttributionSummary(seg.utm);
+                            return (
+                              <div
+                                key={`${seg.started_at}-${seg.ended_at}-${idx}`}
+                                className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white/60 dark:bg-zinc-950/20 px-3 py-2"
+                              >
+                                <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                                  <span className="font-semibold tabular-nums text-zinc-800 dark:text-zinc-200">{idx + 1}.</span>
+                                  <span
+                                    className="rounded-md border border-indigo-200/70 dark:border-indigo-800/60 bg-indigo-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-800 dark:text-indigo-200"
+                                    title={trailSegmentKindLabel(seg.kind)}
+                                  >
+                                    {trailSegmentKindLabel(seg.kind)}
+                                  </span>
+                                  <span className="text-zinc-600 dark:text-zinc-400 tabular-nums">
+                                    {dt(seg.started_at)}
+                                    {seg.ended_at !== seg.started_at ? (
+                                      <>
+                                        {' '}
+                                        → {dt(seg.ended_at)}
+                                      </>
+                                    ) : null}
+                                  </span>
+                                  <span className="text-zinc-500 dark:text-zinc-500">
+                                    · {seg.pageview_hits} PageView{seg.pageview_hits !== 1 ? 's' : ''}
+                                  </span>
+                                </div>
+                                {metaLine ? (
+                                  <div
+                                    className="mt-1.5 text-[10px] leading-snug text-indigo-700/95 dark:text-indigo-300/90"
+                                    title={seg.meta_attribution_source ? `Fonte: ${seg.meta_attribution_source}` : undefined}
+                                  >
+                                    <span className="font-semibold text-zinc-600 dark:text-zinc-400">Meta: </span>
+                                    {metaLine}
+                                  </div>
+                                ) : seg.kind === 'fbc_only' ? (
+                                  <div className="mt-1.5 text-[10px] text-amber-800/95 dark:text-amber-200/90">
+                                    Cookie de clique presente, mas sem cruzamento com insights importados (ou limite de buscas).
+                                    {seg.meta_attribution_source === 'lookup_limit' ? ' (limite de lookups na trilha.)' : null}
+                                  </div>
+                                ) : seg.kind === 'utm' && utmLine ? (
+                                  <div className="mt-1.5 text-[10px] text-zinc-700 dark:text-zinc-300">{utmLine}</div>
+                                ) : seg.kind === 'organic' ? (
+                                  <div className="mt-1.5 text-[10px] text-zinc-600 dark:text-zinc-400">
+                                    Sem UTMs detectáveis na URL e sem <span className="font-mono">fbc</span> no evento (ex.: tráfego direto ou
+                                    links sem parâmetros).
+                                  </div>
+                                ) : utmLine ? (
+                                  <div className="mt-1.5 text-[10px] text-zinc-700 dark:text-zinc-300">{utmLine}</div>
+                                ) : null}
+                                {seg.page_slugs.length ? (
+                                  <div className="mt-1 flex flex-wrap gap-1">
+                                    {seg.page_slugs.map((slug) => (
+                                      <span
+                                        key={slug}
+                                        className="inline-flex rounded border border-zinc-200 dark:border-zinc-700 bg-zinc-100/80 dark:bg-zinc-800/60 px-1.5 py-0.5 text-[10px] text-zinc-800 dark:text-zinc-100"
+                                      >
+                                        {slug}
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : null}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ) : null}
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                       <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/70 dark:bg-zinc-950/25 p-4">

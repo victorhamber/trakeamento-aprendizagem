@@ -1838,6 +1838,153 @@ function metaAttributionCacheKey(utm: Record<string, string> | null | undefined)
   return null;
 }
 
+function stableUtmMapKey(utm: Record<string, string> | null | undefined): string {
+  if (!utm) return '__empty__';
+  return BUYER_UTM_KEYS.map((k) => `${k}=${String(utm[k] || '').trim()}`).join('\x1e');
+}
+
+function trailPageSlugLabel(url: string): string {
+  const k = pageSlugKeyForBuyerTimeline(url);
+  if (k === '__empty__') return '—';
+  if (k === '__root__') return 'início';
+  return k;
+}
+
+type BuyerAdTouchTrailSegment = {
+  started_at: string;
+  ended_at: string;
+  pageview_hits: number;
+  page_slugs: string[];
+  kind: 'meta' | 'utm' | 'fbc_only' | 'organic';
+  utm: Record<string, string> | null;
+  meta_attribution: BuyerMetaInsightRow | null;
+  meta_attribution_source: string | null;
+};
+
+function touchFingerprintForTrail(
+  meta: BuyerMetaInsightRow | null,
+  utm: Record<string, string> | null,
+  fullFbc: string | null | undefined
+): string {
+  const fbcTrim = typeof fullFbc === 'string' ? fullFbc.trim() : '';
+  if (meta?.ad_id != null && String(meta.ad_id).trim()) return `ad:${String(meta.ad_id).trim()}`;
+  const cn = (meta?.campaign_name || '').trim();
+  const asn = (meta?.adset_name || '').trim();
+  const an = (meta?.ad_name || '').trim();
+  if (cn || asn || an) return `meta:${cn}|${asn}|${an}`;
+  const u = utm || {};
+  const utmPart = [u.utm_campaign, u.utm_term, u.utm_content, u.utm_source, u.utm_medium, u.click_id]
+    .map((x) => String(x || '').trim())
+    .join('|');
+  if (utmPart.replace(/\|/g, '')) return `utm:${utmPart}`;
+  if (fbcTrim) return `fbc:${fbcTrim}`;
+  return 'organic';
+}
+
+function trailTouchKind(
+  meta: BuyerMetaInsightRow | null,
+  utm: Record<string, string> | null,
+  fullFbc: string | null | undefined
+): BuyerAdTouchTrailSegment['kind'] {
+  if (
+    meta &&
+    ((meta.ad_id != null && String(meta.ad_id).trim()) ||
+      (meta.campaign_name || '').trim() ||
+      (meta.adset_name || '').trim() ||
+      (meta.ad_name || '').trim())
+  ) {
+    return 'meta';
+  }
+  const u = utm || {};
+  if (
+    (u.utm_campaign || u.utm_content || u.utm_term || u.utm_source || u.utm_medium || u.click_id || '').trim()
+  ) {
+    return 'utm';
+  }
+  const fbcTrim = typeof fullFbc === 'string' ? fullFbc.trim() : '';
+  if (fbcTrim) return 'fbc_only';
+  return 'organic';
+}
+
+/**
+ * Trilha cronológica de “toques” (paid/RMK vs orgânico): cada PageView antes da compra;
+ * passos consecutivos iguais (mesmo anúncio/UTM/fbc) são agrupados com contagem.
+ */
+async function buildMetaAdTouchTrail(
+  siteId: number,
+  rawAsc: Array<{ at: string; url: string; custom_data: unknown; event_user_fbc: string | null }>,
+  maxUniqueLookups: number
+): Promise<BuyerAdTouchTrailSegment[]> {
+  const capped = rawAsc.length > 500 ? rawAsc.slice(-500) : rawAsc;
+  if (!capped.length) return [];
+
+  const utmPerRow: Array<Record<string, string> | null> = [];
+  const fbcPerRow: Array<string | null> = [];
+  for (const row of capped) {
+    const fbcOnly =
+      row.event_user_fbc != null && String(row.event_user_fbc).trim()
+        ? { fbc: String(row.event_user_fbc).trim() }
+        : undefined;
+    utmPerRow.push(mergePageviewUtm(row.custom_data, row.url, fbcOnly));
+    fbcPerRow.push(row.event_user_fbc != null && String(row.event_user_fbc).trim() ? String(row.event_user_fbc).trim() : null);
+  }
+
+  const utmByKey = new Map<string, Record<string, string> | null>();
+  for (const utm of utmPerRow) {
+    const uk = stableUtmMapKey(utm);
+    if (!utmByKey.has(uk)) utmByKey.set(uk, utm);
+  }
+  const uniqueKeys = [...utmByKey.keys()];
+
+  const utmKeyToResolved = new Map<string, { row: BuyerMetaInsightRow | null; source: string | null }>();
+  for (let j = 0; j < uniqueKeys.length; j++) {
+    const uk = uniqueKeys[j];
+    const sampleUtm = utmByKey.get(uk) ?? null;
+    if (j < maxUniqueLookups) {
+      const resolved = await resolveMetaAttributionFromUtm(siteId, sampleUtm);
+      utmKeyToResolved.set(uk, resolved);
+    } else {
+      utmKeyToResolved.set(uk, { row: null, source: 'lookup_limit' });
+    }
+  }
+
+  const out: BuyerAdTouchTrailSegment[] = [];
+  let cur: BuyerAdTouchTrailSegment | null = null;
+  let curFp = '';
+
+  for (let i = 0; i < capped.length; i++) {
+    const utm = utmPerRow[i];
+    const uk = stableUtmMapKey(utm);
+    const { row: meta, source: metaSrc } = utmKeyToResolved.get(uk) ?? { row: null, source: null };
+    const fbc = fbcPerRow[i];
+    const fp = touchFingerprintForTrail(meta, utm, fbc);
+    const slug = trailPageSlugLabel(capped[i].url);
+
+    if (!cur || fp !== curFp) {
+      if (cur) out.push(cur);
+      curFp = fp;
+      const hasUtmVals = utm && BUYER_UTM_KEYS.some((k) => String(utm[k] || '').trim());
+      cur = {
+        started_at: capped[i].at,
+        ended_at: capped[i].at,
+        pageview_hits: 1,
+        page_slugs: [slug],
+        kind: trailTouchKind(meta, utm, fbc),
+        utm: hasUtmVals ? { ...utm! } : null,
+        meta_attribution: meta,
+        meta_attribution_source: metaSrc,
+      };
+    } else {
+      cur!.ended_at = capped[i].at;
+      cur!.pageview_hits += 1;
+      if (cur!.page_slugs.length < 6 && !cur!.page_slugs.includes(slug)) cur!.page_slugs.push(slug);
+    }
+  }
+  if (cur) out.push(cur);
+
+  return out;
+}
+
 function normalizeGroupTagsList(history: unknown, fallbackLast: string | null | undefined): string[] {
   const out: string[] = [];
   if (history != null && Array.isArray(history)) {
@@ -2604,7 +2751,9 @@ router.get('/:siteId/buyers/by-key/:buyerKey', requireAuth, async (req, res) => 
     let lastPageviewBeforePurchase: { url: string; at: string } | null = null;
     let lastPageviewUaBeforePurchase: string | null = null;
     const pageviewTimeline: Array<{ at: string; url: string; utm?: Record<string, string> | null }> = [];
+    let meta_ad_touch_trail: BuyerAdTouchTrailSegment[] = [];
     if (lastPurchaseAt) {
+      const rawTrailPvs: Array<{ at: string; url: string; custom_data: unknown; event_user_fbc: string | null }> = [];
       for (const e of eventsRes.rows) {
         const t = new Date(e.event_time);
         if (t.getTime() >= lastPurchaseAt.getTime()) continue;
@@ -2624,7 +2773,18 @@ router.get('/:siteId/buyers/by-key/:buyerKey', requireAuth, async (req, res) => 
             lastPageviewUaBeforePurchase = ua || null;
           }
           pageviewTimeline.push({ at: String(e.event_time), url: e.event_source_url, utm: mergedUtm });
+          rawTrailPvs.push({
+            at: String(e.event_time),
+            url: e.event_source_url,
+            custom_data: e.custom_data,
+            event_user_fbc:
+              e.event_user_fbc != null && String(e.event_user_fbc).trim() ? String(e.event_user_fbc).trim() : null,
+          });
         }
+      }
+      if (rawTrailPvs.length) {
+        const rawTrailAsc = [...rawTrailPvs].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
+        meta_ad_touch_trail = await buildMetaAdTouchTrail(siteId, rawTrailAsc, 40);
       }
     }
 
@@ -2682,6 +2842,7 @@ router.get('/:siteId/buyers/by-key/:buyerKey', requireAuth, async (req, res) => 
         last_touch: lastTouchUtm,
         meta_attribution: byKeyAttribution,
         meta_attribution_source: byKeyAttributionSource,
+        meta_ad_touch_trail,
         user_agent: uaSummary,
       },
       events: eventsRes.rows,
@@ -2810,7 +2971,9 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
     let lastPageviewBeforePurchase: { url: string; at: string } | null = null;
     let lastPageviewUaBeforePurchase: string | null = null;
     const pageviewTimeline: Array<{ at: string; url: string; utm?: Record<string, string> | null }> = [];
+    let meta_ad_touch_trail: BuyerAdTouchTrailSegment[] = [];
     if (lastPurchaseAt) {
+      const rawTrailPvs: Array<{ at: string; url: string; custom_data: unknown; event_user_fbc: string | null }> = [];
       for (const e of eventsRes.rows) {
         const t = new Date(e.event_time);
         if (t.getTime() >= lastPurchaseAt.getTime()) continue;
@@ -2830,7 +2993,18 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
             lastPageviewUaBeforePurchase = ua || null;
           }
           pageviewTimeline.push({ at: String(e.event_time), url: e.event_source_url, utm: mergedUtm });
+          rawTrailPvs.push({
+            at: String(e.event_time),
+            url: e.event_source_url,
+            custom_data: e.custom_data,
+            event_user_fbc:
+              e.event_user_fbc != null && String(e.event_user_fbc).trim() ? String(e.event_user_fbc).trim() : null,
+          });
         }
+      }
+      if (rawTrailPvs.length) {
+        const rawTrailAsc = [...rawTrailPvs].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
+        meta_ad_touch_trail = await buildMetaAdTouchTrail(siteId, rawTrailAsc, 40);
       }
     }
 
@@ -2889,6 +3063,7 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
         last_touch: lastTouchUtm,
         meta_attribution: attribution,
         meta_attribution_source: attributionSource,
+        meta_ad_touch_trail,
         user_agent: uaSummary,
       },
       events: eventsRes.rows,
