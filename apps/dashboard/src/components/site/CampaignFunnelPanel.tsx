@@ -482,35 +482,35 @@ function futureBadgeClass(f: FunnelRow['future']) {
 function FunnelBars({ f, objectiveLabel }: { f: FunnelRow['funnel']; objectiveLabel?: string }) {
   const max = Math.max(f.link_clicks, f.landing_page_views, f.objective_metric || 0, f.initiates_checkout, f.purchases, 1);
   const items = [
-    { label: 'Cliques no link', v: f.link_clicks, accent: 'accent-violet-500' },
-    { label: 'Ver página (LP)', v: f.landing_page_views, accent: 'accent-indigo-500' },
-    { label: objectiveLabel || 'Objetivo', v: Number(f.objective_metric || 0), accent: 'accent-sky-500' },
-    { label: 'Checkout', v: f.initiates_checkout, accent: 'accent-amber-500' },
-    { label: 'Compras', v: f.purchases, accent: 'accent-emerald-500' },
+    { label: 'Cliques no link', v: f.link_clicks },
+    { label: 'Ver página (LP)', v: f.landing_page_views },
+    { label: objectiveLabel || 'Objetivo', v: Number(f.objective_metric || 0) },
+    { label: 'Checkout', v: f.initiates_checkout },
+    { label: 'Compras', v: f.purchases },
   ];
   return (
     <div className="space-y-2.5">
-      {items.map((it) => (
-        <div key={it.label}>
-          <div className="flex justify-between text-[11px] text-zinc-600 dark:text-zinc-500 mb-0.5">
-            <span>{it.label}</span>
-            <span className="tabular-nums font-medium text-zinc-800 dark:text-zinc-200">{formatNumber(it.v)}</span>
+      {items.map((it) => {
+        const n = Number(it.v) || 0;
+        const pct = max > 0 ? (n / max) * 100 : 0;
+        const widthPct = n <= 0 ? 0 : Math.max(8, pct);
+        return (
+          <div key={it.label}>
+            <div className="flex justify-between gap-2 text-[11px] mb-1">
+              <span className="truncate text-zinc-500 dark:text-zinc-400 font-medium" title={it.label}>
+                {it.label}
+              </span>
+              <span className="tabular-nums font-semibold text-indigo-300 shrink-0">{formatNumber(it.v)}</span>
+            </div>
+            <div className="h-1.5 rounded-full bg-slate-800 overflow-hidden">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-sky-500 via-indigo-500 to-violet-500"
+                style={{ width: `${widthPct}%` }}
+              />
+            </div>
           </div>
-          <progress
-            value={Math.min(100, (it.v / max) * 100)}
-            max={100}
-            className={[
-              'w-full h-2.5 rounded-full overflow-hidden',
-              'bg-zinc-200 dark:bg-zinc-800/80',
-              it.accent,
-              // WebKit
-              '[&::-webkit-progress-bar]:bg-zinc-200 dark:[&::-webkit-progress-bar]:bg-zinc-800/80',
-              // Firefox
-              '[&::-moz-progress-bar]:rounded-full',
-            ].join(' ')}
-          />
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
