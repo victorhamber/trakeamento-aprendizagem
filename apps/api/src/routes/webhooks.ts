@@ -1416,7 +1416,8 @@ async function processPurchaseWebhook({
               const safeValue = Number.isFinite(valueNum) && valueNum >= 0 ? valueNum : 0;
               const crmPayload = buildCrmQualificationCapiPayload({
                 originalCapiEvent: capiPayload,
-                label: 'Compra realizada',
+                leadEventSource: 'Trajettu',
+                crmEventName: 'Converted',
                 includeValueAndCurrency: {
                   value: safeValue,
                   currency: String(resolvedCurrency || 'BRL'),

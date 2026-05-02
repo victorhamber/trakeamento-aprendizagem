@@ -168,6 +168,8 @@ function sanitizeButtonMatchParameters(raw: Record<string, unknown>): Record<str
 // Qualificação CRM (estilo Meta) — campos opcionais armazenados no parameters JSONB.
 // Mantemos compatibilidade total: se ausentes, regra se comporta como antes.
 const CRM_LABEL_MAX = 120;
+const CRM_TOOL_MAX = 120;
+const CRM_EVENT_NAME_MAX = 100;
 function sanitizeCrmQualifyParameters(raw: Record<string, unknown>): Record<string, unknown> {
   const out = { ...raw };
   const qualifyRaw = out._crm_qualify;
@@ -184,9 +186,24 @@ function sanitizeCrmQualifyParameters(raw: Record<string, unknown>): Record<stri
     } else {
       delete out._crm_label;
     }
+    const toolRaw = typeof out._crm_tool === 'string' ? out._crm_tool.trim() : '';
+    if (toolRaw) {
+      out._crm_tool = toolRaw.length > CRM_TOOL_MAX ? toolRaw.slice(0, CRM_TOOL_MAX) : toolRaw;
+    } else {
+      delete out._crm_tool;
+    }
+    const stageRaw = typeof out._crm_event_name === 'string' ? out._crm_event_name.trim() : '';
+    if (stageRaw) {
+      out._crm_event_name =
+        stageRaw.length > CRM_EVENT_NAME_MAX ? stageRaw.slice(0, CRM_EVENT_NAME_MAX) : stageRaw;
+    } else {
+      delete out._crm_event_name;
+    }
   } else {
     delete out._crm_qualify;
     delete out._crm_label;
+    delete out._crm_tool;
+    delete out._crm_event_name;
   }
   return out;
 }

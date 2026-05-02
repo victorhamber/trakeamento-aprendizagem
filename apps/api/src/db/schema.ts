@@ -747,6 +747,21 @@ export const ensureSchema = async (pool: Pool) => {
     );
   });
 
+  await migrate('integrations_meta_crm_auto_funnel_lead', async () => {
+    await pool.query(
+      'ALTER TABLE integrations_meta ADD COLUMN IF NOT EXISTS crm_auto_funnel_lead BOOLEAN DEFAULT FALSE'
+    );
+  });
+
+  await migrate('integrations_meta_crm_auto_funnel_lead_default_on', async () => {
+    await pool.query(
+      'ALTER TABLE integrations_meta ALTER COLUMN crm_auto_funnel_lead SET DEFAULT TRUE'
+    );
+    await pool.query(
+      'UPDATE integrations_meta SET crm_auto_funnel_lead = TRUE WHERE crm_auto_funnel_lead IS NOT TRUE'
+    );
+  });
+
   if (!process.env.DATABASE_URL) {
     const existing = await pool.query('SELECT id FROM users LIMIT 1');
     if (!(existing.rowCount || 0)) {

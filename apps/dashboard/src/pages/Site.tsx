@@ -372,6 +372,8 @@ export const SitePage = () => {
   // Qualificação CRM (estilo Meta) — opcional por regra, sem mudar token/Pixel/SDK
   const [urlRuleCrmQualify, setUrlRuleCrmQualify] = useState(false);
   const [urlRuleCrmLabel, setUrlRuleCrmLabel] = useState('');
+  const [urlRuleCrmTool, setUrlRuleCrmTool] = useState('');
+  const [urlRuleCrmEventName, setUrlRuleCrmEventName] = useState('');
 
   const [buttonRuleUrl, setButtonRuleUrl] = useState('');
   /** URL completa para abrir seletor/teste na página (independente do “Se a URL contém” da regra). */
@@ -386,6 +388,8 @@ export const SitePage = () => {
   const [buttonRuleEventCurrency, setButtonRuleEventCurrency] = useState('BRL');
   const [buttonRuleCrmQualify, setButtonRuleCrmQualify] = useState(false);
   const [buttonRuleCrmLabel, setButtonRuleCrmLabel] = useState('');
+  const [buttonRuleCrmTool, setButtonRuleCrmTool] = useState('');
+  const [buttonRuleCrmEventName, setButtonRuleCrmEventName] = useState('');
 
   const [eventSubTab, setEventSubTab] = useState<'url' | 'button' | 'form'>('url');
   const [formFields, setFormFields] = useState({ name: true, email: true, phone: true });
@@ -1065,6 +1069,8 @@ export const SitePage = () => {
       setUrlRuleEventCurrency('BRL');
       setUrlRuleCrmQualify(false);
       setUrlRuleCrmLabel('');
+      setUrlRuleCrmTool('');
+      setUrlRuleCrmEventName('');
       setSelectedRuleId(null);
       await loadEventRules();
     } catch (err: unknown) {
@@ -1176,6 +1182,9 @@ export const SitePage = () => {
     setSelectedRuleId(rule.id);
     const crmEnabled = rule.parameters?._crm_qualify === true;
     const crmLabel = typeof rule.parameters?._crm_label === 'string' ? rule.parameters._crm_label : '';
+    const crmTool = typeof rule.parameters?._crm_tool === 'string' ? rule.parameters._crm_tool : '';
+    const crmEventName =
+      typeof rule.parameters?._crm_event_name === 'string' ? rule.parameters._crm_event_name : '';
     if (rule.rule_type === 'path_is_root') {
       setUrlRuleUrlMatchKind('home');
       setUrlRuleValue('');
@@ -1186,6 +1195,8 @@ export const SitePage = () => {
       setUrlRuleEventCurrency(rule.parameters?.currency || 'BRL');
       setUrlRuleCrmQualify(crmEnabled);
       setUrlRuleCrmLabel(crmLabel);
+      setUrlRuleCrmTool(crmTool);
+      setUrlRuleCrmEventName(crmEventName);
       setEventSubTab('url');
     } else if (rule.rule_type === 'url_contains' || rule.rule_type === 'url_equals' || !rule.rule_type) {
       setUrlRuleUrlMatchKind('contains');
@@ -1197,6 +1208,8 @@ export const SitePage = () => {
       setUrlRuleEventCurrency(rule.parameters?.currency || 'BRL');
       setUrlRuleCrmQualify(crmEnabled);
       setUrlRuleCrmLabel(crmLabel);
+      setUrlRuleCrmTool(crmTool);
+      setUrlRuleCrmEventName(crmEventName);
       setEventSubTab('url');
     } else if (rule.rule_type === 'button_click') {
       setButtonRuleUrl(rule.match_value);
@@ -1211,6 +1224,8 @@ export const SitePage = () => {
       setButtonRuleEventCurrency(rule.parameters?.currency || 'BRL');
       setButtonRuleCrmQualify(crmEnabled);
       setButtonRuleCrmLabel(crmLabel);
+      setButtonRuleCrmTool(crmTool);
+      setButtonRuleCrmEventName(crmEventName);
       setEventSubTab('button');
     }
     showFlash('Regra carregada para edição');
@@ -1234,8 +1249,12 @@ export const SitePage = () => {
     setButtonRuleEventCurrency('BRL');
     setUrlRuleCrmQualify(false);
     setUrlRuleCrmLabel('');
+    setUrlRuleCrmTool('');
+    setUrlRuleCrmEventName('');
     setButtonRuleCrmQualify(false);
     setButtonRuleCrmLabel('');
+    setButtonRuleCrmTool('');
+    setButtonRuleCrmEventName('');
     showFlash('Edição cancelada');
   };
 
@@ -3105,7 +3124,15 @@ ${scriptContent}
                   </div>
                 </div>
 
-                {/* Qualificação CRM (estilo Meta) — toggle global por site */}
+                <div className="rounded-lg border border-emerald-500/15 bg-emerald-500/5 dark:bg-emerald-950/20 px-3 py-2.5 text-[11px] text-zinc-700 dark:text-zinc-400 mb-4">
+                  <strong className="text-zinc-800 dark:text-zinc-200">Funil Meta (CAPI CRM)</strong> — por padrão o Trajettu
+                  envia <strong className="font-medium text-zinc-800 dark:text-zinc-200">início</strong> (
+                  <code className="text-[10px]">Lead inicial</code> em todo evento <code className="text-[10px]">Lead</code> do
+                  site, quando não há regra CRM no mesmo disparo) e <strong className="font-medium text-zinc-800 dark:text-zinc-200">fim</strong>{' '}
+                  (<code className="text-[10px]">Converted</code> na compra via webhook). O <strong className="font-medium text-zinc-800 dark:text-zinc-200">meio</strong> do funil é opcional: marque na aba Eventos uma regra de URL ou botão — nomes e rótulos seguem o padrão Meta se você não personalizar.
+                </div>
+
+                {/* Qualificação CRM na compra — ativo por padrão; checkbox = opt-out */}
                 <div className="flex items-start gap-3 pt-4 border-t border-zinc-200 dark:border-zinc-800">
                   <input
                     id="meta-crm-qualify-purchases"
@@ -3117,16 +3144,14 @@ ${scriptContent}
                   />
                   <div className="flex-1">
                     <label htmlFor="meta-crm-qualify-purchases" className="text-sm font-medium text-zinc-800 dark:text-zinc-200 block cursor-pointer">
-                      Compra qualifica como Lead máxima (CRM) automaticamente
+                      Manter envio CRM na compra (Converted / Trajettu)
                       <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-300 border border-emerald-500/20 align-middle">
-                        recomendado
+                        padrão ligado
                       </span>
                     </label>
                     <p className="text-[11px] text-zinc-700 dark:text-zinc-500 mt-1">
-                      Quando ligado, toda <strong>Compra recebida via webhook</strong> (Hotmart, Kiwify, custom) envia
-                      automaticamente — em paralelo ao Purchase normal — um evento <code className="text-[11px]">Lead</code>
-                      com <code className="text-[11px]">action_source: system_generated</code> e
-                      <code className="text-[11px]"> lead_event_source: "Compra realizada"</code>. Não muda Pixel ID nem token CAPI.
+                      Desmarque apenas se quiser <strong>desativar</strong> a qualificação automática na compra (webhook).
+                      Enquanto marcado, cada compra aprovada envia também o estágio final ao Meta nos moldes da documentação.
                     </p>
                   </div>
                 </div>
@@ -3566,7 +3591,7 @@ ${scriptContent}
                         </div>
                       </div>
                     )}
-                    {/* Qualificação CRM (estilo Meta) — opcional, aditiva, sem mudar token/Pixel */}
+                    {/* Meio do funil CRM (Meta) — só escolhe “onde”; nomes padrão no backend */}
                     <div className="md:col-span-12 border-t border-zinc-200 dark:border-zinc-800 pt-4 mt-1">
                       <div className="flex items-start gap-3">
                         <input
@@ -3578,30 +3603,70 @@ ${scriptContent}
                         />
                         <div className="flex-1">
                           <label htmlFor="dash-site-url-rule-crm-qualify" className="block text-sm font-medium text-zinc-700 dark:text-zinc-200 cursor-pointer">
-                            Qualificar lead na Meta (CRM)
+                            Marcar meio do funil nesta regra (Meta / CRM)
                             <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-300 border border-emerald-500/20 align-middle">
                               opcional
                             </span>
                           </label>
                           <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
-                            Quando marcada, esta regra continua disparando o evento normal e, em paralelo,
-                            envia um evento <code className="text-[11px]">Lead</code> CRM-style à Meta
-                            (<code className="text-[11px]">action_source: system_generated</code>) com o rótulo escolhido.
-                            Não muda Pixel ID nem token CAPI.
+                            O evento do site continua normal; em paralelo enviamos a etapa intermediária com os campos que a
+                            Meta pede — <strong className="font-medium text-zinc-600 dark:text-zinc-300">só defina a regra
+                            (URL)</strong>. Nome do estágio, rótulo e origem vêm prontos; abra “Avançado” só se quiser
+                            personalizar.
                           </p>
                           {urlRuleCrmQualify && (
-                            <div className="mt-3">
-                              <label htmlFor="dash-site-url-rule-crm-label" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">
-                                Rótulo da qualificação (lead_event_source):
-                              </label>
-                              <input
-                                id="dash-site-url-rule-crm-label"
-                                value={urlRuleCrmLabel}
-                                onChange={(e) => setUrlRuleCrmLabel(e.target.value)}
-                                placeholder={`Ex: Lead qualificado, Demo agendada, MQL... (padrão: ${urlRuleEventType === 'Custom' ? urlRuleCustomName || 'Custom' : urlRuleEventType})`}
-                                maxLength={120}
-                                className={inputCls}
-                              />
+                            <div className="mt-3 space-y-2">
+                              <p className="text-[11px] text-zinc-600 dark:text-zinc-400">
+                                Padrão Trajettu: <code className="text-[10px]">event_name</code> = Qualificado,{' '}
+                                <code className="text-[10px]">lead_event_source</code> = Trajettu (ou o que você preencher
+                                abaixo).
+                              </p>
+                              <details className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50/80 dark:bg-zinc-900/40 px-3 py-2">
+                                <summary className="cursor-pointer text-xs font-medium text-zinc-700 dark:text-zinc-200 list-none [&::-webkit-details-marker]:hidden">
+                                  Avançado — personalizar etapa, ferramenta e rótulo
+                                </summary>
+                                <div className="mt-3 space-y-3 pt-1">
+                                  <div>
+                                    <label htmlFor="dash-site-url-rule-crm-event-name" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">
+                                      Etapa (<code className="text-[10px]">event_name</code>):
+                                    </label>
+                                    <input
+                                      id="dash-site-url-rule-crm-event-name"
+                                      value={urlRuleCrmEventName}
+                                      onChange={(e) => setUrlRuleCrmEventName(e.target.value)}
+                                      placeholder="Vazio = Qualificado (padrão)"
+                                      maxLength={100}
+                                      className={inputCls}
+                                    />
+                                  </div>
+                                  <div>
+                                    <label htmlFor="dash-site-url-rule-crm-tool" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">
+                                      Ferramenta (<code className="text-[10px]">lead_event_source</code>):
+                                    </label>
+                                    <input
+                                      id="dash-site-url-rule-crm-tool"
+                                      value={urlRuleCrmTool}
+                                      onChange={(e) => setUrlRuleCrmTool(e.target.value)}
+                                      placeholder="Vazio = Trajettu após rótulo"
+                                      maxLength={120}
+                                      className={inputCls}
+                                    />
+                                  </div>
+                                  <div>
+                                    <label htmlFor="dash-site-url-rule-crm-label" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">
+                                      Rótulo (se ferramenta vazia, antes de Trajettu):
+                                    </label>
+                                    <input
+                                      id="dash-site-url-rule-crm-label"
+                                      value={urlRuleCrmLabel}
+                                      onChange={(e) => setUrlRuleCrmLabel(e.target.value)}
+                                      placeholder="Opcional"
+                                      maxLength={120}
+                                      className={inputCls}
+                                    />
+                                  </div>
+                                </div>
+                              </details>
                             </div>
                           )}
                         </div>
@@ -3673,7 +3738,7 @@ ${scriptContent}
                                 {rule.parameters?._crm_qualify === true && (
                                   <span
                                     className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-300 border border-emerald-500/20"
-                                    title={`Envia também como qualificação CRM ao Meta (lead_event_source: ${rule.parameters?._crm_label || rule.event_name})`}
+                                    title={`CRM Meta: event_name=${typeof rule.parameters?._crm_event_name === 'string' && rule.parameters._crm_event_name.trim() ? rule.parameters._crm_event_name : 'Qualificado'} · lead_event_source=${rule.parameters?._crm_tool || rule.parameters?._crm_label || 'Trajettu'}`}
                                   >
                                     + CRM
                                   </span>
@@ -3933,7 +3998,6 @@ ${scriptContent}
                         </div>
                       </div>
                     </div>
-                    {/* Qualificação CRM (estilo Meta) — opcional, sem mudar token/Pixel */}
                     <div className="md:col-span-12 border-t border-zinc-200 dark:border-zinc-800 pt-4">
                       <div className="flex items-start gap-3">
                         <input
@@ -3945,30 +4009,68 @@ ${scriptContent}
                         />
                         <div className="flex-1">
                           <label htmlFor="dash-site-btn-rule-crm-qualify" className="block text-sm font-medium text-zinc-700 dark:text-zinc-200 cursor-pointer">
-                            Qualificar lead na Meta (CRM)
+                            Marcar meio do funil nesta regra (Meta / CRM)
                             <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-300 border border-emerald-500/20 align-middle">
                               opcional
                             </span>
                           </label>
                           <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
-                            Quando o botão for clicado, o evento normal continua igual e, em paralelo, é
-                            enviado um <code className="text-[11px]">Lead</code> CRM-style à Meta
-                            (<code className="text-[11px]">action_source: system_generated</code>) com o rótulo escolhido.
-                            Não muda Pixel ID nem token CAPI.
+                            Mesma lógica da regra por URL: o clique dispara o evento do site; se marcar aqui, também enviamos
+                            a etapa intermediária. <strong className="font-medium text-zinc-600 dark:text-zinc-300">Só
+                            escolha o gatilho (texto / classe / seletor)</strong> — o resto é preenchido automaticamente.
                           </p>
                           {buttonRuleCrmQualify && (
-                            <div className="mt-3">
-                              <label htmlFor="dash-site-btn-rule-crm-label" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">
-                                Rótulo da qualificação (lead_event_source):
-                              </label>
-                              <input
-                                id="dash-site-btn-rule-crm-label"
-                                value={buttonRuleCrmLabel}
-                                onChange={(e) => setButtonRuleCrmLabel(e.target.value)}
-                                placeholder={`Ex: Lead qualificado, Carrinho avançado, Clique em CTA... (padrão: ${buttonRuleEventType === 'Custom' ? buttonRuleCustomName || 'Custom' : buttonRuleEventType})`}
-                                maxLength={120}
-                                className={inputCls}
-                              />
+                            <div className="mt-3 space-y-2">
+                              <p className="text-[11px] text-zinc-600 dark:text-zinc-400">
+                                Padrão Trajettu: <code className="text-[10px]">event_name</code> = Qualificado,{' '}
+                                <code className="text-[10px]">lead_event_source</code> = Trajettu.
+                              </p>
+                              <details className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50/80 dark:bg-zinc-900/40 px-3 py-2">
+                                <summary className="cursor-pointer text-xs font-medium text-zinc-700 dark:text-zinc-200 list-none [&::-webkit-details-marker]:hidden">
+                                  Avançado — personalizar etapa, ferramenta e rótulo
+                                </summary>
+                                <div className="mt-3 space-y-3 pt-1">
+                                  <div>
+                                    <label htmlFor="dash-site-btn-rule-crm-event-name" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">
+                                      Etapa (<code className="text-[10px]">event_name</code>):
+                                    </label>
+                                    <input
+                                      id="dash-site-btn-rule-crm-event-name"
+                                      value={buttonRuleCrmEventName}
+                                      onChange={(e) => setButtonRuleCrmEventName(e.target.value)}
+                                      placeholder="Vazio = Qualificado (padrão)"
+                                      maxLength={100}
+                                      className={inputCls}
+                                    />
+                                  </div>
+                                  <div>
+                                    <label htmlFor="dash-site-btn-rule-crm-tool" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">
+                                      Ferramenta (<code className="text-[10px]">lead_event_source</code>):
+                                    </label>
+                                    <input
+                                      id="dash-site-btn-rule-crm-tool"
+                                      value={buttonRuleCrmTool}
+                                      onChange={(e) => setButtonRuleCrmTool(e.target.value)}
+                                      placeholder="Vazio = Trajettu após rótulo"
+                                      maxLength={120}
+                                      className={inputCls}
+                                    />
+                                  </div>
+                                  <div>
+                                    <label htmlFor="dash-site-btn-rule-crm-label" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">
+                                      Rótulo (se ferramenta vazia, antes de Trajettu):
+                                    </label>
+                                    <input
+                                      id="dash-site-btn-rule-crm-label"
+                                      value={buttonRuleCrmLabel}
+                                      onChange={(e) => setButtonRuleCrmLabel(e.target.value)}
+                                      placeholder="Opcional"
+                                      maxLength={120}
+                                      className={inputCls}
+                                    />
+                                  </div>
+                                </div>
+                              </details>
                             </div>
                           )}
                         </div>
@@ -4047,7 +4149,7 @@ ${scriptContent}
                                 {rule.parameters?._crm_qualify === true && (
                                   <span
                                     className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-300 border border-emerald-500/20"
-                                    title={`Envia também como qualificação CRM ao Meta (lead_event_source: ${rule.parameters?._crm_label || rule.event_name})`}
+                                    title={`CRM Meta: event_name=${typeof rule.parameters?._crm_event_name === 'string' && rule.parameters._crm_event_name.trim() ? rule.parameters._crm_event_name : 'Qualificado'} · lead_event_source=${rule.parameters?._crm_tool || rule.parameters?._crm_label || 'Trajettu'}`}
                                   >
                                     + CRM
                                   </span>

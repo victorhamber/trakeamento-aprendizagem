@@ -60,7 +60,8 @@ router.get('/sites/:siteId/meta', requireAuth, async (req, res) => {
             (fb_user_token_enc IS NOT NULL) as has_facebook_connection,
             fb_user_id,
             fb_token_expires_at,
-            COALESCE(crm_qualify_purchases, TRUE) AS crm_qualify_purchases
+            COALESCE(crm_qualify_purchases, TRUE) AS crm_qualify_purchases,
+            COALESCE(crm_auto_funnel_lead, TRUE) AS crm_auto_funnel_lead
      FROM integrations_meta WHERE site_id = $1`,
     [siteId]
   );
@@ -73,7 +74,16 @@ router.put('/sites/:siteId/meta', requireAuth, async (req, res) => {
   if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
   if (!(await requireSiteOwnership(auth.accountId, siteId))) return res.status(404).json({ error: 'Site not found' });
 
-  const { pixel_id, capi_token, marketing_token, ad_account_id, enabled, capi_test_event_code, crm_qualify_purchases } = req.body || {};
+  const {
+    pixel_id,
+    capi_token,
+    marketing_token,
+    ad_account_id,
+    enabled,
+    capi_test_event_code,
+    crm_qualify_purchases,
+    crm_auto_funnel_lead,
+  } = req.body || {};
   const pixelId = typeof pixel_id === 'string' ? pixel_id.trim() : null;
   const adAccountId = typeof ad_account_id === 'string' ? ad_account_id.trim() : null;
   const capiTokenSanitized =
@@ -103,9 +113,17 @@ router.put('/sites/:siteId/meta', requireAuth, async (req, res) => {
         ? crm_qualify_purchases
         : null;
 
+  const hasCrmAutoFunnel = Object.prototype.hasOwnProperty.call(req.body || {}, 'crm_auto_funnel_lead');
+  const crmAutoFunnelBool =
+    typeof crm_auto_funnel_lead === 'string'
+      ? crm_auto_funnel_lead === 'true'
+      : typeof crm_auto_funnel_lead === 'boolean'
+        ? crm_auto_funnel_lead
+        : null;
+
   await pool.query(
-    `INSERT INTO integrations_meta (site_id, pixel_id, capi_token_enc, capi_test_event_code, marketing_token_enc, ad_account_id, enabled, crm_qualify_purchases)
-     VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, TRUE), COALESCE($9, TRUE))
+    `INSERT INTO integrations_meta (site_id, pixel_id, capi_token_enc, capi_test_event_code, marketing_token_enc, ad_account_id, enabled, crm_qualify_purchases, crm_auto_funnel_lead)
+     VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, TRUE), COALESCE($9, TRUE), COALESCE($11, TRUE))
      ON CONFLICT (site_id) DO UPDATE SET
        pixel_id = COALESCE(EXCLUDED.pixel_id, integrations_meta.pixel_id),
        capi_token_enc = COALESCE(EXCLUDED.capi_token_enc, integrations_meta.capi_token_enc),
@@ -114,12 +132,26 @@ router.put('/sites/:siteId/meta', requireAuth, async (req, res) => {
        ad_account_id = COALESCE(EXCLUDED.ad_account_id, integrations_meta.ad_account_id),
        enabled = COALESCE(EXCLUDED.enabled, integrations_meta.enabled),
        crm_qualify_purchases = CASE WHEN $10 THEN EXCLUDED.crm_qualify_purchases ELSE integrations_meta.crm_qualify_purchases END,
+       crm_auto_funnel_lead = CASE WHEN $12 THEN EXCLUDED.crm_auto_funnel_lead ELSE integrations_meta.crm_auto_funnel_lead END,
        updated_at = NOW()`,
-    [siteId, pixelId, capiTokenEnc, capiTestEventCode, marketingTokenEnc, adAccountId, enabledBool, hasTestEventCode, crmQualifyBool, hasCrmQualify]
+    [
+      siteId,
+      pixelId,
+      capiTokenEnc,
+      capiTestEventCode,
+      marketingTokenEnc,
+      adAccountId,
+      enabledBool,
+      hasTestEventCode,
+      crmQualifyBool,
+      hasCrmQualify,
+      crmAutoFunnelBool,
+      hasCrmAutoFunnel,
+    ]
   );
 
   // Invalida o cache LRU do toggle CRM para esse site (refletir imediatamente)
-  if (hasCrmQualify) {
+  if (hasCrmQualify || hasCrmAutoFunnel) {
     try {
       const siteRow = await pool.query('SELECT site_key FROM sites WHERE id = $1', [siteId]);
       const siteKey = siteRow.rows[0]?.site_key;

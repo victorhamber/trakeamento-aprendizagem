@@ -16,7 +16,11 @@ import { buildVisitorTrafficSourceString } from '../lib/visitorTrafficSource';
 import { checkEventQuota } from '../lib/quota';
 import {
   buildCrmQualificationCapiPayload,
+  resolveCrmLeadEventSource,
+  resolveCrmPipelineEventName,
   getCrmQualifyForRule,
+  shouldAutoFunnelLeadForSite,
+  CRM_AUTO_FUNNEL_LEAD_STAGE,
 } from '../lib/crm-qualification';
 
 const LRUCache = require('lru-cache').LRUCache || require('lru-cache');
@@ -1103,6 +1107,7 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
       // dispara um 2º evento CAPI estilo CRM em paralelo (event_id = <orig>_crm).
       // Usa o `_taRuleId` que o SDK já injeta no custom_data quando uma regra casa
       // (apps/api/src/routes/sdk.ts L1524). NÃO modifica o evento original.
+      let ruleCrmSent = false;
       try {
         const ruleIdRaw = (event.custom_data ?? {})['_taRuleId'];
         const ruleId =
@@ -1114,6 +1119,7 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
         if (Number.isFinite(ruleId)) {
           const qual = await getCrmQualifyForRule(siteKey, ruleId);
           if (qual?.enabled) {
+            ruleCrmSent = true;
             const includeValueAndCurrency =
               eventName === 'Purchase' &&
               typeof metaCustomData.value === 'number' &&
@@ -1125,7 +1131,8 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
                 : undefined;
             const crmPayload = buildCrmQualificationCapiPayload({
               originalCapiEvent: capiPayload,
-              label: qual.label || eventName,
+              leadEventSource: resolveCrmLeadEventSource(qual),
+              crmEventName: resolveCrmPipelineEventName(qual),
               includeValueAndCurrency,
             });
             sendCapiWithRetry(siteKey, crmPayload).catch(() => {});
@@ -1133,6 +1140,23 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
         }
       } catch (err) {
         console.warn('[Ingest] CRM qualification hook error (non-fatal):', err);
+      }
+
+      // ── 2c. Funil CRM automático (etapa inicial) — opt-in global na aba Meta ──
+      if (eventName === 'Lead' && !ruleCrmSent) {
+        try {
+          if (await shouldAutoFunnelLeadForSite(siteKey)) {
+            const crmAuto = buildCrmQualificationCapiPayload({
+              originalCapiEvent: capiPayload,
+              leadEventSource: 'Trajettu',
+              crmEventName: CRM_AUTO_FUNNEL_LEAD_STAGE,
+              crmEventIdSuffix: '_crm_auto_lead',
+            });
+            sendCapiWithRetry(siteKey, crmAuto).catch(() => {});
+          }
+        } catch (err) {
+          console.warn('[Ingest] CRM auto-funnel Lead error (non-fatal):', err);
+        }
       }
 
       // ── 3. Envio GA4 (Server-side) ───────────────────────────────────────
@@ -1423,6 +1447,7 @@ router.post('/batch', cors(), ingestLimiter, async (req, res) => {
         sendCapiWithRetry(siteKey, batchCapiPayload).catch(() => {});
 
         // ── Qualificação CRM (estilo Meta) — aditivo, opt-in por regra ──
+        let ruleCrmSentBatch = false;
         try {
           const ruleIdRaw = (p.event.custom_data ?? {})['_taRuleId'];
           const ruleId =
@@ -1434,6 +1459,7 @@ router.post('/batch', cors(), ingestLimiter, async (req, res) => {
           if (Number.isFinite(ruleId)) {
             const qual = await getCrmQualifyForRule(siteKey, ruleId);
             if (qual?.enabled) {
+              ruleCrmSentBatch = true;
               const includeValueAndCurrency =
                 p.eventName === 'Purchase' &&
                 typeof metaCustomData.value === 'number' &&
@@ -1445,7 +1471,8 @@ router.post('/batch', cors(), ingestLimiter, async (req, res) => {
                   : undefined;
               const crmPayload = buildCrmQualificationCapiPayload({
                 originalCapiEvent: batchCapiPayload,
-                label: qual.label || p.eventName,
+                leadEventSource: resolveCrmLeadEventSource(qual),
+                crmEventName: resolveCrmPipelineEventName(qual),
                 includeValueAndCurrency,
               });
               sendCapiWithRetry(siteKey, crmPayload).catch(() => {});
@@ -1453,6 +1480,22 @@ router.post('/batch', cors(), ingestLimiter, async (req, res) => {
           }
         } catch (err) {
           console.warn('[Ingest/Batch] CRM qualification hook error (non-fatal):', err);
+        }
+
+        if (p.eventName === 'Lead' && !ruleCrmSentBatch) {
+          try {
+            if (await shouldAutoFunnelLeadForSite(siteKey)) {
+              const crmAuto = buildCrmQualificationCapiPayload({
+                originalCapiEvent: batchCapiPayload,
+                leadEventSource: 'Trajettu',
+                crmEventName: CRM_AUTO_FUNNEL_LEAD_STAGE,
+                crmEventIdSuffix: '_crm_auto_lead',
+              });
+              sendCapiWithRetry(siteKey, crmAuto).catch(() => {});
+            }
+          } catch (err) {
+            console.warn('[Ingest/Batch] CRM auto-funnel Lead error (non-fatal):', err);
+          }
         }
 
         ga4Service.sendEvent(siteKey, p.eventName, { ...p.event.custom_data, ...p.event.telemetry }, {
