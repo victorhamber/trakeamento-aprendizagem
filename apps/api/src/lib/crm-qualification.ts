@@ -228,6 +228,10 @@ export function buildCrmQualificationCapiPayload(args: {
     db: userDataIn.db,
     country: userDataIn.country,
     external_id: userDataIn.external_id,
+    // Repassa atribuição Meta (clique + browser). Sem isso, o 2º evento CRM (system_generated)
+    // diluía o % de fbc/fbp no diagnóstico do Gerenciador de eventos.
+    fbp: userDataIn.fbp,
+    fbc: userDataIn.fbc,
   };
 
   // lead_id (Meta Lead Ads) é suportado pelo serializador; só anexamos se vier no original.

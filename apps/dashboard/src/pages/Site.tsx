@@ -3617,50 +3617,69 @@ ${scriptContent}
                           {urlRuleCrmQualify && (
                             <div className="mt-3 space-y-2">
                               <p className="text-[11px] text-zinc-600 dark:text-zinc-400">
-                                Padrão Trajettu: <code className="text-[10px]">event_name</code> = Qualificado,{' '}
-                                <code className="text-[10px]">lead_event_source</code> = Trajettu (ou o que você preencher
-                                abaixo).
+                                <strong className="text-zinc-700 dark:text-zinc-300">Sim.</strong> O Trajettu preenche sozinho: na
+                                Meta vão <strong className="font-medium">Qualificado</strong> (etapa) e{' '}
+                                <strong className="font-medium">Trajettu</strong> (origem do lead). Vale mesmo se você abrir
+                                “Avançado” e deixar os três campos em branco — não precisa digitar nada.
                               </p>
                               <details className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50/80 dark:bg-zinc-900/40 px-3 py-2">
                                 <summary className="cursor-pointer text-xs font-medium text-zinc-700 dark:text-zinc-200 list-none [&::-webkit-details-marker]:hidden">
-                                  Avançado — personalizar etapa, ferramenta e rótulo
+                                  Avançado — só preencha se sua conta/uso pedir nomes diferentes na Meta
                                 </summary>
+                                <p className="mt-2 text-[11px] text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                                  Os três campos são opcionais: <strong className="text-zinc-600 dark:text-zinc-300">tudo vazio =
+                                  Trajettu envia o pacote completo no padrão</strong> (
+                                  <code className="text-[10px]">event_name</code> Qualificado,{' '}
+                                  <code className="text-[10px]">lead_event_source</code> Trajettu). Se você preencher só um deles,
+                                  só aquele valor substitui o padrão correspondente. Ordem para origem:{' '}
+                                  <strong>Ferramenta</strong> → senão <strong>Rótulo</strong> → senão <strong>Trajettu</strong>.
+                                </p>
                                 <div className="mt-3 space-y-3 pt-1">
                                   <div>
-                                    <label htmlFor="dash-site-url-rule-crm-event-name" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">
-                                      Etapa (<code className="text-[10px]">event_name</code>):
+                                    <label htmlFor="dash-site-url-rule-crm-event-name" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-0.5">
+                                      Nome da etapa no funil na Meta (<code className="text-[10px]">event_name</code>)
                                     </label>
+                                    <p className="text-[10px] text-zinc-500 dark:text-zinc-500 mb-1.5">
+                                      É o “nome do estágio” que a Meta associa a esta conversão. Vazio = enviamos «Qualificado».
+                                    </p>
                                     <input
                                       id="dash-site-url-rule-crm-event-name"
                                       value={urlRuleCrmEventName}
                                       onChange={(e) => setUrlRuleCrmEventName(e.target.value)}
-                                      placeholder="Vazio = Qualificado (padrão)"
+                                      placeholder='Ex.: "Oportunidade" ou "Agendou chamada" — vazio usa Qualificado'
                                       maxLength={100}
                                       className={inputCls}
                                     />
                                   </div>
                                   <div>
-                                    <label htmlFor="dash-site-url-rule-crm-tool" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">
-                                      Ferramenta (<code className="text-[10px]">lead_event_source</code>):
+                                    <label htmlFor="dash-site-url-rule-crm-tool" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-0.5">
+                                      Ferramenta de CRM (<code className="text-[10px]">lead_event_source</code>)
                                     </label>
+                                    <p className="text-[10px] text-zinc-500 dark:text-zinc-500 mb-1.5">
+                                      Nome do sistema de CRM (como na doc Meta). Vazio = tentamos o rótulo abaixo; se também
+                                      vazio, enviamos «Trajettu».
+                                    </p>
                                     <input
                                       id="dash-site-url-rule-crm-tool"
                                       value={urlRuleCrmTool}
                                       onChange={(e) => setUrlRuleCrmTool(e.target.value)}
-                                      placeholder="Vazio = Trajettu após rótulo"
+                                      placeholder='Ex.: "HubSpot", "RD Station" — ou deixe em branco'
                                       maxLength={120}
                                       className={inputCls}
                                     />
                                   </div>
                                   <div>
-                                    <label htmlFor="dash-site-url-rule-crm-label" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">
-                                      Rótulo (se ferramenta vazia, antes de Trajettu):
+                                    <label htmlFor="dash-site-url-rule-crm-label" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-0.5">
+                                      Rótulo / origem extra (<code className="text-[10px]">lead_event_source</code> alternativo)
                                     </label>
+                                    <p className="text-[10px] text-zinc-500 dark:text-zinc-500 mb-1.5">
+                                      Só entra se «Ferramenta» estiver vazio — útil para marcar fonte (ex.: página ou campanha).
+                                    </p>
                                     <input
                                       id="dash-site-url-rule-crm-label"
                                       value={urlRuleCrmLabel}
                                       onChange={(e) => setUrlRuleCrmLabel(e.target.value)}
-                                      placeholder="Opcional"
+                                      placeholder='Ex.: "Landing captura" — ou deixe em branco para usar só Trajettu'
                                       maxLength={120}
                                       className={inputCls}
                                     />
@@ -4022,49 +4041,65 @@ ${scriptContent}
                           {buttonRuleCrmQualify && (
                             <div className="mt-3 space-y-2">
                               <p className="text-[11px] text-zinc-600 dark:text-zinc-400">
-                                Padrão Trajettu: <code className="text-[10px]">event_name</code> = Qualificado,{' '}
-                                <code className="text-[10px]">lead_event_source</code> = Trajettu.
+                                <strong className="text-zinc-700 dark:text-zinc-300">Sim.</strong> Com os três em branco, o
+                                Trajettu envia <strong className="font-medium">Qualificado</strong> e{' '}
+                                <strong className="font-medium">Trajettu</strong> para a Meta — não precisa preencher nada no
+                                avançado.
                               </p>
                               <details className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50/80 dark:bg-zinc-900/40 px-3 py-2">
                                 <summary className="cursor-pointer text-xs font-medium text-zinc-700 dark:text-zinc-200 list-none [&::-webkit-details-marker]:hidden">
-                                  Avançado — personalizar etapa, ferramenta e rótulo
+                                  Avançado — só preencha se sua conta/uso pedir nomes diferentes na Meta
                                 </summary>
+                                <p className="mt-2 text-[11px] text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                                  <strong className="text-zinc-600 dark:text-zinc-300">Tudo vazio = padrão Trajettu completo.</strong>{' '}
+                                  Se preencher só um campo, só ele substitui o padrão daquele pedaço. Origem na Meta:{' '}
+                                  <strong>Ferramenta</strong> → <strong>Rótulo</strong> → <strong>Trajettu</strong>.
+                                </p>
                                 <div className="mt-3 space-y-3 pt-1">
                                   <div>
-                                    <label htmlFor="dash-site-btn-rule-crm-event-name" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">
-                                      Etapa (<code className="text-[10px]">event_name</code>):
+                                    <label htmlFor="dash-site-btn-rule-crm-event-name" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-0.5">
+                                      Nome da etapa no funil na Meta (<code className="text-[10px]">event_name</code>)
                                     </label>
+                                    <p className="text-[10px] text-zinc-500 dark:text-zinc-500 mb-1.5">
+                                      Estágio que a Meta mostra nesta conversão. Vazio = «Qualificado».
+                                    </p>
                                     <input
                                       id="dash-site-btn-rule-crm-event-name"
                                       value={buttonRuleCrmEventName}
                                       onChange={(e) => setButtonRuleCrmEventName(e.target.value)}
-                                      placeholder="Vazio = Qualificado (padrão)"
+                                      placeholder='Ex.: "Oportunidade" — vazio usa Qualificado'
                                       maxLength={100}
                                       className={inputCls}
                                     />
                                   </div>
                                   <div>
-                                    <label htmlFor="dash-site-btn-rule-crm-tool" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">
-                                      Ferramenta (<code className="text-[10px]">lead_event_source</code>):
+                                    <label htmlFor="dash-site-btn-rule-crm-tool" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-0.5">
+                                      Ferramenta de CRM (<code className="text-[10px]">lead_event_source</code>)
                                     </label>
+                                    <p className="text-[10px] text-zinc-500 dark:text-zinc-500 mb-1.5">
+                                      Sistema de CRM (doc Meta). Vazio = usa rótulo abaixo; ambos vazios = «Trajettu».
+                                    </p>
                                     <input
                                       id="dash-site-btn-rule-crm-tool"
                                       value={buttonRuleCrmTool}
                                       onChange={(e) => setButtonRuleCrmTool(e.target.value)}
-                                      placeholder="Vazio = Trajettu após rótulo"
+                                      placeholder='Ex.: "HubSpot" — ou deixe em branco'
                                       maxLength={120}
                                       className={inputCls}
                                     />
                                   </div>
                                   <div>
-                                    <label htmlFor="dash-site-btn-rule-crm-label" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">
-                                      Rótulo (se ferramenta vazia, antes de Trajettu):
+                                    <label htmlFor="dash-site-btn-rule-crm-label" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-0.5">
+                                      Rótulo / origem extra (<code className="text-[10px]">lead_event_source</code> alternativo)
                                     </label>
+                                    <p className="text-[10px] text-zinc-500 dark:text-zinc-500 mb-1.5">
+                                      Só se «Ferramenta» estiver vazio (ex.: nome da página ou da oferta).
+                                    </p>
                                     <input
                                       id="dash-site-btn-rule-crm-label"
                                       value={buttonRuleCrmLabel}
                                       onChange={(e) => setButtonRuleCrmLabel(e.target.value)}
-                                      placeholder="Opcional"
+                                      placeholder='Ex.: "Botão página de vendas" — ou em branco'
                                       maxLength={120}
                                       className={inputCls}
                                     />
