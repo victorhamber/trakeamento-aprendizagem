@@ -120,10 +120,10 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
   };
 
   return (
-    <div className="min-h-screen bg-[#0B0E14] text-slate-100 grid grid-cols-1 lg:grid-cols-[260px_1fr]">
+    <div className="min-h-screen bg-background text-foreground grid grid-cols-1 lg:grid-cols-[260px_1fr]">
 
       {/* ── Desktop Sidebar ── */}
-      <aside className="hidden lg:flex flex-col bg-[#0B0E14] border-r border-[#1E232D] p-5 select-none">
+      <aside className="hidden lg:flex flex-col bg-background border-r border-border p-5 select-none">
         <Link to="/dashboard" className="flex items-center gap-3 px-2 mb-7 select-none">
           <img src="/logo-icon.png?v=2" alt="Trajettu" className="h-12 w-12 object-contain pointer-events-none" />
           <div className="leading-tight">
@@ -164,8 +164,8 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
       </aside>
 
       {/* ── Main ── */}
-      <main className="flex flex-col min-w-0 bg-[#0B0E14]">
-        <header className="sticky top-0 z-10 backdrop-blur-xl border-b border-[#1E232D] bg-[#0B0E14]/90 select-none">
+      <main className="flex flex-col min-w-0 bg-background">
+        <header className="sticky top-0 z-10 backdrop-blur-xl border-b border-border bg-background/90 select-none">
           <div className="w-full px-4 sm:px-8 py-3 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <button
@@ -208,8 +208,8 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
                       aria-label="Fechar lista de notificações"
                       title="Fechar"
                     />
-                    <div className="absolute right-0 mt-2 w-80 max-h-96 overflow-y-auto rounded-2xl border shadow-2xl z-40 bg-[#12161F] border-[#1E232D] shadow-black/50">
-                      <div className="px-4 py-3 border-b text-sm font-semibold text-zinc-200 border-[#1E232D]">
+                    <div className="absolute right-0 mt-2 w-80 max-h-96 overflow-y-auto rounded-2xl border shadow-2xl z-40 bg-card border-border shadow-black/50">
+                      <div className="px-4 py-3 border-b text-sm font-semibold text-zinc-200 border-border">
                         Notificações
                       </div>
                       {notifications.length === 0 ? (
@@ -226,7 +226,7 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
                                 setSelectedNotification(n);
                                 setNotifOpen(false);
                               }}
-                              className={`w-full text-left px-4 py-3 border-b transition-colors border-[#1E232D]/80 ${n.is_read ? 'opacity-50' : 'hover:bg-white/5'}`}
+                              className={`w-full text-left px-4 py-3 border-b transition-colors border-border/80 ${n.is_read ? 'opacity-50' : 'hover:bg-white/5'}`}
                             >
                               <div className="flex items-start gap-2">
                                 {!n.is_read && <div className="mt-1.5 w-2 h-2 rounded-full bg-blue-500 shrink-0" />}
@@ -265,7 +265,7 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
             aria-label="Fechar menu"
             title="Fechar"
           />
-          <div className="absolute inset-y-0 left-0 w-72 max-w-full p-4 flex flex-col bg-[#0B0E14] border-r border-white/10 select-none">
+          <div className="absolute inset-y-0 left-0 w-72 max-w-full p-4 flex flex-col bg-background border-r border-white/10 select-none">
             <Link
               to="/dashboard"
               onClick={() => setMobileOpen(false)}
@@ -314,7 +314,7 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
             aria-label="Fechar notificação"
             title="Fechar"
           />
-          <div className="relative w-full max-w-lg rounded-3xl shadow-2xl p-6 sm:p-8 animate-in fade-in zoom-in-95 duration-200 bg-[#12161F] border border-[#1E232D]">
+          <div className="relative w-full max-w-lg rounded-3xl shadow-2xl p-6 sm:p-8 animate-in fade-in zoom-in-95 duration-200 bg-card border border-border">
             <div className="flex items-start justify-between gap-4 mb-6">
               <div className="flex-1 min-w-0">
                 <div className="text-xs font-bold tracking-wider mb-2 text-indigo-400">
@@ -338,7 +338,7 @@ export const Layout = ({ title, children, right }: { title: string; children: Re
 
             <div className={`-mt-2 ${selectedNotification.image_url ? 'mb-6' : 'mb-6'}`}>
               {selectedNotification.image_url && (
-                <div className="mb-6 -mx-6 sm:-mx-8 overflow-hidden rounded-none border-y border-[#1E232D]">
+                <div className="mb-6 -mx-6 sm:-mx-8 overflow-hidden rounded-none border-y border-border">
                   {selectedNotification.image_link ? (
                     <a href={selectedNotification.image_link} target="_blank" rel="noopener noreferrer" className="block w-full bg-black/5">
                       <img src={selectedNotification.image_url} alt="Cover" className="w-full h-auto max-h-[250px] object-cover" />

@@ -358,7 +358,7 @@ function LeadJourneyDetailView({ lead }: { lead: LeadDetail['lead'] }) {
 
       <TechnicalAccordion>
         <div className="space-y-4 pt-3">
-          <div className="rounded-lg border border-slate-800 bg-[#0B0E14] p-3">
+          <div className="rounded-lg border border-slate-800 bg-zinc-950 p-3">
             <div className="text-[11px] font-semibold text-slate-300 mb-2">Cadastro</div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-slate-400">
               <div>
@@ -380,7 +380,7 @@ function LeadJourneyDetailView({ lead }: { lead: LeadDetail['lead'] }) {
             </div>
           </div>
 
-          <div className="rounded-lg border border-slate-800 bg-[#0B0E14] p-3">
+          <div className="rounded-lg border border-slate-800 bg-zinc-950 p-3">
             <div className="text-[11px] font-semibold text-slate-300 mb-2">UTMs (payload)</div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
               {(['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'click_id'] as const).map((k) => (
@@ -394,7 +394,7 @@ function LeadJourneyDetailView({ lead }: { lead: LeadDetail['lead'] }) {
             </div>
           </div>
 
-          <div className="rounded-lg border border-slate-800 bg-[#0B0E14] p-3">
+          <div className="rounded-lg border border-slate-800 bg-zinc-950 p-3">
             <div className="text-[11px] font-semibold text-slate-300 mb-2">IDs</div>
             <div className="space-y-1 text-[11px]">
               <ValueRow label="fbclid" value={pickStringAny('fbclid', lead.data, lead.user_data)} />
@@ -404,11 +404,11 @@ function LeadJourneyDetailView({ lead }: { lead: LeadDetail['lead'] }) {
           </div>
 
           {history.length ? (
-            <div className="rounded-lg border border-slate-800 bg-[#0B0E14] p-3">
+            <div className="rounded-lg border border-slate-800 bg-zinc-950 p-3">
               <div className="text-[11px] font-semibold text-slate-300 mb-2">Histórico completo (tabela)</div>
               <div className="max-h-[240px] overflow-auto rounded-md border border-slate-800">
                 <table className="w-full text-[11px]">
-                  <thead className="sticky top-0 bg-[#12161F] border-b border-slate-800">
+                  <thead className="sticky top-0 bg-zinc-900 border-b border-slate-800">
                     <tr>
                       <th className="text-left font-semibold px-3 py-2 text-slate-400 w-[160px]">Quando</th>
                       <th className="text-left font-semibold px-3 py-2 text-slate-400">Página</th>
@@ -445,7 +445,7 @@ function LeadJourneyDetailView({ lead }: { lead: LeadDetail['lead'] }) {
             </div>
           ) : null}
 
-          <details className="rounded-lg border border-slate-800 bg-[#0B0E14] p-3">
+          <details className="rounded-lg border border-slate-800 bg-zinc-950 p-3">
             <summary className="cursor-pointer text-[11px] text-slate-400 hover:text-slate-200">Ver JSON bruto</summary>
             <pre className="mt-2 max-h-[280px] overflow-auto rounded-md border border-slate-800 bg-slate-950/50 p-2 text-[10px] text-slate-400 whitespace-pre-wrap break-all">
               {JSON.stringify(lead.data || {}, null, 2)}

@@ -413,7 +413,7 @@ function BuyerJourneyDetailView({
 
       <TechnicalAccordion>
         <div className="space-y-4 pt-3">
-          <div className="rounded-lg border border-slate-800 bg-[#0B0E14] p-3">
+          <div className="rounded-lg border border-slate-800 bg-zinc-950 p-3">
             <div className="text-[11px] font-semibold text-slate-300 mb-2">Identificação</div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-slate-400">
               <div>
@@ -435,7 +435,7 @@ function BuyerJourneyDetailView({
             </div>
           </div>
 
-          <div className="rounded-lg border border-slate-800 bg-[#0B0E14] p-3">
+          <div className="rounded-lg border border-slate-800 bg-zinc-950 p-3">
             <div className="text-[11px] font-semibold text-slate-300 mb-2">Contato (webhook)</div>
             <div className="text-[11px] text-slate-300 space-y-1">
               <div>{detail.buyer.customer_name || '—'}</div>
@@ -444,7 +444,7 @@ function BuyerJourneyDetailView({
             </div>
           </div>
 
-          <div className="rounded-lg border border-slate-800 bg-[#0B0E14] p-3">
+          <div className="rounded-lg border border-slate-800 bg-zinc-950 p-3">
             <div className="text-[11px] font-semibold text-slate-300 mb-2">User-Agent</div>
             {detail.behavior.user_agent?.effective_user_agent ? (
               <pre className="max-h-32 overflow-auto rounded-md border border-slate-800 bg-slate-950/50 p-2 text-[10px] text-slate-400 whitespace-pre-wrap break-all">
@@ -456,7 +456,7 @@ function BuyerJourneyDetailView({
           </div>
 
           {detail.behavior.last_touch ? (
-            <div className="rounded-lg border border-slate-800 bg-[#0B0E14] p-3">
+            <div className="rounded-lg border border-slate-800 bg-zinc-950 p-3">
               <div className="text-[11px] font-semibold text-slate-300 mb-2">Último toque (UTMs)</div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
                 {(['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'click_id'] as const).map((k) => (
@@ -472,7 +472,7 @@ function BuyerJourneyDetailView({
           ) : null}
 
           {(detail.behavior.meta_ad_touch_trail?.length ?? 0) > 0 ? (
-            <div className="rounded-lg border border-slate-800 bg-[#0B0E14] p-3">
+            <div className="rounded-lg border border-slate-800 bg-zinc-950 p-3">
               <div className="text-[11px] font-semibold text-slate-300 mb-2">Trilha de toques (detalhe)</div>
               <div className="space-y-2 max-h-48 overflow-y-auto text-[10px] text-slate-400">
                 {(detail.behavior.meta_ad_touch_trail || []).map((seg, idx) => (
@@ -487,7 +487,7 @@ function BuyerJourneyDetailView({
             </div>
           ) : null}
 
-          <div className="rounded-lg border border-slate-800 bg-[#0B0E14] p-3">
+          <div className="rounded-lg border border-slate-800 bg-zinc-950 p-3">
             <div className="flex items-center justify-between gap-2 mb-2">
               <div className="text-[11px] font-semibold text-slate-300">Compras (todas)</div>
               <div className="text-[10px] text-slate-500">

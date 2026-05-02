@@ -17,8 +17,8 @@ import {
   X,
 } from 'lucide-react';
 
-const border = 'border-[#1E232D]';
-const cardBg = 'bg-[#12161F]';
+const border = 'border-zinc-800';
+const cardBg = 'bg-zinc-900';
 const muted = 'text-slate-400';
 const text = 'text-slate-100';
 
@@ -43,7 +43,7 @@ export function JourneyModalFrame({
       <button type="button" className="absolute inset-0 bg-black/75 backdrop-blur-[2px]" onClick={onClose} aria-label="Fechar" />
       <div className="relative w-full max-w-6xl">
         <div
-          className={`rounded-2xl ${border} border bg-[#0B0E14] shadow-2xl overflow-hidden max-h-[calc(100vh-40px)] flex flex-col ${text}`}
+          className={`rounded-2xl ${border} border bg-zinc-950 shadow-2xl overflow-hidden max-h-[calc(100vh-40px)] flex flex-col ${text}`}
         >
           {header}
           <div className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-5">{children}</div>
