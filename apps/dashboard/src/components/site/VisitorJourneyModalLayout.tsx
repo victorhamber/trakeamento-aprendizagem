@@ -17,6 +17,8 @@ import {
   X,
 } from 'lucide-react';
 
+import { FUNNEL_BAR_BG_IMAGE } from '../../lib/funnel-bar-gradient';
+
 const border = 'border-zinc-800';
 const cardBg = 'bg-zinc-900';
 const muted = 'text-slate-400';
@@ -388,8 +390,11 @@ export function TopPagesGradientBars({
             </div>
             <div className="h-1.5 rounded-full bg-slate-800 overflow-hidden">
               <div
-                className="h-full rounded-full bg-gradient-to-r from-sky-500 via-indigo-500 to-violet-500"
-                style={{ width: `${Math.max(8, (r.count / max) * 100)}%` }}
+                className="h-full rounded-full min-w-0"
+                style={{
+                  width: `${Math.max(8, (r.count / max) * 100)}%`,
+                  backgroundImage: FUNNEL_BAR_BG_IMAGE,
+                }}
               />
             </div>
           </div>

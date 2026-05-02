@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { api } from '../../lib/api';
+import { FUNNEL_BAR_BG_IMAGE } from '../../lib/funnel-bar-gradient';
 import { labelForAnalysisProfile, type ReportWizardGenerateContext } from '../../lib/analysis-profile';
 import { ReportWizard } from './ReportWizard';
 
@@ -504,8 +505,8 @@ function FunnelBars({ f, objectiveLabel }: { f: FunnelRow['funnel']; objectiveLa
             </div>
             <div className="h-1.5 rounded-full bg-slate-800 overflow-hidden">
               <div
-                className="h-full rounded-full bg-gradient-to-r from-sky-500 via-indigo-500 to-violet-500"
-                style={{ width: `${widthPct}%` }}
+                className="h-full rounded-full min-w-0"
+                style={{ width: `${widthPct}%`, backgroundImage: FUNNEL_BAR_BG_IMAGE }}
               />
             </div>
           </div>
