@@ -1834,13 +1834,32 @@ router.get('/:siteId/buyers', requireAuth, async (req, res) => {
           v.fbc AS v_fbc,
           v.last_group_tag AS v_group_tag
         FROM buyers b
-        LEFT JOIN site_visitors v
-          ON v.site_key = $1
-          AND (
-            (v.email_hash IS NOT NULL AND v.email_hash = b.buyer_key)
-            OR (v.fbp IS NOT NULL AND v.fbp = b.buyer_key)
-            OR (v.fbc IS NOT NULL AND v.fbc = b.buyer_key)
-          )
+        LEFT JOIN LATERAL (
+          SELECT
+            sv.external_id,
+            sv.email_hash,
+            sv.fbp,
+            sv.fbc,
+            sv.last_group_tag
+          FROM site_visitors sv
+          WHERE sv.site_key = $1
+            AND (
+              (sv.email_hash IS NOT NULL AND sv.email_hash = b.buyer_key)
+              OR (sv.fbp IS NOT NULL AND sv.fbp = b.buyer_key)
+              OR (sv.fbc IS NOT NULL AND sv.fbc = b.buyer_key)
+            )
+          ORDER BY
+            CASE
+              WHEN NULLIF(BTRIM(b.last_purchase_external_id::text), '') IS NOT NULL
+                AND BTRIM(sv.external_id::text) = BTRIM(b.last_purchase_external_id::text)
+              THEN 0
+              ELSE 1
+            END,
+            CASE WHEN position('eid_' in sv.external_id::text) = 1 THEN 0 ELSE 1 END,
+            sv.last_seen_at DESC NULLS LAST,
+            sv.external_id
+          LIMIT 1
+        ) v ON true
       )
       SELECT
         buyer_key,
