@@ -6,6 +6,7 @@ import {
   JourneyModalFrame,
   JourneyModalHeader,
   JourneyTimeline,
+  type TimelineItem,
   LastAdPanel,
   Megaphone,
   MetricCard,
@@ -70,6 +71,12 @@ function dt(iso: string | null | undefined) {
   } catch {
     return iso;
   }
+}
+
+function timelineSortMs(iso: string | null | undefined): number {
+  if (!iso) return 0;
+  const ms = Date.parse(iso);
+  return Number.isFinite(ms) ? ms : 0;
 }
 
 function deviceLabel(d: LeadRow['device']) {
@@ -250,8 +257,12 @@ function leadProbableSource(row: LeadRow): string {
 
 function LeadJourneyDetailView({ lead }: { lead: LeadDetail['lead'] }) {
   const history = Array.isArray(lead.history) ? lead.history : [];
+  const historyChrono = [...history].sort(
+    (a, b) => timelineSortMs(String(a.event_time || '')) - timelineSortMs(String(b.event_time || ''))
+  );
+
   const slugSteps: string[] = [];
-  for (const h of history) {
+  for (const h of historyChrono) {
     const label = leadHistoryStepLabel(h);
     if (slugSteps[slugSteps.length - 1] !== label) slugSteps.push(label);
   }
@@ -267,25 +278,36 @@ function LeadJourneyDetailView({ lead }: { lead: LeadDetail['lead'] }) {
     .slice(0, 8)
     .map(([label, count]) => ({ label, count }));
 
-  const timelineItems = history.slice(0, 40).map((h, idx) => {
-    const slug = leadHistoryStepLabel(h);
+  const recentHist = historyChrono.slice(-40);
+  type MergedLead = { kind: 'h'; t: string; h: LeadHistoryItem } | { kind: 'lead'; t: string };
+  const merged: MergedLead[] = [
+    ...recentHist.map((h) => ({ kind: 'h' as const, t: String(h.event_time || ''), h })),
+    { kind: 'lead' as const, t: String(lead.event_time || '') },
+  ].sort((a, b) => timelineSortMs(a.t) - timelineSortMs(b.t));
+
+  const leadEmail = leadPrimaryEmail(lead.data || {});
+  let histOrdinal = 0;
+  const timelineItems: TimelineItem[] = merged.map((row) => {
+    if (row.kind === 'lead') {
+      return {
+        at: dt(row.t),
+        title: 'Lead capturado',
+        subtitle: leadEmail !== '—' ? leadEmail : undefined,
+        highlight: true,
+        icon: 'check',
+      };
+    }
+    const idx = histOrdinal++;
+    const slug = leadHistoryStepLabel(row.h);
     const title = idx === 0 ? `Entrou por ${slug}` : `Visitou ${slug}`;
-    const subtitle = String(h.page_title || '').trim() || undefined;
+    const subtitle = String(row.h.page_title || '').trim() || undefined;
     return {
-      at: dt(String(h.event_time || '')),
+      at: dt(String(row.h.event_time || '')),
       title,
       subtitle,
       highlight: false,
       icon: timelineIconFromPageSlug(slug, idx),
     };
-  });
-  const leadEmail = leadPrimaryEmail(lead.data || {});
-  timelineItems.push({
-    at: dt(String(lead.event_time || '')),
-    title: 'Lead capturado',
-    subtitle: leadEmail !== '—' ? leadEmail : undefined,
-    highlight: true,
-    icon: 'check',
   });
 
   const m = lead.meta_attribution;
@@ -415,7 +437,7 @@ function LeadJourneyDetailView({ lead }: { lead: LeadDetail['lead'] }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {history.slice(0, 40).map((h, idx) => {
+                    {historyChrono.slice(-40).map((h, idx) => {
                       const when = dt(String(h?.event_time || ''));
                       const page =
                         String(h?.page_path || '').trim() ||

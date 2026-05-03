@@ -5,6 +5,7 @@ import {
   JourneyModalFrame,
   JourneyModalHeader,
   JourneyTimeline,
+  type TimelineItem,
   LastAdPanel,
   Megaphone,
   MetricCard,
@@ -73,7 +74,7 @@ type BuyerDetail = {
     pageviews_timeline_before_last_purchase?: Array<{
       at: string;
       url: string;
-      /** Quantidade de PageViews da mesma página (slug) antes da última compra; linha = visita mais recente. */
+      /** Quantidade de PageViews da mesma página (slug) antes da última compra; a API pode vir fora de ordem — a UI ordena por `at`. */
       visit_count?: number;
       utm?: Record<string, string> | null;
       meta_attribution?: null | {
@@ -273,6 +274,12 @@ function dt(iso: string | null | undefined) {
   }
 }
 
+function timelineSortMs(iso: string | null | undefined): number {
+  if (!iso) return 0;
+  const ms = Date.parse(iso);
+  return Number.isFinite(ms) ? ms : 0;
+}
+
 function buyerProbableSource(d: BuyerDetail): string {
   const lt = (d.buyer.last_traffic_source || '').trim();
   if (lt) return lt;
@@ -285,7 +292,9 @@ function buyerProbableSource(d: BuyerDetail): string {
 }
 
 function buyerPathSteps(d: BuyerDetail): string[] {
-  const timeline = d.behavior.pageviews_timeline_before_last_purchase || [];
+  const timeline = [...(d.behavior.pageviews_timeline_before_last_purchase || [])].sort(
+    (a, b) => timelineSortMs(a.at) - timelineSortMs(b.at)
+  );
   const slugs = timeline.map((pv) => pageSlugLabelFromUrl(pv.url));
   const out: string[] = [];
   for (const s of slugs) {
@@ -312,11 +321,36 @@ function BuyerJourneyDetailView({
   const st = String(last?.status || '').toLowerCase();
   const approved = ['approved', 'paid', 'completed', 'active'].includes(st);
 
-  const timelineItems = (detail.behavior.pageviews_timeline_before_last_purchase || []).slice(0, 50).map((pv, idx) => {
+  type PvRow = NonNullable<BuyerDetail['behavior']['pageviews_timeline_before_last_purchase']>[number];
+  const pageviewsWindow = [...(detail.behavior.pageviews_timeline_before_last_purchase || [])]
+    .sort((a, b) => timelineSortMs(a.at) - timelineSortMs(b.at))
+    .slice(-50);
+
+  type MergedTimeline = { kind: 'pv'; atIso: string; pv: PvRow } | { kind: 'purchase'; atIso: string };
+  const merged: MergedTimeline[] = pageviewsWindow.map((pv) => ({ kind: 'pv', atIso: pv.at, pv }));
+  if (last) merged.push({ kind: 'purchase', atIso: last.purchased_at });
+  merged.sort((a, b) => timelineSortMs(a.atIso) - timelineSortMs(b.atIso));
+
+  let pvOrdinal = 0;
+  const timelineItems: TimelineItem[] = merged.map((row) => {
+    if (row.kind === 'purchase') {
+      if (!last) {
+        return { at: '—', title: 'Compra', highlight: true, icon: 'check' };
+      }
+      return {
+        at: dt(last.purchased_at),
+        title: approved ? 'Compra aprovada' : `Compra · ${purchaseStatusLabel(last.status)}`,
+        subtitle: last.order_id ? `Pedido ${last.order_id}` : undefined,
+        highlight: true,
+        icon: 'check',
+      };
+    }
+    const pv = row.pv;
     const slug = pageSlugLabelFromUrl(pv.url);
     const utmS = formatPageviewAttributionSummary(pv.utm);
     const metaL = formatJourneyMetaAttribution(pv.meta_attribution);
     const subtitle = metaL ? metaL : utmS || undefined;
+    const idx = pvOrdinal++;
     const title = idx === 0 ? `Entrou por ${slug}` : `Visitou ${slug}`;
     return {
       at: dt(pv.at),
@@ -326,15 +360,6 @@ function BuyerJourneyDetailView({
       icon: timelineIconFromPageSlug(slug, idx),
     };
   });
-  if (last) {
-    timelineItems.push({
-      at: dt(last.purchased_at),
-      title: approved ? 'Compra aprovada' : `Compra · ${purchaseStatusLabel(last.status)}`,
-      subtitle: last.order_id ? `Pedido ${last.order_id}` : undefined,
-      highlight: true,
-      icon: 'check',
-    });
-  }
 
   const topRows = detail.behavior.top_pages_before_last_purchase.slice(0, 8).map((p) => ({
     label: pageSlugLabelFromUrl(p.url),
