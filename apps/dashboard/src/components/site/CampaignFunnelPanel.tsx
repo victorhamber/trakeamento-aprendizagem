@@ -503,7 +503,7 @@ function FunnelBars({ f, objectiveLabel }: { f: FunnelRow['funnel']; objectiveLa
               </span>
               <span className="tabular-nums font-semibold text-indigo-300 shrink-0">{formatNumber(it.v)}</span>
             </div>
-            <div className="h-1.5 rounded-full bg-slate-800 overflow-hidden">
+            <div className="h-2.5 rounded-full bg-slate-800 overflow-hidden">
               <div
                 className="h-full rounded-full min-w-0"
                 style={{ width: `${widthPct}%`, backgroundImage: FUNNEL_BAR_BG_IMAGE }}
