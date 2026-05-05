@@ -232,6 +232,55 @@ function visitorPiiHashScalar(val: string[] | undefined): string | undefined {
   return s.length > 64 ? s.slice(0, 64) : s;
 }
 
+/** Mescla PII faltante no CAPI a partir de `site_visitors` (ex.: lead já cadastrou no formulário Trajettu). */
+type SiteVisitorPiiRow = {
+  email_hash: string | null;
+  phone_hash: string | null;
+  first_name_hash: string | null;
+  last_name_hash: string | null;
+  city: string | null;
+  state: string | null;
+  country: string | null;
+};
+
+async function lookupSiteVisitorForCapiMerge(
+  siteKey: string,
+  keys: { externalId: string; fbp: string; fbc: string }
+): Promise<SiteVisitorPiiRow | null> {
+  const ext = keys.externalId.trim();
+  const fbpK = keys.fbp.trim();
+  const fbcK = keys.fbc.trim();
+  if (!ext && !fbpK && !fbcK) return null;
+  try {
+    const { rows } = await pool.query<SiteVisitorPiiRow>(
+      `SELECT email_hash, phone_hash, first_name_hash, last_name_hash, city, state, country
+       FROM site_visitors
+       WHERE site_key = $1
+         AND (
+           ($2::text <> '' AND external_id = $2)
+           OR ($3::text <> '' AND fbp IS NOT NULL AND fbp = $3)
+           OR ($4::text <> '' AND fbc IS NOT NULL AND fbc = $4)
+         )
+       ORDER BY last_seen_at DESC NULLS LAST
+       LIMIT 1`,
+      [siteKey, ext, fbpK, fbcK]
+    );
+    const row = rows[0];
+    if (!row) return null;
+    const hasAny =
+      row.email_hash ||
+      row.phone_hash ||
+      row.first_name_hash ||
+      row.last_name_hash ||
+      row.city ||
+      row.state ||
+      row.country;
+    return hasAny ? row : null;
+  } catch {
+    return null;
+  }
+}
+
 function firstNonEmptyString(val: unknown): string | undefined {
   if (typeof val === 'string') {
     const t = val.trim();
@@ -777,20 +826,51 @@ async function buildCapiUserData(
 
   // Helper to wrap in array (Meta CAPI requires arrays for PII fields, except for external_id/fbc/fbp)
   const wrap = (val: string | undefined): string[] | undefined => (val ? [val] : undefined);
-  const em1 = pick('em');
-  const ph1 = pick('ph');
-  const derivedExternalId = externalIdRaw ? String(externalIdRaw).trim() : (em1 || ph1);
+  let em1 = pick('em');
+  let ph1 = pick('ph');
+  let fnOut = fn1;
+  let lnOut = ln1;
+  let ctOut = ct;
+  let stOut = st;
+  let countryOut = countryCapi;
+
+  const extTrim = externalIdRaw ? String(externalIdRaw).trim() : '';
+  const fbpTrim = (fbp || '').trim();
+  const fbcTrim = (fbc || '').trim();
+  const wantVisitorMerge =
+    (!em1 || !ph1 || !fnOut || !lnOut || !ctOut || !stOut || !countryOut) &&
+    (extTrim.length > 0 || fbpTrim.length > 0 || fbcTrim.length > 0);
+
+  if (wantVisitorMerge) {
+    const row = await lookupSiteVisitorForCapiMerge(siteKey, {
+      externalId: extTrim,
+      fbp: fbpTrim,
+      fbc: fbcTrim,
+    });
+    if (row) {
+      const lh = (s: string | null | undefined) => (s && String(s).trim() ? String(s).trim().toLowerCase() : '');
+      if (!em1 && row.email_hash) em1 = lh(row.email_hash);
+      if (!ph1 && row.phone_hash) ph1 = lh(row.phone_hash);
+      if (!fnOut && row.first_name_hash) fnOut = lh(row.first_name_hash);
+      if (!lnOut && row.last_name_hash) lnOut = lh(row.last_name_hash);
+      if (!ctOut && row.city) ctOut = hashPii(normalizers.ct(String(row.city)));
+      if (!stOut && row.state) stOut = hashPii(normalizers.st(String(row.state)));
+      if (!countryOut && row.country) countryOut = hashPii(normalizers.country(String(row.country)));
+    }
+  }
+
+  const derivedExternalId = extTrim || em1 || ph1;
 
   return {
     client_ip_address: clientIp,
     client_user_agent: clientUserAgent,
     em: wrap(em1),
     ph: wrap(ph1),
-    fn: wrap(fn1),
-    ln: wrap(ln1),
-    ct: wrap(ct),
-    st: wrap(st),
-    country: wrap(countryCapi),
+    fn: wrap(fnOut),
+    ln: wrap(lnOut),
+    ct: wrap(ctOut),
+    st: wrap(stOut),
+    country: wrap(countryOut),
     zp: wrap(zp),
     db: wrap(db),
     fbp,

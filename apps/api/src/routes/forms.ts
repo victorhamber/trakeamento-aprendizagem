@@ -240,6 +240,8 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
         const emailHash = email ? CapiService.hash(String(email).trim().toLowerCase()) : null;
         const phoneDigits = phone ? String(phone).replace(/\D/g, '') : '';
         const phoneHash = phoneDigits ? CapiService.hash(phoneDigits) : null;
+        const firstNameHash = fn ? CapiService.hash(String(fn).trim()) : null;
+        const lastNameHash = ln ? CapiService.hash(String(ln).trim()) : null;
         const externalId = typeof userData.external_id === 'string' && userData.external_id.trim()
           ? userData.external_id.trim()
           : (emailHash || phoneHash);
@@ -260,16 +262,18 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
           await pool.query(
             `
               INSERT INTO site_visitors (
-                site_key, external_id, fbc, fbp, email_hash, phone_hash,
+                site_key, external_id, fbc, fbp, email_hash, phone_hash, first_name_hash, last_name_hash,
                 total_events, last_event_name, last_ip, last_user_agent,
                 city, state, country,
                 first_group_tag, last_group_tag, last_group_tag_at, group_tags_history
-              ) VALUES ($1, $2, $3, $4, $5, $6, 1, $7, $8, $9, $10, $11, $12, $13, $14, CASE WHEN $14::text IS NULL OR $14::text = '' THEN NULL ELSE NOW() END, $15::jsonb)
+              ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, $9, $10, $11, $12, $13, $14, $15, $16, CASE WHEN $16::text IS NULL OR $16::text = '' THEN NULL ELSE NOW() END, $17::jsonb)
               ON CONFLICT (site_key, external_id) DO UPDATE SET
                 fbc = COALESCE(EXCLUDED.fbc, site_visitors.fbc),
                 fbp = COALESCE(EXCLUDED.fbp, site_visitors.fbp),
                 email_hash = COALESCE(EXCLUDED.email_hash, site_visitors.email_hash),
                 phone_hash = COALESCE(EXCLUDED.phone_hash, site_visitors.phone_hash),
+                first_name_hash = COALESCE(EXCLUDED.first_name_hash, site_visitors.first_name_hash),
+                last_name_hash = COALESCE(EXCLUDED.last_name_hash, site_visitors.last_name_hash),
                 last_event_name = EXCLUDED.last_event_name,
                 last_ip = COALESCE(EXCLUDED.last_ip, site_visitors.last_ip),
                 last_user_agent = COALESCE(EXCLUDED.last_user_agent, site_visitors.last_user_agent),
@@ -305,6 +309,8 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
               typeof userData.fbp === 'string' && userData.fbp.trim() ? userData.fbp : null,
               emailHash,
               phoneHash,
+              firstNameHash,
+              lastNameHash,
               lastEventName,
               lastIp,
               lastUa,
