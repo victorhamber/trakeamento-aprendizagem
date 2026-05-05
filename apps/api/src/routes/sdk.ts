@@ -386,7 +386,39 @@ router.get('/tracker.js', async (req, res) => {
   }
 
   // ─── External ID ─────────────────────────────────────────────────────────
+  /**
+   * Celular vs computador: cookies/storage são outro “usuário”. Para unificar com quem já cadastrou no phone,
+   * use links de aula/redirecionamento com ?ta_eid=eid_xxx (id do snippet no celular) ou ?ta_vid=<64-hex>
+   * quando o perfil no servidor foi salvo só com hash de email/telefone (sem eid no POST).
+   */
+  function adoptExternalIdFromUrl() {
+    try {
+      var u = new URL(location.href);
+      var taEid = (u.searchParams.get('ta_eid') || '').trim();
+      var taVid = (u.searchParams.get('ta_vid') || '').trim();
+      var extParam = (u.searchParams.get('external_id') || '').trim();
+      var candid = taEid || taVid;
+      if (!candid && /^eid_/i.test(extParam)) candid = extParam;
+      if (!candid) return null;
+      var lower = candid.toLowerCase();
+      if (/^eid_[a-z0-9_]+$/i.test(lower)) {
+        setCookie('_ta_eid', lower, COOKIE_TTL_2Y);
+        try { localStorage.setItem('_ta_eid', lower); } catch(_e) {}
+        return lower;
+      }
+      if (/^[0-9a-f]{64}$/i.test(lower)) {
+        setCookie('_ta_eid', lower, COOKIE_TTL_2Y);
+        try { localStorage.setItem('_ta_eid', lower); } catch(_e) {}
+        return lower;
+      }
+    } catch (_e) {}
+    return null;
+  }
+
   function getOrCreateExternalId() {
+    var fromUrl = adoptExternalIdFromUrl();
+    if (fromUrl) return fromUrl;
+
     // 1. Tenta recuperar do cookie
     var v = getCookie('_ta_eid');
     if (v) return v;

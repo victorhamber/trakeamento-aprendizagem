@@ -126,6 +126,9 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
           : '';
     const groupTag = String(groupTagRaw || '').trim().slice(0, 160);
 
+    /** Chave em `site_visitors.external_id` (eid_* ou hash); devolvida no JSON para links celular→desktop. */
+    let visitorProfileKey: string | null = null;
+
     // ── CAPI INTEGRATION ──
     const siteId = form.site_id;
     const siteRes = await pool.query('SELECT site_key FROM sites WHERE id = $1', [siteId]);
@@ -247,6 +250,7 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
           : (emailHash || phoneHash);
 
         if (externalId) {
+          visitorProfileKey = externalId;
           const lastIp = getClientIp(req) || null;
           const lastUa = (req.headers['user-agent'] as string | undefined) || null;
           const lastEventName = 'form_submit';
@@ -711,12 +715,23 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
       }
     }
 
-    return res.json({
+    const baseJson: Record<string, unknown> = {
       success: true,
       action: config.post_submit_action || 'message',
       message: config.post_submit_message || 'Obrigado! Dados recebidos.',
-      redirect_url: config.post_submit_redirect_url || ''
-    });
+      redirect_url: config.post_submit_redirect_url || '',
+    };
+    if (visitorProfileKey) {
+      const isEid = visitorProfileKey.startsWith('eid_');
+      baseJson.tracking = {
+        visitor_external_id: visitorProfileKey,
+        /** Query string para anexar em links de aula (PC): mesmo perfil do cadastro no celular. */
+        cross_device_query: isEid
+          ? `ta_eid=${encodeURIComponent(visitorProfileKey)}`
+          : `ta_vid=${encodeURIComponent(visitorProfileKey)}`,
+      };
+    }
+    return res.json(baseJson);
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Internal error' });
