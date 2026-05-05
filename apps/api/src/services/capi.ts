@@ -134,6 +134,28 @@ export class CapiService {
   }
 
   /**
+   * O Graph pode responder HTTP 200 com `events_received: 0` quando descarta o evento
+   * (parâmetro inválido, dedup agressivo, etc.). Sem isso, gravávamos last_capi_status=ok à toa.
+   * @see https://developers.facebook.com/docs/marketing-api/conversions-api/using-the-api
+   */
+  private static metaPostIndicatesEventsAccepted(data: unknown): { accepted: boolean; error?: string } {
+    if (data == null || typeof data !== 'object') return { accepted: true };
+    const d = data as Record<string, unknown>;
+    if (!Object.prototype.hasOwnProperty.call(d, 'events_received')) return { accepted: true };
+    const er = d.events_received;
+    if (typeof er !== 'number' || Number.isNaN(er)) return { accepted: true };
+    if (er < 1) {
+      const messages = d.messages;
+      const msg =
+        Array.isArray(messages) && messages.length > 0
+          ? JSON.stringify(messages)
+          : 'Meta retornou events_received=0 (evento não aceito)';
+      return { accepted: false, error: msg };
+    }
+    return { accepted: true };
+  }
+
+  /**
    * Graph API exige vários campos de user_data como array de strings.
    * fbc/fbp/client_ip/client_user_agent ficam como string simples.
    * @see https://developers.facebook.com/docs/marketing-api/conversions-api/parameters/customer-information-parameters
@@ -451,6 +473,20 @@ export class CapiService {
         payload,
         { timeout: CapiService.AXIOS_TIMEOUT_MS }
       );
+      const batchVerdict = CapiService.metaPostIndicatesEventsAccepted(response.data);
+      if (!batchVerdict.accepted) {
+        log.error('Batch send: Meta não aceitou eventos (HTTP 200)', {
+          site_key: siteKey,
+          error: batchVerdict.error,
+          fbtrace_id: (response.data as { fbtrace_id?: string })?.fbtrace_id,
+        });
+        await this.updateLastStatus(siteKey, {
+          ok: false,
+          error: batchVerdict.error || 'events_received=0',
+          details: response.data,
+        });
+        return { ok: false, error: batchVerdict.error || 'events_received=0', details: response.data };
+      }
       log.info('Batch send success', {
         site_key: siteKey,
         count: chunk.length,
@@ -519,6 +555,23 @@ export class CapiService {
         payload,
         { timeout: CapiService.AXIOS_TIMEOUT_MS }
       );
+      const detailedVerdict = CapiService.metaPostIndicatesEventsAccepted(response.data);
+      if (!detailedVerdict.accepted) {
+        const fail = {
+          ok: false as const,
+          error: detailedVerdict.error || 'events_received=0',
+          details: response.data,
+        };
+        log.error('sendEventDetailed: Meta não aceitou o evento (HTTP 200)', {
+          site_key: siteKey,
+          event_name: event.event_name,
+          event_id: event.event_id,
+          error: fail.error,
+          fbtrace_id: (response.data as { fbtrace_id?: string })?.fbtrace_id,
+        });
+        await this.updateLastStatus(siteKey, fail);
+        return fail;
+      }
       const result = { ok: true, data: response.data } as const;
       await this.updateLastStatus(siteKey, result);
       return result;
@@ -567,6 +620,30 @@ export class CapiService {
         payload,
         { timeout: CapiService.AXIOS_TIMEOUT_MS }
       );
+      const verdict = CapiService.metaPostIndicatesEventsAccepted(response.data);
+      if (!verdict.accepted) {
+        log.error('Meta CAPI não aceitou o evento (HTTP 200)', {
+          site_key: siteKey,
+          event_name: event.event_name,
+          event_id: event.event_id,
+          error: verdict.error,
+          fbtrace_id: (response.data as { fbtrace_id?: string })?.fbtrace_id,
+        });
+        await this.updateLastStatus(siteKey, {
+          ok: false,
+          error: verdict.error || 'events_received=0',
+          details: response.data,
+        });
+        return { ok: false, error: verdict.error || 'events_received=0' };
+      }
+      const msgs = (response.data as { messages?: unknown })?.messages;
+      if (Array.isArray(msgs) && msgs.length > 0) {
+        log.warn('Meta CAPI retornou avisos em messages', {
+          event_name: event.event_name,
+          event_id: event.event_id,
+          messages: msgs,
+        });
+      }
       log.info(`Success ${event.event_name}`, {
         event_id: event.event_id,
         fbtrace_id: response.data?.fbtrace_id,
