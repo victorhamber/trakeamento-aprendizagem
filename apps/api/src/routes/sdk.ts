@@ -1453,6 +1453,11 @@ router.get('/tracker.js', async (req, res) => {
         telemetry:        telemetry
       };
 
+      // Ingest precisa de _taRuleId para qualificação CRM (+ CRM nas regras). Não enviar ao fbq (parâmetro interno).
+      if (ruleDedupId != null && ruleDedupId !== '') {
+        payload.custom_data._taRuleId = ruleDedupId;
+      }
+
       var isInstant = (eventName === 'InitiateCheckout' || eventName === 'AddToCart' || eventName === 'Purchase');
       if (isInstant) {
         send(cfg.apiUrl, cfg.siteKey, payload, true);
@@ -1476,6 +1481,7 @@ router.get('/tracker.js', async (req, res) => {
           getTimeFields(eventTime),
           payload.custom_data
         );
+        delete metaParams._taRuleId;
 
         // Ensure value/currency are top-level for standard events like Purchase
         if (payload.custom_data && payload.custom_data.value !== undefined) {
