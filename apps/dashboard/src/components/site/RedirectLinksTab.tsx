@@ -23,6 +23,7 @@ const EVENT_OPTIONS = [
   { value: 'ViewContent', label: 'ViewContent' },
   { value: 'PageView', label: 'PageView' },
   { value: 'Contact', label: 'Contact' },
+  { value: 'Custom', label: 'Personalizado...' },
 ];
 
 export function RedirectLinksTab(props: {
@@ -32,9 +33,9 @@ export function RedirectLinksTab(props: {
   const siteIdNum = props.siteId;
 
   const inputCls =
-    'w-full rounded-lg bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 px-3 py-2 text-[11px] text-zinc-700 dark:text-zinc-300 outline-none';
+    'w-full rounded-lg bg-zinc-950 border border-zinc-800 px-3.5 py-2.5 text-sm text-zinc-200 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/35 transition-all placeholder:text-zinc-500';
   const selectCls =
-    'w-full rounded-lg bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 px-3 py-2 text-[11px] text-zinc-700 dark:text-zinc-300 outline-none';
+    'w-full rounded-lg bg-zinc-950 border border-zinc-800 px-3.5 py-2.5 text-sm text-zinc-200 outline-none focus:border-indigo-500 transition-colors';
 
   const [links, setLinks] = useState<RedirectLinkRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -43,9 +44,14 @@ export function RedirectLinksTab(props: {
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
   const [destinationUrl, setDestinationUrl] = useState('');
-  const [eventName, setEventName] = useState('Lead');
+  const [eventType, setEventType] = useState<string>('Lead');
+  const [customEventName, setCustomEventName] = useState('');
   const [isActive, setIsActive] = useState(true);
   const [lastCreatedUrl, setLastCreatedUrl] = useState<string>('');
+  const [crmQualify, setCrmQualify] = useState(false);
+  const [crmEventName, setCrmEventName] = useState('');
+  const [crmTool, setCrmTool] = useState('');
+  const [crmLabel, setCrmLabel] = useState('');
 
   const normalizedSlug = useMemo(() => {
     const s = (slug || '').trim().toLowerCase().replace(/^\/+/, '');
@@ -74,8 +80,13 @@ export function RedirectLinksTab(props: {
     setName('');
     setSlug('');
     setDestinationUrl('');
-    setEventName('Lead');
+    setEventType('Lead');
+    setCustomEventName('');
     setIsActive(true);
+    setCrmQualify(false);
+    setCrmEventName('');
+    setCrmTool('');
+    setCrmLabel('');
   };
 
   const handleEdit = (row: RedirectLinkRow) => {
@@ -83,8 +94,18 @@ export function RedirectLinksTab(props: {
     setName(row.name || '');
     setSlug(row.slug || '');
     setDestinationUrl(row.destination_url || '');
-    setEventName(row.event_name || 'Lead');
+    setEventType(row.event_name || 'Lead');
+    setCustomEventName('');
     setIsActive(row.is_active !== false);
+    const p =
+      row.parameters && typeof row.parameters === 'object' && !Array.isArray(row.parameters)
+        ? (row.parameters as Record<string, unknown>)
+        : {};
+    const q = p._crm_qualify === true || p._crm_qualify === 'true' || p._crm_qualify === 1 || p._crm_qualify === '1';
+    setCrmQualify(Boolean(q));
+    setCrmEventName(typeof p._crm_event_name === 'string' ? p._crm_event_name : '');
+    setCrmTool(typeof p._crm_tool === 'string' ? p._crm_tool : '');
+    setCrmLabel(typeof p._crm_label === 'string' ? p._crm_label : '');
   };
 
   const handleDelete = async (id: number) => {
@@ -100,12 +121,25 @@ export function RedirectLinksTab(props: {
   };
 
   const handleSave = async () => {
+    const resolvedEventName =
+      eventType === 'Custom' ? (customEventName || '').trim() : (eventType || '').trim();
+    if (eventType === 'Custom' && !resolvedEventName) {
+      props.showFlash('Informe o nome do evento personalizado.', 'error');
+      return;
+    }
+    const parameters: Record<string, unknown> = {};
+    if (crmQualify) {
+      parameters._crm_qualify = true;
+      if (crmEventName.trim()) parameters._crm_event_name = crmEventName.trim();
+      if (crmTool.trim()) parameters._crm_tool = crmTool.trim();
+      if (crmLabel.trim()) parameters._crm_label = crmLabel.trim();
+    }
     const payload = {
       name: (name || '').trim(),
       slug: normalizedSlug,
       destination_url: (destinationUrl || '').trim(),
-      event_name: eventName,
-      parameters: {},
+      event_name: resolvedEventName,
+      parameters,
       is_active: isActive,
     };
 
@@ -170,7 +204,6 @@ export function RedirectLinksTab(props: {
             className={inputCls}
             placeholder="teste"
           />
-          <p className="mt-1 text-[11px] text-zinc-500">Use letras/números, "-" ou "_".</p>
         </div>
         <div className="md:col-span-5">
           <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Destino final</label>
@@ -188,8 +221,8 @@ export function RedirectLinksTab(props: {
           <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Evento ao clicar</label>
           <select
             aria-label="Evento ao clicar no link"
-            value={eventName}
-            onChange={(e) => setEventName(e.target.value)}
+            value={eventType}
+            onChange={(e) => setEventType(e.target.value)}
             className={selectCls}
           >
             {EVENT_OPTIONS.map((o) => (
@@ -199,21 +232,33 @@ export function RedirectLinksTab(props: {
             ))}
           </select>
         </div>
-        <div className="md:col-span-3 flex flex-col justify-end">
+        {eventType === 'Custom' && (
+          <div className="md:col-span-3">
+            <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Nome do Evento</label>
+            <input
+              aria-label="Nome do evento personalizado"
+              value={customEventName}
+              onChange={(e) => setCustomEventName(e.target.value)}
+              className={inputCls}
+              placeholder="Ex: StartTrial"
+            />
+          </div>
+        )}
+        <div className={(eventType === 'Custom' ? 'md:col-span-2' : 'md:col-span-3') + ' flex flex-col justify-end'}>
           <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Ativo</label>
-          <label className="flex items-center gap-2 text-xs text-zinc-700 dark:text-zinc-300">
+          <label className="flex items-center gap-2 text-sm text-zinc-200">
             <input
               type="checkbox"
               aria-label="Ativar link"
               title="Ativar link"
               checked={isActive}
               onChange={(e) => setIsActive(e.target.checked)}
-              className="w-4 h-4 rounded border-zinc-700 bg-zinc-200 dark:bg-zinc-800 text-blue-500"
+              className="w-4 h-4 rounded border-zinc-700 bg-zinc-950 text-indigo-500"
             />
             Link ativo
           </label>
         </div>
-        <div className="md:col-span-5 flex gap-2">
+        <div className={(eventType === 'Custom' ? 'md:col-span-3' : 'md:col-span-5') + ' flex gap-2'}>
           <button
             type="button"
             disabled={loading}
@@ -249,13 +294,90 @@ export function RedirectLinksTab(props: {
                   navigator.clipboard.writeText(generatedUrl);
                   props.showFlash('Link copiado!', 'success');
                 }}
-                className="bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 px-3 py-2 rounded-lg text-xs font-medium transition-colors shrink-0"
+                className="bg-zinc-900 hover:bg-zinc-800 text-white px-3 py-2.5 rounded-lg text-xs font-medium transition-colors shrink-0 border border-zinc-800"
               >
                 Copiar
               </button>
             </div>
           </div>
         )}
+
+        {/* CRM Meta (meio do funil) */}
+        <div className="md:col-span-12 border-t border-zinc-200 dark:border-zinc-800 pt-4 mt-1">
+          <div className="flex items-start gap-3">
+            <input
+              id="dash-redirect-link-crm-qualify"
+              type="checkbox"
+              checked={crmQualify}
+              onChange={(e) => setCrmQualify(e.target.checked)}
+              className="mt-1 h-4 w-4 rounded border-zinc-300 dark:border-zinc-700 text-indigo-600 focus:ring-indigo-500"
+            />
+            <div className="flex-1">
+              <label
+                htmlFor="dash-redirect-link-crm-qualify"
+                className="block text-sm font-medium text-zinc-700 dark:text-zinc-200 cursor-pointer"
+              >
+                Marcar meio do funil nesta regra (Meta / CRM)
+                <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-300 border border-emerald-500/20 align-middle">
+                  opcional
+                </span>
+              </label>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                Ao abrir este link, além do evento escolhido, o Trajettu também envia a etapa intermediária com os campos que a
+                Meta pede. Abra “Avançado” só se quiser personalizar.
+              </p>
+
+              {crmQualify && (
+                <details className="mt-3 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50/80 dark:bg-zinc-900/40 px-3 py-2">
+                  <summary className="cursor-pointer text-xs font-medium text-zinc-700 dark:text-zinc-200 list-none [&::-webkit-details-marker]:hidden">
+                    Avançado — só preencha se sua conta/uso pedir nomes diferentes na Meta
+                  </summary>
+                  <div className="mt-3 grid grid-cols-1 md:grid-cols-12 gap-4">
+                    <div className="md:col-span-4">
+                      <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
+                        Nome da etapa no funil na Meta (<code className="text-[10px]">event_name</code>)
+                      </label>
+                      <input
+                        aria-label="CRM event name"
+                        value={crmEventName}
+                        onChange={(e) => setCrmEventName(e.target.value)}
+                        placeholder='Ex.: "Oportunidade" — vazio usa Qualificado'
+                        maxLength={100}
+                        className={inputCls}
+                      />
+                    </div>
+                    <div className="md:col-span-4">
+                      <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
+                        Ferramenta de CRM (<code className="text-[10px]">lead_event_source</code>)
+                      </label>
+                      <input
+                        aria-label="CRM tool"
+                        value={crmTool}
+                        onChange={(e) => setCrmTool(e.target.value)}
+                        placeholder='Ex.: "HubSpot" — ou deixe em branco'
+                        maxLength={120}
+                        className={inputCls}
+                      />
+                    </div>
+                    <div className="md:col-span-4">
+                      <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
+                        Rótulo / origem extra (<code className="text-[10px]">lead_event_source</code>)
+                      </label>
+                      <input
+                        aria-label="CRM label"
+                        value={crmLabel}
+                        onChange={(e) => setCrmLabel(e.target.value)}
+                        placeholder='Ex.: "Link página de vendas" — ou em branco'
+                        maxLength={120}
+                        className={inputCls}
+                      />
+                    </div>
+                  </div>
+                </details>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
 
       {lastCreatedUrl && (
