@@ -196,10 +196,38 @@ function destinationLooksLikeHotmart(destUrl: string): boolean {
   }
 }
 
-function pickForwardParams(opts: { incoming: URLSearchParams; destinationUrl: string }): URLSearchParams {
-  // Hotmart pode quebrar com parâmetros não reconhecidos / longos.
-  // Aqui a gente é conservador: só repassa UTMs + click ids clássicos.
-  const allow = new Set([
+function buildHotmartSckToken(opts: { externalId: string; fbp?: string; fbc?: string; maxChars?: number | null }) {
+  // sck recebe um token curto. Mantemos compatibilidade com o padrão já usado no SDK: trk_base64(eid|fbc|fbp)
+  // Se estourar o orçamento, reduz para trk_base64(eid||) (ainda garante identidade cross-device).
+  const eid = (opts.externalId || '').trim();
+  if (!eid) return '';
+  const payloadFull = `${eid}|${(opts.fbc || '').trim()}|${(opts.fbp || '').trim()}`;
+  const full = `trk_${Buffer.from(payloadFull).toString('base64')}`;
+  const budget = typeof opts.maxChars === 'number' && Number.isFinite(opts.maxChars) && opts.maxChars > 8 ? opts.maxChars : null;
+  if (!budget) return full;
+  if (full.length <= budget) return full;
+  const payloadShort = `${eid}||`;
+  return `trk_${Buffer.from(payloadShort).toString('base64')}`;
+}
+
+function parseHotmartSckMaxChars(): number | null {
+  const raw = (process.env.HOTMART_SCK_MAX_CHARS || '').trim();
+  if (!raw) return 280;
+  const n = parseInt(raw, 10);
+  if (!Number.isFinite(n) || n <= 0) return 280;
+  return n;
+}
+
+function pickForwardParams(opts: {
+  incoming: URLSearchParams;
+  destinationUrl: string;
+  // ids internos (para pixel/capi) — para Hotmart preferimos sck ao invés de empilhar params
+  externalId: string;
+  fbp?: string;
+  fbc?: string;
+}): URLSearchParams {
+  const isHotmart = destinationLooksLikeHotmart(opts.destinationUrl);
+  const allowBase = new Set([
     'utm_source',
     'utm_medium',
     'utm_campaign',
@@ -215,23 +243,55 @@ function pickForwardParams(opts: { incoming: URLSearchParams; destinationUrl: st
     'twclid',
   ]);
 
+  // Para destinos não-Hotmart, podemos repassar ids (sem duplicar), porque não costuma quebrar.
+  const allowNonHotmartExtra = new Set(['external_id', 'fbp', 'fbc']);
+
   const out = new URLSearchParams();
-  const isHotmart = destinationLooksLikeHotmart(opts.destinationUrl);
+
+  // 1) Repassa allowlist base (sem estourar)
   opts.incoming.forEach((v, k) => {
     const key = String(k || '').trim();
     if (!key) return;
     const lower = key.toLowerCase();
-    if (!allow.has(lower)) {
-      // Fora da allowlist, não repassa (principalmente p/ Hotmart).
-      // Para destinos não-Hotmart, também mantemos conservador por segurança.
-      return;
-    }
     const val = String(v || '').trim();
     if (!val) return;
-    // Não estourar URL em gateways sensíveis.
-    const maxLen = isHotmart ? 160 : 500;
-    out.set(lower, val.length > maxLen ? val.slice(0, maxLen) : val);
+
+    if (allowBase.has(lower)) {
+      const maxLen = isHotmart ? 160 : 500;
+      out.set(lower, val.length > maxLen ? val.slice(0, maxLen) : val);
+      return;
+    }
+
+    if (!isHotmart && allowNonHotmartExtra.has(lower)) {
+      // repassa ids se vierem do clique (sem inventar aqui)
+      const maxLen = 500;
+      out.set(lower, val.length > maxLen ? val.slice(0, maxLen) : val);
+      return;
+    }
   });
+
+  // 2) Estratégia Hotmart: preferir sck=trk_... e evitar empilhar fbp/fbc/external_id
+  if (isHotmart) {
+    if (!out.has('sck') && !opts.incoming.get('sck')) {
+      const sck = buildHotmartSckToken({
+        externalId: opts.externalId,
+        fbp: opts.fbp,
+        fbc: opts.fbc,
+        maxChars: parseHotmartSckMaxChars(),
+      });
+      if (sck) out.set('sck', sck);
+    }
+    // Nunca anexar fbp/fbc/external_id no checkout Hotmart aqui para evitar conflito/bug de pagamento.
+    out.delete('external_id');
+    out.delete('fbp');
+    out.delete('fbc');
+  } else {
+    // 3) Outros destinos: garantir ids (se não existirem) para manter match do pixel do Trajettu
+    if (opts.externalId && !out.has('external_id')) out.set('external_id', opts.externalId);
+    if (opts.fbp && !out.has('fbp')) out.set('fbp', opts.fbp);
+    if (opts.fbc && !out.has('fbc')) out.set('fbc', opts.fbc);
+  }
+
   return out;
 }
 
@@ -282,8 +342,14 @@ app.get('/:slug', async (req, res) => {
   // IMPORTANTE: não “inventar” parâmetros no destino (ex.: external_id/fbp/fbc/trk),
   // porque alguns checkouts (Hotmart) podem quebrar com query extra.
   // A gente usa external_id/fbp/fbc internamente para o evento, mas repassa para o destino
-  // apenas uma allowlist segura (UTMs + click IDs).
-  const forwardQs = pickForwardParams({ incoming: incomingQs, destinationUrl: String(link.destination_url) });
+  // apenas uma estratégia segura por destino (Hotmart: sck; demais: ids).
+  const forwardQs = pickForwardParams({
+    incoming: incomingQs,
+    destinationUrl: String(link.destination_url),
+    externalId,
+    fbp: fbp || undefined,
+    fbc: fbc || undefined,
+  });
   const destination = mergeQueryIntoDestination(String(link.destination_url), forwardQs);
 
   const custom_data: Record<string, unknown> =
