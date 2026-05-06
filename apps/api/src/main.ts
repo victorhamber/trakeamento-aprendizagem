@@ -27,6 +27,9 @@ import publicRoutes from './routes/public';
 import adminRoutes from './routes/admin';
 import dashboardRoutes from './routes/dashboard';
 import mobileRoutes from './routes/mobile';
+import crypto from 'crypto';
+import { mergeUserDataWithMetaParamBuilder } from './lib/meta-param-builder-ingest';
+import { getClientIp } from './lib/ip';
 
 import { ensureSchema } from './db/schema';
 import { capiService } from './services/capi';
@@ -145,6 +148,150 @@ app.get('/health', async (req, res) => {
     const message = err instanceof Error ? err.message : 'db_error';
     res.status(500).json({ status: 'error', db: message });
   }
+});
+
+function normalizeRequestHost(req: express.Request): string {
+  const raw = String(req.headers['x-forwarded-host'] || req.get('host') || '').trim().toLowerCase();
+  const host = (raw.split(',')[0] || '').trim();
+  return host.replace(/:\d+$/, '').replace(/\.$/, '');
+}
+
+function normalizeRequestProto(req: express.Request): 'http' | 'https' {
+  const xf = String(req.headers['x-forwarded-proto'] || '').trim().toLowerCase();
+  if (xf === 'https') return 'https';
+  if (xf === 'http') return 'http';
+  return (req.protocol === 'https' ? 'https' : 'http') as 'http' | 'https';
+}
+
+function safeSlug(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const s = raw.trim().toLowerCase();
+  if (!s) return null;
+  if (!/^[a-z0-9][a-z0-9_-]{0,119}$/.test(s)) return null;
+  const reserved = new Set([
+    'auth','sites','integrations','ai','oauth','stats','sdk','ingest','webhooks','meta','recommendations',
+    'mentor','notifications','upload','public','admin','dashboard','mobile','health','uploads',
+  ]);
+  if (reserved.has(s)) return null;
+  return s;
+}
+
+function mergeQueryIntoDestination(destUrl: string, incoming: URLSearchParams): string {
+  const u = new URL(destUrl);
+  // preserva tudo do clique (utm_*, fbclid/gclid, etc.) sem sobrescrever parâmetros fixos no destino
+  incoming.forEach((v, k) => {
+    if (!k) return;
+    if (!u.searchParams.has(k)) u.searchParams.set(k, v);
+  });
+  return u.toString();
+}
+
+app.get('/:slug', async (req, res) => {
+  const slug = safeSlug(req.params.slug);
+  if (!slug) return res.status(404).type('text/plain').send('Not found');
+
+  const host = normalizeRequestHost(req);
+  if (!host) return res.status(404).type('text/plain').send('Not found');
+  const proto = normalizeRequestProto(req);
+
+  const linkRes = await pool.query(
+    `SELECT l.id, l.site_id, l.host, l.name, l.slug, l.destination_url, l.event_name, l.parameters, l.is_active, s.site_key
+     FROM site_redirect_links l
+     JOIN sites s ON s.id = l.site_id
+     WHERE l.host = $1 AND l.slug = $2 AND l.is_active IS TRUE
+     LIMIT 1`,
+    [host, slug]
+  );
+  if (!linkRes.rowCount) return res.status(404).type('text/plain').send('Not found');
+  const link = linkRes.rows[0] as any;
+
+  const requestUrl = `${proto}://${host}${req.originalUrl || `/${slug}`}`;
+  const nowSec = Math.floor(Date.now() / 1000);
+  const eventId = `rl_${nowSec}_${crypto.randomBytes(6).toString('hex')}`;
+
+  const incomingQs = new URLSearchParams(String(req.originalUrl || '').split('?')[1] || '');
+
+  const userDataBase: Record<string, unknown> = {
+    client_ip_address: getClientIp(req),
+    client_user_agent: req.headers['user-agent'] || undefined,
+  };
+  const user_data = mergeUserDataWithMetaParamBuilder(
+    req as any,
+    requestUrl,
+    userDataBase
+  ) as Record<string, unknown>;
+
+  const externalIdRaw = (incomingQs.get('external_id') || '').trim();
+  const externalId = externalIdRaw || `eid_${crypto.randomBytes(10).toString('hex')}`;
+  const fbp =
+    (incomingQs.get('fbp') || '').trim() ||
+    (typeof (user_data as any).fbp === 'string' ? String((user_data as any).fbp).trim() : '');
+  const fbc =
+    (incomingQs.get('fbc') || '').trim() ||
+    (typeof (user_data as any).fbc === 'string' ? String((user_data as any).fbc).trim() : '');
+
+  const forwardQs = new URLSearchParams(incomingQs.toString());
+  if (externalId && !forwardQs.get('external_id')) forwardQs.set('external_id', externalId);
+  if (fbp && !forwardQs.get('fbp')) forwardQs.set('fbp', fbp);
+  if (fbc && !forwardQs.get('fbc')) forwardQs.set('fbc', fbc);
+  try {
+    const trk = `trk_${Buffer.from(`${externalId}|${fbc || ''}|${fbp || ''}`).toString('base64')}`;
+    if (!forwardQs.get('trk')) forwardQs.set('trk', trk);
+  } catch {}
+
+  const destination = mergeQueryIntoDestination(String(link.destination_url), forwardQs);
+
+  const custom_data: Record<string, unknown> =
+    link.parameters && typeof link.parameters === 'object' && !Array.isArray(link.parameters)
+      ? { ...(link.parameters as Record<string, unknown>) }
+      : {};
+
+  const passKeys = [
+    'utm_source','utm_medium','utm_campaign','utm_content','utm_term',
+    'click_id','fbclid','gclid','ttclid','twclid','msclkid','gbraid','wbraid',
+  ];
+  for (const k of passKeys) {
+    const v = forwardQs.get(k);
+    if (v && v.trim() && !(k in custom_data)) custom_data[k] = v.trim();
+  }
+  if (!custom_data.redirect_destination) custom_data.redirect_destination = destination;
+  if (!custom_data.redirect_slug) custom_data.redirect_slug = slug;
+
+  const capiPayload = {
+    event_name: String(link.event_name || 'PageView'),
+    event_time: nowSec,
+    event_id: eventId,
+    event_source_url: requestUrl,
+    action_source: 'website' as const,
+    user_data: user_data as any,
+    custom_data,
+  };
+
+  Promise.resolve()
+    .then(async () => {
+      try {
+        await pool.query(
+          `INSERT INTO web_events (site_key, event_id, event_name, event_time, event_source_url, user_data, custom_data, telemetry)
+           VALUES ($1, $2, $3, NOW(), $4, $5, $6, $7)
+           ON CONFLICT (site_key, event_id) DO NOTHING`,
+          [String(link.site_key), eventId, String(link.event_name), requestUrl, user_data, custom_data, null]
+        );
+      } catch {}
+      try {
+        const result = await capiService.sendEvent(String(link.site_key), capiPayload as any);
+        if (result && typeof result === 'object' && ('ok' in result) && !(result as any).ok) {
+          await capiService.saveToOutbox(String(link.site_key), capiPayload as any, (result as any).error || 'API Error');
+        }
+      } catch (e: any) {
+        try {
+          await capiService.saveToOutbox(String(link.site_key), capiPayload as any, e?.message || String(e));
+        } catch {}
+      }
+    })
+    .catch(() => {});
+
+  res.setHeader('Cache-Control', 'no-store');
+  return res.redirect(302, destination);
 });
 
 // ─── Data Retention Garbage Collector ────────────────────────────────────────

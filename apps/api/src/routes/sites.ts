@@ -1209,6 +1209,184 @@ router.delete('/:siteId/event-rules/:id', requireAuth, async (req, res) => {
   return res.json({ ok: true });
 });
 
+function normalizeRedirectSlug(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const s = raw.trim().toLowerCase();
+  if (!s) return null;
+  // Permite /teste, teste, teste-123, teste_123
+  const clean = s.startsWith('/') ? s.slice(1) : s;
+  if (!/^[a-z0-9][a-z0-9_-]{0,119}$/.test(clean)) return null;
+  return clean;
+}
+
+function normalizeHostFromTrackingDomain(trackingDomainRaw: unknown): string | null {
+  if (typeof trackingDomainRaw !== 'string') return null;
+  const t = trackingDomainRaw.trim();
+  if (!t) return null;
+  try {
+    const u = t.includes('://') ? new URL(t) : new URL(`https://${t}`);
+    const host = u.hostname.toLowerCase().replace(/\.$/, '');
+    return host && host.includes('.') ? host : null;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeDestinationUrl(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const t = raw.trim();
+  if (!t) return null;
+  try {
+    const u = new URL(t);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+    return u.toString();
+  } catch {
+    return null;
+  }
+}
+
+router.get('/:siteId/redirect-links', requireAuth, async (req, res) => {
+  const auth = req.auth!;
+  const siteId = Number(req.params.siteId);
+  if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
+
+  const site = await pool.query('SELECT id FROM sites WHERE id = $1 AND account_id = $2', [siteId, auth.accountId]);
+  if (!site.rowCount) return res.status(404).json({ error: 'Site not found' });
+
+  const result = await pool.query(
+    `SELECT id, site_id, host, name, slug, destination_url, event_name, parameters, is_active, created_at, updated_at
+     FROM site_redirect_links
+     WHERE site_id = $1
+     ORDER BY created_at DESC`,
+    [siteId]
+  );
+  return res.json({ links: result.rows || [] });
+});
+
+router.post('/:siteId/redirect-links', requireAuth, async (req, res) => {
+  const auth = req.auth!;
+  const siteId = Number(req.params.siteId);
+  if (!Number.isFinite(siteId)) return res.status(400).json({ error: 'Invalid siteId' });
+
+  const siteRes = await pool.query(
+    'SELECT id, tracking_domain FROM sites WHERE id = $1 AND account_id = $2',
+    [siteId, auth.accountId]
+  );
+  if (!siteRes.rowCount) return res.status(404).json({ error: 'Site not found' });
+
+  const { name, slug, destination_url, event_name, parameters, is_active } = req.body || {};
+  const nm = typeof name === 'string' ? name.trim().slice(0, 150) : '';
+  if (!nm) return res.status(400).json({ error: 'Nome é obrigatório' });
+  const sl = normalizeRedirectSlug(slug);
+  if (!sl) return res.status(400).json({ error: 'Slug inválido (use letras/números, "-" ou "_")' });
+  const dest = normalizeDestinationUrl(destination_url);
+  if (!dest) return res.status(400).json({ error: 'URL de destino inválida (http/https)' });
+  const ev = typeof event_name === 'string' ? event_name.trim().slice(0, 100) : '';
+  if (!ev) return res.status(400).json({ error: 'Evento é obrigatório' });
+
+  const hostFromSite = normalizeHostFromTrackingDomain(siteRes.rows[0]?.tracking_domain);
+  const defaultHostFromEnv = (() => {
+    const v = (process.env.PUBLIC_TRACKING_BASE_URL || '').trim();
+    if (!v) return null;
+    try {
+      return new URL(v).hostname.toLowerCase();
+    } catch {
+      return null;
+    }
+  })();
+  const host = hostFromSite || defaultHostFromEnv || 'trajettu.com';
+
+  const paramNorm = normalizeEventRuleParameters(ev, parameters);
+  if (!paramNorm.ok) return res.status(400).json({ error: paramNorm.error });
+
+  const active = is_active === false ? false : true;
+  try {
+    const result = await pool.query(
+      `INSERT INTO site_redirect_links (site_id, host, name, slug, destination_url, event_name, parameters, is_active)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING *`,
+      [siteId, host, nm, sl, dest, ev, paramNorm.parameters, active]
+    );
+    return res.status(201).json({ link: result.rows[0] });
+  } catch (e: any) {
+    const msg = String(e?.message || '');
+    if (msg.toLowerCase().includes('unique') || msg.toLowerCase().includes('duplicate')) {
+      return res.status(409).json({ error: 'Este slug já está em uso neste domínio.' });
+    }
+    throw e;
+  }
+});
+
+router.put('/:siteId/redirect-links/:id', requireAuth, async (req, res) => {
+  const auth = req.auth!;
+  const siteId = Number(req.params.siteId);
+  const id = Number(req.params.id);
+  if (!Number.isFinite(siteId) || !Number.isFinite(id)) return res.status(400).json({ error: 'Invalid ID' });
+
+  const siteRes = await pool.query(
+    'SELECT id, tracking_domain FROM sites WHERE id = $1 AND account_id = $2',
+    [siteId, auth.accountId]
+  );
+  if (!siteRes.rowCount) return res.status(404).json({ error: 'Site not found' });
+
+  const { name, slug, destination_url, event_name, parameters, is_active } = req.body || {};
+  const nm = typeof name === 'string' ? name.trim().slice(0, 150) : '';
+  if (!nm) return res.status(400).json({ error: 'Nome é obrigatório' });
+  const sl = normalizeRedirectSlug(slug);
+  if (!sl) return res.status(400).json({ error: 'Slug inválido (use letras/números, "-" ou "_")' });
+  const dest = normalizeDestinationUrl(destination_url);
+  if (!dest) return res.status(400).json({ error: 'URL de destino inválida (http/https)' });
+  const ev = typeof event_name === 'string' ? event_name.trim().slice(0, 100) : '';
+  if (!ev) return res.status(400).json({ error: 'Evento é obrigatório' });
+
+  const hostFromSite = normalizeHostFromTrackingDomain(siteRes.rows[0]?.tracking_domain);
+  const defaultHostFromEnv = (() => {
+    const v = (process.env.PUBLIC_TRACKING_BASE_URL || '').trim();
+    if (!v) return null;
+    try {
+      return new URL(v).hostname.toLowerCase();
+    } catch {
+      return null;
+    }
+  })();
+  const host = hostFromSite || defaultHostFromEnv || 'trajettu.com';
+
+  const paramNorm = normalizeEventRuleParameters(ev, parameters);
+  if (!paramNorm.ok) return res.status(400).json({ error: paramNorm.error });
+
+  const active = is_active === false ? false : true;
+  try {
+    const result = await pool.query(
+      `UPDATE site_redirect_links
+       SET host = $1, name = $2, slug = $3, destination_url = $4, event_name = $5, parameters = $6, is_active = $7, updated_at = NOW()
+       WHERE id = $8 AND site_id = $9
+       RETURNING *`,
+      [host, nm, sl, dest, ev, paramNorm.parameters, active, id, siteId]
+    );
+    if (!result.rowCount) return res.status(404).json({ error: 'Link not found' });
+    return res.json({ link: result.rows[0] });
+  } catch (e: any) {
+    const msg = String(e?.message || '');
+    if (msg.toLowerCase().includes('unique') || msg.toLowerCase().includes('duplicate')) {
+      return res.status(409).json({ error: 'Este slug já está em uso neste domínio.' });
+    }
+    throw e;
+  }
+});
+
+router.delete('/:siteId/redirect-links/:id', requireAuth, async (req, res) => {
+  const auth = req.auth!;
+  const siteId = Number(req.params.siteId);
+  const id = Number(req.params.id);
+  if (!Number.isFinite(siteId) || !Number.isFinite(id)) return res.status(400).json({ error: 'Invalid ID' });
+
+  const site = await pool.query('SELECT id FROM sites WHERE id = $1 AND account_id = $2', [siteId, auth.accountId]);
+  if (!site.rowCount) return res.status(404).json({ error: 'Site not found' });
+
+  await pool.query('DELETE FROM site_redirect_links WHERE id = $1 AND site_id = $2', [id, siteId]);
+  return res.json({ ok: true });
+});
+
 router.get('/:siteId/utms', requireAuth, async (req, res) => {
   const auth = req.auth!;
   const siteId = Number(req.params.siteId);

@@ -309,6 +309,21 @@ const schemaSql = `
     created_at TIMESTAMP DEFAULT NOW()
   );
 
+  CREATE TABLE IF NOT EXISTS site_redirect_links (
+    id SERIAL PRIMARY KEY,
+    site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+    host VARCHAR(255) NOT NULL,
+    name VARCHAR(150) NOT NULL,
+    slug VARCHAR(120) NOT NULL,
+    destination_url TEXT NOT NULL,
+    event_name VARCHAR(100) NOT NULL,
+    parameters JSONB NOT NULL DEFAULT '{}'::jsonb,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(host, slug)
+  );
+
   CREATE TABLE IF NOT EXISTS checkout_simulators (
     id SERIAL PRIMARY KEY,
     site_id INTEGER NOT NULL UNIQUE REFERENCES sites(id) ON DELETE CASCADE,
@@ -497,6 +512,25 @@ export const ensureSchema = async (pool: Pool) => {
   await migrate('site_url_rules_extra', async () => {
     await pool.query('ALTER TABLE site_url_rules ADD COLUMN IF NOT EXISTS match_text TEXT');
     await pool.query('ALTER TABLE site_url_rules ADD COLUMN IF NOT EXISTS parameters JSONB DEFAULT \'{}\'::jsonb');
+  });
+
+  await migrate('site_redirect_links_table', async () => {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS site_redirect_links (
+        id SERIAL PRIMARY KEY,
+        site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+        host VARCHAR(255) NOT NULL,
+        name VARCHAR(150) NOT NULL,
+        slug VARCHAR(120) NOT NULL,
+        destination_url TEXT NOT NULL,
+        event_name VARCHAR(100) NOT NULL,
+        parameters JSONB NOT NULL DEFAULT '{}'::jsonb,
+        is_active BOOLEAN DEFAULT true,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW(),
+        UNIQUE(host, slug)
+      )
+    `);
   });
 
   await migrate('meta_insights_extra_cols', async () => {

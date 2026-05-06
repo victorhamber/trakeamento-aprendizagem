@@ -13,6 +13,7 @@ import { ReportWizard } from '../components/site/ReportWizard';
 import { CampaignFunnelPanel, type FunnelCampaignOption } from '../components/site/CampaignFunnelPanel';
 import { LeadsTab } from '../components/site/LeadsTab';
 import { BuyersTab } from '../components/site/BuyersTab';
+import { RedirectLinksTab } from '../components/site/RedirectLinksTab';
 type Site = {
   id: number;
   name: string;
@@ -391,7 +392,7 @@ export const SitePage = () => {
   const [buttonRuleCrmTool, setButtonRuleCrmTool] = useState('');
   const [buttonRuleCrmEventName, setButtonRuleCrmEventName] = useState('');
 
-  const [eventSubTab, setEventSubTab] = useState<'url' | 'button' | 'form'>('url');
+  const [eventSubTab, setEventSubTab] = useState<'url' | 'button' | 'form' | 'links'>('url');
   const [formFields, setFormFields] = useState({ name: true, email: true, phone: true });
   const [formButtonText, setFormButtonText] = useState('Quero me cadastrar');
   const [formButtonBgColor, setFormButtonBgColor] = useState('#2563EB'); // blue-600 default
@@ -3467,6 +3468,7 @@ ${scriptContent}
                 <button type="button" onClick={() => setEventSubTab('url')} className={`px-4 py-2.5 font-semibold text-sm rounded-lg transition-colors ${eventSubTab === 'url' ? 'bg-zinc-900 text-white border border-zinc-800 shadow-[inset_0_2px_0_0_rgb(99,102,241)]' : 'text-zinc-400 hover:text-zinc-100 border border-transparent'}`}>Eventos por URL</button>
                 <button type="button" onClick={() => setEventSubTab('button')} className={`px-4 py-2.5 font-semibold text-sm rounded-lg transition-colors ${eventSubTab === 'button' ? 'bg-zinc-900 text-white border border-zinc-800 shadow-[inset_0_2px_0_0_rgb(99,102,241)]' : 'text-zinc-400 hover:text-zinc-100 border border-transparent'}`}>Eventos por Botão</button>
                 <button type="button" onClick={() => setEventSubTab('form')} className={`px-4 py-2.5 font-semibold text-sm rounded-lg transition-colors ${eventSubTab === 'form' ? 'bg-zinc-900 text-white border border-zinc-800 shadow-[inset_0_2px_0_0_rgb(99,102,241)]' : 'text-zinc-400 hover:text-zinc-100 border border-transparent'}`}>Formulários</button>
+                <button type="button" onClick={() => setEventSubTab('links')} className={`px-4 py-2.5 font-semibold text-sm rounded-lg transition-colors ${eventSubTab === 'links' ? 'bg-zinc-900 text-white border border-zinc-800 shadow-[inset_0_2px_0_0_rgb(99,102,241)]' : 'text-zinc-400 hover:text-zinc-100 border border-transparent'}`}>Links</button>
               </div>
 
               {/* Seção 1: Configuração de Eventos por URL */}
@@ -5015,6 +5017,10 @@ ${scriptContent}
                         />
                       </div>
                     )}
+
+              {eventSubTab === 'links' && (
+                <RedirectLinksTab siteId={String(id)} showFlash={showFlash} />
+              )}
                   </div>
                 )}
 
