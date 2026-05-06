@@ -42,6 +42,7 @@ router.get('/allow-domain', async (req, res) => {
   const envHosts = [
     hostFromEnv(process.env.PUBLIC_API_BASE_URL),
     hostFromEnv(process.env.PUBLIC_DASHBOARD_BASE_URL),
+    hostFromEnv(process.env.PUBLIC_TRACKING_BASE_URL),
   ].filter(Boolean) as string[];
 
   if (envHosts.includes(host)) {
