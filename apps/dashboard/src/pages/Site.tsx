@@ -4214,6 +4214,10 @@ ${scriptContent}
                 </div>
               )}
 
+              {eventSubTab === 'links' && (
+                <RedirectLinksTab siteId={String(id)} showFlash={showFlash} />
+              )}
+
               {/* Seção 2: Gerador de Formulário */}
               {eventSubTab === 'form' && (
                 <div className="space-y-5">
@@ -5018,9 +5022,6 @@ ${scriptContent}
                       </div>
                     )}
 
-              {eventSubTab === 'links' && (
-                <RedirectLinksTab siteId={String(id)} showFlash={showFlash} />
-              )}
                   </div>
                 )}
 
