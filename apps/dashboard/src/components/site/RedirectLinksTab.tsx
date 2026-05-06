@@ -177,6 +177,8 @@ export function RedirectLinksTab(props: {
             placeholder="https://seusite.com/oferta"
           />
         </div>
+
+        {/* Linha 2 */}
         <div className="md:col-span-4">
           <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Evento ao clicar</label>
           <select
@@ -192,7 +194,7 @@ export function RedirectLinksTab(props: {
             ))}
           </select>
         </div>
-        <div className="md:col-span-3">
+        <div className="md:col-span-3 flex flex-col justify-end">
           <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">Ativo</label>
           <label className="flex items-center gap-2 text-xs text-zinc-700 dark:text-zinc-300">
             <input
