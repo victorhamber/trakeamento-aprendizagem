@@ -45,6 +45,7 @@ export function RedirectLinksTab(props: {
   const [destinationUrl, setDestinationUrl] = useState('');
   const [eventName, setEventName] = useState('Lead');
   const [isActive, setIsActive] = useState(true);
+  const [lastCreatedUrl, setLastCreatedUrl] = useState<string>('');
 
   const normalizedSlug = useMemo(() => {
     const s = (slug || '').trim().toLowerCase().replace(/^\/+/, '');
@@ -110,11 +111,15 @@ export function RedirectLinksTab(props: {
 
     try {
       if (editingId) {
-        await api.put(`/sites/${siteIdNum}/redirect-links/${editingId}`, payload);
+        const res = await api.put(`/sites/${siteIdNum}/redirect-links/${editingId}`, payload);
         props.showFlash('Link atualizado.', 'success');
+        const link = res?.data?.link as RedirectLinkRow | undefined;
+        if (link?.host && link?.slug) setLastCreatedUrl(`https://${link.host}/${link.slug}`);
       } else {
-        await api.post(`/sites/${siteIdNum}/redirect-links`, payload);
+        const res = await api.post(`/sites/${siteIdNum}/redirect-links`, payload);
         props.showFlash('Link criado.', 'success');
+        const link = res?.data?.link as RedirectLinkRow | undefined;
+        if (link?.host && link?.slug) setLastCreatedUrl(`https://${link.host}/${link.slug}`);
       }
       await load();
       resetForm();
@@ -130,7 +135,7 @@ export function RedirectLinksTab(props: {
       normalizedSlug && links.length
         ? links.find((l) => String(l.slug || '').toLowerCase() === normalizedSlug.toLowerCase()) || null
         : null;
-    const host = row?.host || (links[0]?.host || 'trajettu.com');
+    const host = row?.host || (links[0]?.host || 'app.trajettu.com');
     if (!normalizedSlug) return '';
     return `https://${host}/${normalizedSlug}`;
   }, [links, normalizedSlug]);
@@ -253,6 +258,29 @@ export function RedirectLinksTab(props: {
         )}
       </div>
 
+      {lastCreatedUrl && (
+        <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/30 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <div className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">Último link criado</div>
+              <div className="mt-1 text-[11px] text-zinc-600 dark:text-zinc-400 font-mono break-all">
+                {lastCreatedUrl}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                navigator.clipboard.writeText(lastCreatedUrl);
+                props.showFlash('Link copiado!', 'success');
+              }}
+              className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-xs font-medium transition-colors"
+            >
+              Copiar link
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
         <table className="w-full table-fixed text-left text-sm text-zinc-600 dark:text-zinc-400">
           <thead className="bg-zinc-50 dark:bg-zinc-900/60 text-xs uppercase font-medium text-zinc-600 dark:text-zinc-500">
@@ -303,6 +331,17 @@ export function RedirectLinksTab(props: {
                   </td>
                   <td className="px-4 py-3 text-right whitespace-nowrap">
                     <div className="flex justify-end gap-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const url = `https://${row.host}/${row.slug}`;
+                          navigator.clipboard.writeText(url);
+                          props.showFlash('Link copiado!', 'success');
+                        }}
+                        className="text-zinc-600 dark:text-zinc-400 hover:text-emerald-400 text-xs transition-colors"
+                      >
+                        Copiar
+                      </button>
                       <button
                         type="button"
                         onClick={() => handleEdit(row)}

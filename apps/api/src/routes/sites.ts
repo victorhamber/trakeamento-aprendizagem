@@ -1294,7 +1294,7 @@ router.post('/:siteId/redirect-links', requireAuth, async (req, res) => {
       return null;
     }
   })();
-  const host = hostFromSite || defaultHostFromEnv || 'trajettu.com';
+  const host = hostFromSite || defaultHostFromEnv || 'app.trajettu.com';
 
   const paramNorm = normalizeEventRuleParameters(ev, parameters);
   if (!paramNorm.ok) return res.status(400).json({ error: paramNorm.error });
@@ -1349,7 +1349,7 @@ router.put('/:siteId/redirect-links/:id', requireAuth, async (req, res) => {
       return null;
     }
   })();
-  const host = hostFromSite || defaultHostFromEnv || 'trajettu.com';
+  const host = hostFromSite || defaultHostFromEnv || 'app.trajettu.com';
 
   const paramNorm = normalizeEventRuleParameters(ev, parameters);
   if (!paramNorm.ok) return res.status(400).json({ error: paramNorm.error });
