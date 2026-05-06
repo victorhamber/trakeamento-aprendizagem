@@ -186,6 +186,55 @@ function mergeQueryIntoDestination(destUrl: string, incoming: URLSearchParams): 
   return u.toString();
 }
 
+function destinationLooksLikeHotmart(destUrl: string): boolean {
+  try {
+    const u = new URL(destUrl);
+    const h = u.hostname.toLowerCase();
+    return h === 'pay.hotmart.com' || h.endsWith('.hotmart.com') || h.endsWith('.hotmart.com.br');
+  } catch {
+    return false;
+  }
+}
+
+function pickForwardParams(opts: { incoming: URLSearchParams; destinationUrl: string }): URLSearchParams {
+  // Hotmart pode quebrar com parâmetros não reconhecidos / longos.
+  // Aqui a gente é conservador: só repassa UTMs + click ids clássicos.
+  const allow = new Set([
+    'utm_source',
+    'utm_medium',
+    'utm_campaign',
+    'utm_content',
+    'utm_term',
+    'click_id',
+    'fbclid',
+    'gclid',
+    'gbraid',
+    'wbraid',
+    'msclkid',
+    'ttclid',
+    'twclid',
+  ]);
+
+  const out = new URLSearchParams();
+  const isHotmart = destinationLooksLikeHotmart(opts.destinationUrl);
+  opts.incoming.forEach((v, k) => {
+    const key = String(k || '').trim();
+    if (!key) return;
+    const lower = key.toLowerCase();
+    if (!allow.has(lower)) {
+      // Fora da allowlist, não repassa (principalmente p/ Hotmart).
+      // Para destinos não-Hotmart, também mantemos conservador por segurança.
+      return;
+    }
+    const val = String(v || '').trim();
+    if (!val) return;
+    // Não estourar URL em gateways sensíveis.
+    const maxLen = isHotmart ? 160 : 500;
+    out.set(lower, val.length > maxLen ? val.slice(0, maxLen) : val);
+  });
+  return out;
+}
+
 app.get('/:slug', async (req, res) => {
   const slug = safeSlug(req.params.slug);
   if (!slug) return res.status(404).type('text/plain').send('Not found');
@@ -230,15 +279,11 @@ app.get('/:slug', async (req, res) => {
     (incomingQs.get('fbc') || '').trim() ||
     (typeof (user_data as any).fbc === 'string' ? String((user_data as any).fbc).trim() : '');
 
-  const forwardQs = new URLSearchParams(incomingQs.toString());
-  if (externalId && !forwardQs.get('external_id')) forwardQs.set('external_id', externalId);
-  if (fbp && !forwardQs.get('fbp')) forwardQs.set('fbp', fbp);
-  if (fbc && !forwardQs.get('fbc')) forwardQs.set('fbc', fbc);
-  try {
-    const trk = `trk_${Buffer.from(`${externalId}|${fbc || ''}|${fbp || ''}`).toString('base64')}`;
-    if (!forwardQs.get('trk')) forwardQs.set('trk', trk);
-  } catch {}
-
+  // IMPORTANTE: não “inventar” parâmetros no destino (ex.: external_id/fbp/fbc/trk),
+  // porque alguns checkouts (Hotmart) podem quebrar com query extra.
+  // A gente usa external_id/fbp/fbc internamente para o evento, mas repassa para o destino
+  // apenas uma allowlist segura (UTMs + click IDs).
+  const forwardQs = pickForwardParams({ incoming: incomingQs, destinationUrl: String(link.destination_url) });
   const destination = mergeQueryIntoDestination(String(link.destination_url), forwardQs);
 
   const custom_data: Record<string, unknown> =
