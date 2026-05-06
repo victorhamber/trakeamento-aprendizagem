@@ -169,7 +169,7 @@ export function RedirectLinksTab(props: {
       normalizedSlug && links.length
         ? links.find((l) => String(l.slug || '').toLowerCase() === normalizedSlug.toLowerCase()) || null
         : null;
-    const host = row?.host || (links[0]?.host || 'app.trajettu.com');
+    const host = row?.host || (links[0]?.host || 'r.trajettu.com');
     if (!normalizedSlug) return '';
     return `https://${host}/${normalizedSlug}`;
   }, [links, normalizedSlug]);
@@ -179,7 +179,7 @@ export function RedirectLinksTab(props: {
       <div>
         <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Links (Redirecionador + Evento)</h3>
         <p className="text-sm text-zinc-600 dark:text-zinc-500">
-          Crie um link do tipo <code className="text-xs">https://trajettu.com/seu-slug</code> que dispara o evento escolhido e
+          Crie um link do tipo <code className="text-xs">https://r.trajettu.com/seu-slug</code> que dispara o evento escolhido e
           redireciona levando UTMs e IDs do pixel.
         </p>
       </div>
