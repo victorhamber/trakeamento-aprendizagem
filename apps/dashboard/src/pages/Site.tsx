@@ -1439,6 +1439,10 @@ async function handleTrkSubmit(e) {
     data.page_title = (document && document.title) ? document.title : '';
     data.page_path = (location && location.pathname) ? location.pathname : '';
     data.page_location = (location && location.href) ? location.href : '';
+    try {
+      var docRef = (document.referrer || '').trim();
+      if (/^https?:\\/\\//i.test(docRef)) data.referrer = docRef;
+    } catch (_ref) {}
   } catch(_e) {}
 
   // 1. Identify client

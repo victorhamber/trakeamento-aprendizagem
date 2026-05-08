@@ -27,6 +27,15 @@ const LRUCache = require('lru-cache').LRUCache || require('lru-cache');
 
 const ga4Service = new Ga4Service(pool);
 
+function shouldLogPixelQuality(siteKey: string, eventName: string): boolean {
+  if (process.env.PIXEL_QUALITY_LOG !== '1') return false;
+  const sample = Math.max(0, Math.min(1, Number(process.env.PIXEL_QUALITY_SAMPLE || '0.03')));
+  if (!(sample > 0)) return false;
+  if (eventName === 'Purchase' || eventName === 'InitiateCheckout' || eventName === 'Lead') return true;
+  if (eventName === 'PageView' || eventName === 'PageEngagement') return Math.random() < Math.min(sample, 0.01);
+  return Math.random() < sample;
+}
+
 function rateLimitKey(req: Request): string {
   const siteKeyRaw = (req.query['key'] as string | undefined) || (req.headers['x-site-key'] as string | undefined);
   const siteKey = typeof siteKeyRaw === 'string' ? siteKeyRaw.trim() : '';
@@ -1247,12 +1256,25 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
           ? { custom_data: metaCustomData }
           : {}),
       };
-
-
-
-
       // Fire-and-forget com retry — não bloqueia a resposta HTTP
       sendCapiWithRetry(siteKey, capiPayload).catch(() => { });
+      if (shouldLogPixelQuality(siteKey, eventName)) {
+        const ud = capiPayload.user_data as any;
+        const cd2 = (capiPayload.custom_data || {}) as Record<string, unknown>;
+        console.log('[PixelQuality][Ingest]', {
+          site_key: siteKey,
+          event_name: eventName,
+          has_fbc: Boolean(ud?.fbc && String(ud.fbc).trim()),
+          has_fbp: Boolean(ud?.fbp && String(ud.fbp).trim()),
+          has_ip: Boolean(ud?.client_ip_address && String(ud.client_ip_address).trim()),
+          has_ua: Boolean(ud?.client_user_agent && String(ud.client_user_agent).trim()),
+          has_external_id: Boolean(ud?.external_id && String(ud.external_id).trim()),
+          has_event_source_url: Boolean(capiPayload.event_source_url && String(capiPayload.event_source_url).trim()),
+          has_referrer_url: Boolean(capiPayload.referrer_url && String(capiPayload.referrer_url).trim()),
+          has_value: cd2.value !== undefined && cd2.value !== null,
+          has_currency: cd2.currency !== undefined && cd2.currency !== null && String(cd2.currency).trim() !== '',
+        });
+      }
 
       // ── 2b. Qualificação CRM (estilo Meta) — aditivo, opt-in por regra ──
       // Quando uma regra (URL/clique) é marcada com `_crm_qualify=true` no painel,

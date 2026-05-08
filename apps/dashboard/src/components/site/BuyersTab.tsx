@@ -107,6 +107,12 @@ type BuyerDetail = {
       from_visitor_profile: string | null;
       effective_user_agent: string | null;
     } | null;
+    /** Cada PageView bruto antes da última compra (URLs como no `web_events`), ordem cronológica — diagnóstico. */
+    pageviews_debug_chronological_before_last_purchase?: Array<{
+      at: string;
+      event_source_url: string;
+      page_location?: string | null;
+    }>;
     /** Trilha cronológica (do mais antigo ao mais recente): passos iguais em sequência são agrupados. */
     meta_ad_touch_trail?: Array<{
       started_at: string;
@@ -197,34 +203,59 @@ function formatPageviewAttributionSummary(utm: Record<string, string> | null | u
   return null;
 }
 
-/** Primeiro segmento do path para tag visual; raiz ou vazio → "página principal". */
+/**
+ * Label alinhado à API: path completo (segmentos com ›); hash-rota `#/x` vira parte do path.
+ * Evita colapsar cadastro + vendas no mesmo slug quando compartilham o primeiro segmento.
+ */
 function pageSlugLabelFromUrl(rawUrl: string): string {
   const s = (rawUrl || '').trim();
   if (!s) return 'página principal';
+  const decodeSeg = (seg: string) => {
+    try {
+      return decodeURIComponent(seg);
+    } catch {
+      return seg;
+    }
+  };
   try {
     const u = new URL(s);
-    const path = u.pathname.replace(/^\/+|\/+$/g, '');
-    if (!path) return 'página principal';
-    const segment = path.split('/').filter(Boolean)[0] || '';
-    if (!segment) return 'página principal';
-    try {
-      return decodeURIComponent(segment);
-    } catch {
-      return segment;
+    let path = u.pathname.replace(/^\/+|\/+$/g, '');
+    let frag = (u.hash || '').replace(/^#/, '').trim().split('?')[0];
+    if (frag.startsWith('/')) {
+      const hp = frag.replace(/^\/+|\/+$/g, '');
+      if (hp) path = path ? `${path}/${hp}` : hp;
+      frag = '';
     }
+    const segments = path.split('/').filter(Boolean).map(decodeSeg);
+    if (!segments.length && !frag) return 'página principal';
+    let label = segments.length ? segments.join(' › ') : 'página principal';
+    if (frag) {
+      const short = frag.length > 40 ? `${frag.slice(0, 38)}…` : frag;
+      label = segments.length ? `${label} (#${short})` : `#${short}`;
+    }
+    return label;
   } catch {
     const q = s.indexOf('?');
     const withoutQuery = q >= 0 ? s.slice(0, q) : s;
-    const afterHost = withoutQuery.replace(/^[^:]+:\/\//, '').replace(/^[^/]+/, '');
-    const path = afterHost.replace(/^\/+|\/+$/g, '');
-    if (!path) return 'página principal';
-    const segment = path.split('/').filter(Boolean)[0] || '';
-    if (!segment) return 'página principal';
-    try {
-      return decodeURIComponent(segment);
-    } catch {
-      return segment;
+    const hashIdx = withoutQuery.indexOf('#');
+    const beforeHash = hashIdx >= 0 ? withoutQuery.slice(0, hashIdx) : withoutQuery;
+    const hashPart = hashIdx >= 0 ? withoutQuery.slice(hashIdx + 1).split('?')[0] : '';
+    const afterHost = beforeHash.replace(/^[^:]+:\/\//, '').replace(/^[^/]+/, '');
+    let path = afterHost.replace(/^\/+|\/+$/g, '');
+    let frag = hashPart;
+    if (frag.startsWith('/')) {
+      const hp = frag.replace(/^\/+|\/+$/g, '');
+      if (hp) path = path ? `${path}/${hp}` : hp;
+      frag = '';
     }
+    const segments = path.split('/').filter(Boolean).map(decodeSeg);
+    if (!segments.length && !frag) return 'página principal';
+    let label = segments.length ? segments.join(' › ') : 'página principal';
+    if (frag) {
+      const short = frag.length > 40 ? `${frag.slice(0, 38)}…` : frag;
+      label = segments.length ? `${label} (#${short})` : `#${short}`;
+    }
+    return label;
   }
 }
 
@@ -488,6 +519,32 @@ function BuyerJourneyDetailView({
               <div className="text-slate-400">{detail.buyer.customer_phone || '—'}</div>
             </div>
           </div>
+
+          {(detail.behavior.pageviews_debug_chronological_before_last_purchase?.length ?? 0) > 0 ? (
+            <div className="rounded-lg border border-slate-800 bg-zinc-950 p-3">
+              <div className="text-[11px] font-semibold text-slate-300 mb-1">PageViews brutos (pré-compra)</div>
+              <p className="text-[10px] text-slate-500 mb-2">
+                URLs exatamente como gravadas no rastreamento, em ordem de tempo. Se duas linhas forem iguais, não houve
+                nova URL entre elas (ex.: recarregar a mesma página).
+              </p>
+              <div className="max-h-56 overflow-y-auto space-y-2 text-[10px]">
+                {detail.behavior.pageviews_debug_chronological_before_last_purchase!.map((row, idx) => (
+                  <div key={`${row.at}-${idx}`} className="rounded border border-slate-800/80 p-2 space-y-1">
+                    <div className="text-slate-500">{dt(row.at)}</div>
+                    <div className="text-slate-200 font-mono break-all" title={row.event_source_url}>
+                      {row.event_source_url}
+                    </div>
+                    {row.page_location && row.page_location !== row.event_source_url ? (
+                      <div className="text-slate-500">
+                        <span className="text-slate-600">page_location: </span>
+                        <span className="font-mono break-all text-slate-400">{row.page_location}</span>
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
 
           <div className="rounded-lg border border-slate-800 bg-zinc-950 p-3">
             <div className="text-[11px] font-semibold text-slate-300 mb-2">User-Agent</div>

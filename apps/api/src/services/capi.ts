@@ -51,9 +51,12 @@ type CapiSendResult =
 export class CapiService {
   private static disabledUntil = new Map<string, number>();
   private static readonly AXIOS_TIMEOUT_MS = 8000;
-  private static readonly OUTBOX_INITIAL_DELAY_SEC = 30;
-  private static readonly OUTBOX_BASE_DELAY_SEC = 30;
+  // Latência: outbox é fallback, mas quando cai nele queremos retry rápido.
+  // Override via env para ajuste fino sem redeploy.
+  private static readonly OUTBOX_INITIAL_DELAY_SEC = parseInt(process.env.CAPI_OUTBOX_INITIAL_DELAY_SEC || '10', 10) || 10;
+  private static readonly OUTBOX_BASE_DELAY_SEC = parseInt(process.env.CAPI_OUTBOX_BASE_DELAY_SEC || '30', 10) || 30;
   private static readonly OUTBOX_MAX_DELAY_SEC = 30 * 60; // 30 min
+  private static readonly OUTBOX_LOG_ENABLED = process.env.PIXEL_QUALITY_LOG === '1';
 
   // Função auxiliar para hash SHA256
   public static hash(input: string): string {
@@ -286,6 +289,15 @@ export class CapiService {
          VALUES ($1, $2, $3, NOW() + ($4::int * INTERVAL '1 second'))`,
         [siteKey, JSON.stringify(event), errorStr, CapiService.OUTBOX_INITIAL_DELAY_SEC]
       );
+      if (CapiService.OUTBOX_LOG_ENABLED) {
+        console.log('[PixelQuality][Outbox]', {
+          site_key: siteKey,
+          event_name: event?.event_name,
+          event_id: event?.event_id,
+          next_delay_sec: CapiService.OUTBOX_INITIAL_DELAY_SEC,
+          last_error: String(errorStr || '').slice(0, 200),
+        });
+      }
     } catch (e) {
       log.error('Failed to save to capi_outbox', { error: String(e) });
     }

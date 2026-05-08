@@ -19,6 +19,32 @@ function splitName(fullName: string): { fn?: string; ln?: string } {
   };
 }
 
+/** `referrer_url` no CAPI (POST público do form): body.referrer vindo do embed ou Referer do browser. */
+function pickFormCapiReferrerUrl(
+  bodyRaw: Record<string, unknown>,
+  headerReferer: string | undefined,
+  eventSourceUrl: string
+): string | undefined {
+  const es = eventSourceUrl.trim();
+  const candidates: string[] = [];
+  const r0 = typeof bodyRaw.referrer === 'string' ? bodyRaw.referrer.trim() : '';
+  const rDoc =
+    typeof (bodyRaw as { document_referrer?: string }).document_referrer === 'string'
+      ? String((bodyRaw as { document_referrer?: string }).document_referrer).trim()
+      : '';
+  if (r0) candidates.push(r0);
+  if (rDoc) candidates.push(rDoc);
+  const hdr = (headerReferer || '').trim();
+  if (hdr) candidates.push(hdr);
+  for (const c of candidates) {
+    if (!c || !CapiService.isValidHttpEventSourceUrl(c)) continue;
+    const t = c.trim();
+    if (t === es) continue;
+    return t;
+  }
+  return undefined;
+}
+
 // List Forms
 router.get('/sites/:siteId/forms', requireAuth, async (req, res) => {
   const auth = req.auth!;
@@ -656,7 +682,41 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
             typeof (body as any)?.page_location === 'string' && String((body as any).page_location).trim()
               ? String((body as any).page_location).trim()
               : '';
-          const eventSourceUrl = pageLocation || (req.headers.referer as string | undefined) || `https://form-submit.trakeamento.com/${publicId}`;
+          const hdrRef = typeof req.headers.referer === 'string' ? req.headers.referer.trim() : '';
+
+          let eventSourceUrl = '';
+          for (const c of [pageLocation, hdrRef]) {
+            if (c && CapiService.isValidHttpEventSourceUrl(c)) {
+              eventSourceUrl = c;
+              break;
+            }
+          }
+          if (!eventSourceUrl) {
+            try {
+              const hostRes = await pool.query<{ host: string | null }>(
+                `SELECT COALESCE(NULLIF(TRIM(s.tracking_domain), ''), NULLIF(TRIM(s.domain), '')) AS host
+                 FROM sites s WHERE s.site_key = $1 LIMIT 1`,
+                [siteKey]
+              );
+              const host = hostRes.rows[0]?.host?.trim();
+              if (host) {
+                const hostOnly = host.replace(/^https?:\/\//i, '').split('/')[0];
+                const origin = `https://${hostOnly}/`;
+                if (CapiService.isValidHttpEventSourceUrl(origin)) eventSourceUrl = origin;
+              }
+            } catch {
+              /* use placeholder below */
+            }
+          }
+          if (!eventSourceUrl) {
+            eventSourceUrl = `https://form-submit.trakeamento.com/${publicId}`;
+          }
+
+          const referrerUrlFallback = pickFormCapiReferrerUrl(
+            body as Record<string, unknown>,
+            hdrRef,
+            eventSourceUrl
+          );
 
           capiService
             .sendEventDetailed(siteKey, {
@@ -664,6 +724,7 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
               event_time: Math.floor(Date.now() / 1000),
               event_id: eventIdSafe,
               event_source_url: eventSourceUrl,
+              ...(referrerUrlFallback ? { referrer_url: referrerUrlFallback } : {}),
               action_source: 'website',
               user_data: userData,
               custom_data: {

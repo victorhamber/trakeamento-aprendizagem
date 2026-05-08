@@ -1283,17 +1283,49 @@ async function handleTrkSubmit(e) {
   var phoneDigits = (phoneRaw || '').toString().replace(/[^0-9]/g, '');
   if (phoneDigits) data.phone = '+' + ddiDigits + phoneDigits;
 
-  // Prevent duplicates by generating a single event ID for both Tracker (browser) and API (server)
-  var eventId = 'evt_' + Math.floor(Date.now() / 1000) + '_' + Math.random().toString(36).slice(2);
+  // Mesmo formato que o SDK (genEventId): dedup Pixel × CAPI exige event_id idêntico no fbq e no /ingest
+  var eventId = Math.random().toString(36).slice(2) + Date.now().toString(36);
   data.event_id = eventId;
   data.tracked_by_frontend = !!window.tracker;
+  data.meta_event_name = '${evtName}';
+
+  // Campos para auditoria no servidor (igual embed do dashboard)
+  try {
+    var fields = {};
+    var els = form.querySelectorAll('input,select,textarea');
+    for (var i = 0; i < els.length; i++) {
+      var el = els[i];
+      if (!el || !el.name) continue;
+      if (el.type === 'password') continue;
+      if ((el.type === 'checkbox' || el.type === 'radio') && !el.checked) continue;
+      var v = (el.value || '').toString();
+      if (!v) continue;
+      fields[el.name] = v;
+    }
+    data.fields = fields;
+    data.page_title = (document && document.title) ? document.title : '';
+    data.page_path = (location && location.pathname) ? location.pathname : '';
+    data.page_location = (location && location.href) ? location.href : '';
+    try {
+      var docRef = (document.referrer || '').trim();
+      if (/^https?:\\/\\//i.test(docRef)) data.referrer = docRef;
+    } catch (_ref) {}
+  } catch(_e) {}
 
   // 1. Identify client
   if (window.tracker) {
     window.tracker.identify(data);
   }
 
-  // 2. Server-side submission
+  // 2. Pixel + /ingest ANTES do POST (mesmo event_id → Meta dedup browser × servidor)
+  if (window.tracker) {
+    var evtData = { event_id: eventId };
+    ${(event_value && !isNaN(parseFloat(event_value))) ? `evtData.value = ${parseFloat(event_value)};` : ''}
+    ${(event_currency) ? `evtData.currency = '${event_currency}';` : ''}
+    window.tracker.track('${evtName}', evtData);
+  }
+
+  // 3. Envio ao servidor (webhooks, auditoria, fallback CAPI se /ingest atrasar)
   try {
     var res = await fetch('${endpoint}', {
       method: 'POST',
@@ -1303,28 +1335,16 @@ async function handleTrkSubmit(e) {
     var json = await res.json();
 
     if (json.action === 'redirect' && json.redirect_url) {
-      if (window.tracker) {
-        var evtData = { event_id: eventId };
-        ${(event_value && !isNaN(parseFloat(event_value))) ? `evtData.value = ${parseFloat(event_value)};` : ''}
-        ${(event_currency) ? `evtData.currency = '${event_currency}';` : ''}
-        window.tracker.track('${evtName}', evtData);
-      }
       setTimeout(function() {
         if (window.taDecorateUrl) {
           window.location.href = window.taDecorateUrl(json.redirect_url);
         } else {
           window.location.href = json.redirect_url;
         }
-      }, 400); // Dá tempo (400ms) para o Meta Pixel/FBQ disparar antes de matar a página atual
+      }, 400); // Tempo para o fbq completar antes do redirect
     } else if (json.message) {
       form.innerHTML = '<div style="padding:20px; text-align:center; color:${isDark ? '#fff' : '#000'};">' + json.message + '</div>';
     } else {
-       if (window.tracker) {
-         var evtData = { event_id: eventId };
-         ${(event_value && !isNaN(parseFloat(event_value))) ? `evtData.value = ${parseFloat(event_value)};` : ''}
-         ${(event_currency) ? `evtData.currency = '${event_currency}';` : ''}
-         window.tracker.track('${evtName}', evtData);
-       }
        form.reset();
        alert('Enviado com sucesso!');
        btn.disabled = false;

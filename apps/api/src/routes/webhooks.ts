@@ -22,6 +22,14 @@ import {
 const log = createLogger('Webhook');
 const router = Router();
 
+function shouldLogPixelQuality(siteKey: string, eventName: string): boolean {
+  if (process.env.PIXEL_QUALITY_LOG !== '1') return false;
+  const sample = Math.max(0, Math.min(1, Number(process.env.PIXEL_QUALITY_SAMPLE || '0.03')));
+  if (!(sample > 0)) return false;
+  if (eventName === 'Purchase' || eventName === 'InitiateCheckout' || eventName === 'Lead') return true;
+  return Math.random() < sample;
+}
+
 function decodeTrkToken(token: string) {
   if (!token || !token.startsWith('trk_')) return null;
   try {
@@ -1218,6 +1226,28 @@ async function processPurchaseWebhook({
   };
 
   if (capi_test_event_code) capiPayload.test_event_code = capi_test_event_code;
+
+  if (shouldLogPixelQuality(siteKey, capiEventName)) {
+    const ud = capiPayload.user_data || {};
+    const cd = capiPayload.custom_data || {};
+    console.log('[PixelQuality][Webhook]', {
+      site_key: siteKey,
+      platform,
+      event_name: capiEventName,
+      has_fbc: Boolean(ud.fbc && String(ud.fbc).trim()),
+      has_fbp: Boolean(ud.fbp && String(ud.fbp).trim()),
+      has_ip: Boolean(ud.client_ip_address && String(ud.client_ip_address).trim()),
+      has_ua: Boolean(ud.client_user_agent && String(ud.client_user_agent).trim()),
+      has_external_id: Boolean(ud.external_id && String(ud.external_id).trim()),
+      has_event_source_url: Boolean(capiPayload.event_source_url && String(capiPayload.event_source_url).trim()),
+      has_referrer_url: Boolean(capiPayload.referrer_url && String(capiPayload.referrer_url).trim()),
+      has_value: cd.value !== undefined && cd.value !== null,
+      has_currency: cd.currency !== undefined && cd.currency !== null && String(cd.currency).trim() !== '',
+      hotmart_recurrence_number: webhookRecurrenceNumber,
+      hotmart_installments_number: hotmartMetaDedupe?.installmentsNumber ?? null,
+      hotmart_is_installment_plan: hotmartMetaDedupe?.isInstallmentPlan ?? null,
+    });
+  }
 
   // 3. Database Persistence
   // Chave do perfil (site_visitors / purchases.external_id): mesmo critério do CAPI — eid_ primeiro;

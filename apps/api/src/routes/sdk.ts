@@ -1219,6 +1219,13 @@ router.get('/tracker.js', async (req, res) => {
     var lt = nav && nav.loadEventEnd > 0 ? (nav.loadEventEnd - nav.navigationStart) : 
              (nav && nav.domContentLoadedEventEnd > 0 ? (nav.domContentLoadedEventEnd - nav.navigationStart) : 0);
 
+    // document.referrer → CAPI referrer_url via pickReferrerUrlForCapi (ingest) em todos os eventos com telemetry
+    var docRefTelemetry = {};
+    try {
+      var dr = (document.referrer || '').trim();
+      if (/^https?:\/\//i.test(dr)) docRefTelemetry.referrer = dr;
+    } catch (_dr) {}
+
     var base = Object.assign({
       dwell_time_ms:   dwellMs,
       visible_time_ms: visibleMs + (hiddenSince ? 0 : (Date.now() - startMs)),
@@ -1239,7 +1246,7 @@ router.get('/tracker.js', async (req, res) => {
       vsl_duration_s:  vslState.found ? Math.round(vslState.duration) : undefined,
       vsl_max_pct:     vslState.found ? Math.round(vslState.maxPct) : undefined,
       vsl_milestones:  vslState.found ? vslState.milestones : undefined,
-    }, getDeviceInfo());
+    }, docRefTelemetry, getDeviceInfo());
     return Object.assign(base, extra || {});
   }
 
@@ -1472,6 +1479,10 @@ router.get('/tracker.js', async (req, res) => {
         page_location:    location.href,
         traffic_source:   getTrafficSource()
       };
+      try {
+        var drTr = (document.referrer || '').trim();
+        if (/^https?:\/\//i.test(drTr)) baseCustom.referrer = drTr;
+      } catch (_tr) {}
       var telemetry = buildTelemetry({ page_path: location.pathname, page_title: document.title });
 
       var payload = {

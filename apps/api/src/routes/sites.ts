@@ -2039,10 +2039,10 @@ function stableUtmMapKey(utm: Record<string, string> | null | undefined): string
 }
 
 function trailPageSlugLabel(url: string): string {
-  const k = pageSlugKeyForBuyerTimeline(url);
-  if (k === '__empty__') return '—';
-  if (k === '__root__') return 'início';
-  return k;
+  const p = parseBuyerPageIdentity(url);
+  if (!p) return '—';
+  if (p.key === '__root__') return 'início';
+  return p.displayLabel;
 }
 
 type BuyerAdTouchTrailSegment = {
@@ -2193,32 +2193,88 @@ function normalizeGroupTagsList(history: unknown, fallbackLast: string | null | 
   return f ? [f] : [];
 }
 
-/** Chave de slug (1º segmento do path) para agregar repetições de PageView na jornada. */
-function pageSlugKeyForBuyerTimeline(url: string): string {
+/**
+ * Path lógico da página + fragmento restante (âncora / rota sem "/" inicial).
+ * Antes usávamos só o 1º segmento — `/funil/captura` e `/funil/vendas` viravam um só ("funil").
+ */
+type BuyerPageParsed = { key: string; displayLabel: string };
+
+function buyerPageParsedFromParts(pathnameRaw: string, hashRawWithMaybeHash: string): BuyerPageParsed {
+  let path = pathnameRaw.replace(/^\/+|\/+$/g, '');
+  let frag = (hashRawWithMaybeHash || '').replace(/^#/, '').trim().split('?')[0];
+
+  // SPA com hash-rota: .../codigo-secreto-b#/pagina → path lógico codigo-secreto-b/pagina
+  if (frag.startsWith('/')) {
+    const hp = frag.replace(/^\/+|\/+$/g, '');
+    if (hp) path = path ? `${path}/${hp}` : hp;
+    frag = '';
+  }
+
+  const rawSegs = path.split('/').filter(Boolean);
+  const keySegs = rawSegs.map((seg) => {
+    try {
+      return decodeURIComponent(seg).toLowerCase();
+    } catch {
+      return seg.toLowerCase();
+    }
+  });
+  const displaySegs = rawSegs.map((seg) => {
+    try {
+      return decodeURIComponent(seg);
+    } catch {
+      return seg;
+    }
+  });
+
+  const hKey = frag ? (frag.length > 120 ? frag.slice(0, 120) : frag).toLowerCase() : '';
+
+  let key: string;
+  let displayLabel: string;
+  if (!keySegs.length) {
+    key = '__root__';
+    displayLabel = 'início';
+  } else {
+    key = keySegs.join('/');
+    displayLabel = displaySegs.join(' › ');
+  }
+  if (hKey) {
+    key = `${key}#${hKey}`;
+    const hDisp = frag.length > 40 ? `${frag.slice(0, 38)}…` : frag;
+    displayLabel = `${displayLabel} (#${hDisp})`;
+  }
+  return { key, displayLabel };
+}
+
+function parseBuyerPageIdentity(url: string): BuyerPageParsed | null {
   const s = (url || '').trim();
-  if (!s) return '__empty__';
+  if (!s) return null;
   try {
     const u = new URL(s);
-    const path = u.pathname.replace(/^\/+|\/+$/g, '');
-    const segment = path.split('/').filter(Boolean)[0] || '';
-    if (!segment) return '__root__';
-    try {
-      return decodeURIComponent(segment).toLowerCase();
-    } catch {
-      return segment.toLowerCase();
-    }
+    return buyerPageParsedFromParts(u.pathname || '/', u.hash || '');
   } catch {
-    const q = s.indexOf('?');
-    const withoutQuery = q >= 0 ? s.slice(0, q) : s;
-    const afterHost = withoutQuery.replace(/^[^:]+:\/\//, '').replace(/^[^/]+/, '');
-    const path = afterHost.replace(/^\/+|\/+$/g, '');
-    const segment = path.split('/').filter(Boolean)[0] || '';
-    return segment ? segment.toLowerCase() : '__root__';
+    try {
+      const q = s.indexOf('?');
+      const withoutQuery = q >= 0 ? s.slice(0, q) : s;
+      const hashIdx = withoutQuery.indexOf('#');
+      const beforeHash = hashIdx >= 0 ? withoutQuery.slice(0, hashIdx) : withoutQuery;
+      const hashPart = hashIdx >= 0 ? withoutQuery.slice(hashIdx) : '';
+      const afterHost = beforeHash.replace(/^[^:]+:\/\//, '').replace(/^[^/]+/, '');
+      const pathname = afterHost.startsWith('/') ? afterHost : `/${afterHost}`;
+      return buyerPageParsedFromParts(pathname, hashPart);
+    } catch {
+      return null;
+    }
   }
 }
 
+function pageSlugKeyForBuyerTimeline(url: string): string {
+  const p = parseBuyerPageIdentity(url);
+  if (!p) return '__empty__';
+  return p.key;
+}
+
 /**
- * Uma linha por slug: horário = visita mais recente àquela página; visit_count = total de PageViews (pré-compra).
+ * Uma linha por página lógica (path completo + hash quando diferencia): horário = última visita; visit_count = PageViews.
  */
 function aggregateBuyerPageviewTimeline(
   timeline: Array<{ at: string; url: string; utm?: Record<string, string> | null }>,
@@ -2243,6 +2299,40 @@ function aggregateBuyerPageviewTimeline(
   return Array.from(bySlug.values())
     .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
     .map((v) => ({ at: v.at, url: v.url, utm: v.utm, visit_count: v.count }));
+}
+
+/** Diagnóstico: cada PageView bruto antes da compra (URLs reais no `web_events`), sem agregação. */
+const BUYER_DEBUG_PAGEVIEW_MAX = 150;
+
+type BuyerPageviewDebugRow = {
+  at: string;
+  event_source_url: string;
+  page_location?: string | null;
+};
+
+function collectBuyerPageviewDebugRow(
+  acc: BuyerPageviewDebugRow[],
+  eventTime: unknown,
+  eventSourceUrl: string,
+  customData: unknown
+): void {
+  const at = String(eventTime);
+  let pageLocation: string | undefined;
+  if (customData && typeof customData === 'object') {
+    const o = customData as Record<string, unknown>;
+    const p = o.page_location;
+    const eu = o.event_url;
+    const s =
+      typeof p === 'string' && p.trim()
+        ? p.trim()
+        : typeof eu === 'string' && eu.trim()
+          ? eu.trim()
+          : '';
+    if (s && s !== eventSourceUrl) pageLocation = s;
+  }
+  const row: BuyerPageviewDebugRow = { at, event_source_url: eventSourceUrl };
+  if (pageLocation) row.page_location = pageLocation;
+  acc.push(row);
 }
 
 /** Anexa campanha/conjunto/anúncio (Meta) a cada PageView da jornada; cache por combinação UTM, limite de lookups. */
@@ -3001,8 +3091,10 @@ router.get('/:siteId/buyers/by-key/:buyerKey', requireAuth, async (req, res) => 
     let lastPageviewUaBeforePurchase: string | null = null;
     const pageviewTimeline: Array<{ at: string; url: string; utm?: Record<string, string> | null }> = [];
     let meta_ad_touch_trail: BuyerAdTouchTrailSegment[] = [];
+    let pageviewsDebugChrono: BuyerPageviewDebugRow[] = [];
     if (lastPurchaseAt) {
       const rawTrailPvs: Array<{ at: string; url: string; custom_data: unknown; event_user_fbc: string | null }> = [];
+      const pageviewsDebugRaw: BuyerPageviewDebugRow[] = [];
       for (const e of eventsRes.rows) {
         const t = new Date(e.event_time);
         if (t.getTime() >= lastPurchaseAt.getTime()) continue;
@@ -3022,6 +3114,7 @@ router.get('/:siteId/buyers/by-key/:buyerKey', requireAuth, async (req, res) => 
             lastPageviewUaBeforePurchase = ua || null;
           }
           pageviewTimeline.push({ at: String(e.event_time), url: e.event_source_url, utm: mergedUtm });
+          collectBuyerPageviewDebugRow(pageviewsDebugRaw, e.event_time, e.event_source_url, e.custom_data);
           rawTrailPvs.push({
             at: String(e.event_time),
             url: e.event_source_url,
@@ -3031,6 +3124,8 @@ router.get('/:siteId/buyers/by-key/:buyerKey', requireAuth, async (req, res) => 
           });
         }
       }
+      pageviewsDebugRaw.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
+      pageviewsDebugChrono = pageviewsDebugRaw.slice(0, BUYER_DEBUG_PAGEVIEW_MAX);
       if (rawTrailPvs.length) {
         const rawTrailAsc = [...rawTrailPvs].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
         meta_ad_touch_trail = await buildMetaAdTouchTrail(siteId, rawTrailAsc, 40);
@@ -3088,6 +3183,7 @@ router.get('/:siteId/buyers/by-key/:buyerKey', requireAuth, async (req, res) => 
         top_pages_before_last_purchase: topPages,
         last_pageview_before_last_purchase: lastPageviewBeforePurchase,
         pageviews_timeline_before_last_purchase: pageviewTimelineWithMetaByKey.slice(0, 500),
+        pageviews_debug_chronological_before_last_purchase: pageviewsDebugChrono,
         last_touch: lastTouchUtm,
         meta_attribution: byKeyAttribution,
         meta_attribution_source: byKeyAttributionSource,
@@ -3244,8 +3340,10 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
     let lastPageviewUaBeforePurchase: string | null = null;
     const pageviewTimeline: Array<{ at: string; url: string; utm?: Record<string, string> | null }> = [];
     let meta_ad_touch_trail: BuyerAdTouchTrailSegment[] = [];
+    let pageviewsDebugChrono: BuyerPageviewDebugRow[] = [];
     if (lastPurchaseAt) {
       const rawTrailPvs: Array<{ at: string; url: string; custom_data: unknown; event_user_fbc: string | null }> = [];
+      const pageviewsDebugRaw: BuyerPageviewDebugRow[] = [];
       for (const e of eventsRes.rows) {
         const t = new Date(e.event_time);
         if (t.getTime() >= lastPurchaseAt.getTime()) continue;
@@ -3265,6 +3363,7 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
             lastPageviewUaBeforePurchase = ua || null;
           }
           pageviewTimeline.push({ at: String(e.event_time), url: e.event_source_url, utm: mergedUtm });
+          collectBuyerPageviewDebugRow(pageviewsDebugRaw, e.event_time, e.event_source_url, e.custom_data);
           rawTrailPvs.push({
             at: String(e.event_time),
             url: e.event_source_url,
@@ -3274,6 +3373,8 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
           });
         }
       }
+      pageviewsDebugRaw.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
+      pageviewsDebugChrono = pageviewsDebugRaw.slice(0, BUYER_DEBUG_PAGEVIEW_MAX);
       if (rawTrailPvs.length) {
         const rawTrailAsc = [...rawTrailPvs].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
         meta_ad_touch_trail = await buildMetaAdTouchTrail(siteId, rawTrailAsc, 40);
@@ -3332,6 +3433,7 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
         top_pages_before_last_purchase: topPages,
         last_pageview_before_last_purchase: lastPageviewBeforePurchase,
         pageviews_timeline_before_last_purchase: pageviewTimelineWithMeta.slice(0, 500),
+        pageviews_debug_chronological_before_last_purchase: pageviewsDebugChrono,
         last_touch: lastTouchUtm,
         meta_attribution: attribution,
         meta_attribution_source: attributionSource,

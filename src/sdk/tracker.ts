@@ -201,6 +201,16 @@ export function createTracker(config: TrackerConfig = {}) {
     const fbpResolved = input.fbp || getCookie(FBP_COOKIE) || getOrCreateFbp()
     const fbcResolved = input.fbc || getCookie(FBC_COOKIE) || getOrCreateFbc(eventSourceUrl)
 
+    const customFromCaller = input.custom_data && typeof input.custom_data === 'object' ? { ...input.custom_data } : {}
+    try {
+      const r = (typeof document !== 'undefined' ? document.referrer : '').trim()
+      if (r && /^https?:\/\//i.test(r) && customFromCaller.referrer == null) {
+        customFromCaller.referrer = r
+      }
+    } catch {
+      // ignore
+    }
+
     const payload: TrackEventInput = {
       ...input,
       event_id: eventId,
@@ -211,6 +221,7 @@ export function createTracker(config: TrackerConfig = {}) {
       load_time_ms: input.load_time_ms ?? getLoadTimeMs(),
       fbp: fbpResolved,
       fbc: fbcResolved,
+      custom_data: Object.keys(customFromCaller).length ? customFromCaller : input.custom_data,
       // external_id persistente (por navegador) quando não fornecido pelo caller
       external_id: input.external_id || getOrCreateExternalId(),
     }
