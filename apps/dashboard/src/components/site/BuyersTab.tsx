@@ -340,7 +340,6 @@ function BuyerJourneyDetailView({
   const last = detail.purchases?.[0];
   const st = String(last?.status || '').toLowerCase();
   const approved = ['approved', 'paid', 'completed', 'active'].includes(st);
-  const billingKind = (last?.billing_kind || null) as 'parcelamento' | 'recorrencia' | null;
 
   type PvRow = NonNullable<BuyerDetail['behavior']['pageviews_timeline_before_last_purchase']>[number];
   const pageviewsWindow = [...(detail.behavior.pageviews_timeline_before_last_purchase || [])]
