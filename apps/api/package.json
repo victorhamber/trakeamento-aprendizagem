@@ -15,7 +15,8 @@
     "cleanup": "ts-node src/scripts/cleanup.ts",
     "cleanup:prod": "node dist/scripts/cleanup.js",
     "make:admin": "ts-node src/scripts/make_admin.ts",
-    "make:admin:prod": "node dist/scripts/make_admin.js"
+    "make:admin:prod": "node dist/scripts/make_admin.js",
+    "identity:merge-visitors:eid": "ts-node src/scripts/merge_visitors_to_eid.ts"
   },
   "dependencies": {
     "@types/geoip-lite": "^1.4.4",
