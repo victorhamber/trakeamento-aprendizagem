@@ -1242,7 +1242,9 @@ async function processPurchaseWebhook({
             OR ($3::text IS NOT NULL AND email_hash = $3::text)
             OR ($4::text IS NOT NULL AND phone_hash = $4::text)
           )
-        ORDER BY last_seen_at DESC
+        ORDER BY
+          CASE WHEN NULLIF(BTRIM(last_group_tag), '') IS NOT NULL THEN 0 ELSE 1 END,
+          last_seen_at DESC
         LIMIT 1
       `,
       [siteKey, visitorExtId, dbEmailHash, dbPhoneHash]

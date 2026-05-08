@@ -2433,6 +2433,12 @@ router.get('/:siteId/buyers', requireAuth, async (req, res) => {
             )
           ORDER BY
             CASE
+              WHEN NULLIF(BTRIM(sv.last_group_tag), '') IS NOT NULL
+                OR COALESCE(jsonb_array_length(COALESCE(sv.group_tags_history, '[]'::jsonb)), 0) > 0
+              THEN 0
+              ELSE 1
+            END,
+            CASE
               WHEN NULLIF(BTRIM(b.last_purchase_external_id::text), '') IS NOT NULL
                 AND BTRIM(sv.external_id::text) = BTRIM(b.last_purchase_external_id::text)
               THEN 0
