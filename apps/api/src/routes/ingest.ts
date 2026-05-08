@@ -330,6 +330,49 @@ function deriveVisitorExternalIdForStorage(input: {
   return `anon_${createHash('sha256').update(input.eventId).digest('hex').slice(0, 16)}`;
 }
 
+async function resolveCanonicalVisitorExternalIdForStorage(siteKey: string, proposedExternalId: string, keys: {
+  emailHash?: string | null;
+  phoneHash?: string | null;
+  fbp?: string | null;
+  fbc?: string | null;
+}): Promise<string> {
+  const p = (proposedExternalId || '').trim();
+  if (!p) return p;
+  if (p.startsWith('eid_')) return p;
+
+  const emailHash = (keys.emailHash || '').trim();
+  const phoneHash = (keys.phoneHash || '').trim();
+  const fbp = (keys.fbp || '').trim();
+  const fbc = (keys.fbc || '').trim();
+
+  // Se já existe um visitor com eid_ que bate em alguma chave forte, usamos ele como canônico.
+  try {
+    const { rows } = await pool.query(
+      `
+      SELECT external_id
+      FROM site_visitors
+      WHERE site_key = $1
+        AND position('eid_' in external_id) = 1
+        AND (
+          ($2::text <> '' AND email_hash IS NOT NULL AND email_hash = $2)
+          OR ($3::text <> '' AND phone_hash IS NOT NULL AND phone_hash = $3)
+          OR ($4::text <> '' AND fbp IS NOT NULL AND fbp = $4)
+          OR ($5::text <> '' AND fbc IS NOT NULL AND fbc = $5)
+        )
+      ORDER BY last_seen_at DESC NULLS LAST
+      LIMIT 1
+      `,
+      [siteKey, emailHash, phoneHash, fbp, fbc]
+    );
+    const eid = rows[0]?.external_id ? String(rows[0].external_id).trim() : '';
+    if (eid.startsWith('eid_')) return eid;
+  } catch {
+    // ignore
+  }
+
+  return p;
+}
+
 // ─── Engagement scoring ───────────────────────────────────────────────────────
 
 function toNumber(value: unknown): number {
@@ -1064,7 +1107,7 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
       const ph = capiUser.ph;
       const fn = capiUser.fn;
       const ln = capiUser.ln;
-      const extId = deriveVisitorExternalIdForStorage({
+      const proposedExtId = deriveVisitorExternalIdForStorage({
         external_id: capiUser.external_id,
         fbp,
         fbc,
@@ -1073,6 +1116,12 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
         client_ip_address: capiUser.client_ip_address,
         client_user_agent: capiUser.client_user_agent,
         eventId,
+      });
+      const extId = await resolveCanonicalVisitorExternalIdForStorage(siteKey, proposedExtId, {
+        emailHash: visitorPiiHashScalar(em) || null,
+        phoneHash: visitorPiiHashScalar(ph) || null,
+        fbp: fbp || null,
+        fbc: fbc || null,
       });
 
       const trafficSourceValue = buildVisitorTrafficSourceString(

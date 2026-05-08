@@ -218,6 +218,43 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
       if (typeof body.fbp === 'string') userData.fbp = body.fbp;
       if (typeof body.fbc === 'string') userData.fbc = body.fbc;
 
+      // Canonicaliza external_id: se já existe um perfil eid_ para essas chaves, use ele (evita duplicar usuário).
+      const resolveCanonicalEid = async () => {
+        try {
+          const emailHash = email ? CapiService.hash(String(email).trim().toLowerCase()) : '';
+          const phoneDigits = phone ? String(phone).replace(/\D/g, '') : '';
+          const phoneHash = phoneDigits ? CapiService.hash(phoneDigits) : '';
+          const fbp = typeof userData.fbp === 'string' ? String(userData.fbp).trim() : '';
+          const fbc = typeof userData.fbc === 'string' ? String(userData.fbc).trim() : '';
+          const { rows } = await pool.query(
+            `
+            SELECT external_id
+            FROM site_visitors
+            WHERE site_key = $1
+              AND position('eid_' in external_id) = 1
+              AND (
+                ($2::text <> '' AND email_hash IS NOT NULL AND email_hash = $2)
+                OR ($3::text <> '' AND phone_hash IS NOT NULL AND phone_hash = $3)
+                OR ($4::text <> '' AND fbp IS NOT NULL AND fbp = $4)
+                OR ($5::text <> '' AND fbc IS NOT NULL AND fbc = $5)
+              )
+            ORDER BY last_seen_at DESC NULLS LAST
+            LIMIT 1
+            `,
+            [siteKey, emailHash, phoneHash, fbp, fbc]
+          );
+          const eid = rows[0]?.external_id ? String(rows[0].external_id).trim() : '';
+          if (eid.startsWith('eid_')) return eid;
+        } catch {
+          // ignore
+        }
+        return null;
+      };
+      const canonicalEid = await resolveCanonicalEid();
+      if (canonicalEid) {
+        userData.external_id = canonicalEid;
+      }
+
       // Mesma lógica do /ingest: reconstrói fbc a partir de fbclid (URL) + cookies; preenche fbp quando faltar.
       const userDataMerged = mergeUserDataWithMetaParamBuilder(
         req,
