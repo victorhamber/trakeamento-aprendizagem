@@ -2331,6 +2331,29 @@ router.get('/:siteId/buyers', requireAuth, async (req, res) => {
           p.customer_email,
           p.customer_phone,
           NULLIF(BTRIM(p.custom_data->>'group_tag'), '') AS group_tag,
+          CASE
+            WHEN p.platform = 'hotmart' AND p.raw_payload IS NOT NULL
+              THEN NULLIF(BTRIM(p.raw_payload->'data'->'purchase'->'payment'->>'installments_number'), '')
+            ELSE NULL
+          END AS installments_number,
+          CASE
+            WHEN p.platform = 'hotmart' AND p.raw_payload IS NOT NULL
+              THEN NULLIF(BTRIM(p.raw_payload->'data'->'purchase'->>'recurrence_number'), '')
+            ELSE NULL
+          END AS recurrence_number,
+          CASE
+            WHEN p.platform = 'hotmart'
+              AND p.raw_payload IS NOT NULL
+              AND COALESCE(NULLIF(BTRIM(p.raw_payload->'data'->'purchase'->'payment'->>'installments_number'), ''), '0')::int > 1
+              AND COALESCE(NULLIF(BTRIM(p.raw_payload->'data'->'purchase'->>'recurrence_number'), ''), '0')::int >= 2
+            THEN 'parcelamento'
+            WHEN p.platform = 'hotmart'
+              AND p.raw_payload IS NOT NULL
+              AND COALESCE(NULLIF(BTRIM(p.raw_payload->'data'->'purchase'->'payment'->>'installments_number'), ''), '0')::int <= 1
+              AND COALESCE(NULLIF(BTRIM(p.raw_payload->'data'->'purchase'->>'recurrence_number'), ''), '0')::int >= 2
+            THEN 'recorrencia'
+            ELSE NULL
+          END AS billing_kind,
           COALESCE(p.buyer_email_hash, p.fbp, p.fbc, p.order_id, ('purchase:' || p.id::text)) AS buyer_key
         FROM purchases p
         WHERE p.site_key = $1
@@ -2378,7 +2401,8 @@ router.get('/:siteId/buyers', requireAuth, async (req, res) => {
           (ARRAY_AGG(NULLIF(BTRIM(customer_phone), '') ORDER BY purchased_at DESC))[1] AS last_customer_phone,
           (ARRAY_AGG(NULLIF(BTRIM(purchase_external_id::text), '') ORDER BY purchased_at DESC))[1] AS last_purchase_external_id,
           (ARRAY_AGG(NULLIF(BTRIM(order_id), '') ORDER BY purchased_at DESC))[1] AS last_order_id,
-          (ARRAY_AGG(NULLIF(BTRIM(group_tag), '') ORDER BY purchased_at DESC))[1] AS last_group_tag
+          (ARRAY_AGG(NULLIF(BTRIM(group_tag), '') ORDER BY purchased_at DESC))[1] AS last_group_tag,
+          (ARRAY_AGG(NULLIF(BTRIM(billing_kind), '') ORDER BY purchased_at DESC))[1] AS last_billing_kind
         FROM pf
         GROUP BY 1
       ),
@@ -2442,6 +2466,7 @@ router.get('/:siteId/buyers', requireAuth, async (req, res) => {
         purchases_count,
         revenue,
         revenue_currency,
+        last_billing_kind,
         last_purchase_at
       FROM enriched
       ORDER BY last_purchase_at DESC NULLS LAST
@@ -2876,6 +2901,29 @@ router.get('/:siteId/buyers/by-key/:buyerKey', requireAuth, async (req, res) => 
         buyer_email_hash,
         utm_source, utm_medium, utm_campaign,
         custom_data,
+        CASE
+          WHEN platform = 'hotmart' AND raw_payload IS NOT NULL
+            THEN NULLIF(BTRIM(raw_payload->'data'->'purchase'->'payment'->>'installments_number'), '')
+          ELSE NULL
+        END AS installments_number,
+        CASE
+          WHEN platform = 'hotmart' AND raw_payload IS NOT NULL
+            THEN NULLIF(BTRIM(raw_payload->'data'->'purchase'->>'recurrence_number'), '')
+          ELSE NULL
+        END AS recurrence_number,
+        CASE
+          WHEN platform = 'hotmart'
+            AND raw_payload IS NOT NULL
+            AND COALESCE(NULLIF(BTRIM(raw_payload->'data'->'purchase'->'payment'->>'installments_number'), ''), '0')::int > 1
+            AND COALESCE(NULLIF(BTRIM(raw_payload->'data'->'purchase'->>'recurrence_number'), ''), '0')::int >= 2
+          THEN 'parcelamento'
+          WHEN platform = 'hotmart'
+            AND raw_payload IS NOT NULL
+            AND COALESCE(NULLIF(BTRIM(raw_payload->'data'->'purchase'->'payment'->>'installments_number'), ''), '0')::int <= 1
+            AND COALESCE(NULLIF(BTRIM(raw_payload->'data'->'purchase'->>'recurrence_number'), ''), '0')::int >= 2
+          THEN 'recorrencia'
+          ELSE NULL
+        END AS billing_kind,
         NULLIF(btrim(custom_data->>'group_tag'), '') AS group_tag,
         COALESCE(platform_date, created_at) AS purchased_at,
         COUNT(*) OVER()::int AS total_count
@@ -3089,6 +3137,29 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
         external_id, fbp, fbc, buyer_email_hash,
         utm_source, utm_medium, utm_campaign,
         custom_data,
+        CASE
+          WHEN platform = 'hotmart' AND raw_payload IS NOT NULL
+            THEN NULLIF(BTRIM(raw_payload->'data'->'purchase'->'payment'->>'installments_number'), '')
+          ELSE NULL
+        END AS installments_number,
+        CASE
+          WHEN platform = 'hotmart' AND raw_payload IS NOT NULL
+            THEN NULLIF(BTRIM(raw_payload->'data'->'purchase'->>'recurrence_number'), '')
+          ELSE NULL
+        END AS recurrence_number,
+        CASE
+          WHEN platform = 'hotmart'
+            AND raw_payload IS NOT NULL
+            AND COALESCE(NULLIF(BTRIM(raw_payload->'data'->'purchase'->'payment'->>'installments_number'), ''), '0')::int > 1
+            AND COALESCE(NULLIF(BTRIM(raw_payload->'data'->'purchase'->>'recurrence_number'), ''), '0')::int >= 2
+          THEN 'parcelamento'
+          WHEN platform = 'hotmart'
+            AND raw_payload IS NOT NULL
+            AND COALESCE(NULLIF(BTRIM(raw_payload->'data'->'purchase'->'payment'->>'installments_number'), ''), '0')::int <= 1
+            AND COALESCE(NULLIF(BTRIM(raw_payload->'data'->'purchase'->>'recurrence_number'), ''), '0')::int >= 2
+          THEN 'recorrencia'
+          ELSE NULL
+        END AS billing_kind,
         NULLIF(btrim(custom_data->>'group_tag'), '') AS group_tag,
         COALESCE(platform_date, created_at) AS purchased_at,
         COUNT(*) OVER()::int AS total_count

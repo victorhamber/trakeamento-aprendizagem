@@ -31,6 +31,7 @@ type BuyerRow = {
   last_customer_email?: string | null;
   last_customer_phone?: string | null;
   last_order_id?: string | null;
+  last_billing_kind?: 'parcelamento' | 'recorrencia' | null;
   purchases_count: number;
   revenue: number;
   /** Só preenchida quando todas as compras do comprador compartilham a mesma moeda (evita somar BRL+USD como um único símbolo). */
@@ -64,6 +65,9 @@ type BuyerDetail = {
     customer_name?: string | null;
     customer_email?: string | null;
     customer_phone?: string | null;
+    installments_number?: string | null;
+    recurrence_number?: string | null;
+    billing_kind?: 'parcelamento' | 'recorrencia' | null;
   }>;
   purchases_total?: number;
   behavior: {
@@ -234,6 +238,22 @@ function GroupTagBadge({ value }: { value: string }) {
   );
 }
 
+function BillingKindBadge({ kind }: { kind: 'parcelamento' | 'recorrencia' }) {
+  const k = (kind || '').trim();
+  if (k === 'parcelamento') {
+    return (
+      <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold bg-indigo-500/15 text-indigo-200 border border-indigo-500/20">
+        Parcela
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold bg-amber-500/15 text-amber-200 border border-amber-500/20">
+      Recorrência
+    </span>
+  );
+}
+
 function formatMoney(n: number, currencyCode: string | null | undefined): string {
   const raw = (currencyCode || '').trim().toUpperCase();
   const code = /^[A-Z]{3}$/.test(raw) ? raw : 'BRL';
@@ -320,6 +340,7 @@ function BuyerJourneyDetailView({
   const last = detail.purchases?.[0];
   const st = String(last?.status || '').toLowerCase();
   const approved = ['approved', 'paid', 'completed', 'active'].includes(st);
+  const billingKind = (last?.billing_kind || null) as 'parcelamento' | 'recorrencia' | null;
 
   type PvRow = NonNullable<BuyerDetail['behavior']['pageviews_timeline_before_last_purchase']>[number];
   const pageviewsWindow = [...(detail.behavior.pageviews_timeline_before_last_purchase || [])]
@@ -534,7 +555,10 @@ function BuyerJourneyDetailView({
                     <tr key={p.id} className="border-t border-slate-800">
                       <td className="py-2 pr-3 text-slate-400 whitespace-nowrap">{dt(p.purchased_at)}</td>
                       <td className="py-2 pr-3 text-slate-200 truncate max-w-[200px]" title={p.order_id}>
-                        {p.order_id || '—'}
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="truncate">{p.order_id || '—'}</span>
+                          {p.billing_kind ? <BillingKindBadge kind={p.billing_kind} /> : null}
+                        </div>
                       </td>
                       <td className="py-2 pr-3 text-right tabular-nums text-slate-200 whitespace-nowrap">
                         {p.amount != null ? formatMoney(Number(p.amount), p.currency) : '—'}
@@ -822,8 +846,11 @@ export function BuyersTab({ siteId }: { siteId: number }) {
                   onClick={() => setSelected({ externalId: r.external_id, buyerKey: r.buyer_key, title: r.display_name || r.last_order_id || r.external_id || r.buyer_key })}
                 >
                   <td className="px-4 py-3">
-                    <div className="text-zinc-900 dark:text-zinc-100 font-semibold truncate max-w-[420px]">
-                      {r.display_name || r.last_customer_name || r.external_id || r.buyer_key}
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="text-zinc-900 dark:text-zinc-100 font-semibold truncate max-w-[420px]">
+                        {r.display_name || r.last_customer_name || r.external_id || r.buyer_key}
+                      </div>
+                      {r.last_billing_kind ? <BillingKindBadge kind={r.last_billing_kind} /> : null}
                     </div>
                     <div className="text-[11px] text-zinc-600 dark:text-zinc-500 truncate max-w-[420px]">
                       ID: {r.external_id || r.buyer_key}
@@ -915,11 +942,16 @@ export function BuyersTab({ siteId }: { siteId: number }) {
               subtitle="Resumo da compra e jornada até a conversão"
               badge={
                 detail?.purchases?.[0] ? (
-                  ['approved', 'paid', 'completed', 'active'].includes(String(detail.purchases[0].status || '').toLowerCase()) ? (
-                    <StatusPill variant="success">Compra aprovada</StatusPill>
-                  ) : (
-                    <StatusPill variant="warning">{purchaseStatusLabel(detail.purchases[0].status)}</StatusPill>
-                  )
+                  <div className="flex items-center gap-2">
+                    {['approved', 'paid', 'completed', 'active'].includes(String(detail.purchases[0].status || '').toLowerCase()) ? (
+                      <StatusPill variant="success">Compra aprovada</StatusPill>
+                    ) : (
+                      <StatusPill variant="warning">{purchaseStatusLabel(detail.purchases[0].status)}</StatusPill>
+                    )}
+                    {detail.purchases[0].billing_kind ? (
+                      <BillingKindBadge kind={detail.purchases[0].billing_kind} />
+                    ) : null}
+                  </div>
                 ) : null
               }
               onClose={() => setSelected(null)}

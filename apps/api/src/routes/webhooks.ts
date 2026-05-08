@@ -588,6 +588,73 @@ function resolveHotmartOrderId(
   return fallback;
 }
 
+function extractHotmartSubscriberCode(
+  payload: Record<string, unknown>,
+  d: Record<string, unknown>,
+  purchase: Record<string, unknown>
+): string {
+  try {
+    const dataRoot = recordOf(payload.data);
+    const sub0 = recordOf((d as any).subscription);
+    const sub1 = recordOf((dataRoot as any).subscription);
+    const sub2 = recordOf((purchase as any).subscription);
+    const sub = Object.keys(sub0).length ? sub0 : Object.keys(sub1).length ? sub1 : sub2;
+    const subscriber = recordOf((sub as any).subscriber);
+    return coerceWebhookStr((subscriber as any).code);
+  } catch {
+    return '';
+  }
+}
+
+function extractHotmartRecurrenceNumber(
+  payload: Record<string, unknown>,
+  d: Record<string, unknown>,
+  purchase: Record<string, unknown>
+): number | null {
+  const candidates: unknown[] = [
+    (purchase as any).recurrence_number,
+    (purchase as any).recurrency_number,
+    (d as any).recurrence_number,
+    (d as any).recurrency_number,
+    (payload as any).recurrence_number,
+    (payload as any).recurrency_number,
+    (payload as any).data?.purchase?.recurrence_number,
+    (payload as any).data?.purchase?.recurrency_number,
+    (payload as any).data?.recurrence_number,
+    (payload as any).data?.recurrency_number,
+  ];
+  for (const c of candidates) {
+    const n = typeof c === 'number' ? c : parseInt(coerceWebhookStr(c), 10);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return null;
+}
+
+function extractHotmartInstallmentsNumber(
+  payload: Record<string, unknown>,
+  d: Record<string, unknown>,
+  purchase: Record<string, unknown>
+): number | null {
+  const payment = recordOf((purchase as any).payment ?? (d as any).payment ?? (payload as any).payment);
+  const candidates: unknown[] = [
+    (payment as any).installments_number,
+    (payment as any).installmentsNumber,
+    (purchase as any).installments_number,
+    (purchase as any).installmentsNumber,
+    (d as any).installments_number,
+    (d as any).installmentsNumber,
+    (payload as any).installments_number,
+    (payload as any).installmentsNumber,
+    (payload as any).data?.purchase?.payment?.installments_number,
+    (payload as any).data?.purchase?.payment?.installmentsNumber,
+  ];
+  for (const c of candidates) {
+    const n = typeof c === 'number' ? c : parseInt(coerceWebhookStr(c), 10);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return null;
+}
+
 function resolveHotmartPurchaseTimestamp(
   payload: Record<string, unknown>,
   d: Record<string, unknown>,
@@ -1085,6 +1152,18 @@ async function processPurchaseWebhook({
   const isPending = finalStatus === 'pending_payment';
   const capiEventName = isPending ? 'InitiateCheckout' : 'Purchase';
   const capiEventId = isPending ? `checkout_pending_${orderId}` : `purchase_${orderId}`;
+  const hotmartMetaDedupe = (() => {
+    if (platform !== 'hotmart') return null;
+    const p = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
+    const d = recordOf((p as any).data ?? p);
+    const purchase = recordOf((d as any).purchase ?? (p as any).purchase);
+    const subscriberCode = extractHotmartSubscriberCode(p, d, purchase);
+    const recurrenceNumber = extractHotmartRecurrenceNumber(p, d, purchase);
+    const installmentsNumber = extractHotmartInstallmentsNumber(p, d, purchase);
+    const isInstallmentPlan = installmentsNumber != null && installmentsNumber > 1;
+    return { subscriberCode, recurrenceNumber, installmentsNumber, isInstallmentPlan };
+  })();
+  const webhookRecurrenceNumber = hotmartMetaDedupe?.recurrenceNumber ?? null;
 
   const capiPayload: any = {
     event_name: capiEventName,
@@ -1342,6 +1421,60 @@ async function processPurchaseWebhook({
 
   // 4. Dispatch — with cross-site pixel dedup and health check
   if (sendToCapi && metaEnabled && pixel_id && capiToken && !skipHotmartDuplicateSideEffects) {
+    let skipMetaPurchaseToMeta = false;
+    let replacePurchaseWithCustomEvent: null | { event_name: 'Parcelamento'; event_id: string } = null;
+    let alsoSendCustomEvent: null | { event_name: 'Recorrencia'; event_id: string } = null;
+
+    // Hotmart — Parcelamento inteligente / parcelado:
+    // Quando `installments_number > 1`, Hotmart envia "recurrence_number" a cada cobrança/parcela.
+    // Para não inflar "Purchase" no Meta, enviamos Purchase APENAS na primeira (recurrence=1).
+    if (
+      !isPending &&
+      capiEventName === 'Purchase' &&
+      webhookRecurrenceNumber != null &&
+      webhookRecurrenceNumber >= 2 &&
+      platform === 'hotmart' &&
+      hotmartMetaDedupe?.isInstallmentPlan === true
+    ) {
+      // Em vez de Purchase, envia evento custom "Parcelamento" (não soma compras na campanha).
+      replacePurchaseWithCustomEvent = { event_name: 'Parcelamento', event_id: `parcelamento_${orderId}` };
+    }
+
+    // Hotmart — Recorrência real (não parcelado): mantém Purchase (ROI) e envia também um evento custom "Recorrencia"
+    // para você conseguir separar no Events Manager sem bagunçar "Purchases".
+    if (
+      !isPending &&
+      capiEventName === 'Purchase' &&
+      platform === 'hotmart' &&
+      webhookRecurrenceNumber != null &&
+      webhookRecurrenceNumber >= 2 &&
+      hotmartMetaDedupe?.isInstallmentPlan !== true
+    ) {
+      alsoSendCustomEvent = { event_name: 'Recorrencia', event_id: `recorrencia_${orderId}` };
+    }
+
+    if (skipMetaPurchaseToMeta) {
+      // continua o fluxo (notificações, persistência) sem enviar evento pro Meta
+    } else {
+      const payloadToSend = (() => {
+        if (!replacePurchaseWithCustomEvent) return capiPayload;
+        const cd = (capiPayload.custom_data && typeof capiPayload.custom_data === 'object')
+          ? (capiPayload.custom_data as Record<string, unknown>)
+          : {};
+        const enrichedCustom = {
+          ...cd,
+          billing_kind: 'parcelamento',
+          installments_number: hotmartMetaDedupe?.installmentsNumber ?? undefined,
+          recurrence_number: webhookRecurrenceNumber ?? undefined,
+        };
+        return {
+          ...capiPayload,
+          event_name: replacePurchaseWithCustomEvent.event_name,
+          event_id: replacePurchaseWithCustomEvent.event_id,
+          custom_data: enrichedCustom,
+        };
+      })();
+
     // Health check: verifica se CAPI está saudável antes de enviar
     const capiHealthy = await capiService.isCapiHealthy(siteKey);
     if (!capiHealthy) {
@@ -1350,7 +1483,7 @@ async function processPurchaseWebhook({
         order_id: orderId,
       });
       // Salva no outbox para retry posterior
-      await capiService.saveToOutbox(siteKey, capiPayload, 'CAPI not healthy at webhook time');
+      await capiService.saveToOutbox(siteKey, payloadToSend, 'CAPI not healthy at webhook time');
     } else {
       // Dedup: verifica se outro site com o MESMO pixel já enviou este pedido com dados mais ricos
       let shouldSendCapi = true;
@@ -1401,14 +1534,34 @@ async function processPurchaseWebhook({
         if (isPending) {
           log.info('Pending payment → sending as InitiateCheckout', { order_id: orderId });
         }
-        sendCapiWithRetry(siteKey, capiPayload).catch(err => log.error('CAPI send error', { order_id: orderId, error: String(err) }));
+        sendCapiWithRetry(siteKey, payloadToSend).catch(err => log.error('CAPI send error', { order_id: orderId, error: String(err) }));
+
+        if (alsoSendCustomEvent) {
+          const cd = (capiPayload.custom_data && typeof capiPayload.custom_data === 'object')
+            ? (capiPayload.custom_data as Record<string, unknown>)
+            : {};
+          const recurringPayload = {
+            ...capiPayload,
+            event_name: alsoSendCustomEvent.event_name,
+            event_id: alsoSendCustomEvent.event_id,
+            custom_data: {
+              ...cd,
+              billing_kind: 'recorrencia',
+              installments_number: hotmartMetaDedupe?.installmentsNumber ?? undefined,
+              recurrence_number: webhookRecurrenceNumber ?? undefined,
+            },
+          };
+          sendCapiWithRetry(siteKey, recurringPayload).catch(err =>
+            log.error('CAPI send error (Recorrencia)', { order_id: orderId, error: String(err) })
+          );
+        }
 
         // ── Qualificação CRM (estilo Meta) — automática para Purchase ──
         // Só dispara para Purchase (não para InitiateCheckout pendente) e respeita o toggle
         // global `integrations_meta.crm_qualify_purchases` (default TRUE — ligado para
         // todos os clientes existentes, mas desligável pela aba Meta do painel).
         // event_id derivado (`<purchase>_crm`) → não duplica com o evento original no Meta.
-        if (!isPending) {
+        if (!isPending && payloadToSend.event_name === 'Purchase') {
           shouldQualifyPurchasesForSite(siteKey)
             .then((enabled) => {
               if (!enabled) return;
@@ -1433,6 +1586,7 @@ async function processPurchaseWebhook({
             );
         }
       }
+    }
     }
   }
 
