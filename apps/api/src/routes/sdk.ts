@@ -1223,7 +1223,7 @@ router.get('/tracker.js', async (req, res) => {
     var docRefTelemetry = {};
     try {
       var dr = (document.referrer || '').trim();
-      if (/^https?:\/\//i.test(dr)) docRefTelemetry.referrer = dr;
+      if (/^https?:\\/\\//i.test(dr)) docRefTelemetry.referrer = dr;
     } catch (_dr) {}
 
     var base = Object.assign({
@@ -1481,7 +1481,7 @@ router.get('/tracker.js', async (req, res) => {
       };
       try {
         var drTr = (document.referrer || '').trim();
-        if (/^https?:\/\//i.test(drTr)) baseCustom.referrer = drTr;
+        if (/^https?:\\/\\//i.test(drTr)) baseCustom.referrer = drTr;
       } catch (_tr) {}
       var telemetry = buildTelemetry({ page_path: location.pathname, page_title: document.title });
 
