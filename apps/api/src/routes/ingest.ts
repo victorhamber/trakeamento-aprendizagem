@@ -560,6 +560,17 @@ function pickReferrerUrlForCapi(
 
 /** Meta Events Manager costuma alertar ROAS quando estes eventos não trazem value+currency. */
 const META_ROAS_HINT_EVENTS = new Set(['ViewContent', 'AddToCart', 'InitiateCheckout']);
+const META_STANDARD_EVENTS = new Set([
+  'PageView',
+  'ViewContent',
+  'AddToCart',
+  'InitiateCheckout',
+  'Purchase',
+  'Lead',
+  'Contact',
+  'Search',
+  'CompleteRegistration',
+]);
 
 /**
  * Monta `custom_data` enviado ao CAPI a partir do ingest (campos comerciais + atribuição).
@@ -610,6 +621,18 @@ function buildMetaCustomDataForCapi(
     } else {
       delete metaCustomData['currency'];
     }
+  }
+
+  // Lead e eventos personalizados: o Meta recomenda currency/value para ROAS e relatórios.
+  // Para evitar alertas, mandamos currency=BRL e value=0 quando ausentes.
+  // NÃO sobrescreve quando já vierem corretos no payload.
+  const isCustomEvent = !META_STANDARD_EVENTS.has(eventName);
+  if (eventName === 'Lead' || isCustomEvent) {
+    const hasValue = metaCustomData['value'] !== undefined && metaCustomData['value'] !== null && metaCustomData['value'] !== '';
+    const cur = normalizeMetaCurrencyCode(metaCustomData['currency']);
+    if (!hasValue) metaCustomData['value'] = 0;
+    if (!cur) metaCustomData['currency'] = 'BRL';
+    else metaCustomData['currency'] = cur;
   }
 
   if (!metaCustomData['content_name']) {
