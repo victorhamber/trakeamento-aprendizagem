@@ -455,6 +455,7 @@ function resolveObjectiveMetric(row: Record<string, any>) {
   const objective = String(row.objective || '').toLowerCase();
   const optimizationGoal = String(row.optimization_goal || '').toLowerCase();
   const optimizedEventNameRaw = row.optimized_event_name ? String(row.optimized_event_name) : '';
+  const optimizedEventName = optimizedEventNameRaw.toLowerCase();
   const leads = Number(row.leads || 0);
   const purchases = Number(row.purchases || 0);
   const initiatesCheckout = Number(row.initiates_checkout || 0);
@@ -477,7 +478,46 @@ function resolveObjectiveMetric(row: Record<string, any>) {
   // Se o adset tem um evento otimizado explícito (promoted_object),
   // mostramos isso mesmo que o optimization_goal não venha com os "hints" esperados.
   if (optHintsCustom || !!optimizedEventNameRaw) {
-    const ev = customEventName || optimizedEventNameRaw;
+    // Alguns "event_name" que aparecem aqui são, na prática, eventos padrão/aliases (ex.: leads/contacts),
+    // e NÃO devem aparecer como "evento custom".
+    const ev = (customEventName || optimizedEventNameRaw || '').trim();
+    const evL = ev.toLowerCase();
+
+    const isLeadLike =
+      objective.includes('lead') ||
+      optimizationGoal.includes('lead') ||
+      evL.includes('lead') ||
+      evL.includes('omni_lead');
+    const isPurchaseLike =
+      objective.includes('purchase') ||
+      objective.includes('sale') ||
+      optimizationGoal.includes('purchase') ||
+      optimizationGoal.includes('sale') ||
+      evL.includes('purchase') ||
+      evL.includes('omni_purchase');
+    const isCheckoutLike =
+      objective.includes('checkout') ||
+      objective.includes('initiate') ||
+      optimizationGoal.includes('checkout') ||
+      optimizationGoal.includes('initiate') ||
+      evL.includes('initiate_checkout') ||
+      evL.includes('omni_initiate_checkout');
+    const isContactLike =
+      objective.includes('message') ||
+      objective.includes('messaging') ||
+      objective.includes('contact') ||
+      optimizationGoal.includes('message') ||
+      optimizationGoal.includes('messaging') ||
+      optimizationGoal.includes('contact') ||
+      evL.includes('contact') ||
+      evL.includes('messaging') ||
+      evL.includes('fb_pixel_custom');
+
+    if (isLeadLike) return { value: leads, label: 'Leads' };
+    if (isPurchaseLike) return { value: purchases, label: 'Compras' };
+    if (isCheckoutLike) return { value: initiatesCheckout, label: 'Finalizações' };
+    if (isContactLike) return { value: contacts, label: 'Contatos' };
+
     return {
       value: results > 0 ? results : customEventCount,
       label: ev ? `Evento ${ev}` : 'Evento personalizado',
@@ -657,13 +697,18 @@ function funnelCompareLabel(preset: string, hasCustom: boolean): string {
 }
 
 function mapRawRowToFunnelResponse(r: Record<string, unknown>) {
-  const o = { ...r, spend: Number(r.spend || 0) };
+  const metaPurchases = Number((r as any).purchases || 0);
+  const db_purchases = Number((r as any).db_purchases || 0);
+  const db_revenue = Number((r as any).db_revenue || 0);
+  // Se o Meta não atribuiu compras, mas o DB (UTM compatível) tem compra, mostramos como compra atribuída.
+  const effectivePurchases = metaPurchases > 0 ? metaPurchases : db_purchases;
+  const o = { ...r, spend: Number(r.spend || 0), purchases: effectivePurchases };
   const { bottleneck, bottleneck_plain } = analyzeFunnelBottleneck(o);
   const hints = presentAndFutureHints(o);
   const link = linkBaseFromRow(o);
   const lp = Number(r.landing_page_views || 0);
   const checkout = Number(r.initiates_checkout || 0);
-  const purchases = Number(r.purchases || 0);
+  const purchases = effectivePurchases;
   const resolvedObjective = resolveObjectiveMetric(r as any);
   const funnel = {
     link_clicks: link,
@@ -679,8 +724,6 @@ function mapRawRowToFunnelResponse(r: Record<string, unknown>) {
   const purchase_rate_pct = checkout > 0 ? Math.round((purchases / checkout) * 1000) / 10 : 0;
   const meta_revenue = Number((r as any).meta_revenue || 0);
   const meta_roas = o.spend > 0 ? Math.round((meta_revenue / o.spend) * 1000) / 1000 : 0;
-  const db_purchases = Number((r as any).db_purchases || 0);
-  const db_revenue = Number((r as any).db_revenue || 0);
   const roas_real = o.spend > 0 ? Math.round((db_revenue / o.spend) * 1000) / 1000 : 0;
 
   return {
