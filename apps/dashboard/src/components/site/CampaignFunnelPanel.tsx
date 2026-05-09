@@ -277,7 +277,6 @@ function FunnelKpis({ row }: { row: FunnelRow }) {
   const roas = spend > 0 && metaRevenue > 0 ? metaRevenue / spend : 0;
   const dbRevenue = Number(row.db_revenue || 0);
   const dbPurchases = Number(row.db_purchases || 0);
-  const roasReal = spend > 0 && dbRevenue > 0 ? dbRevenue / spend : 0;
 
   const resultLabel = (row.objective_metric_label || 'Resultado').trim();
   const resultLabelShort = resultLabel.length > 14 ? `${resultLabel.slice(0, 14)}…` : resultLabel;
@@ -366,7 +365,6 @@ function buildFunnelSummary(args: {
   const cpcLink = linkClicks > 0 ? spend / linkClicks : 0;
   const cpr = results > 0 ? spend / results : 0;
   const metaRevenue = Number(primary.meta_revenue || 0);
-  const metaRoas = spend > 0 && metaRevenue > 0 ? metaRevenue / spend : 0;
   const dbRevenue = Number(primary.db_revenue || 0);
   const effectiveRevenue = metaRevenue > 0 ? metaRevenue : dbRevenue;
   const effectiveRoas = spend > 0 && effectiveRevenue > 0 ? effectiveRevenue / spend : 0;

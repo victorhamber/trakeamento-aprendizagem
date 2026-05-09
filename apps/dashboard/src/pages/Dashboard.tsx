@@ -306,10 +306,6 @@ export const DashboardPage = () => {
 
   const metaSpend = Number(data?.meta_spend || 0);
   const metaRevenue = Number(data?.meta_revenue || 0);
-  // meta_roas vem do rollup Meta (não é mais o número exibido — usamos “receita única” efetiva).
-  // Mantido só para compatibilidade/uso futuro.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const metaRoas = Number(data?.meta_roas || 0);
   const metaPurchases = Number(data?.meta_purchases || 0);
   const metaLandingPageViews = Number(data?.meta_landing_page_views || 0);
   const totalRevenueDb = Number(data?.total_revenue || 0);
