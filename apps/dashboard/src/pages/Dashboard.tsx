@@ -311,11 +311,11 @@ export const DashboardPage = () => {
   const totalRevenueDb = Number(data?.total_revenue || 0);
   const totalPurchasesDb = Number(data?.purchases_today || 0);
 
-  // Receita única: usa Meta quando houver atribuição; senão, cai no DB.
-  const effectiveRevenue = metaRevenue > 0 ? metaRevenue : totalRevenueDb;
-  const effectivePurchases = metaPurchases > 0 ? metaPurchases : totalPurchasesDb;
+  // Receita única: quando DB excede o Meta, usa o maior (cobre “Meta não marcou” em janela maior).
+  const effectiveRevenue = Math.max(metaRevenue, totalRevenueDb);
+  const effectivePurchases = Math.max(metaPurchases, totalPurchasesDb);
   const effectiveRoas = metaSpend > 0 ? (effectiveRevenue / metaSpend) : 0;
-  const revenueSourceLabel = metaRevenue > 0 ? 'Meta' : 'DB (UTM compatível)';
+  const revenueSourceLabel = effectiveRevenue === metaRevenue ? 'Meta' : 'DB (UTM compatível)';
   const metaConvRatePct =
     metaLandingPageViews > 0 ? Math.round((metaPurchases / metaLandingPageViews) * 10000) / 100 : 0;
   const metaTicketMedio = metaPurchases > 0 ? (metaRevenue / metaPurchases) : 0;

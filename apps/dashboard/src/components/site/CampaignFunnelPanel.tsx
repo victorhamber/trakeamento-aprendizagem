@@ -290,9 +290,10 @@ function FunnelKpis({ row }: { row: FunnelRow }) {
   const pillCtr = benchPill(levelFromHigherBetter(ctr, 0.8, 1.2, 2.0));
   const pillCpc = benchPill(levelFromLowerBetter(cpcLink, 1.2, 2.5, 4.0));
   // Receita única (Meta primeiro; fallback DB se o Meta não atribuir)
-  const effectiveRevenue = metaRevenue > 0 ? metaRevenue : dbRevenue;
+  // Receita única: quando DB (UTM compatível) excede o Meta, usa o maior (cobre “Meta não marcou” em janela maior).
+  const effectiveRevenue = Math.max(metaRevenue, dbRevenue);
   const effectiveRoas = spend > 0 && effectiveRevenue > 0 ? effectiveRevenue / spend : 0;
-  const revenueSourceLabel = metaRevenue > 0 ? 'Meta' : (dbRevenue > 0 ? 'DB' : '');
+  const revenueSourceLabel = effectiveRevenue === metaRevenue ? 'Meta' : (dbRevenue > 0 ? 'DB' : '');
 
   return (
     <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px] text-zinc-500">
@@ -366,9 +367,10 @@ function buildFunnelSummary(args: {
   const cpr = results > 0 ? spend / results : 0;
   const metaRevenue = Number(primary.meta_revenue || 0);
   const dbRevenue = Number(primary.db_revenue || 0);
-  const effectiveRevenue = metaRevenue > 0 ? metaRevenue : dbRevenue;
+  // Receita única: quando DB (UTM compatível) excede o Meta, usa o maior (cobre “Meta não marcou” em janela maior).
+  const effectiveRevenue = Math.max(metaRevenue, dbRevenue);
   const effectiveRoas = spend > 0 && effectiveRevenue > 0 ? effectiveRevenue / spend : 0;
-  const revenueSourceLabel = metaRevenue > 0 ? 'Meta' : 'DB';
+  const revenueSourceLabel = effectiveRevenue === metaRevenue ? 'Meta' : 'DB';
 
   const q = primary.meta_rankings?.quality ? String(primary.meta_rankings.quality) : '';
   const e = primary.meta_rankings?.engagement_rate ? String(primary.meta_rankings.engagement_rate) : '';
