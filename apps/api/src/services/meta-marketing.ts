@@ -32,6 +32,9 @@ export class MetaMarketingService {
     const msg = String((err as Error)?.message || '');
     if (!msg.includes('Batch item HTTP')) return false;
     const lower = msg.toLowerCase();
+    // Rate limit (ex.: code=4, subcode=1504022) vem como JSON dentro do item; tratar como retryable.
+    if (lower.includes('"code":4') || lower.includes('"code": 4')) return true;
+    if (lower.includes('1504022')) return true;
     if (lower.includes('temporarily unavailable')) return true;
     if (lower.includes('"code":2') || lower.includes('"code": 2')) return true;
     if (lower.includes('1504044')) return true;
@@ -660,12 +663,18 @@ export class MetaMarketingService {
         adSetInsights = [...adset0.data, ...adsetRest];
         campaignInsights = [...camp0.data, ...campRest];
       } catch (batchErr) {
-        console.warn('[MetaSync] insights batch failed, using parallel GET:', this.summarizeMetaError(batchErr));
-        [adInsights, adSetInsights, campaignInsights] = await Promise.all([
-          this.fetchAllPages(baseUrl, { access_token: cfg.token, level: 'ad', ...timeParams, time_increment: 1, fields: adFields, limit: 500 }),
-          this.fetchAllPages(baseUrl, { access_token: cfg.token, level: 'adset', ...timeParams, time_increment: 1, fields: adSetFields, limit: 500 }),
-          this.fetchAllPages(baseUrl, { access_token: cfg.token, level: 'campaign', ...timeParams, time_increment: 1, fields: campaignFields, limit: 500 }),
-        ]);
+        // IMPORTANTE: se falhou por rate limit / indisponibilidade, NÃO faz fallback com mais chamadas.
+        // Isso só piora o bloqueio do app na Meta. Deixa o erro subir para o retry/backoff do caller.
+        if (this.isRetryableMetaError(batchErr) || this.isRetryableBatchParseError(batchErr)) {
+          throw batchErr;
+        }
+
+        console.warn('[MetaSync] insights batch failed, using sequential GET:', this.summarizeMetaError(batchErr));
+        // Fallback conservador (sequencial) para casos não-transientes (ex.: batch shape inesperado)
+        // para evitar três chamadas simultâneas.
+        adInsights = await this.fetchAllPages(baseUrl, { access_token: cfg.token, level: 'ad', ...timeParams, time_increment: 1, fields: adFields, limit: 500 });
+        adSetInsights = await this.fetchAllPages(baseUrl, { access_token: cfg.token, level: 'adset', ...timeParams, time_increment: 1, fields: adSetFields, limit: 500 });
+        campaignInsights = await this.fetchAllPages(baseUrl, { access_token: cfg.token, level: 'campaign', ...timeParams, time_increment: 1, fields: campaignFields, limit: 500 });
       }
 
       console.log(
