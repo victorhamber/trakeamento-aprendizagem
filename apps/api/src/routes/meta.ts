@@ -679,6 +679,9 @@ function mapRawRowToFunnelResponse(r: Record<string, unknown>) {
   const purchase_rate_pct = checkout > 0 ? Math.round((purchases / checkout) * 1000) / 10 : 0;
   const meta_revenue = Number((r as any).meta_revenue || 0);
   const meta_roas = o.spend > 0 ? Math.round((meta_revenue / o.spend) * 1000) / 1000 : 0;
+  const db_purchases = Number((r as any).db_purchases || 0);
+  const db_revenue = Number((r as any).db_revenue || 0);
+  const roas_real = o.spend > 0 ? Math.round((db_revenue / o.spend) * 1000) / 1000 : 0;
 
   return {
     id: r.id,
@@ -688,6 +691,9 @@ function mapRawRowToFunnelResponse(r: Record<string, unknown>) {
     spend: o.spend,
     meta_revenue,
     meta_roas,
+    db_purchases,
+    db_revenue,
+    roas_real,
     funnel,
     funnel_rates: {
       lp_from_clicks_pct: lp_rate_pct,
@@ -797,6 +803,12 @@ router.get('/campaigns/funnel-breakdown', requireAuth, async (req, res) => {
     if (!owns.rowCount) return res.status(404).json({ error: 'Site not found' });
 
     const { since, until, days, preset, hasCustomRange, sinceRaw, untilRaw } = parseMetaCampaignDateWindow(req);
+
+    const siteKeyRes = await pool.query('SELECT site_key FROM sites WHERE id = $1 AND account_id = $2', [
+      siteId,
+      auth.accountId,
+    ]);
+    const siteKey = String(siteKeyRes.rows[0]?.site_key || '').trim();
 
     const forceRefresh =
       req.query.force === '1' || req.query.force === 'true' || req.query.force === 'yes';
@@ -1040,11 +1052,6 @@ router.get('/campaigns/funnel-breakdown', requireAuth, async (req, res) => {
 
     if (level === 'ad' && rawRows.length > 0) {
       try {
-        const siteKeyRes = await pool.query(
-          'SELECT site_key FROM sites WHERE id = $1 AND account_id = $2',
-          [siteId, auth.accountId]
-        );
-        const siteKey = siteKeyRes.rows[0]?.site_key as string | undefined;
         const cnRes = await pool.query(
           `SELECT MAX(campaign_name) AS cn FROM meta_insights_daily
            WHERE site_id = $1 AND date_start >= $2 AND date_start < $3 AND campaign_id = $4`,
@@ -1070,6 +1077,78 @@ router.get('/campaigns/funnel-breakdown', requireAuth, async (req, res) => {
         console.warn(
           '[funnel-breakdown] first-party page per ad failed:',
           fpErr instanceof Error ? fpErr.message : summarizeMetaMarketingError(fpErr)
+        );
+      }
+    }
+
+    // Adiciona “dupla confirmação” (DB): compras/receita reais por utm_campaign ~ nome da campanha.
+    // Isso cobre casos em que o Meta não atribui por janela/privacidade, mas a venda veio com UTM.
+    if (siteKey && rawRows.length > 0) {
+      try {
+        const keys = rawRows
+          .map((r) => String(r.name || '').trim())
+          .filter((n) => n.length >= 2);
+        if (keys.length > 0) {
+          const dbAgg = await pool.query(
+            `
+              WITH p AS (
+                SELECT
+                  lower(trim(regexp_replace(coalesce(utm_campaign, ''), '\\s+', ' ', 'g'))) AS k,
+                  COUNT(*) FILTER (WHERE status IN ('approved','paid','completed','active'))::bigint AS db_purchases,
+                  COALESCE(SUM(
+                    CASE
+                      WHEN status IN ('approved','paid','completed','active') THEN COALESCE(amount, 0)
+                      ELSE 0
+                    END
+                  ), 0)::numeric AS db_revenue
+                FROM purchases
+                WHERE site_key = $1
+                  AND COALESCE(platform_date, created_at) >= $2
+                  AND COALESCE(platform_date, created_at) < $3
+                  AND length(trim(coalesce(utm_campaign, ''))) >= 2
+                GROUP BY 1
+              )
+              SELECT k, db_purchases, db_revenue
+              FROM p
+              WHERE k = ANY($4::text[])
+            `,
+            [
+              siteKey,
+              since,
+              until,
+              keys.map((n) => n.replace(/\s+/g, ' ').trim().toLowerCase()),
+            ]
+          );
+
+          const m = new Map<string, { db_purchases: number; db_revenue: number }>();
+          for (const row of dbAgg.rows) {
+            const k = String(row.k || '');
+            if (!k) continue;
+            m.set(k, {
+              db_purchases: Number(row.db_purchases || 0),
+              db_revenue: Number(row.db_revenue || 0),
+            });
+          }
+
+          for (const r of rawRows) {
+            const k = String(r.name || '')
+              .replace(/\s+/g, ' ')
+              .trim()
+              .toLowerCase();
+            const v = m.get(k);
+            if (v) {
+              (r as any).db_purchases = v.db_purchases;
+              (r as any).db_revenue = v.db_revenue;
+            } else {
+              (r as any).db_purchases = 0;
+              (r as any).db_revenue = 0;
+            }
+          }
+        }
+      } catch (dbErr) {
+        console.warn(
+          '[funnel-breakdown] db purchases aggregation failed:',
+          dbErr instanceof Error ? dbErr.message : summarizeMetaMarketingError(dbErr)
         );
       }
     }

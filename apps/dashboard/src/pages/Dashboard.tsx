@@ -306,9 +306,20 @@ export const DashboardPage = () => {
 
   const metaSpend = Number(data?.meta_spend || 0);
   const metaRevenue = Number(data?.meta_revenue || 0);
+  // meta_roas vem do rollup Meta (não é mais o número exibido — usamos “receita única” efetiva).
+  // Mantido só para compatibilidade/uso futuro.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const metaRoas = Number(data?.meta_roas || 0);
   const metaPurchases = Number(data?.meta_purchases || 0);
   const metaLandingPageViews = Number(data?.meta_landing_page_views || 0);
+  const totalRevenueDb = Number(data?.total_revenue || 0);
+  const totalPurchasesDb = Number(data?.purchases_today || 0);
+
+  // Receita única: usa Meta quando houver atribuição; senão, cai no DB.
+  const effectiveRevenue = metaRevenue > 0 ? metaRevenue : totalRevenueDb;
+  const effectivePurchases = metaPurchases > 0 ? metaPurchases : totalPurchasesDb;
+  const effectiveRoas = metaSpend > 0 ? (effectiveRevenue / metaSpend) : 0;
+  const revenueSourceLabel = metaRevenue > 0 ? 'Meta' : 'DB (UTM compatível)';
   const metaConvRatePct =
     metaLandingPageViews > 0 ? Math.round((metaPurchases / metaLandingPageViews) * 10000) / 100 : 0;
   const metaTicketMedio = metaPurchases > 0 ? (metaRevenue / metaPurchases) : 0;
@@ -491,16 +502,16 @@ export const DashboardPage = () => {
             <div className="relative">
               <div className="text-xs font-semibold uppercase tracking-widest text-zinc-600 dark:text-zinc-500">ROAS</div>
               <div className="mt-2 text-2xl font-bold text-zinc-900 dark:text-zinc-100 tabular-nums">
-                {metaSpend > 0 ? `${metaRoas.toFixed(2)}x` : '—'}
+                {metaSpend > 0 ? `${(Number.isFinite(effectiveRoas) ? effectiveRoas : 0).toFixed(2)}x` : '—'}
               </div>
               <div className="mt-1 text-[11px] text-zinc-500">
                 {metaSpend > 0
-                  ? `Investido ${fmtCurrency(metaSpend)} · Receita (Meta) ${fmtCurrency(metaRevenue)}`
+                  ? `Investido ${fmtCurrency(metaSpend)} · Receita ${fmtCurrency(effectiveRevenue)} (${revenueSourceLabel})`
                   : 'Conecte Meta Ads e aguarde sincronizar'}
               </div>
               {metaSpend > 0 ? (
                 <div className="mt-2 text-[10px] text-zinc-500">
-                  Compras (Meta): {metaPurchases || 0}
+                  Compras: {effectivePurchases || 0}
                   {metaLandingPageViews > 0 ? ` · LPV: ${metaLandingPageViews}` : ''}
                 </div>
               ) : null}
@@ -525,7 +536,7 @@ export const DashboardPage = () => {
               <div className="mt-2 text-2xl font-bold text-zinc-900 dark:text-zinc-100 tabular-nums">
                 {metaPurchases > 0 ? fmtCurrency(metaTicketMedio) : '—'}
               </div>
-              <div className="mt-1 text-[11px] text-zinc-500">Receita (Meta) / Compras (Meta)</div>
+              <div className="mt-1 text-[11px] text-zinc-500">Receita / Compras</div>
             </div>
           </div>
 

@@ -16,6 +16,9 @@ type FunnelRow = {
   spend: number;
   meta_revenue?: number;
   meta_roas?: number;
+  db_purchases?: number;
+  db_revenue?: number;
+  roas_real?: number;
   meta_rankings?: {
     quality?: string | null;
     engagement_rate?: string | null;
@@ -272,6 +275,9 @@ function FunnelKpis({ row }: { row: FunnelRow }) {
   const cpr = results > 0 ? spend / results : 0;
   const metaRevenue = Number(row.meta_revenue || 0);
   const roas = spend > 0 && metaRevenue > 0 ? metaRevenue / spend : 0;
+  const dbRevenue = Number(row.db_revenue || 0);
+  const dbPurchases = Number(row.db_purchases || 0);
+  const roasReal = spend > 0 && dbRevenue > 0 ? dbRevenue / spend : 0;
 
   const resultLabel = (row.objective_metric_label || 'Resultado').trim();
   const resultLabelShort = resultLabel.length > 14 ? `${resultLabel.slice(0, 14)}…` : resultLabel;
@@ -284,6 +290,10 @@ function FunnelKpis({ row }: { row: FunnelRow }) {
   const pillCpm = benchPill(levelFromLowerBetter(cpm, 25, 45, 70));
   const pillCtr = benchPill(levelFromHigherBetter(ctr, 0.8, 1.2, 2.0));
   const pillCpc = benchPill(levelFromLowerBetter(cpcLink, 1.2, 2.5, 4.0));
+  // Receita única (Meta primeiro; fallback DB se o Meta não atribuir)
+  const effectiveRevenue = metaRevenue > 0 ? metaRevenue : dbRevenue;
+  const effectiveRoas = spend > 0 && effectiveRevenue > 0 ? effectiveRevenue / spend : 0;
+  const revenueSourceLabel = metaRevenue > 0 ? 'Meta' : (dbRevenue > 0 ? 'DB' : '');
 
   return (
     <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px] text-zinc-500">
@@ -296,8 +306,8 @@ function FunnelKpis({ row }: { row: FunnelRow }) {
         </div>
         <div className="text-zinc-900 dark:text-zinc-200 font-semibold tabular-nums">{results > 0 ? formatMoney(cpr) : '—'}</div>
         <div className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-snug mt-0.5">
-          {metaRevenue > 0 && spend > 0
-            ? `ROAS ${roas.toFixed(2)}x (receita Meta)`
+          {effectiveRevenue > 0 && spend > 0
+            ? `ROAS ${effectiveRoas.toFixed(2)}x (receita ${revenueSourceLabel}${revenueSourceLabel ? ` · ${formatNumber(dbPurchases)} compra${dbPurchases === 1 ? '' : 's'}` : ''})`
             : results > 0
               ? `${formatNumber(results)} ${resultLabelShort}`
               : 'Sem resultado no período'}
@@ -357,6 +367,10 @@ function buildFunnelSummary(args: {
   const cpr = results > 0 ? spend / results : 0;
   const metaRevenue = Number(primary.meta_revenue || 0);
   const metaRoas = spend > 0 && metaRevenue > 0 ? metaRevenue / spend : 0;
+  const dbRevenue = Number(primary.db_revenue || 0);
+  const effectiveRevenue = metaRevenue > 0 ? metaRevenue : dbRevenue;
+  const effectiveRoas = spend > 0 && effectiveRevenue > 0 ? effectiveRevenue / spend : 0;
+  const revenueSourceLabel = metaRevenue > 0 ? 'Meta' : 'DB';
 
   const q = primary.meta_rankings?.quality ? String(primary.meta_rankings.quality) : '';
   const e = primary.meta_rankings?.engagement_rate ? String(primary.meta_rankings.engagement_rate) : '';
@@ -394,8 +408,8 @@ function buildFunnelSummary(args: {
     `• *CTR (link):* ${impressions > 0 ? formatPct(ctrLink, 2) : '—'}`,
     `• *CPC (link):* ${linkClicks > 0 ? formatMoney(cpcLink) : '—'}`,
     `• *Custo por ${metricName}:* ${results > 0 ? formatMoney(cpr) : '—'}`,
-    metaRevenue > 0 ? `• *Receita (Meta):* ${formatMoney(metaRevenue)}` : '',
-    metaRevenue > 0 ? `• *ROAS (Meta):* ${metaRoas.toFixed(2)}x` : '',
+    effectiveRevenue > 0 ? `• *Receita:* ${formatMoney(effectiveRevenue)} (${revenueSourceLabel})` : '',
+    effectiveRevenue > 0 ? `• *ROAS:* ${effectiveRoas.toFixed(2)}x` : '',
     '',
     hasRankings ? `🧪 *Diagnóstico (Meta Rankings)*` : '',
     hasRankings ? `• ${rankingText}` : '',
@@ -419,7 +433,9 @@ function buildFunnelSummary(args: {
     const pCpc = pClicks > 0 ? pSpend / pClicks : 0;
     const pCpr = pResults > 0 ? pSpend / pResults : 0;
     const pMetaRev = Number(p.meta_revenue || 0);
-    const pMetaRoas = pSpend > 0 && pMetaRev > 0 ? pMetaRev / pSpend : 0;
+    const pDbRev = Number((p as any).db_revenue || 0);
+    const pEffRev = pMetaRev > 0 ? pMetaRev : pDbRev;
+    const pEffRoas = pSpend > 0 && pEffRev > 0 ? pEffRev / pSpend : 0;
     lines.push(
       '',
       `🔁 *Comparativo (${compareLabel})*`,
@@ -428,7 +444,7 @@ function buildFunnelSummary(args: {
       `• *CTR (link):* ${pImpr > 0 ? formatPct(pCtr, 2) : '—'}`,
       `• *CPC (link):* ${pClicks > 0 ? formatMoney(pCpc) : '—'}`,
       `• *Custo por ${metricName}:* ${pResults > 0 ? formatMoney(pCpr) : '—'}`,
-      pMetaRev > 0 ? `• *ROAS (Meta):* ${pMetaRoas.toFixed(2)}x` : '',
+      pEffRev > 0 ? `• *ROAS:* ${pEffRoas.toFixed(2)}x` : '',
       '',
       `• *Cliques:* ${formatNumber(p.funnel.link_clicks)} | *LP:* ${formatNumber(p.funnel.landing_page_views)} | *Checkout:* ${formatNumber(p.funnel.initiates_checkout)} | *Compras:* ${formatNumber(p.funnel.purchases)}`
     );
@@ -1449,16 +1465,30 @@ export function CampaignFunnelPanel({
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                     <KpiCard label="Investido" value={formatMoney(primary.spend)} hint={comparePrimary ? `vs. anterior ${formatMoney(comparePrimary.spend)}` : undefined} accent="zinc" />
                     <KpiCard
-                      label="Receita (Meta)"
-                      value={Number(primary.meta_revenue || 0) > 0 ? formatMoney(Number(primary.meta_revenue || 0)) : '—'}
-                      hint="Meta (action_values)"
+                      label="Receita"
+                      value={(() => {
+                        const m = Number(primary.meta_revenue || 0);
+                        const d = Number(primary.db_revenue || 0);
+                        const eff = m > 0 ? m : d;
+                        return eff > 0 ? formatMoney(eff) : '—';
+                      })()}
+                      hint={Number(primary.meta_revenue || 0) > 0 ? 'Meta (action_values)' : 'DB (UTM compatível)'}
                       accent="emerald"
                     />
                     <KpiCard
-                      label="ROAS (Meta)"
-                      value={Number(primary.meta_revenue || 0) > 0 ? `${(Number(primary.meta_roas || 0)).toFixed(2)}x` : '—'}
+                      label="ROAS"
+                      value={(() => {
+                        const spend = Number(primary.spend || 0);
+                        const m = Number(primary.meta_revenue || 0);
+                        const d = Number(primary.db_revenue || 0);
+                        const eff = m > 0 ? m : d;
+                        if (!(spend > 0) || !(eff > 0)) return '—';
+                        return `${(eff / spend).toFixed(2)}x`;
+                      })()}
                       hint={comparePrimary ? (() => {
-                        const prevRev = Number(comparePrimary.meta_revenue || 0);
+                        const prevMeta = Number(comparePrimary.meta_revenue || 0);
+                        const prevDb = Number(comparePrimary.db_revenue || 0);
+                        const prevRev = prevMeta > 0 ? prevMeta : prevDb;
                         const prevSpend = Number(comparePrimary.spend || 0);
                         const prevRoas = prevSpend > 0 ? prevRev / prevSpend : 0;
                         if (!Number.isFinite(prevRoas) || prevRoas <= 0) return undefined;
