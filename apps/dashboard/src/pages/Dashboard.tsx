@@ -326,7 +326,7 @@ export const DashboardPage = () => {
   const revenueSourceLabel = effectiveRevenue === metaRevenue ? 'Meta' : 'DB (UTM compatível)';
   const metaConvRatePct =
     metaLandingPageViews > 0 ? Math.round((metaPurchases / metaLandingPageViews) * 10000) / 100 : 0;
-  const metaTicketMedio = metaPurchases > 0 ? (metaRevenue / metaPurchases) : 0;
+  const effectiveTicketMedio = effectivePurchases > 0 ? (effectiveRevenue / effectivePurchases) : 0;
 
   useEffect(() => {
     api.get('/ai/settings')
@@ -563,7 +563,7 @@ export const DashboardPage = () => {
             <div className="relative">
               <div className="text-xs font-semibold uppercase tracking-widest text-zinc-600 dark:text-zinc-500">Ticket médio</div>
               <div className="mt-2 text-2xl font-bold text-zinc-900 dark:text-zinc-100 tabular-nums">
-                {metaPurchases > 0 ? fmtCurrency(metaTicketMedio) : '—'}
+                {effectivePurchases > 0 ? fmtCurrency(effectiveTicketMedio) : '—'}
               </div>
               <div className="mt-1 text-[11px] text-zinc-500">Receita / Compras</div>
             </div>
