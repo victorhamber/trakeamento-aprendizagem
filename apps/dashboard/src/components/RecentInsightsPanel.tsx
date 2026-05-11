@@ -91,11 +91,12 @@ function InsightRow({
   );
 }
 
-export function RecentInsightsPanel({ siteId, period = 'last_7d' }: { siteId?: number; period?: string }) {
+export function RecentInsightsPanel({ siteId, period = 'last_7d', since, until }: { siteId?: number; period?: string; since?: string; until?: string }) {
   const [data, setData] = useState<BestTimesRes | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (period === 'custom' && (!since || !until)) return;
     let ok = true;
     (async () => {
       try {
@@ -103,6 +104,10 @@ export function RecentInsightsPanel({ siteId, period = 'last_7d' }: { siteId?: n
         const params = new URLSearchParams();
         if (siteId) params.set('siteId', String(siteId));
         params.set('period', period);
+        if (period === 'custom' && since && until) {
+          params.set('since', since);
+          params.set('until', until);
+        }
         const res = await api.get<BestTimesRes>(`/stats/best-times?${params.toString()}`);
         if (ok) setData(res.data);
       } catch {
@@ -114,7 +119,7 @@ export function RecentInsightsPanel({ siteId, period = 'last_7d' }: { siteId?: n
     return () => {
       ok = false;
     };
-  }, [siteId, period]);
+  }, [siteId, period, since, until]);
 
   const { timeLine, deviceLine, regionLine } = useMemo(() => {
     const pv = data?.pageview;
@@ -196,7 +201,7 @@ export function RecentInsightsPanel({ siteId, period = 'last_7d' }: { siteId?: n
   );
 }
 
-export function RecentInsightsBlock({ siteId, period }: { siteId?: number; period?: string }) {
+export function RecentInsightsBlock({ siteId, period, since, until }: { siteId?: number; period?: string; since?: string; until?: string }) {
   return (
     <div className="neo-card neo-border neo-glow h-full rounded-2xl border border-zinc-200 dark:border-white/10 bg-white dark:bg-zinc-950/45 p-5 shadow-sm dark:shadow-none select-none flex flex-col">
       <div className="mb-4">
@@ -204,7 +209,7 @@ export function RecentInsightsBlock({ siteId, period }: { siteId?: number; perio
         <div className="text-[11px] text-zinc-500 mt-0.5">Base: PageView do período (lado a lado com a receita).</div>
       </div>
       <div className="flex-1 min-h-0">
-        <RecentInsightsPanel siteId={siteId} period={period} />
+        <RecentInsightsPanel siteId={siteId} period={period} since={since} until={until} />
       </div>
     </div>
   );

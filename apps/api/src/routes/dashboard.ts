@@ -306,12 +306,14 @@ router.get('/funnel', async (req, res) => {
   const auth = req.auth!;
   const siteId = req.query.siteId ? Number(req.query.siteId) : null;
   const period = (req.query.period as string) || 'last_30d';
+  const since = typeof req.query.since === 'string' ? req.query.since.trim() : '';
+  const until = typeof req.query.until === 'string' ? req.query.until.trim() : '';
 
   const now = new Date();
-  const p = ['today', 'yesterday', 'last_7d', 'last_14d', 'last_30d', 'maximum'].includes(period)
+  const p = ['today', 'yesterday', 'last_7d', 'last_14d', 'last_30d', 'maximum', 'custom'].includes(period)
     ? period
     : 'last_30d';
-  const { start, end } = resolveDashboardPeriodRange(p, now);
+  const { start, end } = resolveDashboardPeriodRange(p, now, { since, until });
 
   try {
     // Query 1: Web Events — usa subquery ANY para acionar o índice (site_key, event_name, event_time)

@@ -803,30 +803,43 @@ router.delete('/:siteId', requireAuth, async (req, res) => {
     }
     const siteKey = siteCheck.rows[0].site_key;
 
-    await pool.query('BEGIN');
-
-    // Use ON DELETE CASCADE for tables mapped by site_id.
-    // For tables mapped by site_key (which might not have a foreign key to sites.id), delete them in parallel.
-    await Promise.all([
-      pool.query('DELETE FROM web_events WHERE site_key = $1', [siteKey]),
-      pool.query('DELETE FROM purchases WHERE site_key = $1', [siteKey]),
-      pool.query('DELETE FROM recommendation_reports WHERE site_key = $1', [siteKey])
-    ]);
-
-    const result = await pool.query(
-      'DELETE FROM sites WHERE id = $1 AND account_id = $2 RETURNING id',
-      [siteId, auth.accountId]
-    );
-
-    if (!(result.rowCount || 0)) {
-      await pool.query('ROLLBACK');
-      return res.status(404).json({ error: 'Site not found' });
+    // Delete large tables in batches outside the main transaction to avoid long locks.
+    const BATCH_SIZE = 5000;
+    for (const table of ['web_events', 'purchases', 'recommendation_reports'] as const) {
+      let deleted = 0;
+      do {
+        const r = await pool.query(
+          `DELETE FROM ${table} WHERE ctid = ANY(
+            ARRAY(SELECT ctid FROM ${table} WHERE site_key = $1 LIMIT ${BATCH_SIZE})
+          )`,
+          [siteKey]
+        );
+        deleted = r.rowCount ?? 0;
+      } while (deleted >= BATCH_SIZE);
     }
 
-    await pool.query('COMMIT');
+    // Now delete the site row (ON DELETE CASCADE handles site_id-linked tables).
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const result = await client.query(
+        'DELETE FROM sites WHERE id = $1 AND account_id = $2 RETURNING id',
+        [siteId, auth.accountId]
+      );
+      if (!(result.rowCount || 0)) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Site not found' });
+      }
+      await client.query('COMMIT');
+    } catch (txErr) {
+      await client.query('ROLLBACK');
+      throw txErr;
+    } finally {
+      client.release();
+    }
+
     return res.json({ ok: true });
   } catch (err) {
-    await pool.query('ROLLBACK');
     console.error('Delete site error:', err);
     return res.status(500).json({ error: 'Failed to delete site' });
   }

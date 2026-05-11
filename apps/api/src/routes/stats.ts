@@ -84,11 +84,14 @@ router.get('/overview', requireAuth, async (req, res) => {
   const currency = (req.query.currency as string) || 'BRL';
   const siteId = req.query.siteId ? Number(req.query.siteId) : null;
 
+  const since = typeof req.query.since === 'string' ? req.query.since.trim() : '';
+  const until = typeof req.query.until === 'string' ? req.query.until.trim() : '';
+
   const now = new Date();
-  const p = ['today', 'yesterday', 'last_7d', 'last_14d', 'last_30d', 'maximum'].includes(period)
+  const p = ['today', 'yesterday', 'last_7d', 'last_14d', 'last_30d', 'maximum', 'custom'].includes(period)
     ? period
     : 'today';
-  const { start, end } = resolveDashboardPeriodRange(p, now);
+  const { start, end } = resolveDashboardPeriodRange(p, now, { since, until });
   const reportTz = getMetaReportTimeZone();
   const reportTodayYmd = new Intl.DateTimeFormat('sv-SE', { timeZone: reportTz }).format(now).slice(0, 10);
   const reportStartYmd = new Intl.DateTimeFormat('sv-SE', { timeZone: reportTz }).format(start).slice(0, 10);
@@ -270,12 +273,14 @@ router.get('/sales-daily', requireAuth, async (req, res) => {
   const period = (req.query.period as string) || 'last_30d';
   const currency = (req.query.currency as string) || 'BRL';
   const siteId = req.query.siteId ? Number(req.query.siteId) : null;
+  const since = typeof req.query.since === 'string' ? req.query.since.trim() : '';
+  const until = typeof req.query.until === 'string' ? req.query.until.trim() : '';
 
   const now = new Date();
-  const p = ['today', 'yesterday', 'last_7d', 'last_14d', 'last_30d', 'maximum'].includes(period)
+  const p = ['today', 'yesterday', 'last_7d', 'last_14d', 'last_30d', 'maximum', 'custom'].includes(period)
     ? period
     : 'last_30d';
-  const { start, end } = resolveDashboardPeriodRange(p, now);
+  const { start, end } = resolveDashboardPeriodRange(p, now, { since, until });
 
   try {
     const result = await pool.query(
@@ -305,7 +310,9 @@ router.get('/best-times', requireAuth, async (req, res) => {
   const auth = req.auth!;
   const siteId = req.query.siteId ? Number(req.query.siteId) : null;
   const period = (req.query.period as string) || 'last_30d';
-  const { start, end } = resolveDashboardPeriodRange(period);
+  const since = typeof req.query.since === 'string' ? req.query.since.trim() : '';
+  const until = typeof req.query.until === 'string' ? req.query.until.trim() : '';
+  const { start, end } = resolveDashboardPeriodRange(period, new Date(), { since, until });
   const reportTz = getMetaReportTimeZone();
   const cacheKey = `a:${auth.accountId}|s:${siteId ?? 'all'}|p:${String(period || '').toLowerCase()}|tz:${reportTz}`;
   const cached = bestTimesCache.get(cacheKey);

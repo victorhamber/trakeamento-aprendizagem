@@ -316,7 +316,7 @@ export const SitePage = () => {
   const [campaignMetrics, setCampaignMetrics] = useState<Record<string, any>>({});
   const [selectedCampaignId, setSelectedCampaignId] = useState<string>('');
   const [metricsPreset, setMetricsPreset] = useState<
-    'today' | 'yesterday' | 'last_7d' | 'last_14d' | 'last_30d' | 'maximum' | 'custom'
+    'today' | 'yesterday' | 'last_7d' | 'last_14d' | 'last_30d' | 'custom'
   >('last_7d');
   const [metricsSince, setMetricsSince] = useState('');
   const [metricsUntil, setMetricsUntil] = useState('');
@@ -2367,7 +2367,6 @@ ${scriptContent}
         <option value="last_7d">Últimos 7 dias</option>
         <option value="last_14d">Últimos 14 dias</option>
         <option value="last_30d">Últimos 30 dias</option>
-        <option value="maximum">Máximo</option>
         <option value="custom">Personalizado</option>
       </select>
       {metricsPreset === 'custom' && (

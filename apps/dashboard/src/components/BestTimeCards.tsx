@@ -38,6 +38,8 @@ function bestTimesTzNote(tz?: string) {
 interface BestTimeCardsProps {
   siteId?: number;
   period?: string;
+  since?: string;
+  until?: string;
 }
 
 const DAYS_SHORT = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
@@ -47,7 +49,7 @@ const PERIOD_LABELS: Record<string, string> = {
   last_7d: '7 dias',
   last_14d: '14 dias',
   last_30d: '30 dias',
-  maximum: 'Máximo',
+  custom: 'Personalizado',
 };
 
 const TABS: { id: TabId; label: string; lineColor: string; textColor: string; dot: string }[] = [
@@ -351,18 +353,23 @@ function getPeakForTab(data: BestTimesData | null, tab: TabId): PeakData {
   }
 }
 
-export function BestTimeCards({ siteId, period = 'last_30d' }: BestTimeCardsProps) {
+export function BestTimeCards({ siteId, period = 'last_30d', since, until }: BestTimeCardsProps) {
   const [data, setData] = useState<BestTimesData | null>(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<TabId>('pageview');
 
   useEffect(() => {
+    if (period === 'custom' && (!since || !until)) return;
     async function load() {
       try {
         setLoading(true);
         const params = new URLSearchParams();
         if (siteId) params.append('siteId', String(siteId));
         params.append('period', period);
+        if (period === 'custom' && since && until) {
+          params.append('since', since);
+          params.append('until', until);
+        }
         const res = await api.get(`/stats/best-times?${params.toString()}`);
         setData(res.data);
       } catch (err) {
@@ -372,7 +379,7 @@ export function BestTimeCards({ siteId, period = 'last_30d' }: BestTimeCardsProp
       }
     }
     load();
-  }, [siteId, period]);
+  }, [siteId, period, since, until]);
 
   const current = TABS.find((t) => t.id === tab)!;
   const peak = getPeakForTab(data, tab);

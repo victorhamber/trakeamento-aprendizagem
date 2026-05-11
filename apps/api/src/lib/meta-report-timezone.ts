@@ -51,17 +51,29 @@ export function startOfZonedDayUtc(ymd: string, tz: string): Date {
 
 /**
  * Janelas do dashboard / overview / funil: sempre no calendário de {@link getMetaReportTimeZone}
- * (ex.: America/Sao_Paulo), nunca na meia-noite “local” do processo Node (UTC no Docker).
+ * (ex.: America/Sao_Paulo), nunca na meia-noite "local" do processo Node (UTC no Docker).
+ *
+ * Aceita `opts.since` / `opts.until` (YYYY-MM-DD) para período personalizado.
  */
 export function resolveDashboardPeriodRange(
   period: string,
-  now: Date = new Date()
+  now: Date = new Date(),
+  opts?: { since?: string; until?: string }
 ): { start: Date; end: Date } {
   const tz = getMetaReportTimeZone();
   const p = String(period || 'today').trim().toLowerCase();
   const todayYmd = getYmdInReportTz(now, tz);
   let start: Date;
   let end: Date = now;
+
+  if (p === 'custom' && opts?.since && opts?.until) {
+    const ymdRe = /^\d{4}-\d{2}-\d{2}$/;
+    const sinceYmd = ymdRe.test(opts.since) ? opts.since : todayYmd;
+    const untilYmd = ymdRe.test(opts.until) ? opts.until : todayYmd;
+    start = startOfZonedDayUtc(sinceYmd, tz);
+    end = startOfZonedDayUtc(addDaysToYmd(untilYmd, 1), tz);
+    return { start, end };
+  }
 
   switch (p) {
     case 'today':

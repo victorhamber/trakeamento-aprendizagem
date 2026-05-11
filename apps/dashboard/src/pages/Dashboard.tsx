@@ -205,6 +205,8 @@ export const DashboardPage = () => {
   const [sites, setSites] = useState<Array<{ id: number; name: string }>>([]);
   const [selectedSiteId, setSelectedSiteId] = useState('');
   const [period, setPeriod] = useState('last_7d');
+  const [customSince, setCustomSince] = useState('');
+  const [customUntil, setCustomUntil] = useState('');
   const [currency, setCurrency] = useState('BRL');
   const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains('dark'));
   const [metaSyncBusy, setMetaSyncBusy] = useState(false);
@@ -225,8 +227,11 @@ export const DashboardPage = () => {
   }, []);
 
   useEffect(() => {
+    if (period === 'custom' && (!customSince || !customUntil)) return;
+
     const params: any = { period, currency };
     if (selectedSiteId) params.siteId = selectedSiteId;
+    if (period === 'custom') { params.since = customSince; params.until = customUntil; }
 
     api.get('/stats/overview', { params })
       .then((res) => setData(res.data))
@@ -236,12 +241,13 @@ export const DashboardPage = () => {
       .then((res) => setSalesData(res.data?.data || []))
       .catch(() => setSalesData([]));
 
-    // Fetch Funnel Data
-    api.get('/dashboard/funnel', { params: { siteId: selectedSiteId, period } })
+    const funnelParams: any = { siteId: selectedSiteId, period };
+    if (period === 'custom') { funnelParams.since = customSince; funnelParams.until = customUntil; }
+    api.get('/dashboard/funnel', { params: funnelParams })
       .then((res) => setFunnelData(res.data))
       .catch(() => setFunnelData(null));
 
-  }, [period, currency, selectedSiteId]);
+  }, [period, currency, selectedSiteId, customSince, customUntil]);
 
   useEffect(() => {
     if (!selectedSiteId) return;
@@ -258,6 +264,7 @@ export const DashboardPage = () => {
         await api.post('/meta/sync', { site_id: siteIdNum, date_preset: period, force });
         if (cancelled) return;
         const params: any = { period, currency, siteId: selectedSiteId };
+        if (period === 'custom') { params.since = customSince; params.until = customUntil; }
         const refreshed = await api.get('/stats/overview', { params });
         if (!cancelled) setData(refreshed.data);
       } catch {
@@ -291,6 +298,7 @@ export const DashboardPage = () => {
       });
       const params: any = { period, currency };
       if (selectedSiteId) params.siteId = selectedSiteId;
+      if (period === 'custom') { params.since = customSince; params.until = customUntil; }
       const refreshed = await api.get('/stats/overview', { params });
       setData(refreshed.data);
     } catch {
@@ -333,7 +341,10 @@ export const DashboardPage = () => {
       case 'last_7d': return 'Últimos 7 dias';
       case 'last_14d': return 'Últimos 14 dias';
       case 'last_30d': return 'Últimos 30 dias';
-      case 'maximum': return 'Período Máximo';
+      case 'custom':
+        return customSince && customUntil
+          ? `${customSince.split('-').reverse().join('/')} → ${customUntil.split('-').reverse().join('/')}`
+          : 'Personalizado';
       default: return 'Hoje';
     }
   };
@@ -384,7 +395,10 @@ export const DashboardPage = () => {
             <select
               aria-label="Período do relatório"
               value={period}
-              onChange={(e) => setPeriod(e.target.value)}
+              onChange={(e) => {
+                setPeriod(e.target.value);
+                if (e.target.value !== 'custom') { setCustomSince(''); setCustomUntil(''); }
+              }}
               className={selectCls}
             >
               <option value="today">Hoje</option>
@@ -392,8 +406,27 @@ export const DashboardPage = () => {
               <option value="last_7d">Últimos 7 dias</option>
               <option value="last_14d">Últimos 14 dias</option>
               <option value="last_30d">Últimos 30 dias</option>
-              <option value="maximum">Máximo</option>
+              <option value="custom">Personalizado</option>
             </select>
+            {period === 'custom' && (
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="date"
+                  aria-label="Data inicial"
+                  value={customSince}
+                  onChange={(e) => setCustomSince(e.target.value)}
+                  className={selectCls}
+                />
+                <span className="text-xs text-zinc-500">→</span>
+                <input
+                  type="date"
+                  aria-label="Data final"
+                  value={customUntil}
+                  onChange={(e) => setCustomUntil(e.target.value)}
+                  className={selectCls}
+                />
+              </div>
+            )}
             <select
               aria-label="Moeda do faturamento"
               value={currency}
@@ -581,10 +614,10 @@ export const DashboardPage = () => {
             <RevenueChart data={salesData} currency={currency} isDark={isDark} />
           </div>
         </div>
-        <RecentInsightsBlock siteId={selectedSiteId ? Number(selectedSiteId) : undefined} period={period} />
+        <RecentInsightsBlock siteId={selectedSiteId ? Number(selectedSiteId) : undefined} period={period} since={customSince} until={customUntil} />
       </div>
 
-      <BestTimeCards siteId={selectedSiteId ? Number(selectedSiteId) : undefined} period={period} />
+      <BestTimeCards siteId={selectedSiteId ? Number(selectedSiteId) : undefined} period={period} since={customSince} until={customUntil} />
 
       {/* ── Bottom grid ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
