@@ -512,6 +512,33 @@ function isDuplicate(siteKey: string, eventId: string): boolean {
   return false;
 }
 
+// ─── Lead de-dup (fingerprint) ────────────────────────────────────────────────
+// Problema real: muitos sites disparam Lead 2x (submit + redirect, double handler, etc.)
+// com event_id diferente. O Meta só deduplica Pixel/CAPI quando event_id é idêntico.
+// Aqui seguramos duplicação acidental no server-side (CAPI/DB) usando um TTL curto.
+const recentLeadFingerprints = new LRUCache({
+  max: 200000,
+  ttl: 10 * 60 * 1000, // 10 min
+});
+
+function leadFingerprint(siteKey: string, event: { user_data?: any; custom_data?: any; event_source_url?: string }, eventName: string): string {
+  const ext = (event?.user_data?.external_id ? String(event.user_data.external_id) : '').trim();
+  const fbp = (event?.user_data?.fbp ? String(event.user_data.fbp) : '').trim();
+  const fbc = (event?.user_data?.fbc ? String(event.user_data.fbc) : '').trim();
+  const pagePath = (event?.custom_data?.page_path ? String(event.custom_data.page_path) : '').trim();
+  const sourceUrl = (event?.event_source_url ? String(event.event_source_url) : '').trim();
+  // external_id é o melhor; caímos para fbp/fbc se faltar.
+  const who = ext || fbp || fbc || 'anon';
+  return `${siteKey}|${eventName}|${who}|${pagePath}|${sourceUrl}`.slice(0, 800);
+}
+
+function isDuplicateLeadByFingerprint(siteKey: string, event: any, eventName: string): boolean {
+  const key = leadFingerprint(siteKey, event, eventName);
+  if (recentLeadFingerprints.has(key)) return true;
+  recentLeadFingerprints.set(key, true);
+  return false;
+}
+
 // ─── CAPI payload builder ─────────────────────────────────────────────────────
 
 function resolveClientIp(req: Request, userData: NonNullable<IngestEvent['user_data']>) {
@@ -1063,6 +1090,14 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
   // ─── 1. Deduplicação (In-Memory) ──────────────────────────────────
   if (isDuplicate(siteKey, eventId)) {
     return res.status(202).json({ status: 'ignored_duplicate' });
+  }
+
+  // ─── 1a. Dedup extra para Lead (fingerprint) ──────────────────────
+  // Evita duplicação acidental quando o frontend dispara Lead 2x com event_id diferente.
+  if (eventName === 'Lead') {
+    if (isDuplicateLeadByFingerprint(siteKey, event, eventName)) {
+      return res.status(202).json({ status: 'ignored_duplicate_lead' });
+    }
   }
 
   // ─── 1b. Quota check (plan-based monthly event limit) ────────────
