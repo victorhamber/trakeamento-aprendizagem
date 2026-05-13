@@ -4,7 +4,7 @@ import { Router, type Request, type Response, type NextFunction } from 'express'
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import { pool } from '../db/pool';
-import { preserveMetaClickIds } from '../lib/meta-attribution';
+import { preserveFreshMetaFbc, preserveMetaClickIds } from '../lib/meta-attribution';
 import { capiService, CapiService } from '../services/capi';
 import { EnrichmentService } from '../services/enrichment';
 import { decryptString } from '../lib/crypto';
@@ -987,7 +987,7 @@ async function processPurchaseWebhook({
 
   const mergedFbp = finalFbp || enriched?.fbp;
   const mergedFbc = finalFbc || enriched?.fbc;
-  const mergedFbcSafe = preserveMetaClickIds(mergedFbc);
+  const mergedFbcSafe = preserveFreshMetaFbc(mergedFbc);
   const mergedFbpSafe = preserveMetaClickIds(mergedFbp);
   const mergedIp = clientIp || enriched?.clientIp;
   const mergedUa = clientUa || enriched?.clientUa;
@@ -1602,7 +1602,7 @@ async function processPurchaseWebhook({
               const crmPayload = buildCrmQualificationCapiPayload({
                 originalCapiEvent: capiPayload,
                 leadEventSource: 'Trajettu',
-                crmEventName: 'Converted',
+                crmEventName: 'Compra realizada',
                 includeValueAndCurrency: {
                   value: safeValue,
                   currency: String(resolvedCurrency || 'BRL'),

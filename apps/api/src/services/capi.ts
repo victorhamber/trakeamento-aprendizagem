@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import { pool } from '../db/pool';
 import { decryptString } from '../lib/crypto';
 import { summarizeMetaMarketingError } from '../lib/meta-api-error';
-import { preserveMetaClickIds } from '../lib/meta-attribution';
+import { preserveFreshMetaFbc, preserveMetaClickIds } from '../lib/meta-attribution';
 import { META_GRAPH_API_VERSION } from '../lib/meta-graph-version';
 import { createLogger } from '../lib/logger';
 
@@ -196,7 +196,7 @@ export class CapiService {
 
   private buildEventData(event: CapiEvent): Record<string, unknown> {
     const userDataIn = event.user_data ? ({ ...event.user_data } as Record<string, unknown>) : {};
-    const fbcSafe = preserveMetaClickIds(userDataIn.fbc);
+    const fbcSafe = preserveFreshMetaFbc(userDataIn.fbc);
     const fbpSafe = preserveMetaClickIds(userDataIn.fbp);
     if (fbcSafe) userDataIn.fbc = fbcSafe;
     else delete userDataIn.fbc;

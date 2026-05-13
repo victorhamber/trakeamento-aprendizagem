@@ -9,7 +9,7 @@ import cors from 'cors'; // Added import for cors
 import { DDI_LIST } from '../lib/ddi';
 import { getClientIp } from '../lib/ip';
 import { resolveServerGeoHint, geoFromGeoipLite } from '../lib/request-geo';
-import { preserveMetaClickIds } from '../lib/meta-attribution';
+import { preserveFreshMetaFbc, preserveMetaClickIds } from '../lib/meta-attribution';
 import { mergeUserDataWithMetaParamBuilder } from '../lib/meta-param-builder-ingest';
 import { normalizeMetaCurrencyCode } from '../lib/meta-currency';
 import { buildVisitorTrafficSourceString } from '../lib/visitorTrafficSource';
@@ -619,29 +619,48 @@ function buildMetaCustomDataForCapi(
     }
   }
 
+  if (metaCustomData['value'] === undefined) {
+    const rawAlias = cd['amount'] ?? cd['price'] ?? cd['total'] ?? cd['revenue'];
+    const aliasValue = parseFloat(String(rawAlias ?? ''));
+    if (!Number.isNaN(aliasValue)) {
+      metaCustomData['value'] = aliasValue;
+    }
+  }
+  if (metaCustomData['currency'] === undefined) {
+    const rawCurrencyAlias = cd['currency_code'] ?? cd['moeda'];
+    if (rawCurrencyAlias !== undefined && rawCurrencyAlias !== null && String(rawCurrencyAlias).trim() !== '') {
+      metaCustomData['currency'] = rawCurrencyAlias;
+    }
+  }
+
   if (META_ROAS_HINT_EVENTS.has(eventName)) {
     if (metaCustomData['value'] === undefined) {
       metaCustomData['value'] = 0;
     }
     metaCustomData['currency'] = normalizeMetaCurrencyCode(metaCustomData['currency']);
   } else {
-    if (metaCustomData['value'] !== undefined) {
+    if (
+      typeof metaCustomData['value'] === 'number' &&
+      Number.isFinite(Number(metaCustomData['value']))
+    ) {
       metaCustomData['currency'] = normalizeMetaCurrencyCode(metaCustomData['currency']);
     } else {
+      delete metaCustomData['value'];
       delete metaCustomData['currency'];
     }
   }
 
-  // Lead e eventos personalizados: o Meta recomenda currency/value para ROAS e relatórios.
-  // Para evitar alertas, mandamos currency=BRL e value=0 quando ausentes.
-  // NÃO sobrescreve quando já vierem corretos no payload.
+  // Lead/custom sem valor real não devem ser forçados com value=0.
+  // Isso reduz alertas de "mesmo valor em todos os eventos".
   const isCustomEvent = !META_STANDARD_EVENTS.has(eventName);
   if (eventName === 'Lead' || isCustomEvent) {
-    const hasValue = metaCustomData['value'] !== undefined && metaCustomData['value'] !== null && metaCustomData['value'] !== '';
-    const cur = normalizeMetaCurrencyCode(metaCustomData['currency']);
-    if (!hasValue) metaCustomData['value'] = 0;
-    if (!cur) metaCustomData['currency'] = 'BRL';
-    else metaCustomData['currency'] = cur;
+    const hasValue = typeof metaCustomData['value'] === 'number' && Number.isFinite(Number(metaCustomData['value']));
+    if (hasValue) {
+      metaCustomData['currency'] = normalizeMetaCurrencyCode(metaCustomData['currency']);
+    } else {
+      delete metaCustomData['value'];
+      delete metaCustomData['currency'];
+    }
   }
 
   if (!metaCustomData['content_name']) {
@@ -884,7 +903,7 @@ async function buildCapiUserData(
     normalizeAndHash('country', pickRawWithAliases('country', ['pais', 'nacionalidade', 'paisdeorigem']), { ip: clientIp, country: countryForPh }) ??
     (geoHint.country ? hashPii(normalizers.country(geoHint.country)) : undefined);
   let fbp = preserveMetaClickIds(userData.fbp || pickCustom('fbp'));
-  const fbc = preserveMetaClickIds(userData.fbc || pickCustom('fbc'));
+  const fbc = preserveFreshMetaFbc(userData.fbc || pickCustom('fbc'));
   // Se temos fbc (clique Meta) mas faltou fbp (browser id), gera um fallback mínimo para CAPI.
   // Isso não depende do Pixel e melhora match/dedup em cenários onde o cookie _fbp não veio.
   if (!fbp && fbc) {
