@@ -777,6 +777,24 @@ const WebhooksTab: React.FC<WebhooksTabProps> = ({ site, id, apiBaseUrl, webhook
                                   <span className="font-mono text-zinc-700 dark:text-zinc-300">{capi.custom_data?.currency}</span>
                                 </div>
                                 <div className="flex items-center justify-between text-[10px]">
+                                  <span className="text-zinc-500 dark:text-zinc-400">Código da Oferta:</span>
+                                  <span
+                                    className={`font-mono truncate max-w-[150px] ${capi.custom_data?.offer ? 'text-emerald-600 dark:text-emerald-400 font-medium' : 'text-zinc-300 dark:text-zinc-700'}`}
+                                    title={String(capi.custom_data?.offer || '')}
+                                  >
+                                    {capi.custom_data?.offer || '—'}
+                                  </span>
+                                </div>
+                                <div className="flex items-center justify-between text-[10px]">
+                                  <span className="text-zinc-500 dark:text-zinc-400">Nome da Oferta:</span>
+                                  <span
+                                    className={`font-mono truncate max-w-[150px] ${capi.custom_data?.offer_name ? 'text-zinc-700 dark:text-zinc-300' : 'text-zinc-300 dark:text-zinc-700'}`}
+                                    title={String(capi.custom_data?.offer_name || '')}
+                                  >
+                                    {capi.custom_data?.offer_name || '—'}
+                                  </span>
+                                </div>
+                                <div className="flex items-center justify-between text-[10px]">
                                   <span className="text-zinc-500 dark:text-zinc-400">URL Origem:</span>
                                   <span className="font-mono text-zinc-700 dark:text-zinc-300 truncate max-w-[150px]" title={capi.event_source_url}>{capi.event_source_url || '—'}</span>
                                 </div>
