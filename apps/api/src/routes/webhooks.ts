@@ -730,6 +730,40 @@ function resolveHotmartMoneyFromCommissionsOrPurchase(
   return { value: parseFloat(String(rawValue)) || 0, currency };
 }
 
+/** Código/nome da oferta Hotmart (ex.: purchase.offer.code) para conversões personalizadas na Meta. */
+function extractHotmartOfferMeta(
+  purchase: Record<string, unknown>,
+  d: Record<string, unknown>,
+  item?: Record<string, unknown>
+): { offerCode?: string; offerName?: string } {
+  const itemOffer = item ? recordOf(item.offer as unknown) : {};
+  const purchaseOffer = recordOf(purchase.offer as unknown);
+  const rootOffer = recordOf(d.offer as unknown);
+  const offerCode =
+    coerceWebhookStr(itemOffer.code) ||
+    coerceWebhookStr(purchaseOffer.code) ||
+    coerceWebhookStr(rootOffer.code) ||
+    coerceWebhookStr(item?.offer_code) ||
+    coerceWebhookStr(purchase.offer_code);
+  const offerName =
+    coerceWebhookStr(itemOffer.name) ||
+    coerceWebhookStr(purchaseOffer.name) ||
+    coerceWebhookStr(rootOffer.name);
+  return {
+    ...(offerCode ? { offerCode } : {}),
+    ...(offerName ? { offerName } : {}),
+  };
+}
+
+/** Fallback genérico para outras plataformas que enviem offer no JSON do webhook. */
+function extractOfferFromWebhookPayload(payload: unknown): { offerCode?: string; offerName?: string } {
+  if (!payload || typeof payload !== 'object') return {};
+  const p = payload as Record<string, unknown>;
+  const d = recordOf(p.data ?? p);
+  const purchase = recordOf(d.purchase ?? p.purchase);
+  return extractHotmartOfferMeta(purchase, d);
+}
+
 type HotmartCheckoutLine = {
   orderId: string;
   value: number;
@@ -737,6 +771,8 @@ type HotmartCheckoutLine = {
   contentName: string;
   /** Rótulo curto para push / Meta (ex.: Order bump). */
   saleLineLabel?: string;
+  offerCode?: string;
+  offerName?: string;
 };
 
 function dedupeHotmartLinesByOrderId(lines: HotmartCheckoutLine[]): HotmartCheckoutLine[] {
@@ -771,6 +807,7 @@ function buildHotmartCheckoutLines(
   const parentPurchaseTx = coerceWebhookStr(ob.parent_purchase_transaction);
   const rootProd = recordOf(d.product as unknown);
   const rootPid = rootProd.id;
+  const rootOfferMeta = extractHotmartOfferMeta(purchase, d);
 
   const itemsRaw = purchase.items ?? d.items;
   if (Array.isArray(itemsRaw) && itemsRaw.length > 0) {
@@ -813,12 +850,15 @@ function buildHotmartCheckoutLines(
       } else if (i > 0) {
         saleLineLabel = 'Item adicional';
       }
+      const lineOfferMeta = extractHotmartOfferMeta(purchase, d, it);
       lines.push({
         orderId: oid.slice(0, 100),
         value: v,
         currency: cur || 'BRL',
         contentName: name,
         saleLineLabel,
+        offerCode: lineOfferMeta.offerCode || rootOfferMeta.offerCode,
+        offerName: lineOfferMeta.offerName || rootOfferMeta.offerName,
       });
     }
     return dedupeHotmartLinesByOrderId(lines);
@@ -852,6 +892,8 @@ function buildHotmartCheckoutLines(
       currency: rootMoney.currency,
       contentName,
       saleLineLabel,
+      offerCode: rootOfferMeta.offerCode,
+      offerName: rootOfferMeta.offerName,
     },
   ];
 }
@@ -898,6 +940,10 @@ async function processPurchaseWebhook({
   saleLineLabel,
   /** ID do produto na plataforma (Hotmart product_id, Kiwify product_id, etc.) — enriquece content_ids no CAPI. */
   contentId,
+  /** Código da oferta (Hotmart purchase.offer.code) — usado em conversões personalizadas Meta. */
+  offerCode,
+  /** Nome legível da oferta (Hotmart purchase.offer.name). */
+  offerName,
 }: any) {
   const { finalStatus, sendToCapi } = normalizeStatus(status);
   const resolvedCurrency = normalizeCurrencyCode(currency) || extractCurrencyFromPayload(payload as Record<string, unknown>) || 'BRL';
@@ -921,6 +967,18 @@ async function processPurchaseWebhook({
       : saleLineLabel && !contentName
         ? String(saleLineLabel)
         : contentName;
+
+  const resolvedOfferMeta = (() => {
+    const code = coerceWebhookStr(offerCode);
+    const name = coerceWebhookStr(offerName);
+    if (code || name) {
+      return {
+        ...(code ? { offerCode: code } : {}),
+        ...(name ? { offerName: name } : {}),
+      };
+    }
+    return extractOfferFromWebhookPayload(payload);
+  })();
 
   // Fetch site settings (Pixel, Token)
   const siteRes = await pool.query(
@@ -1216,6 +1274,8 @@ async function processPurchaseWebhook({
       content_type: 'product',
       content_ids: contentId ? [String(contentId)] : undefined,
       num_items: 1,
+      ...(resolvedOfferMeta.offerCode ? { offer: resolvedOfferMeta.offerCode } : {}),
+      ...(resolvedOfferMeta.offerName ? { offer_name: resolvedOfferMeta.offerName } : {}),
       utm_source: utmSource || undefined,
       utm_medium: utmMedium || undefined,
       utm_campaign: utmCampaign || undefined,
@@ -1759,6 +1819,8 @@ router.post('/purchase', async (req, res) => {
         purchaseTimestamp,
         paymentMethodRaw: extractPaymentMethodRaw(payload),
         contentId: (d.product as any)?.id || (d.product as any)?.offer_code,
+        offerCode: line.offerCode,
+        offerName: line.offerName,
       });
       if (!result.success) return res.status(result.status || 500).json({ error: result.error });
     }
@@ -1916,6 +1978,8 @@ router.post('/hotmart', async (req, res) => {
       purchaseTimestamp,
       paymentMethodRaw: extractPaymentMethodRaw(payload),
       contentId: (d.product as any)?.id || (d.product as any)?.offer_code,
+      offerCode: line.offerCode,
+      offerName: line.offerName,
     });
 
     if (!result.success) return res.status(result.status || 500).json({ error: result.error });
