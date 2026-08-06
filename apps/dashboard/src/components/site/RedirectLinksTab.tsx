@@ -94,8 +94,19 @@ export function RedirectLinksTab(props: {
     setName(row.name || '');
     setSlug(row.slug || '');
     setDestinationUrl(row.destination_url || '');
-    setEventType(row.event_name || 'Lead');
-    setCustomEventName('');
+    const savedEvent = String(row.event_name || '').trim();
+    const knownStandard = EVENT_OPTIONS.some(
+      (o) => o.value !== 'Custom' && o.value === savedEvent
+    );
+    if (knownStandard) {
+      setEventType(savedEvent);
+      setCustomEventName('');
+    } else {
+      // Evento personalizado (ou nome fora da lista): o <select> não tem essa option —
+      // sem mapear pra Custom o browser cai no primeiro item (Purchase).
+      setEventType('Custom');
+      setCustomEventName(savedEvent);
+    }
     setIsActive(row.is_active !== false);
     const p =
       row.parameters && typeof row.parameters === 'object' && !Array.isArray(row.parameters)
