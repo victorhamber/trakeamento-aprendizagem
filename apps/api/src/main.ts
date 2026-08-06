@@ -320,24 +320,36 @@ app.get('/:slug', async (req, res) => {
 
   const incomingQs = new URLSearchParams(String(req.originalUrl || '').split('?')[1] || '');
 
+  // IDs vindos da página de origem (taDecorateUrl). Em go.* não há cookie _fbp do site —
+  // sem isso no user_data o CAPI sai só com IP/UA e o Meta não casa/marca o evento.
+  const externalIdRaw = (incomingQs.get('external_id') || '').trim();
+  const externalId = externalIdRaw || `eid_${crypto.randomBytes(10).toString('hex')}`;
+  const fbpFromQs = (incomingQs.get('fbp') || '').trim();
+  const fbcFromQs = (incomingQs.get('fbc') || '').trim();
+
   const userDataBase: Record<string, unknown> = {
     client_ip_address: getClientIp(req),
     client_user_agent: req.headers['user-agent'] || undefined,
+    external_id: externalId,
   };
+  if (fbpFromQs) userDataBase.fbp = fbpFromQs;
+  if (fbcFromQs) userDataBase.fbc = fbcFromQs;
+
   const user_data = mergeUserDataWithMetaParamBuilder(
     req as any,
     requestUrl,
     userDataBase
   ) as Record<string, unknown>;
 
-  const externalIdRaw = (incomingQs.get('external_id') || '').trim();
-  const externalId = externalIdRaw || `eid_${crypto.randomBytes(10).toString('hex')}`;
+  // Query da página de origem tem prioridade (destino externo não carrega pixel nosso).
+  user_data.external_id = externalId;
+  if (fbpFromQs) user_data.fbp = fbpFromQs;
+  if (fbcFromQs) user_data.fbc = fbcFromQs;
+
   const fbp =
-    (incomingQs.get('fbp') || '').trim() ||
-    (typeof (user_data as any).fbp === 'string' ? String((user_data as any).fbp).trim() : '');
+    (typeof user_data.fbp === 'string' ? String(user_data.fbp).trim() : '') || fbpFromQs;
   const fbc =
-    (incomingQs.get('fbc') || '').trim() ||
-    (typeof (user_data as any).fbc === 'string' ? String((user_data as any).fbc).trim() : '');
+    (typeof user_data.fbc === 'string' ? String(user_data.fbc).trim() : '') || fbcFromQs;
 
   // IMPORTANTE: não “inventar” parâmetros no destino (ex.: external_id/fbp/fbc/trk),
   // porque alguns checkouts (Hotmart) podem quebrar com query extra.
@@ -378,28 +390,41 @@ app.get('/:slug', async (req, res) => {
     custom_data,
   };
 
-  Promise.resolve()
-    .then(async () => {
-      try {
-        await pool.query(
-          `INSERT INTO web_events (site_key, event_id, event_name, event_time, event_source_url, user_data, custom_data, telemetry)
-           VALUES ($1, $2, $3, NOW(), $4, $5, $6, $7)
-           ON CONFLICT (site_key, event_id) DO NOTHING`,
-          [String(link.site_key), eventId, String(link.event_name), requestUrl, user_data, custom_data, null]
-        );
-      } catch {}
-      try {
-        const result = await capiService.sendEvent(String(link.site_key), capiPayload as any);
-        if (result && typeof result === 'object' && ('ok' in result) && !(result as any).ok) {
-          await capiService.saveToOutbox(String(link.site_key), capiPayload as any, (result as any).error || 'API Error');
-        }
-      } catch (e: any) {
-        try {
-          await capiService.saveToOutbox(String(link.site_key), capiPayload as any, e?.message || String(e));
-        } catch {}
+  // Persiste + envia CAPI ANTES do 302 (destino externo não tem nosso pixel).
+  // Timeout curto: se a Meta atrasar, ainda redireciona e o outbox/retry cobre o resto.
+  const REDIRECT_CAPI_WAIT_MS = 2500;
+  try {
+    await pool.query(
+      `INSERT INTO web_events (site_key, event_id, event_name, event_time, event_source_url, user_data, custom_data, telemetry)
+       VALUES ($1, $2, $3, NOW(), $4, $5, $6, $7)
+       ON CONFLICT (site_key, event_id) DO NOTHING`,
+      [String(link.site_key), eventId, String(link.event_name), requestUrl, user_data, custom_data, null]
+    );
+  } catch {}
+
+  try {
+    const sendPromise = capiService.sendEvent(String(link.site_key), capiPayload as any).then(async (result) => {
+      if (result && typeof result === 'object' && ('ok' in result) && !(result as any).ok) {
+        await capiService.saveToOutbox(String(link.site_key), capiPayload as any, (result as any).error || 'API Error');
       }
-    })
-    .catch(() => {});
+      return result;
+    });
+    await Promise.race([
+      sendPromise,
+      new Promise((resolve) => setTimeout(resolve, REDIRECT_CAPI_WAIT_MS)),
+    ]);
+    // Se estourou o timeout, não bloqueia o redirect; deixa o envio terminar em background
+    // e garante outbox se falhar depois.
+    void sendPromise.catch(async (e: any) => {
+      try {
+        await capiService.saveToOutbox(String(link.site_key), capiPayload as any, e?.message || String(e));
+      } catch {}
+    });
+  } catch (e: any) {
+    try {
+      await capiService.saveToOutbox(String(link.site_key), capiPayload as any, e?.message || String(e));
+    } catch {}
+  }
 
   res.setHeader('Cache-Control', 'no-store');
   return res.redirect(302, destination);
