@@ -20,7 +20,12 @@ async function getMetaUserToken(siteId: number, res: any): Promise<string | null
     return null;
   }
   if (meta.fb_token_expires_at && new Date(meta.fb_token_expires_at) < new Date()) {
-    res.status(401).json({ error: 'Facebook token expired. Please reconnect in the Dashboard.' });
+    // 409: a sessão Trajetto continua válida; só a conexão Facebook precisa ser refeita.
+    // 401 aqui derrubava o login do dashboard (interceptor trata 401 como sessão expirada).
+    res.status(409).json({
+      error: 'Facebook token expired. Please reconnect in the Dashboard.',
+      code: 'FACEBOOK_TOKEN_EXPIRED',
+    });
     return null;
   }
   try {

@@ -70,9 +70,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       (err) => {
         const status = err?.response?.status;
         const url = String(err?.config?.url || '');
-        // Evita loop em endpoints de autenticação.
         const isAuthRoute = url.includes('/auth/login') || url.includes('/auth/register') || url.includes('/auth/me');
-        if (!isAuthRoute && (status === 401 || status === 403)) {
+        // Só 401 = sessão Trajetto inválida.
+        // 403 é permissão/CORS/plano; 409 é Facebook expirado — não deslogar.
+        if (!isAuthRoute && status === 401) {
           forceLogoutAndReload('unauthorized');
         }
         return Promise.reject(err);

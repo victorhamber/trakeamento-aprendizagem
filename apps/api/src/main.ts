@@ -51,6 +51,7 @@ app.use((req, res, next) => {
   // Lista de origens permitidas (dashboard em prod + localhost)
   const allowedOrigins = [
     process.env.PUBLIC_DASHBOARD_BASE_URL,
+    'https://app.trajettu.com',
     'https://adm.trajettu.com',
     'http://localhost:5173',
     'http://127.0.0.1:5173'

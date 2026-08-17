@@ -2025,7 +2025,12 @@ ${scriptContent}
 
   useEffect(() => {
     if (tab === 'meta' && meta?.has_facebook_connection && adAccounts.length === 0) {
-      loadAdAccounts().catch(() => { });
+      loadAdAccounts().catch((err) => {
+        const msg = String(err?.response?.data?.error || '');
+        if (err?.response?.status === 409 || /facebook|reconnect/i.test(msg)) {
+          showFlash('A conexão com o Facebook expirou. Clique em conectar novamente.', 'error');
+        }
+      });
     }
   }, [tab, meta, adAccounts.length, loadAdAccounts]);
 

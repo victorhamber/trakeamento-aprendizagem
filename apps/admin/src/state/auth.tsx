@@ -68,7 +68,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         const status = err?.response?.status;
         const url = String(err?.config?.url || '');
         const isAuthRoute = url.includes('/auth/login') || url.includes('/auth/register') || url.includes('/auth/me');
-        if (!isAuthRoute && (status === 401 || status === 403)) {
+        // Só 401 = sessão inválida. 403 (CORS/plano) e 409 (Facebook expirado) não deslogam.
+        if (!isAuthRoute && status === 401) {
           forceLogoutAndReload('unauthorized');
         }
         return Promise.reject(err);
