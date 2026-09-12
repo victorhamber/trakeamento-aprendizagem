@@ -92,6 +92,7 @@ type BuyerDetail = {
       meta_attribution_source?: string | null;
     }>;
     last_touch: null | Record<string, string>;
+    anchor_purchase_id?: number | null;
     meta_attribution: null | {
       campaign_id?: string | null;
       campaign_name?: string | null;
@@ -381,37 +382,47 @@ function BuyerJourneyDetailView({
   setPurchasesPage,
   purchasesPerPage,
   detailLoading,
+  onSelectPurchase,
 }: {
   detail: BuyerDetail;
   purchasesPage: number;
   setPurchasesPage: (n: number | ((p: number) => number)) => void;
   purchasesPerPage: number;
   detailLoading: boolean;
+  onSelectPurchase: (purchaseId: number) => void;
 }) {
-  const last = detail.purchases?.[0];
-  const st = String(last?.status || '').toLowerCase();
-  const approved = ['approved', 'paid', 'completed', 'active'].includes(st);
+  const anchorId = detail.behavior.anchor_purchase_id ?? detail.purchases?.[0]?.id;
+  const last = detail.purchases?.find((p) => p.id === anchorId) || detail.purchases?.[0];
+  const purchaseTotal = Number(detail.purchases_total ?? detail.purchases.length ?? 0);
+  const revenueOnPage = detail.purchases.reduce((s, p) => s + (Number(p.amount) || 0), 0);
 
   type PvRow = NonNullable<BuyerDetail['behavior']['pageviews_timeline_before_last_purchase']>[number];
   const pageviewsWindow = [...(detail.behavior.pageviews_timeline_before_last_purchase || [])]
     .sort((a, b) => timelineSortMs(a.at) - timelineSortMs(b.at))
     .slice(-50);
 
-  type MergedTimeline = { kind: 'pv'; atIso: string; pv: PvRow } | { kind: 'purchase'; atIso: string };
+  type MergedTimeline =
+    | { kind: 'pv'; atIso: string; pv: PvRow }
+    | { kind: 'purchase'; atIso: string; purchase: NonNullable<BuyerDetail['purchases']>[number] };
   const merged: MergedTimeline[] = pageviewsWindow.map((pv) => ({ kind: 'pv', atIso: pv.at, pv }));
-  if (last) merged.push({ kind: 'purchase', atIso: last.purchased_at });
+  const anchorMs = last ? timelineSortMs(last.purchased_at) : Number.POSITIVE_INFINITY;
+  for (const p of detail.purchases) {
+    const ms = timelineSortMs(p.purchased_at);
+    if (ms > 0 && ms <= anchorMs) merged.push({ kind: 'purchase', atIso: p.purchased_at, purchase: p });
+  }
   merged.sort((a, b) => timelineSortMs(a.atIso) - timelineSortMs(b.atIso));
 
   let pvOrdinal = 0;
   const timelineItems: TimelineItem[] = merged.map((row) => {
     if (row.kind === 'purchase') {
-      if (!last) {
-        return { at: '—', title: 'Compra', highlight: true, icon: 'check' };
-      }
+      const p = row.purchase;
+      const ok = ['approved', 'paid', 'completed', 'active'].includes(String(p.status || '').toLowerCase());
       return {
-        at: dt(last.purchased_at),
-        title: approved ? 'Compra aprovada' : `Compra · ${purchaseStatusLabel(last.status)}`,
-        subtitle: last.order_id ? `Pedido ${last.order_id}` : undefined,
+        at: dt(p.purchased_at),
+        title: ok ? 'Compra aprovada' : `Compra · ${purchaseStatusLabel(p.status)}`,
+        subtitle: [p.order_id ? `Pedido ${p.order_id}` : null, p.amount != null ? formatMoney(Number(p.amount), p.currency) : null]
+          .filter(Boolean)
+          .join(' · '),
         highlight: true,
         icon: 'check',
       };
@@ -451,11 +462,56 @@ function BuyerJourneyDetailView({
 
   return (
     <>
+      {purchaseTotal > 1 ? (
+        <div className="rounded-2xl border border-indigo-400/30 bg-zinc-900/40 p-4">
+          <div className="flex flex-wrap items-end justify-between gap-2 mb-3">
+            <div>
+              <div className="text-sm font-semibold text-white">Compras deste visitante</div>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                Selecione um pedido para ver a jornada e a origem daquela compra. Total{' '}
+                <span className="tabular-nums text-slate-200 font-semibold">{purchaseTotal}</span>
+                {revenueOnPage > 0 ? ` · nesta página ${formatMoney(revenueOnPage, last?.currency)}` : null}.
+              </p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
+            {detail.purchases.map((p) => {
+              const selected = p.id === last?.id;
+              const ok = ['approved', 'paid', 'completed', 'active'].includes(String(p.status || '').toLowerCase());
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  disabled={detailLoading}
+                  onClick={() => onSelectPurchase(p.id)}
+                  className={`text-left rounded-xl border px-3 py-3 transition-colors disabled:opacity-50 ${
+                    selected
+                      ? 'border-indigo-400 bg-indigo-500/25 ring-2 ring-indigo-400/40'
+                      : 'border-slate-700 bg-zinc-950/60 hover:border-indigo-400/50 hover:bg-zinc-900'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-bold tabular-nums text-white">
+                      {p.amount != null ? formatMoney(Number(p.amount), p.currency) : '—'}
+                    </span>
+                    <span className={`text-[10px] font-semibold ${ok ? 'text-emerald-300' : 'text-amber-300'}`}>
+                      {purchaseStatusLabel(p.status)}
+                    </span>
+                  </div>
+                  <div className="mt-1 text-[11px] text-slate-300">{dt(p.purchased_at)}</div>
+                  <div className="mt-0.5 text-[10px] font-mono text-slate-500 truncate">{p.order_id || '—'}</div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+
       <MetricGrid4>
         <MetricCard
           icon={ShoppingBag}
           iconClass="bg-violet-500/15 text-violet-300"
-          label="Valor da compra"
+          label={purchaseTotal > 1 ? 'Desta compra' : 'Valor da compra'}
           value={last?.amount != null ? formatMoney(Number(last.amount), last.currency) : '—'}
         />
         <MetricCard
@@ -486,10 +542,113 @@ function BuyerJourneyDetailView({
         badge={m ? 'Meta Ads' : lt?.utm_source ? 'Histórico do visitante' : undefined}
         footerNote={
           m
-            ? 'Associado ao último toque detectado antes da compra (campanha Meta).'
-            : 'Sem campanha Meta no momento da compra. Usamos a última origem do histórico do visitante (UTM/clique).'
+            ? 'Campanha Meta do último toque antes desta compra — não da compra mais recente do visitante.'
+            : 'Sem campanha Meta neste pedido. Origem do histórico do visitante até esta compra (UTM/clique).'
         }
       />
+
+      <div className="rounded-2xl border border-slate-800 bg-zinc-950/80 p-4">
+        <div className="flex items-center justify-between gap-2 mb-3">
+          <div>
+            <div className="text-sm font-semibold text-white">Pedidos</div>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              {purchaseTotal > 1 ? 'Clique numa linha para abrir a jornada daquele pedido.' : 'Compras deste visitante.'}
+            </p>
+          </div>
+          <div className="text-[11px] text-slate-500">
+            Total: <span className="font-semibold tabular-nums text-slate-200">{detail.purchases_total ?? 0}</span>
+          </div>
+        </div>
+        <div className="overflow-auto">
+          <table className="w-full text-[11px]">
+            <thead className="text-slate-500">
+              <tr>
+                <th className="text-left py-2 pr-3">Data</th>
+                <th className="text-left py-2 pr-3">Pedido</th>
+                <th className="text-right py-2 pr-3">Valor</th>
+                <th className="text-left py-2">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {detail.purchases.map((p) => {
+                const selected = p.id === last?.id;
+                return (
+                  <tr
+                    key={p.id}
+                    className={`border-t border-slate-800 ${
+                      purchaseTotal > 1 ? 'cursor-pointer hover:bg-indigo-500/10' : ''
+                    } ${selected ? 'bg-indigo-500/15' : ''}`}
+                    onClick={purchaseTotal > 1 ? () => onSelectPurchase(p.id) : undefined}
+                  >
+                    <td className="py-2 pr-3 text-slate-300 whitespace-nowrap">{dt(p.purchased_at)}</td>
+                    <td className="py-2 pr-3 text-slate-100 truncate max-w-[200px]" title={p.order_id}>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="truncate">{p.order_id || '—'}</span>
+                        {p.billing_kind ? <BillingKindBadge kind={p.billing_kind} /> : null}
+                      </div>
+                    </td>
+                    <td className="py-2 pr-3 text-right tabular-nums text-slate-100 whitespace-nowrap">
+                      {p.amount != null ? formatMoney(Number(p.amount), p.currency) : '—'}
+                    </td>
+                    <td className="py-2 text-slate-400">{purchaseStatusLabel(p.status)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        {(() => {
+          const total = Number(detail.purchases_total ?? 0);
+          const pages = Math.max(1, Math.ceil(total / purchasesPerPage));
+          if (pages <= 1) return null;
+          const current = purchasesPage;
+          const start = Math.max(1, current - 3);
+          const end = Math.min(pages, start + 6);
+          const pageNums = [];
+          for (let i = start; i <= end; i++) pageNums.push(i);
+          return (
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setPurchasesPage((p) => Math.max(1, p - 1))}
+                  disabled={current <= 1 || detailLoading}
+                  className="text-[11px] px-2 py-1 rounded-lg border border-slate-700 bg-slate-900/50 text-slate-200 disabled:opacity-40"
+                >
+                  Anterior
+                </button>
+                {pageNums.map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => setPurchasesPage(n)}
+                    disabled={detailLoading}
+                    className={`text-[11px] px-2 py-1 rounded-lg border ${
+                      n === current
+                        ? 'border-indigo-500/60 bg-indigo-500/20 text-indigo-200'
+                        : 'border-slate-700 bg-slate-900/50 text-slate-200'
+                    } disabled:opacity-40`}
+                  >
+                    {n}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setPurchasesPage((p) => Math.min(pages, p + 1))}
+                  disabled={current >= pages || detailLoading}
+                  className="text-[11px] px-2 py-1 rounded-lg border border-slate-700 bg-slate-900/50 text-slate-200 disabled:opacity-40"
+                >
+                  Próxima
+                </button>
+              </div>
+              <div className="text-[11px] text-slate-500">
+                Página <span className="font-semibold tabular-nums">{current}</span> de{' '}
+                <span className="font-semibold tabular-nums">{pages}</span>
+              </div>
+            </div>
+          );
+        })()}
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
         <JourneyTimeline
@@ -497,7 +656,7 @@ function BuyerJourneyDetailView({
           items={timelineItems}
           uniquePath={{
             steps: pathSteps,
-            footer: `${interactions} interações antes da compra`,
+            footer: `${interactions} interações antes desta compra`,
             variant: 'purchase',
           }}
         />
@@ -614,95 +773,6 @@ function BuyerJourneyDetailView({
               </div>
             </div>
           ) : null}
-
-          <div className="rounded-lg border border-slate-800 bg-zinc-950 p-3">
-            <div className="flex items-center justify-between gap-2 mb-2">
-              <div className="text-[11px] font-semibold text-slate-300">Compras (todas)</div>
-              <div className="text-[10px] text-slate-500">
-                Total: <span className="font-semibold tabular-nums text-slate-300">{detail.purchases_total ?? 0}</span>
-              </div>
-            </div>
-            <div className="overflow-auto">
-              <table className="w-full text-[11px]">
-                <thead className="text-slate-500">
-                  <tr>
-                    <th className="text-left py-2 pr-3">Data</th>
-                    <th className="text-left py-2 pr-3">Pedido</th>
-                    <th className="text-right py-2 pr-3">Valor</th>
-                    <th className="text-left py-2">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {detail.purchases.map((p) => (
-                    <tr key={p.id} className="border-t border-slate-800">
-                      <td className="py-2 pr-3 text-slate-400 whitespace-nowrap">{dt(p.purchased_at)}</td>
-                      <td className="py-2 pr-3 text-slate-200 truncate max-w-[200px]" title={p.order_id}>
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="truncate">{p.order_id || '—'}</span>
-                          {p.billing_kind ? <BillingKindBadge kind={p.billing_kind} /> : null}
-                        </div>
-                      </td>
-                      <td className="py-2 pr-3 text-right tabular-nums text-slate-200 whitespace-nowrap">
-                        {p.amount != null ? formatMoney(Number(p.amount), p.currency) : '—'}
-                      </td>
-                      <td className="py-2 text-slate-400">{purchaseStatusLabel(p.status)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {(() => {
-              const total = Number(detail.purchases_total ?? 0);
-              const pages = Math.max(1, Math.ceil(total / purchasesPerPage));
-              if (pages <= 1) return null;
-              const current = purchasesPage;
-              const start = Math.max(1, current - 3);
-              const end = Math.min(pages, start + 6);
-              const pageNums = [];
-              for (let i = start; i <= end; i++) pageNums.push(i);
-              return (
-                <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => setPurchasesPage((p) => Math.max(1, p - 1))}
-                      disabled={current <= 1 || detailLoading}
-                      className="text-[11px] px-2 py-1 rounded-lg border border-slate-700 bg-slate-900/50 text-slate-200 disabled:opacity-40"
-                    >
-                      Anterior
-                    </button>
-                    {pageNums.map((n) => (
-                      <button
-                        key={n}
-                        type="button"
-                        onClick={() => setPurchasesPage(n)}
-                        disabled={detailLoading}
-                        className={`text-[11px] px-2 py-1 rounded-lg border ${
-                          n === current
-                            ? 'border-indigo-500/60 bg-indigo-500/20 text-indigo-200'
-                            : 'border-slate-700 bg-slate-900/50 text-slate-200'
-                        } disabled:opacity-40`}
-                      >
-                        {n}
-                      </button>
-                    ))}
-                    <button
-                      type="button"
-                      onClick={() => setPurchasesPage((p) => Math.min(pages, p + 1))}
-                      disabled={current >= pages || detailLoading}
-                      className="text-[11px] px-2 py-1 rounded-lg border border-slate-700 bg-slate-900/50 text-slate-200 disabled:opacity-40"
-                    >
-                      Próxima
-                    </button>
-                  </div>
-                  <div className="text-[11px] text-slate-500">
-                    Página <span className="font-semibold tabular-nums">{current}</span> de{' '}
-                    <span className="font-semibold tabular-nums">{pages}</span>
-                  </div>
-                </div>
-              );
-            })()}
-          </div>
         </div>
       </TechnicalAccordion>
     </>
@@ -724,9 +794,18 @@ export function BuyersTab({ siteId }: { siteId: number }) {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [purchasesPage, setPurchasesPage] = useState(1);
+  const [anchorPurchaseId, setAnchorPurchaseId] = useState<number | null>(null);
   const purchasesPerPage = 10;
+  const buyerLookbackDays = 90;
 
   const canOpen = useMemo(() => !!selected, [selected]);
+  const headerPurchase =
+    detail?.purchases?.find((p) => p.id === (detail.behavior.anchor_purchase_id ?? detail.purchases[0]?.id)) ||
+    detail?.purchases?.[0] ||
+    null;
+  const headerPurchaseApproved = headerPurchase
+    ? ['approved', 'paid', 'completed', 'active'].includes(String(headerPurchase.status || '').toLowerCase())
+    : false;
 
   const load = async (opts?: { page?: number }) => {
     setLoading(true);
@@ -767,6 +846,7 @@ export function BuyersTab({ siteId }: { siteId: number }) {
       return;
     }
     setPurchasesPage(1);
+    setAnchorPurchaseId(null);
     setDetailLoading(true);
     setDetailError(null);
     (async () => {
@@ -774,7 +854,7 @@ export function BuyersTab({ siteId }: { siteId: number }) {
         const res = selected.externalId
           ? await api.get(`/sites/${siteId}/buyers/${encodeURIComponent(selected.externalId)}`, {
               params: {
-                lookback_days: 60,
+                lookback_days: buyerLookbackDays,
                 purchases_limit: purchasesPerPage,
                 purchases_offset: 0,
                 purchase_status: purchaseListFilter,
@@ -782,7 +862,7 @@ export function BuyersTab({ siteId }: { siteId: number }) {
             })
           : await api.get(`/sites/${siteId}/buyers/by-key/${encodeURIComponent(selected.buyerKey)}`, {
               params: {
-                lookback_days: 60,
+                lookback_days: buyerLookbackDays,
                 purchases_limit: purchasesPerPage,
                 purchases_offset: 0,
                 purchase_status: purchaseListFilter,
@@ -800,29 +880,22 @@ export function BuyersTab({ siteId }: { siteId: number }) {
 
   useEffect(() => {
     if (!selected) return;
-    if (purchasesPage === 1) return; // já carregado no primeiro request
+    if (purchasesPage === 1 && anchorPurchaseId == null) return;
     setDetailLoading(true);
     setDetailError(null);
     (async () => {
       try {
         const offset = (purchasesPage - 1) * purchasesPerPage;
+        const params = {
+          lookback_days: buyerLookbackDays,
+          purchases_limit: purchasesPerPage,
+          purchases_offset: offset,
+          purchase_status: purchaseListFilter,
+          ...(anchorPurchaseId ? { anchor_purchase_id: anchorPurchaseId } : {}),
+        };
         const res = selected.externalId
-          ? await api.get(`/sites/${siteId}/buyers/${encodeURIComponent(selected.externalId)}`, {
-              params: {
-                lookback_days: 60,
-                purchases_limit: purchasesPerPage,
-                purchases_offset: offset,
-                purchase_status: purchaseListFilter,
-              },
-            })
-          : await api.get(`/sites/${siteId}/buyers/by-key/${encodeURIComponent(selected.buyerKey)}`, {
-              params: {
-                lookback_days: 60,
-                purchases_limit: purchasesPerPage,
-                purchases_offset: offset,
-                purchase_status: purchaseListFilter,
-              },
-            });
+          ? await api.get(`/sites/${siteId}/buyers/${encodeURIComponent(selected.externalId)}`, { params })
+          : await api.get(`/sites/${siteId}/buyers/by-key/${encodeURIComponent(selected.buyerKey)}`, { params });
         setDetail(res.data as BuyerDetail);
       } catch (e: any) {
         setDetail(null);
@@ -831,7 +904,7 @@ export function BuyersTab({ siteId }: { siteId: number }) {
         setDetailLoading(false);
       }
     })();
-  }, [siteId, selected, purchasesPage, purchaseListFilter]);
+  }, [siteId, selected, purchasesPage, purchaseListFilter, anchorPurchaseId]);
 
   return (
     <div className="space-y-4">
@@ -1021,18 +1094,23 @@ export function BuyersTab({ siteId }: { siteId: number }) {
                 selected?.buyerKey ||
                 'Comprador'
               }
-              subtitle="Resumo da compra e jornada até a conversão"
+              subtitle={
+                Number(detail?.purchases_total || 0) > 1
+                  ? `${detail?.purchases_total} compras · jornada do pedido ${headerPurchase?.order_id || 'selecionado'}`
+                  : 'Resumo da compra e jornada até a conversão'
+              }
               badge={
-                detail?.purchases?.[0] ? (
+                headerPurchase ? (
                   <div className="flex items-center gap-2">
-                    {['approved', 'paid', 'completed', 'active'].includes(String(detail.purchases[0].status || '').toLowerCase()) ? (
+                    {headerPurchaseApproved ? (
                       <StatusPill variant="success">Compra aprovada</StatusPill>
                     ) : (
-                      <StatusPill variant="warning">{purchaseStatusLabel(detail.purchases[0].status)}</StatusPill>
+                      <StatusPill variant="warning">{purchaseStatusLabel(headerPurchase.status)}</StatusPill>
                     )}
-                    {detail.purchases[0].billing_kind ? (
-                      <BillingKindBadge kind={detail.purchases[0].billing_kind} />
+                    {Number(detail?.purchases_total || 0) > 1 ? (
+                      <StatusPill variant="info">{detail?.purchases_total} compras</StatusPill>
                     ) : null}
+                    {headerPurchase.billing_kind ? <BillingKindBadge kind={headerPurchase.billing_kind} /> : null}
                   </div>
                 ) : null
               }
@@ -1040,18 +1118,30 @@ export function BuyersTab({ siteId }: { siteId: number }) {
             />
           }
         >
-          {detailLoading ? (
-            <div className="text-sm text-slate-400 py-8 text-center">Carregando…</div>
-          ) : detailError ? (
+          {detailError ? (
             <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{detailError}</div>
           ) : detail ? (
-            <BuyerJourneyDetailView
-              detail={detail}
-              purchasesPage={purchasesPage}
-              setPurchasesPage={setPurchasesPage}
-              purchasesPerPage={purchasesPerPage}
-              detailLoading={detailLoading}
-            />
+            <>
+              {detailLoading ? (
+                <div className="text-[11px] text-indigo-200 bg-indigo-500/15 border border-indigo-400/30 rounded-xl px-3 py-2">
+                  Atualizando jornada desta compra…
+                </div>
+              ) : null}
+              <BuyerJourneyDetailView
+                detail={detail}
+                purchasesPage={purchasesPage}
+                setPurchasesPage={setPurchasesPage}
+                purchasesPerPage={purchasesPerPage}
+                detailLoading={detailLoading}
+                onSelectPurchase={(id) => {
+                  const current = anchorPurchaseId ?? detail.behavior.anchor_purchase_id ?? detail.purchases[0]?.id;
+                  if (id === current) return;
+                  setAnchorPurchaseId(id);
+                }}
+              />
+            </>
+          ) : detailLoading ? (
+            <div className="text-sm text-slate-400 py-8 text-center">Carregando…</div>
           ) : null}
         </JourneyModalFrame>
       ) : null}

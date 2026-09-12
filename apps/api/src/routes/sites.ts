@@ -1850,6 +1850,53 @@ function utmFromVisitorTrafficSource(raw: string): Record<string, string> | null
   return parseTrafficSourceQuery(s.startsWith('?') ? s : `?${s}`);
 }
 
+function pickBuyerAnchorPurchase<T extends { id: number }>(rows: T[], requestedId: unknown): T | null {
+  const id = Number(requestedId);
+  if (Number.isFinite(id) && id > 0) {
+    const hit = rows.find((r) => Number(r.id) === id);
+    if (hit) return hit;
+  }
+  return rows[0] || null;
+}
+
+/** Se a compra âncora não estiver na página atual da lista, busca ela direto (jornada/origem daquele pedido). */
+async function resolveBuyerAnchorPurchase(
+  siteKey: string,
+  pageRows: any[],
+  requestedId: unknown
+): Promise<any | null> {
+  const picked = pickBuyerAnchorPurchase(pageRows, requestedId);
+  const id = Number(requestedId);
+  if (!(Number.isFinite(id) && id > 0)) return picked;
+  if (picked && Number(picked.id) === id) return picked;
+  const r = await pool.query(
+    `SELECT
+        id, order_id, platform, amount, currency, status,
+        customer_name, customer_email, customer_phone,
+        external_id, fbp, fbc, buyer_email_hash,
+        utm_source, utm_medium, utm_campaign, custom_data,
+        COALESCE(platform_date, created_at) AS purchased_at
+       FROM purchases
+      WHERE site_key = $1 AND id = $2
+      LIMIT 1`,
+    [siteKey, id]
+  );
+  return r.rows[0] || picked;
+}
+
+function isBuyerLatestPurchaseOnPage(pageRows: any[], offset: number, anchor: { id?: number } | null): boolean {
+  if (offset !== 0 || !pageRows[0] || !anchor?.id) return false;
+  return Number(anchor.id) === Number(pageRows[0].id);
+}
+
+function buyerJourneyWindow(anchorAt: Date | null, lookbackDays: number): { from: Date; to: Date } | null {
+  if (!anchorAt || Number.isNaN(anchorAt.getTime())) return null;
+  return {
+    from: new Date(anchorAt.getTime() - lookbackDays * 24 * 60 * 60 * 1000),
+    to: anchorAt,
+  };
+}
+
 /** Completa Último toque com primeiro toque gravado no perfil + UTMs da compra (webhook) + fbclid derivado do `fbc` do visitante. */
 function enrichBuyerLastTouchFromProfileAndPurchase(
   lastTouchUtm: Record<string, string> | null,
@@ -3078,7 +3125,10 @@ router.get('/:siteId/buyers/by-key/:buyerKey', requireAuth, async (req, res) => 
     const v = visitorRes.rows[0] || null;
     const externalId = (v?.external_id ? String(v.external_id) : null) || purchaseExternalId;
 
-    const lookbackDays = Math.min(60, Math.max(1, Number(req.query.lookback_days || 30)));
+    const lookbackDays = Math.min(120, Math.max(1, Number(req.query.lookback_days || 90)));
+    const anchorPurchase = await resolveBuyerAnchorPurchase(siteKey, purchasesRes.rows, req.query.anchor_purchase_id);
+    const lastPurchaseAt = anchorPurchase?.purchased_at ? new Date(anchorPurchase.purchased_at) : null;
+    const journeyWin = buyerJourneyWindow(lastPurchaseAt, lookbackDays);
     const eventsRes = externalId
       ? await pool.query(
           `SELECT
@@ -3091,15 +3141,19 @@ router.get('/:siteId/buyers/by-key/:buyerKey', requireAuth, async (req, res) => 
            FROM web_events
            WHERE site_key = $1
              AND user_data->>'external_id' = $2
-             AND event_time >= NOW() - ($3::int || ' days')::interval
+             AND event_time >= $3::timestamptz
+             AND event_time < $4::timestamptz
              AND event_name IN ('PageView', 'PageEngagement', 'Purchase', 'Lead', 'InitiateCheckout')
            ORDER BY event_time DESC
            LIMIT 2000`,
-          [siteKey, externalId, lookbackDays]
+          [
+            siteKey,
+            externalId,
+            journeyWin?.from ?? new Date(Date.now() - lookbackDays * 86400000),
+            journeyWin?.to ?? new Date(),
+          ]
         )
       : { rows: [] as any[] };
-
-    const lastPurchaseAt = purchasesRes.rows[0]?.purchased_at ? new Date(purchasesRes.rows[0].purchased_at) : null;
     const pvBefore: Record<string, number> = {};
     let pvCountBefore = 0;
     let lastTouchUtm: Record<string, string> | null = null;
@@ -3152,14 +3206,19 @@ router.get('/:siteId/buyers/by-key/:buyerKey', requireAuth, async (req, res) => 
       lastTouchUtm,
       pageviewTimeline.map((p) => p.utm)
     );
-    if (!lastTouchUtm && v?.last_traffic_source) {
+    const isLatestPurchaseByKey = isBuyerLatestPurchaseOnPage(
+      purchasesRes.rows,
+      purchasesOffset,
+      anchorPurchase
+    );
+    if (!lastTouchUtm && isLatestPurchaseByKey && v?.last_traffic_source) {
       lastTouchUtm = utmFromVisitorTrafficSource(String(v.last_traffic_source));
     }
     if (!lastTouchUtm && v?.first_traffic_source) {
       lastTouchUtm = utmFromVisitorTrafficSource(String(v.first_traffic_source));
     }
 
-    lastTouchUtm = enrichBuyerLastTouchFromProfileAndPurchase(lastTouchUtm, [v], purchasesRes.rows[0]);
+    lastTouchUtm = enrichBuyerLastTouchFromProfileAndPurchase(lastTouchUtm, [v], anchorPurchase);
 
     if (pageviewTimeline.length && lastPageviewBeforePurchase && pageviewTimeline[0].url === lastPageviewBeforePurchase.url) {
       pageviewTimeline[0] = { ...pageviewTimeline[0], utm: lastTouchUtm };
@@ -3208,6 +3267,7 @@ router.get('/:siteId/buyers/by-key/:buyerKey', requireAuth, async (req, res) => 
         pageviews_timeline_before_last_purchase: pageviewTimelineWithMetaByKey.slice(0, 500),
         pageviews_debug_chronological_before_last_purchase: pageviewsDebugChrono,
         last_touch: lastTouchUtm,
+        anchor_purchase_id: anchorPurchase?.id ?? null,
         meta_attribution: byKeyAttribution,
         meta_attribution_source: byKeyAttributionSource,
         meta_ad_touch_trail,
@@ -3333,7 +3393,10 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
     const v = visitorRes.rows[0] || v0 || null;
     const eventsExternalId = v?.external_id ? String(v.external_id) : null;
 
-    const lookbackDays = Math.min(60, Math.max(1, Number(req.query.lookback_days || 30)));
+    const lookbackDays = Math.min(120, Math.max(1, Number(req.query.lookback_days || 90)));
+    const anchorPurchase = await resolveBuyerAnchorPurchase(siteKey, purchasesRes.rows, req.query.anchor_purchase_id);
+    const lastPurchaseAt = anchorPurchase?.purchased_at ? new Date(anchorPurchase.purchased_at) : null;
+    const journeyWin = buyerJourneyWindow(lastPurchaseAt, lookbackDays);
     const eventsRes = eventsExternalId
       ? await pool.query(
           `SELECT
@@ -3346,16 +3409,19 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
            FROM web_events
            WHERE site_key = $1
              AND user_data->>'external_id' = $2
-             AND event_time >= NOW() - ($3::int || ' days')::interval
+             AND event_time >= $3::timestamptz
+             AND event_time < $4::timestamptz
              AND event_name IN ('PageView', 'PageEngagement', 'Purchase', 'Lead', 'InitiateCheckout')
            ORDER BY event_time DESC
            LIMIT 2000`,
-          [siteKey, eventsExternalId, lookbackDays]
+          [
+            siteKey,
+            eventsExternalId,
+            journeyWin?.from ?? new Date(Date.now() - lookbackDays * 86400000),
+            journeyWin?.to ?? new Date(),
+          ]
         )
       : { rows: [] as any[] };
-
-    // Pré-compra: contar PageView antes da última compra e top páginas.
-    const lastPurchaseAt = purchasesRes.rows[0]?.purchased_at ? new Date(purchasesRes.rows[0].purchased_at) : null;
     const pvBefore: Record<string, number> = {};
     let pvCountBefore = 0;
     let lastTouchUtm: Record<string, string> | null = null;
@@ -3408,18 +3474,21 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
       lastTouchUtm,
       pageviewTimeline.map((p) => p.utm)
     );
-    if (!lastTouchUtm && v?.last_traffic_source) {
+    const isLatestPurchase = isBuyerLatestPurchaseOnPage(purchasesRes.rows, purchasesOffset, anchorPurchase);
+    if (!lastTouchUtm && isLatestPurchase && v?.last_traffic_source) {
       lastTouchUtm = utmFromVisitorTrafficSource(String(v.last_traffic_source));
     }
-    if (!lastTouchUtm && (v?.first_traffic_source || v0?.first_traffic_source || v0?.last_traffic_source)) {
+    if (!lastTouchUtm && (v?.first_traffic_source || v0?.first_traffic_source || (isLatestPurchase && v0?.last_traffic_source))) {
       lastTouchUtm =
         lastTouchUtm ||
         (v?.first_traffic_source ? utmFromVisitorTrafficSource(String(v.first_traffic_source)) : null) ||
-        (v0?.last_traffic_source ? utmFromVisitorTrafficSource(String(v0.last_traffic_source)) : null) ||
+        (isLatestPurchase && v0?.last_traffic_source
+          ? utmFromVisitorTrafficSource(String(v0.last_traffic_source))
+          : null) ||
         (v0?.first_traffic_source ? utmFromVisitorTrafficSource(String(v0.first_traffic_source)) : null);
     }
 
-    lastTouchUtm = enrichBuyerLastTouchFromProfileAndPurchase(lastTouchUtm, [v0, v], purchasesRes.rows[0]);
+    lastTouchUtm = enrichBuyerLastTouchFromProfileAndPurchase(lastTouchUtm, [v0, v], anchorPurchase);
 
     if (pageviewTimeline.length && lastPageviewBeforePurchase && pageviewTimeline[0].url === lastPageviewBeforePurchase.url) {
       pageviewTimeline[0] = { ...pageviewTimeline[0], utm: lastTouchUtm };
@@ -3468,6 +3537,7 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
         pageviews_timeline_before_last_purchase: pageviewTimelineWithMeta.slice(0, 500),
         pageviews_debug_chronological_before_last_purchase: pageviewsDebugChrono,
         last_touch: lastTouchUtm,
+        anchor_purchase_id: anchorPurchase?.id ?? null,
         meta_attribution: attribution,
         meta_attribution_source: attributionSource,
         meta_ad_touch_trail,
