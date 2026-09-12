@@ -1097,6 +1097,19 @@ async function processPurchaseWebhook({
     }
   }
 
+  // Histórico do visitante: UTMs da jornada mesmo quando o checkout chega limpo (sem origem).
+  let histAttr: Awaited<ReturnType<typeof EnrichmentService.findAttributionHistory>> = null;
+  try {
+    histAttr = await EnrichmentService.findAttributionHistory(siteKey, {
+      externalId: mergedExternalId,
+      fbp: mergedFbpSafe,
+      fbc: mergedFbcSafe,
+      emailHash: dbEmailHash,
+    });
+  } catch {
+    histAttr = null;
+  }
+
   // UTMs priority (Strip trk_ token from UTM source if present)
   let baseUtmSource = payload.utm_source || payload.trackingParameters?.utm_source || payload.tracking_parameters?.utm_source || (payload.sck && !String(payload.sck).startsWith('trk_') ? payload.sck : undefined) || (payload.src && !String(payload.src).startsWith('trk_') ? payload.src : undefined) || undefined;
   
@@ -1109,20 +1122,22 @@ async function processPurchaseWebhook({
     baseUtmSource = baseUtmSource.split('-trk_')[0];
   }
 
-  const utmSource = baseUtmSource || enriched?.utmSource || undefined;
-  const utmMedium = payload.utm_medium || payload.trackingParameters?.utm_medium || payload.tracking_parameters?.utm_medium || enriched?.utmMedium || undefined;
-  const utmCampaign = payload.utm_campaign || payload.trackingParameters?.utm_campaign || payload.tracking_parameters?.utm_campaign || enriched?.utmCampaign || undefined;
+  const utmSource = baseUtmSource || enriched?.utmSource || histAttr?.utmSource || undefined;
+  const utmMedium = payload.utm_medium || payload.trackingParameters?.utm_medium || payload.tracking_parameters?.utm_medium || enriched?.utmMedium || histAttr?.utmMedium || undefined;
+  const utmCampaign = payload.utm_campaign || payload.trackingParameters?.utm_campaign || payload.tracking_parameters?.utm_campaign || enriched?.utmCampaign || histAttr?.utmCampaign || undefined;
   const utmContent =
     payload.utm_content ||
     payload.trackingParameters?.utm_content ||
     payload.tracking_parameters?.utm_content ||
     enriched?.utmContent ||
+    histAttr?.utmContent ||
     undefined;
   const utmTerm =
     payload.utm_term ||
     payload.trackingParameters?.utm_term ||
     payload.tracking_parameters?.utm_term ||
     enriched?.utmTerm ||
+    histAttr?.utmTerm ||
     undefined;
 
   // 2. CAPI Payload
@@ -1167,12 +1182,21 @@ async function processPurchaseWebhook({
   );
 
   const rawReferrerUrl = extractPurchaseReferrerUrl(purchasePayload);
-  const capiReferrerUrl =
+  let capiReferrerUrl =
     rawReferrerUrl &&
     rawReferrerUrl !== purchaseEventSourceUrl &&
     CapiService.isValidHttpEventSourceUrl(rawReferrerUrl)
       ? rawReferrerUrl
       : undefined;
+  const histLanding = (histAttr?.landingUrl || '').trim();
+  if (
+    !capiReferrerUrl &&
+    histLanding &&
+    histLanding !== purchaseEventSourceUrl &&
+    CapiService.isValidHttpEventSourceUrl(histLanding)
+  ) {
+    capiReferrerUrl = histLanding;
+  }
 
   const effectiveEventSourceUrl = (() => {
     let esu = String(purchaseEventSourceUrl || '').trim();
@@ -1281,7 +1305,9 @@ async function processPurchaseWebhook({
       utm_campaign: utmCampaign || undefined,
       utm_content: utmContent || undefined,
       utm_term: utmTerm || undefined,
-      ...(checkoutClickIdFromUrls ? { click_id: checkoutClickIdFromUrls } : {}),
+      ...((checkoutClickIdFromUrls || histAttr?.clickId)
+        ? { click_id: checkoutClickIdFromUrls || histAttr?.clickId }
+        : {}),
     },
   };
 

@@ -19,10 +19,10 @@ import {
 
 import { FUNNEL_BAR_BG_IMAGE } from '../../lib/funnel-bar-gradient';
 
-const border = 'border-zinc-800';
-const cardBg = 'bg-zinc-900';
-const muted = 'text-slate-400';
-const text = 'text-slate-100';
+const border = 'border-zinc-200 dark:border-zinc-800';
+const cardBg = 'bg-white dark:bg-zinc-900';
+const muted = 'text-zinc-500 dark:text-slate-400';
+const text = 'text-zinc-900 dark:text-slate-100';
 
 export function initialsFromName(name: string): string {
   const p = (name || '').trim().split(/\s+/).filter(Boolean);
@@ -45,7 +45,7 @@ export function JourneyModalFrame({
       <button type="button" className="absolute inset-0 bg-black/75 backdrop-blur-[2px]" onClick={onClose} aria-label="Fechar" />
       <div className="relative w-full max-w-6xl">
         <div
-          className={`rounded-2xl ${border} border bg-zinc-950 shadow-2xl overflow-hidden max-h-[calc(100vh-40px)] flex flex-col ${text}`}
+          className={`rounded-2xl ${border} border bg-zinc-50 dark:bg-zinc-950 shadow-2xl overflow-hidden max-h-[calc(100vh-40px)] flex flex-col ${text}`}
         >
           {header}
           <div className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-5">{children}</div>
@@ -76,7 +76,7 @@ export function JourneyModalHeader({
         </div>
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2 gap-y-1">
-            <h2 className="text-base font-semibold text-white truncate">{name}</h2>
+            <h2 className="text-base font-semibold text-zinc-900 dark:text-white truncate">{name}</h2>
             {badge}
           </div>
           <p className={`text-xs ${muted} mt-0.5 leading-relaxed`}>{subtitle}</p>
@@ -85,7 +85,7 @@ export function JourneyModalHeader({
       <button
         type="button"
         onClick={onClose}
-        className={`shrink-0 inline-flex items-center gap-1.5 rounded-lg ${border} border px-3 py-2 text-xs font-medium text-slate-200 hover:bg-white/5 transition-colors`}
+        className={`shrink-0 inline-flex items-center gap-1.5 rounded-lg ${border} border px-3 py-2 text-xs font-medium text-zinc-700 dark:text-slate-200 hover:bg-zinc-100 dark:hover:bg-white/5 transition-colors`}
       >
         <X className="h-3.5 w-3.5" strokeWidth={2} />
         Fechar
@@ -135,7 +135,7 @@ export function MetricCard({
       </div>
       <div className="min-w-0">
         <div className={`text-[10px] font-semibold uppercase tracking-wide ${muted}`}>{label}</div>
-        <div className="mt-0.5 text-sm font-semibold text-white truncate">{value}</div>
+        <div className="mt-0.5 text-sm font-semibold text-zinc-900 dark:text-white truncate">{value}</div>
       </div>
     </div>
   );
@@ -150,12 +150,16 @@ export function OriginSaleCard({
   campaign,
   adset,
   ad,
+  channel,
+  badge,
   footerNote,
 }: {
   heading?: string;
   campaign: string;
   adset: string;
   ad: string;
+  channel?: string;
+  badge?: string;
   footerNote: string;
 }) {
   const col = (Icon: typeof Flag, label: string, value: string) => (
@@ -164,21 +168,34 @@ export function OriginSaleCard({
         <Icon className="h-3 w-3 shrink-0" strokeWidth={2} />
         {label}
       </div>
-      <div className="mt-1 text-sm font-medium text-white truncate" title={value}>
+      <div className="mt-1 text-sm font-medium text-zinc-900 dark:text-white truncate" title={value}>
         {value || '—'}
       </div>
     </div>
   );
+  const cols = channel
+    ? [
+        col(Megaphone, 'Canal', channel),
+        col(Flag, 'Campanha', campaign),
+        col(Users, 'Conjunto', adset),
+        col(Play, 'Anúncio / conteúdo', ad),
+      ]
+    : [col(Flag, 'Campanha', campaign), col(Users, 'Conjunto', adset), col(Play, 'Anúncio', ad)];
   return (
     <div className={`rounded-xl ${border} border ${cardBg} p-4`}>
-      <div className="text-xs font-semibold text-slate-200 mb-3">{heading}</div>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {col(Flag, 'Campanha', campaign)}
-        {col(Users, 'Conjunto', adset)}
-        {col(Play, 'Anúncio', ad)}
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        <div className="text-xs font-semibold text-zinc-800 dark:text-slate-200">{heading}</div>
+        {badge ? (
+          <span className="inline-flex items-center rounded-full border border-indigo-500/25 bg-indigo-500/10 px-2 py-0.5 text-[10px] font-semibold text-indigo-700 dark:text-indigo-200">
+            {badge}
+          </span>
+        ) : null}
+      </div>
+      <div className={`grid grid-cols-1 gap-4 ${channel ? 'md:grid-cols-2 xl:grid-cols-4' : 'md:grid-cols-3'}`}>
+        {cols}
       </div>
       <div className={`mt-3 flex items-start gap-2 text-[11px] ${muted}`}>
-        <Info className="h-3.5 w-3.5 shrink-0 mt-0.5 text-slate-500" />
+        <Info className="h-3.5 w-3.5 shrink-0 mt-0.5 text-zinc-400 dark:text-slate-500" />
         <span>{footerNote}</span>
       </div>
     </div>
@@ -195,7 +212,7 @@ function UniquePathStrip({ steps, footer, variant }: JourneyUniquePath) {
   if (!steps.length) return null;
   const lastIdx = steps.length - 1;
   return (
-    <div className="mb-5 pb-5 border-b border-slate-800/80">
+    <div className="mb-5 pb-5 border-b border-zinc-200 dark:border-slate-800/80">
       <div className={`text-[10px] font-semibold uppercase tracking-wide ${muted} mb-1`}>Resumo do funil</div>
       <p className={`text-[11px] ${muted} mb-3 leading-relaxed`}>
         {variant === 'purchase'
@@ -324,7 +341,7 @@ export function JourneyTimeline({
 }) {
   return (
     <div className={`rounded-xl ${border} border ${cardBg} p-4`}>
-      <div className="text-xs font-semibold text-slate-200 mb-3">{title}</div>
+      <div className="text-xs font-semibold text-zinc-800 dark:text-slate-200 mb-3">{title}</div>
       {uniquePath ? <UniquePathStrip {...uniquePath} /> : null}
       {items.length === 0 ? (
         <div className={`text-sm ${muted}`}>Nenhum evento na linha do tempo ainda.</div>
@@ -355,7 +372,7 @@ export function JourneyTimeline({
                   </div>
                   <div className="min-w-0 pt-1">
                     <div className={`text-[10px] font-medium tabular-nums ${muted}`}>{it.at}</div>
-                    <div className={`text-sm font-medium ${it.highlight ? 'text-emerald-200' : 'text-white'}`}>{it.title}</div>
+                    <div className={`text-sm font-medium ${it.highlight ? 'text-emerald-700 dark:text-emerald-200' : 'text-zinc-900 dark:text-white'}`}>{it.title}</div>
                     {it.subtitle ? <div className={`text-[11px] ${muted} mt-0.5`}>{it.subtitle}</div> : null}
                   </div>
                 </li>
@@ -378,7 +395,7 @@ export function TopPagesGradientBars({
   const max = Math.max(...rows.map((r) => r.count), 1);
   return (
     <div className={`rounded-xl ${border} border ${cardBg} p-4`}>
-      <div className="text-xs font-semibold text-slate-200 mb-3">{title}</div>
+      <div className="text-xs font-semibold text-zinc-800 dark:text-slate-200 mb-3">{title}</div>
       <div className="space-y-2.5">
         {rows.slice(0, 8).map((r) => (
           <div key={r.label}>
@@ -422,7 +439,7 @@ export function LastAdPanel({
       <Icon className="h-4 w-4 text-slate-500 shrink-0 mt-0.5" strokeWidth={2} />
       <div className="min-w-0 flex-1">
         <div className={`text-[10px] font-semibold uppercase tracking-wide ${muted}`}>{label}</div>
-        <div className="text-sm font-medium text-white truncate" title={value}>
+        <div className="text-sm font-medium text-zinc-900 dark:text-white truncate" title={value}>
           {value || '—'}
         </div>
       </div>
@@ -430,7 +447,7 @@ export function LastAdPanel({
   );
   return (
     <div className={`rounded-xl ${border} border ${cardBg} p-4`}>
-      <div className="text-xs font-semibold text-slate-200 mb-1">Último anúncio detectado</div>
+      <div className="text-xs font-semibold text-zinc-800 dark:text-slate-200 mb-1">Último anúncio detectado</div>
       <p className={`text-[10px] ${muted} mb-2 leading-relaxed`}>
         Valores do último clique com parâmetros de anúncio disponíveis (Meta ou UTM).
       </p>
@@ -449,8 +466,8 @@ export function TechnicalAccordion({ children }: { children: ReactNode }) {
   return (
     <details className={`rounded-xl ${border} border ${cardBg} group`}>
       <summary className="cursor-pointer list-none flex flex-wrap items-center gap-x-2 gap-y-1 px-4 py-3 text-sm font-medium text-slate-200 hover:bg-white/[0.03] rounded-xl">
-        <Code2 className="h-4 w-4 text-slate-400 shrink-0" />
-        <span className="shrink-0">Ver dados técnicos</span>
+        <Code2 className="h-4 w-4 text-zinc-400 dark:text-slate-400 shrink-0" />
+        <span className="shrink-0 text-zinc-800 dark:text-slate-200">Ver dados técnicos</span>
         <span className={`text-xs font-normal ${muted} basis-full sm:basis-auto sm:pl-0 pl-7`}>
           IDs, parâmetros UTM, user agent e outros detalhes técnicos.
         </span>

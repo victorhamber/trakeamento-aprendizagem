@@ -2,6 +2,7 @@ import geoip from 'geoip-lite';
 import { pool } from '../db/pool';
 import { CapiService } from './capi';
 import { DDI_LIST } from '../lib/ddi';
+import { parseStoredTrafficSource, resolveSaleOriginFromHistory } from '../lib/visitorTrafficSource';
 
 interface EnrichedData {
   fbp?: string;
@@ -16,6 +17,8 @@ interface EnrichedData {
   utmCampaign?: string;
   utmContent?: string;
   utmTerm?: string;
+  clickId?: string;
+  landingUrl?: string;
 }
 
 export class EnrichmentService {
@@ -57,7 +60,7 @@ export class EnrichmentService {
     // 1. Tentar buscar em site_visitors (Perfil consolidado)
     // Prioridade: IDs diretos > IP (Se habilitado)
     const visitorQuery = `
-      SELECT fbp, fbc, external_id, last_traffic_source, last_ip, last_user_agent
+      SELECT fbp, fbc, external_id, last_traffic_source, first_traffic_source, last_ip, last_user_agent
       FROM site_visitors
       WHERE site_key = $1
         AND (
@@ -81,7 +84,7 @@ export class EnrichmentService {
 
     // Cross-site fallback: busca nos outros sites da mesma conta que compartilham o MESMO pixel
     const crossSiteQuery = `
-      SELECT sv.fbp, sv.fbc, sv.external_id, sv.last_traffic_source, sv.last_ip, sv.last_user_agent
+      SELECT sv.fbp, sv.fbc, sv.external_id, sv.last_traffic_source, sv.first_traffic_source, sv.last_ip, sv.last_user_agent
       FROM site_visitors sv
       JOIN sites s ON s.site_key = sv.site_key
       JOIN integrations_meta m ON m.site_id = s.id
@@ -142,14 +145,16 @@ export class EnrichmentService {
       
       if (visitorRes.rowCount && visitorRes.rowCount > 0) {
         const row = visitorRes.rows[0];
-        const utms = this.parseUtmString(row.last_traffic_source);
+        const utmsLast = this.parseUtmString(row.last_traffic_source);
+        const utmsFirst = this.parseUtmString(row.first_traffic_source);
         visitorData = {
           fbp: row.fbp,
           fbc: row.fbc,
           externalId: this.canonicalEid(row.external_id) || undefined,
           clientIp: row.last_ip,
           clientUa: row.last_user_agent,
-          ...utms
+          ...utmsFirst,
+          ...Object.fromEntries(Object.entries(utmsLast).filter(([, v]) => v)),
         };
       }
 
@@ -186,6 +191,108 @@ export class EnrichmentService {
     }
   }
 
+  /**
+   * UTMs + URL da última landing com origem, mesmo quando fbp/fbc já existem.
+   * Usado no Purchase CAPI quando o checkout chega sem UTM.
+   */
+  static async findAttributionHistory(
+    siteKey: string,
+    opts: {
+      externalId?: string | null;
+      fbp?: string | null;
+      fbc?: string | null;
+      emailHash?: string | null;
+    }
+  ): Promise<EnrichedData | null> {
+    const ext = (opts.externalId || '').trim();
+    const fbp = (opts.fbp || '').trim();
+    const fbc = (opts.fbc || '').trim();
+    const emailHash = (opts.emailHash || '').trim();
+    if (!ext && !fbp && !fbc && !emailHash) return null;
+
+    try {
+      const vis = await pool.query<{
+        last_traffic_source: string | null;
+        first_traffic_source: string | null;
+        external_id: string | null;
+      }>(
+        `SELECT last_traffic_source, first_traffic_source, external_id
+         FROM site_visitors
+         WHERE site_key = $1
+           AND (
+             ($2::text <> '' AND external_id = $2)
+             OR ($3::text <> '' AND fbp IS NOT NULL AND fbp = $3)
+             OR ($4::text <> '' AND fbc IS NOT NULL AND fbc = $4)
+             OR ($5::text <> '' AND email_hash IS NOT NULL AND email_hash = $5)
+           )
+         ORDER BY last_seen_at DESC NULLS LAST
+         LIMIT 1`,
+        [siteKey, ext, fbp, fbc, emailHash]
+      );
+      const row = vis.rows[0];
+      const eid = this.canonicalEid(row?.external_id) || this.canonicalEid(ext);
+
+      const history: Array<Record<string, string> | null> = [];
+      let landingUrl: string | undefined;
+      if (eid) {
+        const ev = await pool.query<{ event_source_url: string | null; custom_data: unknown }>(
+          `SELECT event_source_url, custom_data
+           FROM web_events
+           WHERE site_key = $1
+             AND user_data->>'external_id' = $2
+             AND event_name = 'PageView'
+             AND event_time >= NOW() - INTERVAL '60 days'
+           ORDER BY event_time DESC
+           LIMIT 40`,
+          [siteKey, eid]
+        );
+        for (const e of ev.rows) {
+          const url = typeof e.event_source_url === 'string' ? e.event_source_url.trim() : '';
+          const fromUrl = url ? parseStoredTrafficSource(url.includes('?') ? url.slice(url.indexOf('?')) : '') : null;
+          const fromCd =
+            e.custom_data && typeof e.custom_data === 'object'
+              ? parseStoredTrafficSource(
+                  Object.entries(e.custom_data as Record<string, unknown>)
+                    .filter(([, v]) => typeof v === 'string' && String(v).trim())
+                    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
+                    .join('&')
+                )
+              : null;
+          const merged: Record<string, string> = {
+            utm_source: (fromUrl?.utm_source || fromCd?.utm_source || '').trim(),
+            utm_medium: (fromUrl?.utm_medium || fromCd?.utm_medium || '').trim(),
+            utm_campaign: (fromUrl?.utm_campaign || fromCd?.utm_campaign || '').trim(),
+            utm_content: (fromUrl?.utm_content || fromCd?.utm_content || '').trim(),
+            utm_term: (fromUrl?.utm_term || fromCd?.utm_term || '').trim(),
+            click_id: (fromUrl?.click_id || fromCd?.click_id || '').trim(),
+          };
+          history.push(merged);
+          if (!landingUrl && url.startsWith('http') && (merged.utm_source || merged.utm_campaign || merged.utm_content)) {
+            landingUrl = url;
+          }
+        }
+      }
+
+      const fromLast = row?.last_traffic_source ? parseStoredTrafficSource(String(row.last_traffic_source)) : null;
+      const fromFirst = row?.first_traffic_source ? parseStoredTrafficSource(String(row.first_traffic_source)) : null;
+      const resolved = resolveSaleOriginFromHistory(fromLast, [...history, fromFirst]);
+      if (!resolved && !landingUrl) return null;
+
+      return {
+        utmSource: resolved?.utm_source || undefined,
+        utmMedium: resolved?.utm_medium || undefined,
+        utmCampaign: resolved?.utm_campaign || undefined,
+        utmContent: resolved?.utm_content || undefined,
+        utmTerm: resolved?.utm_term || undefined,
+        clickId: resolved?.click_id || undefined,
+        landingUrl,
+      };
+    } catch (err) {
+      console.error(`[Enrichment] findAttributionHistory failed (site=${siteKey}):`, err);
+      return null;
+    }
+  }
+
   private static async findLatestMetadata(siteKey: string, fbp?: string, externalId?: string, emailHash?: string | null, phoneHash?: string | null) {
     const baseQuery = (whereClause: string) => `
       SELECT 
@@ -215,7 +322,13 @@ export class EnrichmentService {
             (jsonb_typeof(user_data->'ph') = 'array' AND user_data->'ph'->>0 = $5::text)
           ))
         )
-      ORDER BY event_time DESC
+      ORDER BY
+        CASE
+          WHEN custom_data->>'utm_source' IS NOT NULL AND BTRIM(custom_data->>'utm_source') <> '' THEN 0
+          WHEN custom_data->>'utm_campaign' IS NOT NULL AND BTRIM(custom_data->>'utm_campaign') <> '' THEN 0
+          ELSE 1
+        END ASC,
+        event_time DESC
       LIMIT 1
     `;
 

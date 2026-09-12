@@ -331,14 +331,34 @@ function timelineSortMs(iso: string | null | undefined): number {
   return Number.isFinite(ms) ? ms : 0;
 }
 
+function platformFromUtm(src: string | undefined): string {
+  const s = (src || '').trim().toLowerCase();
+  if (!s) return '—';
+  if (s === 'ig' || s === 'instagram') return 'Instagram';
+  if (s === 'fb' || s === 'facebook' || s === 'an' || s === 'fb-ads') return 'Facebook';
+  if (s === 'google' || s === 'googleads') return 'Google';
+  if (s === 'tiktok') return 'TikTok';
+  return src || '—';
+}
+
 function buyerProbableSource(d: BuyerDetail): string {
-  const lt = (d.buyer.last_traffic_source || '').trim();
-  if (lt) return lt;
   if (d.behavior.meta_attribution) return 'Meta Ads';
   const u = d.behavior.last_touch;
   const src = (u?.utm_source || '').trim();
   const med = (u?.utm_medium || '').trim();
   if (src || med) return [src, med].filter(Boolean).join(' · ') || '—';
+  const lt = (d.buyer.last_traffic_source || '').trim();
+  if (lt) {
+    try {
+      const p = new URLSearchParams(lt.startsWith('?') ? lt.slice(1) : lt.includes('=') ? lt : '');
+      const us = (p.get('utm_source') || '').trim();
+      const um = (p.get('utm_medium') || '').trim();
+      if (us || um) return [us, um].filter(Boolean).join(' · ');
+    } catch {
+      /* ignore */
+    }
+    return lt.length > 48 ? `${lt.slice(0, 46)}…` : lt;
+  }
   return '—';
 }
 
@@ -459,10 +479,16 @@ function BuyerJourneyDetailView({
       </MetricGrid4>
 
       <OriginSaleCard
-        campaign={m?.campaign_name || m?.campaign_id || '—'}
-        adset={m?.adset_name || m?.adset_id || '—'}
-        ad={m?.ad_name || m?.ad_id || '—'}
-        footerNote="Associado ao último toque detectado antes da compra."
+        campaign={m?.campaign_name || m?.campaign_id || lt?.utm_campaign || '—'}
+        adset={m?.adset_name || m?.adset_id || lt?.utm_term || '—'}
+        ad={m?.ad_name || m?.ad_id || lt?.utm_content || '—'}
+        channel={originStr !== '—' ? originStr : undefined}
+        badge={m ? 'Meta Ads' : lt?.utm_source ? 'Histórico do visitante' : undefined}
+        footerNote={
+          m
+            ? 'Associado ao último toque detectado antes da compra (campanha Meta).'
+            : 'Sem campanha Meta no momento da compra. Usamos a última origem do histórico do visitante (UTM/clique).'
+        }
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
@@ -478,11 +504,11 @@ function BuyerJourneyDetailView({
         <div className="space-y-4">
           <TopPagesGradientBars title="Top páginas pré-compra" rows={topRows} />
           <LastAdPanel
-            platform={m ? 'Meta Ads' : '—'}
+            platform={m ? 'Meta Ads' : platformFromUtm(lt?.utm_source)}
             origin={originStr}
-            campaign={m?.campaign_name || m?.campaign_id || '—'}
-            content={m?.ad_name || m?.ad_id || '—'}
-            audience={m?.adset_name || m?.adset_id || '—'}
+            campaign={m?.campaign_name || m?.campaign_id || lt?.utm_campaign || '—'}
+            content={m?.ad_name || m?.ad_id || lt?.utm_content || '—'}
+            audience={m?.adset_name || m?.adset_id || lt?.utm_term || '—'}
           />
         </div>
       </div>
@@ -748,7 +774,7 @@ export function BuyersTab({ siteId }: { siteId: number }) {
         const res = selected.externalId
           ? await api.get(`/sites/${siteId}/buyers/${encodeURIComponent(selected.externalId)}`, {
               params: {
-                lookback_days: 30,
+                lookback_days: 60,
                 purchases_limit: purchasesPerPage,
                 purchases_offset: 0,
                 purchase_status: purchaseListFilter,
@@ -756,7 +782,7 @@ export function BuyersTab({ siteId }: { siteId: number }) {
             })
           : await api.get(`/sites/${siteId}/buyers/by-key/${encodeURIComponent(selected.buyerKey)}`, {
               params: {
-                lookback_days: 30,
+                lookback_days: 60,
                 purchases_limit: purchasesPerPage,
                 purchases_offset: 0,
                 purchase_status: purchaseListFilter,
@@ -783,7 +809,7 @@ export function BuyersTab({ siteId }: { siteId: number }) {
         const res = selected.externalId
           ? await api.get(`/sites/${siteId}/buyers/${encodeURIComponent(selected.externalId)}`, {
               params: {
-                lookback_days: 30,
+                lookback_days: 60,
                 purchases_limit: purchasesPerPage,
                 purchases_offset: offset,
                 purchase_status: purchaseListFilter,
@@ -791,7 +817,7 @@ export function BuyersTab({ siteId }: { siteId: number }) {
             })
           : await api.get(`/sites/${siteId}/buyers/by-key/${encodeURIComponent(selected.buyerKey)}`, {
               params: {
-                lookback_days: 30,
+                lookback_days: 60,
                 purchases_limit: purchasesPerPage,
                 purchases_offset: offset,
                 purchase_status: purchaseListFilter,

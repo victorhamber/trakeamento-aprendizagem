@@ -10,6 +10,7 @@ import { fbclidFromFbcCookie } from '../lib/meta-attribution';
 import {
   mergeUtmFillGaps,
   parseStoredTrafficSource,
+  resolveSaleOriginFromHistory,
   utmRecordFromFbcCookie,
   utmRecordFromPurchaseRow,
 } from '../lib/visitorTrafficSource';
@@ -3147,8 +3148,15 @@ router.get('/:siteId/buyers/by-key/:buyerKey', requireAuth, async (req, res) => 
       }
     }
 
+    lastTouchUtm = resolveSaleOriginFromHistory(
+      lastTouchUtm,
+      pageviewTimeline.map((p) => p.utm)
+    );
     if (!lastTouchUtm && v?.last_traffic_source) {
       lastTouchUtm = utmFromVisitorTrafficSource(String(v.last_traffic_source));
+    }
+    if (!lastTouchUtm && v?.first_traffic_source) {
+      lastTouchUtm = utmFromVisitorTrafficSource(String(v.first_traffic_source));
     }
 
     lastTouchUtm = enrichBuyerLastTouchFromProfileAndPurchase(lastTouchUtm, [v], purchasesRes.rows[0]);
@@ -3396,9 +3404,19 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
       }
     }
 
-    // Fallback: se não encontramos UTMs no último PageView pré-compra, tenta o last_traffic_source do visitante.
+    lastTouchUtm = resolveSaleOriginFromHistory(
+      lastTouchUtm,
+      pageviewTimeline.map((p) => p.utm)
+    );
     if (!lastTouchUtm && v?.last_traffic_source) {
       lastTouchUtm = utmFromVisitorTrafficSource(String(v.last_traffic_source));
+    }
+    if (!lastTouchUtm && (v?.first_traffic_source || v0?.first_traffic_source || v0?.last_traffic_source)) {
+      lastTouchUtm =
+        lastTouchUtm ||
+        (v?.first_traffic_source ? utmFromVisitorTrafficSource(String(v.first_traffic_source)) : null) ||
+        (v0?.last_traffic_source ? utmFromVisitorTrafficSource(String(v0.last_traffic_source)) : null) ||
+        (v0?.first_traffic_source ? utmFromVisitorTrafficSource(String(v0.first_traffic_source)) : null);
     }
 
     lastTouchUtm = enrichBuyerLastTouchFromProfileAndPurchase(lastTouchUtm, [v0, v], purchasesRes.rows[0]);

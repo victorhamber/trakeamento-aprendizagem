@@ -153,6 +153,46 @@ export function buildVisitorTrafficSourceString(
   return undefined;
 }
 
+/** Origem de venda/cadastro: source, campanha ou conteúdo — click_id sozinho não conta. */
+export function utmHasSaleOrigin(u: Record<string, string> | null | undefined): boolean {
+  if (!u) return false;
+  return Boolean(
+    (u.utm_source || '').trim() || (u.utm_campaign || '').trim() || (u.utm_content || '').trim()
+  );
+}
+
+/**
+ * Se o toque da compra não tem origem, usa o último PageView do histórico que tiver.
+ * Completa lacunas com toques mais antigos (first-touch do funil).
+ * `historyNewestFirst` = PageViews em ordem decrescente de tempo.
+ */
+export function resolveSaleOriginFromHistory(
+  lastTouch: Record<string, string> | null | undefined,
+  historyNewestFirst: Array<Record<string, string> | null | undefined>
+): Record<string, string> | null {
+  let chosen: Record<string, string> | null = utmHasSaleOrigin(lastTouch)
+    ? { ...lastTouch! }
+    : null;
+  if (!chosen) {
+    for (const older of historyNewestFirst) {
+      if (utmHasSaleOrigin(older)) {
+        chosen = { ...older! };
+        break;
+      }
+    }
+  }
+  if (!chosen) {
+    for (const older of historyNewestFirst) {
+      chosen = mergeUtmFillGaps(chosen, older);
+    }
+    return chosen;
+  }
+  for (const older of historyNewestFirst) {
+    chosen = mergeUtmFillGaps(chosen, older);
+  }
+  return chosen;
+}
+
 /** Preenche campos vazios de `primary` com valores de `fallback` (ex.: perfil first_touch). */
 export function mergeUtmFillGaps(
   primary: Record<string, string> | null | undefined,
