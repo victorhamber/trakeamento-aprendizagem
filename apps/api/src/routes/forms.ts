@@ -5,6 +5,7 @@ import { capiService, CapiService } from '../services/capi';
 import { getClientIp } from '../lib/ip';
 import { geoFromGeoipLite, resolveServerGeoHint } from '../lib/request-geo';
 import { mergeUserDataWithMetaParamBuilder } from '../lib/meta-param-builder-ingest';
+import { ensureMetaRoasMoneyFields } from '../lib/meta-currency';
 
 const router = Router();
 
@@ -718,6 +719,20 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
             eventSourceUrl
           );
 
+          const formCfg = (form.config && typeof form.config === 'object' ? form.config : {}) as Record<string, unknown>;
+          const formCustomData = ensureMetaRoasMoneyFields(eventName, {
+            form_name: form.name,
+            form_id: publicId,
+            meta_event_name: eventName,
+            ...safeCustomData,
+            ...(formCfg.event_value !== undefined && formCfg.event_value !== ''
+              ? { value: formCfg.event_value }
+              : {}),
+            ...(formCfg.event_currency !== undefined && formCfg.event_currency !== ''
+              ? { currency: formCfg.event_currency }
+              : {}),
+          });
+
           capiService
             .sendEventDetailed(siteKey, {
               event_name: eventName,
@@ -727,12 +742,7 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
               ...(referrerUrlFallback ? { referrer_url: referrerUrlFallback } : {}),
               action_source: 'website',
               user_data: userData,
-              custom_data: {
-                form_name: form.name,
-                form_id: publicId,
-                meta_event_name: eventName,
-                ...safeCustomData,
-              },
+              custom_data: formCustomData,
             })
             .catch((err) => console.error(`CAPI failed for form ${publicId}:`, err));
         }

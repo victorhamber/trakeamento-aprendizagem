@@ -1320,8 +1320,8 @@ async function handleTrkSubmit(e) {
   // 2. Pixel + /ingest ANTES do POST (mesmo event_id → Meta dedup browser × servidor)
   if (window.tracker) {
     var evtData = { event_id: eventId };
-    ${(event_value && !isNaN(parseFloat(event_value))) ? `evtData.value = ${parseFloat(event_value)};` : ''}
-    ${(event_currency) ? `evtData.currency = '${event_currency}';` : ''}
+    evtData.value = ${Number.isFinite(parseFloat(event_value)) ? parseFloat(event_value) : 0};
+    evtData.currency = '${/^[A-Za-z]{3}$/.test(String(event_currency || '').trim()) ? String(event_currency).trim().toUpperCase() : 'BRL'}';
     window.tracker.track('${evtName}', evtData);
   }
 
@@ -1400,8 +1400,8 @@ function handleTrkSubmit(e) {
   // assume-se sucesso ao clicar no submit se houvesse lógica manual acoplada.
   if (window.tracker) {
     var evtData = {};
-    ${(event_value && !isNaN(parseFloat(event_value))) ? `evtData.value = ${parseFloat(event_value)};` : ''}
-    ${(event_currency) ? `evtData.currency = '${event_currency}';` : ''}
+    evtData.value = ${Number.isFinite(parseFloat(event_value)) ? parseFloat(event_value) : 0};
+    evtData.currency = '${/^[A-Za-z]{3}$/.test(String(event_currency || '').trim()) ? String(event_currency).trim().toUpperCase() : 'BRL'}';
     window.tracker.track('${evtName}', evtData);
   }
   

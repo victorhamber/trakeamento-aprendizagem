@@ -1436,17 +1436,22 @@ router.get('/tracker.js', async (req, res) => {
       delete cleanCustom.match_class_contains;
       delete cleanCustom.match_css;
 
-      // ViewContent / carrinho / checkout: o Events Manager alerta ROAS sem value+currency — envia par mínimo (0 + BRL se vazio).
-      // Moeda precisa ser ISO 4217 de 3 letras (ex.: MXN); "R$", números etc. viram BRL.
-      if (eventName === 'ViewContent' || eventName === 'AddToCart' || eventName === 'InitiateCheckout') {
-        var rawV = cleanCustom.value;
-        var parsedV = rawV !== undefined && rawV !== null && String(rawV).trim() !== '' ? parseFloat(String(rawV)) : NaN;
+      // Events Manager alerta ROAS sem value + currency ISO. Pixel e CAPI precisam do mesmo par.
+      // Lead = padrão Meta; Download/Group = personalizados do site (trackCustom). Purchase não entra.
+      var roasMoneyEvents = {
+        ViewContent:1, AddToCart:1, AddToWishlist:1, InitiateCheckout:1, AddPaymentInfo:1,
+        Lead:1, CompleteRegistration:1, Subscribe:1, StartTrial:1, Download:1, Group:1, Grupo:1,
+        Donate:1, Schedule:1, Contact:1, SubmitApplication:1
+      };
+      if (roasMoneyEvents[eventName]) {
+        var rawV = cleanCustom.value != null ? cleanCustom.value : (cleanCustom.amount != null ? cleanCustom.amount : (cleanCustom.price != null ? cleanCustom.price : cleanCustom.total));
+        var parsedV = rawV !== undefined && rawV !== null && String(rawV).trim() !== '' ? parseFloat(String(rawV).replace(',', '.')) : NaN;
         if (!isFinite(parsedV) || parsedV < 0) {
           cleanCustom.value = 0;
         } else {
           cleanCustom.value = parsedV;
         }
-        var rawC = cleanCustom.currency;
+        var rawC = cleanCustom.currency != null ? cleanCustom.currency : (cleanCustom.currency_code != null ? cleanCustom.currency_code : cleanCustom.moeda);
         var curS = (rawC === undefined || rawC === null) ? '' : String(rawC).trim().toUpperCase();
         if (!curS || curS === '0' || !/^[A-Z]{3}$/.test(curS)) {
           cleanCustom.currency = 'BRL';

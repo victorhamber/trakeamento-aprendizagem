@@ -713,9 +713,11 @@ router.post('/:siteId/checkout-simulator/lead', requireAuth, async (req, res) =>
     external_id: externalId ? CapiService.hash(externalId) : undefined,
   };
 
-  const customData: Record<string, unknown> = { content_type: 'product' };
-  if (value !== null) customData.value = value;
-  if (currency) customData.currency = currency;
+  const customData: Record<string, unknown> = {
+    content_type: 'product',
+    value: value !== null && Number.isFinite(value) && value >= 0 ? value : 0,
+    currency: /^[A-Za-z]{3}$/.test(currency) ? currency.toUpperCase() : 'BRL',
+  };
 
   await pool.query(
     `INSERT INTO web_events(

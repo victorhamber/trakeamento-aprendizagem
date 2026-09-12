@@ -250,6 +250,9 @@ export function buildCrmQualificationCapiPayload(args: {
     if (includeValueAndCurrency.currency) {
       customData.currency = includeValueAndCurrency.currency;
     }
+  } else {
+    customData.value = 0;
+    customData.currency = 'BRL';
   }
 
   const rawSuffix = (crmEventIdSuffix ?? '_crm').trim();

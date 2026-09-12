@@ -11,7 +11,7 @@ import { getClientIp } from '../lib/ip';
 import { resolveServerGeoHint, geoFromGeoipLite } from '../lib/request-geo';
 import { preserveFreshMetaFbc, preserveMetaClickIds } from '../lib/meta-attribution';
 import { mergeUserDataWithMetaParamBuilder } from '../lib/meta-param-builder-ingest';
-import { normalizeMetaCurrencyCode } from '../lib/meta-currency';
+import { ensureMetaRoasMoneyFields, normalizeMetaCurrencyCode } from '../lib/meta-currency';
 import { buildVisitorTrafficSourceString } from '../lib/visitorTrafficSource';
 import { checkEventQuota } from '../lib/quota';
 import {
@@ -594,20 +594,6 @@ function pickReferrerUrlForCapi(
   return undefined;
 }
 
-/** Meta Events Manager costuma alertar ROAS quando estes eventos não trazem value+currency. */
-const META_ROAS_HINT_EVENTS = new Set(['ViewContent', 'AddToCart', 'InitiateCheckout']);
-const META_STANDARD_EVENTS = new Set([
-  'PageView',
-  'ViewContent',
-  'AddToCart',
-  'InitiateCheckout',
-  'Purchase',
-  'Lead',
-  'Contact',
-  'Search',
-  'CompleteRegistration',
-]);
-
 /**
  * Monta `custom_data` enviado ao CAPI a partir do ingest (campos comerciais + atribuição).
  */
@@ -660,34 +646,13 @@ function buildMetaCustomDataForCapi(
     }
   }
 
-  if (META_ROAS_HINT_EVENTS.has(eventName)) {
-    if (metaCustomData['value'] === undefined) {
-      metaCustomData['value'] = 0;
-    }
-    metaCustomData['currency'] = normalizeMetaCurrencyCode(metaCustomData['currency']);
+  const money = ensureMetaRoasMoneyFields(eventName, metaCustomData);
+  if (typeof money.value === 'number' && Number.isFinite(Number(money.value))) {
+    metaCustomData.value = money.value;
+    metaCustomData.currency = normalizeMetaCurrencyCode(money.currency);
   } else {
-    if (
-      typeof metaCustomData['value'] === 'number' &&
-      Number.isFinite(Number(metaCustomData['value']))
-    ) {
-      metaCustomData['currency'] = normalizeMetaCurrencyCode(metaCustomData['currency']);
-    } else {
-      delete metaCustomData['value'];
-      delete metaCustomData['currency'];
-    }
-  }
-
-  // Lead/custom sem valor real não devem ser forçados com value=0.
-  // Isso reduz alertas de "mesmo valor em todos os eventos".
-  const isCustomEvent = !META_STANDARD_EVENTS.has(eventName);
-  if (eventName === 'Lead' || isCustomEvent) {
-    const hasValue = typeof metaCustomData['value'] === 'number' && Number.isFinite(Number(metaCustomData['value']));
-    if (hasValue) {
-      metaCustomData['currency'] = normalizeMetaCurrencyCode(metaCustomData['currency']);
-    } else {
-      delete metaCustomData['value'];
-      delete metaCustomData['currency'];
-    }
+    delete metaCustomData.value;
+    delete metaCustomData.currency;
   }
 
   if (!metaCustomData['content_name']) {
@@ -1310,8 +1275,11 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
           ? { custom_data: metaCustomData }
           : {}),
       };
-      // Fire-and-forget com retry — não bloqueia a resposta HTTP
-      sendCapiWithRetry(siteKey, capiPayload).catch(() => { });
+      // PageEngagement é telemetria interna (alta frequência). Mandar em/ph
+      // recuperados do visitante no CAPI dispara alerta de e-mail/telefone duplicado.
+      if (eventName !== 'PageEngagement') {
+        sendCapiWithRetry(siteKey, capiPayload).catch(() => { });
+      }
       if (shouldLogPixelQuality(siteKey, eventName)) {
         const ud = capiPayload.user_data as any;
         const cd2 = (capiPayload.custom_data || {}) as Record<string, unknown>;
@@ -1349,14 +1317,13 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
           if (qual?.enabled) {
             ruleCrmSent = true;
             const includeValueAndCurrency =
-              eventName === 'Purchase' &&
               typeof metaCustomData.value === 'number' &&
               typeof metaCustomData.currency === 'string'
                 ? {
                     value: Number(metaCustomData.value),
                     currency: String(metaCustomData.currency),
                   }
-                : undefined;
+                : { value: 0, currency: 'BRL' };
             const crmPayload = buildCrmQualificationCapiPayload({
               originalCapiEvent: capiPayload,
               leadEventSource: resolveCrmLeadEventSource(qual),
@@ -1379,6 +1346,14 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
               leadEventSource: 'Trajettu',
               crmEventName: CRM_AUTO_FUNNEL_LEAD_STAGE,
               crmEventIdSuffix: '_crm_auto_lead',
+              includeValueAndCurrency:
+                typeof metaCustomData.value === 'number' &&
+                typeof metaCustomData.currency === 'string'
+                  ? {
+                      value: Number(metaCustomData.value),
+                      currency: String(metaCustomData.currency),
+                    }
+                  : { value: 0, currency: 'BRL' },
             });
             sendCapiWithRetry(siteKey, crmAuto).catch(() => {});
           }
@@ -1672,7 +1647,9 @@ router.post('/batch', cors(), ingestLimiter, async (req, res) => {
           ...(Object.keys(metaCustomData).length > 0 ? { custom_data: metaCustomData } : {}),
         };
 
-        sendCapiWithRetry(siteKey, batchCapiPayload).catch(() => {});
+        if (p.eventName !== 'PageEngagement') {
+          sendCapiWithRetry(siteKey, batchCapiPayload).catch(() => {});
+        }
 
         // ── Qualificação CRM (estilo Meta) — aditivo, opt-in por regra ──
         let ruleCrmSentBatch = false;
@@ -1689,14 +1666,13 @@ router.post('/batch', cors(), ingestLimiter, async (req, res) => {
             if (qual?.enabled) {
               ruleCrmSentBatch = true;
               const includeValueAndCurrency =
-                p.eventName === 'Purchase' &&
                 typeof metaCustomData.value === 'number' &&
                 typeof metaCustomData.currency === 'string'
                   ? {
                       value: Number(metaCustomData.value),
                       currency: String(metaCustomData.currency),
                     }
-                  : undefined;
+                  : { value: 0, currency: 'BRL' };
               const crmPayload = buildCrmQualificationCapiPayload({
                 originalCapiEvent: batchCapiPayload,
                 leadEventSource: resolveCrmLeadEventSource(qual),
@@ -1718,6 +1694,14 @@ router.post('/batch', cors(), ingestLimiter, async (req, res) => {
                 leadEventSource: 'Trajettu',
                 crmEventName: CRM_AUTO_FUNNEL_LEAD_STAGE,
                 crmEventIdSuffix: '_crm_auto_lead',
+                includeValueAndCurrency:
+                  typeof metaCustomData.value === 'number' &&
+                  typeof metaCustomData.currency === 'string'
+                    ? {
+                        value: Number(metaCustomData.value),
+                        currency: String(metaCustomData.currency),
+                      }
+                    : { value: 0, currency: 'BRL' },
               });
               sendCapiWithRetry(siteKey, crmAuto).catch(() => {});
             }
