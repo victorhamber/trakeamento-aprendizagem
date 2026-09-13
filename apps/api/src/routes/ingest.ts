@@ -12,6 +12,7 @@ import { resolveServerGeoHint, geoFromGeoipLite } from '../lib/request-geo';
 import { preserveFreshMetaFbc, preserveMetaClickIds } from '../lib/meta-attribution';
 import { mergeUserDataWithMetaParamBuilder } from '../lib/meta-param-builder-ingest';
 import { ensureMetaRoasMoneyFields, normalizeMetaCurrencyCode } from '../lib/meta-currency';
+import { resolveSiteLeadMoney } from '../lib/site-lead-money';
 import { buildVisitorTrafficSourceString } from '../lib/visitorTrafficSource';
 import { checkEventQuota } from '../lib/quota';
 import {
@@ -250,6 +251,7 @@ type SiteVisitorPiiRow = {
   city: string | null;
   state: string | null;
   country: string | null;
+  fbc: string | null;
 };
 
 async function lookupSiteVisitorForCapiMerge(
@@ -262,7 +264,7 @@ async function lookupSiteVisitorForCapiMerge(
   if (!ext && !fbpK && !fbcK) return null;
   try {
     const { rows } = await pool.query<SiteVisitorPiiRow>(
-      `SELECT email_hash, phone_hash, first_name_hash, last_name_hash, city, state, country
+      `SELECT email_hash, phone_hash, first_name_hash, last_name_hash, city, state, country, fbc
        FROM site_visitors
        WHERE site_key = $1
          AND (
@@ -283,7 +285,8 @@ async function lookupSiteVisitorForCapiMerge(
       row.last_name_hash ||
       row.city ||
       row.state ||
-      row.country;
+      row.country ||
+      row.fbc;
     return hasAny ? row : null;
   } catch {
     return null;
@@ -600,7 +603,8 @@ function pickReferrerUrlForCapi(
 function buildMetaCustomDataForCapi(
   eventName: string,
   cd: Record<string, unknown>,
-  tl: Record<string, unknown>
+  tl: Record<string, unknown>,
+  siteMoney?: { value: number; currency: string } | null
 ): { metaCustomData: Record<string, unknown>; refUrl: string | undefined } {
   const refUrl = pickReferrerUrlForCapi(cd, tl);
   const metaCustomData: Record<string, unknown> = {};
@@ -646,7 +650,12 @@ function buildMetaCustomDataForCapi(
     }
   }
 
-  const money = ensureMetaRoasMoneyFields(eventName, metaCustomData);
+  const money = ensureMetaRoasMoneyFields(
+    eventName,
+    metaCustomData,
+    siteMoney?.currency || 'BRL',
+    siteMoney?.value
+  );
   if (typeof money.value === 'number' && Number.isFinite(Number(money.value))) {
     metaCustomData.value = money.value;
     metaCustomData.currency = normalizeMetaCurrencyCode(money.currency);
@@ -895,7 +904,7 @@ async function buildCapiUserData(
     normalizeAndHash('country', pickRawWithAliases('country', ['pais', 'nacionalidade', 'paisdeorigem']), { ip: clientIp, country: countryForPh }) ??
     (geoHint.country ? hashPii(normalizers.country(geoHint.country)) : undefined);
   let fbp = preserveMetaClickIds(userData.fbp || pickCustom('fbp'));
-  const fbc = preserveFreshMetaFbc(userData.fbc || pickCustom('fbc'));
+  let fbc = preserveFreshMetaFbc(userData.fbc || pickCustom('fbc'));
   // Se temos fbc (clique Meta) mas faltou fbp (browser id), gera um fallback mínimo para CAPI.
   // Isso não depende do Pixel e melhora match/dedup em cenários onde o cookie _fbp não veio.
   if (!fbp && fbc) {
@@ -924,7 +933,7 @@ async function buildCapiUserData(
   const fbpTrim = (fbp || '').trim();
   const fbcTrim = (fbc || '').trim();
   const wantVisitorMerge =
-    (!em1 || !ph1 || !fnOut || !lnOut || !ctOut || !stOut || !countryOut) &&
+    (!em1 || !ph1 || !fnOut || !lnOut || !ctOut || !stOut || !countryOut || !fbcTrim) &&
     (extTrim.length > 0 || fbpTrim.length > 0 || fbcTrim.length > 0);
 
   if (wantVisitorMerge) {
@@ -942,6 +951,7 @@ async function buildCapiUserData(
       if (!ctOut && row.city) ctOut = hashPii(normalizers.ct(String(row.city)));
       if (!stOut && row.state) stOut = hashPii(normalizers.st(String(row.state)));
       if (!countryOut && row.country) countryOut = hashPii(normalizers.country(String(row.country)));
+      if (!fbc && row.fbc) fbc = preserveFreshMetaFbc(row.fbc);
     }
   }
 
@@ -1259,7 +1269,8 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
       // @see https://developers.facebook.com/docs/marketing-api/conversions-api/parameters
       const cd = event.custom_data ?? {};
       const tl = event.telemetry ?? {} as Record<string, unknown>;
-      const { metaCustomData, refUrl } = buildMetaCustomDataForCapi(eventName, cd, tl);
+      const siteMoney = await resolveSiteLeadMoney(siteKey);
+      const { metaCustomData, refUrl } = buildMetaCustomDataForCapi(eventName, cd, tl, siteMoney);
 
       const actionSrc = actionSourceForCapi(event.action_source);
 
@@ -1552,6 +1563,7 @@ router.post('/batch', cors(), ingestLimiter, async (req, res) => {
       ).catch(() => {});
 
       // Visitor UPSERTs + CAPI + GA4 — all fire-and-forget per event
+      const batchSiteMoney = await resolveSiteLeadMoney(siteKey);
       for (const p of inserted) {
         const capiUser = await buildCapiUserData(req, p.event.user_data || {}, siteKey, p.event.custom_data ?? {});
         const extId = deriveVisitorExternalIdForStorage({
@@ -1632,7 +1644,7 @@ router.post('/batch', cors(), ingestLimiter, async (req, res) => {
         // CAPI payload (espelha POST /events: custom_data + referrer_url + action_source)
         const cd = p.event.custom_data ?? {};
         const tl = p.event.telemetry ?? {} as Record<string, unknown>;
-        const { metaCustomData, refUrl } = buildMetaCustomDataForCapi(p.eventName, cd, tl);
+        const { metaCustomData, refUrl } = buildMetaCustomDataForCapi(p.eventName, cd, tl, batchSiteMoney);
 
         const actionSrc = actionSourceForCapi(p.event.action_source);
 

@@ -30,6 +30,7 @@ import mobileRoutes from './routes/mobile';
 import crypto from 'crypto';
 import { mergeUserDataWithMetaParamBuilder } from './lib/meta-param-builder-ingest';
 import { ensureMetaRoasMoneyFields } from './lib/meta-currency';
+import { resolveSiteLeadMoney } from './lib/site-lead-money';
 import { getClientIp } from './lib/ip';
 
 import { ensureSchema } from './db/schema';
@@ -383,7 +384,16 @@ app.get('/:slug', async (req, res) => {
   if (!custom_data.redirect_slug) custom_data.redirect_slug = slug;
 
   const redirectEventName = String(link.event_name || 'PageView');
-  Object.assign(custom_data, ensureMetaRoasMoneyFields(redirectEventName, custom_data));
+  const redirectSiteMoney = await resolveSiteLeadMoney(String(link.site_key || ''));
+  Object.assign(
+    custom_data,
+    ensureMetaRoasMoneyFields(
+      redirectEventName,
+      custom_data,
+      redirectSiteMoney?.currency || 'BRL',
+      redirectSiteMoney?.value
+    )
+  );
 
   const capiPayload = {
     event_name: redirectEventName,

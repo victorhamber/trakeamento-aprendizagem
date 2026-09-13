@@ -14,6 +14,8 @@ import {
   utmRecordFromFbcCookie,
   utmRecordFromPurchaseRow,
 } from '../lib/visitorTrafficSource';
+import { ensureMetaRoasMoneyFields } from '../lib/meta-currency';
+import { resolveSiteLeadMoney } from '../lib/site-lead-money';
 import { invalidateCrmCaches } from '../lib/crm-qualification';
 import { LlmService } from '../services/llm';
 
@@ -714,9 +716,18 @@ router.post('/:siteId/checkout-simulator/lead', requireAuth, async (req, res) =>
     external_id: externalId ? CapiService.hash(externalId) : undefined,
   };
 
+  const siteMoney = await resolveSiteLeadMoney(siteKey);
   const customData: Record<string, unknown> = {
     content_type: 'product',
-    value: value !== null && Number.isFinite(value) && value >= 0 ? value : 0,
+    ...ensureMetaRoasMoneyFields(
+      'Lead',
+      {
+        value: value !== null && Number.isFinite(value) && value > 0 ? value : undefined,
+        currency,
+      },
+      siteMoney?.currency || 'BRL',
+      siteMoney?.value
+    ),
     currency: /^[A-Za-z]{3}$/.test(currency) ? currency.toUpperCase() : 'BRL',
   };
 
@@ -1895,6 +1906,43 @@ function buyerJourneyWindow(anchorAt: Date | null, lookbackDays: number): { from
     from: new Date(anchorAt.getTime() - lookbackDays * 24 * 60 * 60 * 1000),
     to: anchorAt,
   };
+}
+
+async function loadBuyerJourneyEvents(opts: {
+  siteKey: string;
+  from: Date;
+  to: Date;
+  externalId?: string | null;
+  fbp?: string | null;
+  fbc?: string | null;
+}): Promise<any[]> {
+  const ext = opts.externalId != null ? String(opts.externalId).trim() : '';
+  const fbp = opts.fbp != null ? String(opts.fbp).trim() : '';
+  const fbc = opts.fbc != null ? String(opts.fbc).trim() : '';
+  if (!ext && !fbp && !fbc) return [];
+  const r = await pool.query(
+    `SELECT
+        event_name,
+        event_time,
+        event_source_url,
+        custom_data,
+        NULLIF(BTRIM(user_data->>'fbc'), '') AS event_user_fbc,
+        user_data->>'client_user_agent' AS client_user_agent
+       FROM web_events
+       WHERE site_key = $1
+         AND event_time >= $2::timestamptz
+         AND event_time < $3::timestamptz
+         AND event_name IN ('PageView', 'PageEngagement', 'Purchase', 'Lead', 'InitiateCheckout')
+         AND (
+           ($4::text IS NOT NULL AND user_data->>'external_id' = $4)
+           OR ($5::text IS NOT NULL AND NULLIF(BTRIM(user_data->>'fbp'), '') = $5)
+           OR ($6::text IS NOT NULL AND NULLIF(BTRIM(user_data->>'fbc'), '') = $6)
+         )
+       ORDER BY event_time DESC
+       LIMIT 2000`,
+    [opts.siteKey, opts.from, opts.to, ext || null, fbp || null, fbc || null]
+  );
+  return r.rows;
 }
 
 /** Completa Último toque com primeiro toque gravado no perfil + UTMs da compra (webhook) + fbclid derivado do `fbc` do visitante. */
@@ -3129,31 +3177,17 @@ router.get('/:siteId/buyers/by-key/:buyerKey', requireAuth, async (req, res) => 
     const anchorPurchase = await resolveBuyerAnchorPurchase(siteKey, purchasesRes.rows, req.query.anchor_purchase_id);
     const lastPurchaseAt = anchorPurchase?.purchased_at ? new Date(anchorPurchase.purchased_at) : null;
     const journeyWin = buyerJourneyWindow(lastPurchaseAt, lookbackDays);
-    const eventsRes = externalId
-      ? await pool.query(
-          `SELECT
-            event_name,
-            event_time,
-            event_source_url,
-            custom_data,
-            NULLIF(BTRIM(user_data->>'fbc'), '') AS event_user_fbc,
-            user_data->>'client_user_agent' AS client_user_agent
-           FROM web_events
-           WHERE site_key = $1
-             AND user_data->>'external_id' = $2
-             AND event_time >= $3::timestamptz
-             AND event_time < $4::timestamptz
-             AND event_name IN ('PageView', 'PageEngagement', 'Purchase', 'Lead', 'InitiateCheckout')
-           ORDER BY event_time DESC
-           LIMIT 2000`,
-          [
-            siteKey,
-            externalId,
-            journeyWin?.from ?? new Date(Date.now() - lookbackDays * 86400000),
-            journeyWin?.to ?? new Date(),
-          ]
-        )
-      : { rows: [] as any[] };
+    const isLatestPurchaseByKey = isBuyerLatestPurchaseOnPage(purchasesRes.rows, purchasesOffset, anchorPurchase);
+    const eventsRes = {
+      rows: await loadBuyerJourneyEvents({
+        siteKey,
+        from: journeyWin?.from ?? new Date(Date.now() - lookbackDays * 86400000),
+        to: journeyWin?.to ?? lastPurchaseAt ?? new Date(),
+        externalId,
+        fbp: String(anchorPurchase?.fbp || v?.fbp || '').trim() || null,
+        fbc: String(anchorPurchase?.fbc || (isLatestPurchaseByKey ? v?.fbc : '') || '').trim() || null,
+      }),
+    };
     const pvBefore: Record<string, number> = {};
     let pvCountBefore = 0;
     let lastTouchUtm: Record<string, string> | null = null;
@@ -3206,19 +3240,18 @@ router.get('/:siteId/buyers/by-key/:buyerKey', requireAuth, async (req, res) => 
       lastTouchUtm,
       pageviewTimeline.map((p) => p.utm)
     );
-    const isLatestPurchaseByKey = isBuyerLatestPurchaseOnPage(
-      purchasesRes.rows,
-      purchasesOffset,
-      anchorPurchase
-    );
     if (!lastTouchUtm && isLatestPurchaseByKey && v?.last_traffic_source) {
       lastTouchUtm = utmFromVisitorTrafficSource(String(v.last_traffic_source));
     }
-    if (!lastTouchUtm && v?.first_traffic_source) {
+    if (!lastTouchUtm && isLatestPurchaseByKey && v?.first_traffic_source) {
       lastTouchUtm = utmFromVisitorTrafficSource(String(v.first_traffic_source));
     }
 
-    lastTouchUtm = enrichBuyerLastTouchFromProfileAndPurchase(lastTouchUtm, [v], anchorPurchase);
+    lastTouchUtm = enrichBuyerLastTouchFromProfileAndPurchase(
+      lastTouchUtm,
+      isLatestPurchaseByKey ? [v] : [],
+      anchorPurchase
+    );
 
     if (pageviewTimeline.length && lastPageviewBeforePurchase && pageviewTimeline[0].url === lastPageviewBeforePurchase.url) {
       pageviewTimeline[0] = { ...pageviewTimeline[0], utm: lastTouchUtm };
@@ -3397,31 +3430,17 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
     const anchorPurchase = await resolveBuyerAnchorPurchase(siteKey, purchasesRes.rows, req.query.anchor_purchase_id);
     const lastPurchaseAt = anchorPurchase?.purchased_at ? new Date(anchorPurchase.purchased_at) : null;
     const journeyWin = buyerJourneyWindow(lastPurchaseAt, lookbackDays);
-    const eventsRes = eventsExternalId
-      ? await pool.query(
-          `SELECT
-            event_name,
-            event_time,
-            event_source_url,
-            custom_data,
-            NULLIF(BTRIM(user_data->>'fbc'), '') AS event_user_fbc,
-            user_data->>'client_user_agent' AS client_user_agent
-           FROM web_events
-           WHERE site_key = $1
-             AND user_data->>'external_id' = $2
-             AND event_time >= $3::timestamptz
-             AND event_time < $4::timestamptz
-             AND event_name IN ('PageView', 'PageEngagement', 'Purchase', 'Lead', 'InitiateCheckout')
-           ORDER BY event_time DESC
-           LIMIT 2000`,
-          [
-            siteKey,
-            eventsExternalId,
-            journeyWin?.from ?? new Date(Date.now() - lookbackDays * 86400000),
-            journeyWin?.to ?? new Date(),
-          ]
-        )
-      : { rows: [] as any[] };
+    const isLatestPurchase = isBuyerLatestPurchaseOnPage(purchasesRes.rows, purchasesOffset, anchorPurchase);
+    const eventsRes = {
+      rows: await loadBuyerJourneyEvents({
+        siteKey,
+        from: journeyWin?.from ?? new Date(Date.now() - lookbackDays * 86400000),
+        to: journeyWin?.to ?? lastPurchaseAt ?? new Date(),
+        externalId: eventsExternalId || pExternalId || externalId,
+        fbp: String(anchorPurchase?.fbp || v?.fbp || v0?.fbp || '').trim() || null,
+        fbc: String(anchorPurchase?.fbc || (isLatestPurchase ? v?.fbc || v0?.fbc : '') || '').trim() || null,
+      }),
+    };
     const pvBefore: Record<string, number> = {};
     let pvCountBefore = 0;
     let lastTouchUtm: Record<string, string> | null = null;
@@ -3474,21 +3493,22 @@ router.get('/:siteId/buyers/:externalId', requireAuth, async (req, res) => {
       lastTouchUtm,
       pageviewTimeline.map((p) => p.utm)
     );
-    const isLatestPurchase = isBuyerLatestPurchaseOnPage(purchasesRes.rows, purchasesOffset, anchorPurchase);
     if (!lastTouchUtm && isLatestPurchase && v?.last_traffic_source) {
       lastTouchUtm = utmFromVisitorTrafficSource(String(v.last_traffic_source));
     }
-    if (!lastTouchUtm && (v?.first_traffic_source || v0?.first_traffic_source || (isLatestPurchase && v0?.last_traffic_source))) {
+    if (!lastTouchUtm && isLatestPurchase && (v?.first_traffic_source || v0?.first_traffic_source || v0?.last_traffic_source)) {
       lastTouchUtm =
         lastTouchUtm ||
         (v?.first_traffic_source ? utmFromVisitorTrafficSource(String(v.first_traffic_source)) : null) ||
-        (isLatestPurchase && v0?.last_traffic_source
-          ? utmFromVisitorTrafficSource(String(v0.last_traffic_source))
-          : null) ||
+        (v0?.last_traffic_source ? utmFromVisitorTrafficSource(String(v0.last_traffic_source)) : null) ||
         (v0?.first_traffic_source ? utmFromVisitorTrafficSource(String(v0.first_traffic_source)) : null);
     }
 
-    lastTouchUtm = enrichBuyerLastTouchFromProfileAndPurchase(lastTouchUtm, [v0, v], anchorPurchase);
+    lastTouchUtm = enrichBuyerLastTouchFromProfileAndPurchase(
+      lastTouchUtm,
+      isLatestPurchase ? [v0, v] : [],
+      anchorPurchase
+    );
 
     if (pageviewTimeline.length && lastPageviewBeforePurchase && pageviewTimeline[0].url === lastPageviewBeforePurchase.url) {
       pageviewTimeline[0] = { ...pageviewTimeline[0], utm: lastTouchUtm };

@@ -43,14 +43,18 @@ describe('parseMetaEventValue', () => {
 });
 
 describe('ensureMetaRoasMoneyFields', () => {
-  it('força 0 + BRL em Lead/Download/Group sem valor', () => {
-    expect(ensureMetaRoasMoneyFields('Lead', {})).toEqual({ value: 0, currency: 'BRL' });
+  it('não envia 0 em Lead/Download/Group — usa fallback ou 1 + BRL', () => {
+    expect(ensureMetaRoasMoneyFields('Lead', {})).toEqual({ value: 1, currency: 'BRL' });
+    expect(ensureMetaRoasMoneyFields('Lead', { value: 0 }, 'BRL', 185)).toEqual({
+      value: 185,
+      currency: 'BRL',
+    });
     expect(ensureMetaRoasMoneyFields('Download', { currency: 'R$' })).toEqual({
-      value: 0,
+      value: 1,
       currency: 'BRL',
     });
     expect(ensureMetaRoasMoneyFields('Group', { moeda: 'MX$' })).toMatchObject({
-      value: 0,
+      value: 1,
       currency: 'BRL',
     });
   });

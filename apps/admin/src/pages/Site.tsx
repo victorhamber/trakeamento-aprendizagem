@@ -329,6 +329,10 @@ export const SitePage = () => {
       t === 'Donate' ||
       t === 'StartTrial' ||
       t === 'Subscribe' ||
+      t === 'Lead' ||
+      t === 'CompleteRegistration' ||
+      t === 'Contact' ||
+      t === 'Schedule' ||
       t === 'Custom'
     );
   };

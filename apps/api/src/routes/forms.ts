@@ -6,6 +6,7 @@ import { getClientIp } from '../lib/ip';
 import { geoFromGeoipLite, resolveServerGeoHint } from '../lib/request-geo';
 import { mergeUserDataWithMetaParamBuilder } from '../lib/meta-param-builder-ingest';
 import { ensureMetaRoasMoneyFields } from '../lib/meta-currency';
+import { resolveSiteLeadMoney } from '../lib/site-lead-money';
 
 const router = Router();
 
@@ -720,7 +721,10 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
           );
 
           const formCfg = (form.config && typeof form.config === 'object' ? form.config : {}) as Record<string, unknown>;
-          const formCustomData = ensureMetaRoasMoneyFields(eventName, {
+          const siteMoney = await resolveSiteLeadMoney(siteKey);
+          const formCustomData = ensureMetaRoasMoneyFields(
+            eventName,
+            {
             form_name: form.name,
             form_id: publicId,
             meta_event_name: eventName,
@@ -731,7 +735,10 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
             ...(formCfg.event_currency !== undefined && formCfg.event_currency !== ''
               ? { currency: formCfg.event_currency }
               : {}),
-          });
+            },
+            siteMoney?.currency || 'BRL',
+            siteMoney?.value
+          );
 
           capiService
             .sendEventDetailed(siteKey, {

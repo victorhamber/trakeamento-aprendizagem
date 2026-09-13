@@ -45,10 +45,10 @@ export function JourneyModalFrame({
       <button type="button" className="absolute inset-0 bg-black/75 backdrop-blur-[2px]" onClick={onClose} aria-label="Fechar" />
       <div className="relative w-full max-w-6xl">
         <div
-          className={`rounded-3xl ${border} border bg-zinc-100 dark:bg-zinc-950 shadow-[0_24px_80px_rgba(0,0,0,0.45)] overflow-hidden max-h-[calc(100vh-40px)] flex flex-col ${text}`}
+          className={`rounded-2xl ${border} border bg-zinc-50 dark:bg-zinc-950 shadow-2xl overflow-hidden max-h-[calc(100vh-40px)] flex flex-col ${text}`}
         >
           {header}
-          <div className="p-5 sm:p-6 overflow-y-auto flex-1 space-y-6">{children}</div>
+          <div className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-5">{children}</div>
         </div>
       </div>
     </div>
@@ -69,23 +69,23 @@ export function JourneyModalHeader({
   onClose: () => void;
 }) {
   return (
-    <div className="relative flex items-start justify-between gap-4 px-5 sm:px-6 py-5 bg-gradient-to-r from-indigo-600 via-violet-600 to-fuchsia-600 text-white">
-      <div className="flex items-start gap-3.5 min-w-0">
-        <div className="h-12 w-12 rounded-2xl bg-white/20 backdrop-blur flex items-center justify-center text-sm font-bold text-white shrink-0 ring-2 ring-white/30">
+    <div className={`flex items-start justify-between gap-4 px-4 sm:px-5 py-4 border-b ${border} ${cardBg}`}>
+      <div className="flex items-start gap-3 min-w-0">
+        <div className="h-11 w-11 rounded-full bg-indigo-500 flex items-center justify-center text-sm font-bold text-white shrink-0 shadow-lg shadow-indigo-500/20">
           {initials}
         </div>
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2 gap-y-1">
-            <h2 className="text-lg font-semibold text-white truncate">{name}</h2>
+            <h2 className="text-base font-semibold text-zinc-900 dark:text-white truncate">{name}</h2>
             {badge}
           </div>
-          <p className="text-xs text-white/80 mt-0.5 leading-relaxed">{subtitle}</p>
+          <p className={`text-xs ${muted} mt-0.5 leading-relaxed`}>{subtitle}</p>
         </div>
       </div>
       <button
         type="button"
         onClick={onClose}
-        className="shrink-0 inline-flex items-center gap-1.5 rounded-xl bg-white/15 hover:bg-white/25 px-3 py-2 text-xs font-medium text-white transition-colors"
+        className={`shrink-0 inline-flex items-center gap-1.5 rounded-lg ${border} border px-3 py-2 text-xs font-medium text-zinc-700 dark:text-slate-200 hover:bg-zinc-100 dark:hover:bg-white/5 transition-colors`}
       >
         <X className="h-3.5 w-3.5" strokeWidth={2} />
         Fechar
@@ -97,10 +97,10 @@ export function JourneyModalHeader({
 export function StatusPill({ children, variant = 'success' }: { children: ReactNode; variant?: 'success' | 'info' | 'warning' }) {
   const cls =
     variant === 'success'
-      ? 'bg-emerald-500 text-white border-emerald-400/80 shadow-sm'
+      ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/25'
       : variant === 'warning'
-        ? 'bg-amber-500 text-white border-amber-400/80 shadow-sm'
-        : 'bg-white/20 text-white border-white/35 shadow-sm';
+        ? 'bg-amber-500/15 text-amber-200 border-amber-500/25'
+        : 'bg-sky-500/15 text-sky-200 border-sky-500/25';
   const icon =
     variant === 'success' ? (
       <Check className="h-3 w-3 shrink-0" strokeWidth={2.5} aria-hidden />
@@ -129,14 +129,13 @@ export function MetricCard({
   value: ReactNode;
 }) {
   return (
-    <div className={`relative overflow-hidden rounded-2xl ${border} border ${cardBg} p-4 flex gap-3 shadow-sm`}>
-      <div className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-indigo-400 via-violet-500 to-fuchsia-500" />
-      <div className={`shrink-0 rounded-xl p-2.5 ${iconClass}`}>
-        <Icon className="h-5 w-5" strokeWidth={2} />
+    <div className={`rounded-xl ${border} border ${cardBg} p-3 flex gap-3`}>
+      <div className={`shrink-0 rounded-lg p-2 ${iconClass}`}>
+        <Icon className="h-4 w-4" strokeWidth={2} />
       </div>
-      <div className="min-w-0 pl-1">
+      <div className="min-w-0">
         <div className={`text-[10px] font-semibold uppercase tracking-wide ${muted}`}>{label}</div>
-        <div className="mt-1 text-base font-bold text-zinc-900 dark:text-white truncate">{value}</div>
+        <div className="mt-0.5 text-sm font-semibold text-zinc-900 dark:text-white truncate">{value}</div>
       </div>
     </div>
   );
@@ -164,12 +163,12 @@ export function OriginSaleCard({
   footerNote: string;
 }) {
   const col = (Icon: typeof Flag, label: string, value: string) => (
-    <div className="min-w-0 rounded-xl bg-white/12 ring-1 ring-white/15 px-3 py-3">
-      <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-white/70">
-        <Icon className="h-3.5 w-3.5 shrink-0 text-white/85" strokeWidth={2} />
+    <div className="min-w-0">
+      <div className={`flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide ${muted}`}>
+        <Icon className="h-3 w-3 shrink-0" strokeWidth={2} />
         {label}
       </div>
-      <div className="mt-1.5 text-sm font-semibold text-white truncate" title={value}>
+      <div className="mt-1 text-sm font-medium text-zinc-900 dark:text-white truncate" title={value}>
         {value || '—'}
       </div>
     </div>
@@ -183,25 +182,20 @@ export function OriginSaleCard({
       ]
     : [col(Flag, 'Campanha', campaign), col(Users, 'Conjunto', adset), col(Play, 'Anúncio', ad)];
   return (
-    <div className="rounded-2xl overflow-hidden border border-indigo-400/40 bg-gradient-to-br from-indigo-700 via-violet-700 to-fuchsia-800 text-white shadow-[0_12px_40px_rgba(76,29,149,0.35)]">
-      <div className="flex flex-wrap items-center justify-between gap-2 px-5 pt-4 pb-3">
-        <div className="flex items-center gap-2">
-          <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/20">
-            <Megaphone className="h-4 w-4" strokeWidth={2} />
-          </span>
-          <div className="text-sm font-semibold tracking-tight">{heading}</div>
-        </div>
+    <div className={`rounded-xl ${border} border ${cardBg} p-4`}>
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        <div className="text-xs font-semibold text-zinc-800 dark:text-slate-200">{heading}</div>
         {badge ? (
-          <span className="inline-flex items-center rounded-full bg-white px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-indigo-700">
+          <span className="inline-flex items-center rounded-full border border-indigo-500/25 bg-indigo-500/10 px-2 py-0.5 text-[10px] font-semibold text-indigo-700 dark:text-indigo-200">
             {badge}
           </span>
         ) : null}
       </div>
-      <div className={`grid grid-cols-1 gap-3 px-5 pb-4 ${channel ? 'md:grid-cols-2 xl:grid-cols-4' : 'md:grid-cols-3'}`}>
+      <div className={`grid grid-cols-1 gap-4 ${channel ? 'md:grid-cols-2 xl:grid-cols-4' : 'md:grid-cols-3'}`}>
         {cols}
       </div>
-      <div className="flex items-start gap-2 px-5 py-3 bg-black/20 text-[11px] text-white/80 leading-relaxed">
-        <Info className="h-3.5 w-3.5 shrink-0 mt-0.5 text-white/70" />
+      <div className={`mt-3 flex items-start gap-2 text-[11px] ${muted}`}>
+        <Info className="h-3.5 w-3.5 shrink-0 mt-0.5 text-zinc-400 dark:text-slate-500" />
         <span>{footerNote}</span>
       </div>
     </div>
@@ -452,15 +446,10 @@ export function LastAdPanel({
     </div>
   );
   return (
-    <div className={`rounded-2xl ${border} border ${cardBg} p-4 shadow-sm`}>
-      <div className="flex items-center gap-2 mb-1">
-        <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-500/15 text-indigo-300">
-          <Megaphone className="h-3.5 w-3.5" strokeWidth={2} />
-        </span>
-        <div className="text-xs font-semibold text-zinc-800 dark:text-slate-100">Último anúncio desta compra</div>
-      </div>
+    <div className={`rounded-xl ${border} border ${cardBg} p-4`}>
+      <div className="text-xs font-semibold text-zinc-800 dark:text-slate-200 mb-1">Último anúncio detectado</div>
       <p className={`text-[10px] ${muted} mb-2 leading-relaxed`}>
-        Parâmetros do clique mais recente antes do pedido selecionado (Meta ou UTM).
+        Valores do último clique com parâmetros de anúncio disponíveis (Meta ou UTM).
       </p>
       <div className="divide-y divide-slate-800/80">
         <Row icon={Megaphone} label="Plataforma" value={platform} />

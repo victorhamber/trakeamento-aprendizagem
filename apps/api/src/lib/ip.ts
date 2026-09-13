@@ -29,6 +29,7 @@ function firstForwardedFor(xff: string): string {
 
 export function getClientIp(req: Request): string {
   const candidates: Array<string | undefined> = [
+    req.headers['cf-connecting-ipv6'] as string | undefined,
     req.headers['cf-connecting-ip'] as string | undefined,
     req.headers['true-client-ip'] as string | undefined,
     req.headers['x-real-ip'] as string | undefined,

@@ -348,6 +348,11 @@ function buyerProbableSource(d: BuyerDetail): string {
   const src = (u?.utm_source || '').trim();
   const med = (u?.utm_medium || '').trim();
   if (src || med) return [src, med].filter(Boolean).join(' · ') || '—';
+  const isLatest =
+    !d.behavior.anchor_purchase_id ||
+    !d.purchases?.[0]?.id ||
+    Number(d.behavior.anchor_purchase_id) === Number(d.purchases[0].id);
+  if (!isLatest) return '—';
   const lt = (d.buyer.last_traffic_source || '').trim();
   if (lt) {
     try {
@@ -453,9 +458,7 @@ function BuyerJourneyDetailView({
   const originStr =
     lt?.utm_source || lt?.utm_medium
       ? [lt?.utm_source, lt?.utm_medium].filter(Boolean).join(' / ')
-      : detail.buyer.fbc
-        ? 'fb / paid_social (estimado)'
-        : '—';
+      : '—';
 
   const pathSteps = buyerPathSteps(detail);
   const interactions = detail.behavior.pageviews_before_last_purchase;
@@ -539,11 +542,13 @@ function BuyerJourneyDetailView({
         adset={m?.adset_name || m?.adset_id || lt?.utm_term || '—'}
         ad={m?.ad_name || m?.ad_id || lt?.utm_content || '—'}
         channel={originStr !== '—' ? originStr : undefined}
-        badge={m ? 'Meta Ads' : lt?.utm_source ? 'Histórico do visitante' : undefined}
+        badge={m ? 'Meta Ads' : lt?.utm_source ? 'Deste pedido' : undefined}
         footerNote={
           m
-            ? 'Campanha Meta do último toque antes desta compra — não da compra mais recente do visitante.'
-            : 'Sem campanha Meta neste pedido. Origem do histórico do visitante até esta compra (UTM/clique).'
+            ? 'Campanha Meta do último toque antes desta compra.'
+            : lt?.utm_source
+              ? 'Origem dos eventos ou UTMs deste pedido — não de outra compra do mesmo visitante.'
+              : 'Sem origem registrada neste pedido. Não reutilizamos Instagram/UTM de outra compra.'
         }
       />
 

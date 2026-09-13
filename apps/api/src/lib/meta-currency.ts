@@ -50,20 +50,25 @@ export function parseMetaEventValue(raw: unknown): number | undefined {
 
 /**
  * Garante `value` numérico + `currency` ISO 4217 nos eventos que o Meta
- * usa para ROAS. Sem valor real, envia 0 + BRL (par válido; Pixel e CAPI iguais).
+ * usa para ROAS. `value=0` é tratado como ausente (Events Manager marca inválido
+ * e dispara “preços iguais”). Sem valor no evento, usa `fallbackValue` se > 0.
  */
 export function ensureMetaRoasMoneyFields(
   eventName: string,
   customData: Record<string, unknown>,
-  fallbackCurrency = 'BRL'
+  fallbackCurrency = 'BRL',
+  fallbackValue?: number
 ): Record<string, unknown> {
   const out: Record<string, unknown> = { ...customData };
   const rawValue = out.value ?? out.amount ?? out.price ?? out.total ?? out.revenue;
   const parsed = parseMetaEventValue(rawValue);
   const rawCurrency = out.currency ?? out.currency_code ?? out.moeda;
+  const fallbackParsed = parseMetaEventValue(fallbackValue);
+  const positive = parsed !== undefined && parsed > 0 ? parsed : undefined;
+  const positiveFallback = fallbackParsed !== undefined && fallbackParsed > 0 ? fallbackParsed : undefined;
 
   if (META_ROAS_MONEY_EVENTS.has(eventName)) {
-    out.value = parsed !== undefined ? parsed : 0;
+    out.value = positive ?? positiveFallback ?? 1;
     out.currency = normalizeMetaCurrencyCode(rawCurrency, fallbackCurrency);
     return out;
   }

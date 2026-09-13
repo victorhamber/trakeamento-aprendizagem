@@ -4,6 +4,7 @@ import { Router } from 'express';
 import { pool } from '../db/pool';
 import { getClientIp } from '../lib/ip';
 import { resolveServerGeoHint } from '../lib/request-geo';
+import { resolveSiteLeadMoney } from '../lib/site-lead-money';
 
 const router = Router();
 
@@ -158,6 +159,7 @@ router.get('/tracker.js', async (req, res) => {
           hotmartSckMaxChars = Number.isFinite(n) && n > 0 ? n : null;
         }
 
+        const siteLeadMoney = await resolveSiteLeadMoney(siteKey);
         const configObj: Record<string, unknown> = {
           apiUrl,
           siteKey,
@@ -166,6 +168,8 @@ router.get('/tracker.js', async (req, res) => {
           eventRules,
           /** Limite aproximado do campo sck da Hotmart; acima disso usa trk_ só com eid e manda fbp/fbc na query. Aumente com HOTMART_SCK_MAX_CHARS na API se a Hotmart permitir mais. */
           hotmartSckMaxChars,
+          defaultLeadValue: siteLeadMoney?.value ?? 1,
+          defaultLeadCurrency: siteLeadMoney?.currency || 'BRL',
         };
         const headSnip = typeof injRow.inject_head_html === 'string' ? injRow.inject_head_html.trim() : '';
         const bodySnip = typeof injRow.inject_body_html === 'string' ? injRow.inject_body_html.trim() : '';
@@ -1343,10 +1347,9 @@ router.get('/tracker.js', async (req, res) => {
         telemetry: telemetry
       };
 
-      getFingerprintHash(function(fp) {
-        payload.telemetry.device_fingerprint = fp;
-        send(cfg.apiUrl, cfg.siteKey, payload);
-      });
+      if (_fingerprintHash) payload.telemetry.device_fingerprint = _fingerprintHash;
+      send(cfg.apiUrl, cfg.siteKey, payload);
+      getFingerprintHash(function() {});
 
       if (cfg.metaPixelId) {
         loadMetaPixel(cfg.metaPixelId);
@@ -1405,14 +1408,11 @@ router.get('/tracker.js', async (req, res) => {
         }, attrs)
       };
 
-      getFingerprintHash(function(fp) {
-        payload.telemetry.device_fingerprint = fp;
-        send(cfg.apiUrl, cfg.siteKey, payload);
-      });
+      if (_fingerprintHash) payload.telemetry.device_fingerprint = _fingerprintHash;
+      send(cfg.apiUrl, cfg.siteKey, payload, true);
 
       if (cfg.metaPixelId) {
-        // Enviaremos PageEngagement apenas via CAPI (backend) para não atrasar/falhar no beforeunload do browser
-        // Meta Docs recomendam evitar web requests lentos durante o evento beforeunload
+        // PageEngagement não vai ao Pixel/CAPI (beforeunload). Só ingest interno.
       }
 
       if (cfg.gaMeasurementId) {
@@ -1446,15 +1446,18 @@ router.get('/tracker.js', async (req, res) => {
       if (roasMoneyEvents[eventName]) {
         var rawV = cleanCustom.value != null ? cleanCustom.value : (cleanCustom.amount != null ? cleanCustom.amount : (cleanCustom.price != null ? cleanCustom.price : cleanCustom.total));
         var parsedV = rawV !== undefined && rawV !== null && String(rawV).trim() !== '' ? parseFloat(String(rawV).replace(',', '.')) : NaN;
-        if (!isFinite(parsedV) || parsedV < 0) {
-          cleanCustom.value = 0;
+        if (!isFinite(parsedV) || parsedV <= 0) {
+          var defV = cfg.defaultLeadValue;
+          cleanCustom.value = (typeof defV === 'number' && isFinite(defV) && defV > 0) ? defV : 1;
         } else {
           cleanCustom.value = parsedV;
         }
         var rawC = cleanCustom.currency != null ? cleanCustom.currency : (cleanCustom.currency_code != null ? cleanCustom.currency_code : cleanCustom.moeda);
         var curS = (rawC === undefined || rawC === null) ? '' : String(rawC).trim().toUpperCase();
         if (!curS || curS === '0' || !/^[A-Z]{3}$/.test(curS)) {
-          cleanCustom.currency = 'BRL';
+          cleanCustom.currency = (cfg.defaultLeadCurrency && /^[A-Za-z]{3}$/.test(String(cfg.defaultLeadCurrency)))
+            ? String(cfg.defaultLeadCurrency).toUpperCase()
+            : 'BRL';
         } else {
           cleanCustom.currency = curS;
         }
@@ -1464,6 +1467,8 @@ router.get('/tracker.js', async (req, res) => {
       var evKey = eventName;
       if (ruleDedupId != null && ruleDedupId !== '') {
         evKey = eventName + ':rule:' + ruleDedupId;
+      } else if (eventName === 'VideoMilestone' && cleanCustom.milestone != null) {
+        evKey = eventName + ':' + String(cleanCustom.milestone);
       }
       var nowMs = Date.now();
       if (_lastRuleFire[evKey] && (nowMs - _lastRuleFire[evKey]) < RULE_DEDUP_MS) {
@@ -1506,15 +1511,20 @@ router.get('/tracker.js', async (req, res) => {
         payload.custom_data._taRuleId = ruleDedupId;
       }
 
-      var isInstant = (eventName === 'InitiateCheckout' || eventName === 'AddToCart' || eventName === 'Purchase');
-      if (isInstant) {
-        send(cfg.apiUrl, cfg.siteKey, payload, true);
-      } else {
-        getFingerprintHash(function(fp) {
-          payload.telemetry.device_fingerprint = fp;
-          send(cfg.apiUrl, cfg.siteKey, payload);
-        });
-      }
+      var isInstant =
+        eventName === 'InitiateCheckout' ||
+        eventName === 'AddToCart' ||
+        eventName === 'Purchase' ||
+        eventName === 'Lead' ||
+        eventName === 'Contact' ||
+        eventName === 'Download' ||
+        eventName === 'Group' ||
+        eventName === 'Grupo' ||
+        eventName === 'ViewContent' ||
+        eventName === 'VideoMilestone';
+      if (_fingerprintHash) payload.telemetry.device_fingerprint = _fingerprintHash;
+      send(cfg.apiUrl, cfg.siteKey, payload, isInstant);
+      if (!_fingerprintHash) getFingerprintHash(function() {});
 
       if (cfg.metaPixelId) {
         loadMetaPixel(cfg.metaPixelId);
