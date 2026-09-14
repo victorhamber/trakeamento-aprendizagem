@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  buildMetaPurchaseCommerceFields,
   ensureMetaRoasMoneyFields,
   normalizeMetaCurrencyCode,
   parseMetaEventValue,
@@ -77,6 +78,53 @@ describe('ensureMetaRoasMoneyFields', () => {
     expect(ensureMetaRoasMoneyFields('Purchase', { value: 185, currency: 'R$' })).toEqual({
       value: 185,
       currency: 'BRL',
+    });
+  });
+});
+
+describe('buildMetaPurchaseCommerceFields', () => {
+  it('não envia value 0 e inclui contents + order_id', () => {
+    expect(buildMetaPurchaseCommerceFields({ value: 0, currency: 'BRL', orderId: 'HP123' })).toEqual({
+      content_type: 'product',
+      num_items: 1,
+      content_ids: ['HP123'],
+      order_id: 'HP123',
+    });
+    expect(
+      buildMetaPurchaseCommerceFields({
+        value: 497,
+        currency: 'brl',
+        contentId: 'prod_1',
+        orderId: 'HP123',
+      })
+    ).toEqual({
+      content_type: 'product',
+      num_items: 1,
+      value: 497,
+      currency: 'BRL',
+      content_ids: ['prod_1'],
+      order_id: 'HP123',
+      contents: [{ id: 'prod_1', quantity: 1, item_price: 497 }],
+    });
+    expect(
+      buildMetaPurchaseCommerceFields({
+        value: 5.97,
+        currency: 'BRL',
+        contentId: 'offer_bump',
+        orderId: 'HP-bump',
+      }).content_ids
+    ).toEqual(['offer_bump']);
+    expect(
+      buildMetaPurchaseCommerceFields({
+        value: 24.14,
+        currency: 'BRL',
+        contentId: 'offer_entry',
+        orderId: 'HP-entry',
+      })
+    ).toMatchObject({
+      value: 24.14,
+      content_ids: ['offer_entry'],
+      contents: [{ id: 'offer_entry', quantity: 1, item_price: 24.14 }],
     });
   });
 });

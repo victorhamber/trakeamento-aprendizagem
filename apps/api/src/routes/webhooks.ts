@@ -14,6 +14,7 @@ import type { SaleNotifyKind } from '../services/sale-notification';
 import { DDI_LIST } from '../lib/ddi';
 import { buildVisitorTrafficSourceString, parseStoredTrafficSource } from '../lib/visitorTrafficSource';
 import { createLogger } from '../lib/logger';
+import { buildMetaPurchaseCommerceFields } from '../lib/meta-currency';
 import {
   buildCrmQualificationCapiPayload,
   shouldQualifyPurchasesForSite,
@@ -697,9 +698,9 @@ function resolveHotmartMoneyFromCommissionsOrPurchase(
   const fp = recordOf(pr.full_price as unknown);
   const pp = recordOf(pr.price as unknown);
   // Hotmart:
-  // - `purchase.price.value` é o valor bruto cobrado/pago.
-  // - `commissions` contém o líquido (ex.: PRODUCER) já descontando taxas Hotmart.
-  // Para métricas financeiras reais do produtor, priorizamos a comissão PRODUCER quando existir.
+  // - `purchase.price.value` é o valor bruto da oferta (pode ser o mesmo em bump e principal).
+  // - `commissions` PRODUCER é o líquido desta transação (24,14 vs 5,97 vs 470).
+  // Painel, CAPI e ROAS usam o líquido da linha — senão a Meta vê um preço só.
   let rawValue: unknown =
     pp.value ?? fp.value ?? pr.amount ?? pr.total ?? (d as { amount?: unknown }).amount ?? 0;
   let currency =
@@ -708,7 +709,7 @@ function resolveHotmartMoneyFromCommissionsOrPurchase(
     coerceWebhookStr((d as { currency?: unknown }).currency) ||
     'BRL';
 
-  // Usa comissão do PRODUTOR como "receita líquida" (soma caso venha quebrada em múltiplas linhas).
+  // Usa comissão do PRODUTOR como valor desta venda (soma caso venha quebrada em múltiplas linhas).
   if (Array.isArray(commissions) && commissions.length > 0) {
     let sum = 0;
     let any = false;
@@ -769,11 +770,22 @@ type HotmartCheckoutLine = {
   value: number;
   currency: string;
   contentName: string;
+  /** Produto/oferta desta linha — nunca o id raiz em bump/upsell. */
+  contentId?: string;
   /** Rótulo curto para push / Meta (ex.: Order bump). */
   saleLineLabel?: string;
   offerCode?: string;
   offerName?: string;
 };
+
+function firstHotmartContentId(...candidates: unknown[]): string | undefined {
+  for (const c of candidates) {
+    if (c == null) continue;
+    const s = String(c).trim();
+    if (s) return s.slice(0, 100);
+  }
+  return undefined;
+}
 
 function dedupeHotmartLinesByOrderId(lines: HotmartCheckoutLine[]): HotmartCheckoutLine[] {
   const seen = new Set<string>();
@@ -856,6 +868,12 @@ function buildHotmartCheckoutLines(
         value: v,
         currency: cur || 'BRL',
         contentName: name,
+        contentId: firstHotmartContentId(
+          lineOfferMeta.offerCode,
+          pid,
+          rootOfferMeta.offerCode,
+          rootPid
+        ),
         saleLineLabel,
         offerCode: lineOfferMeta.offerCode || rootOfferMeta.offerCode,
         offerName: lineOfferMeta.offerName || rootOfferMeta.offerName,
@@ -891,6 +909,7 @@ function buildHotmartCheckoutLines(
       value: rootMoney.value,
       currency: rootMoney.currency,
       contentName,
+      contentId: firstHotmartContentId(rootOfferMeta.offerCode, rootPid),
       saleLineLabel,
       offerCode: rootOfferMeta.offerCode,
       offerName: rootOfferMeta.offerName,
@@ -1292,12 +1311,13 @@ async function processPurchaseWebhook({
       external_id: mergedExternalId ? String(mergedExternalId) : undefined,
     },
     custom_data: {
-      value: Number(value) || 0,
-      currency: resolvedCurrency,
+      ...buildMetaPurchaseCommerceFields({
+        value,
+        currency: resolvedCurrency,
+        contentId,
+        orderId,
+      }),
       content_name: displayContentName || undefined,
-      content_type: 'product',
-      content_ids: contentId ? [String(contentId)] : undefined,
-      num_items: 1,
       ...(resolvedOfferMeta.offerCode ? { offer: resolvedOfferMeta.offerCode } : {}),
       ...(resolvedOfferMeta.offerName ? { offer_name: resolvedOfferMeta.offerName } : {}),
       utm_source: utmSource || undefined,
@@ -1683,16 +1703,10 @@ async function processPurchaseWebhook({
           shouldQualifyPurchasesForSite(siteKey)
             .then((enabled) => {
               if (!enabled) return;
-              const valueNum = Number(value);
-              const safeValue = Number.isFinite(valueNum) && valueNum >= 0 ? valueNum : 0;
               const crmPayload = buildCrmQualificationCapiPayload({
                 originalCapiEvent: capiPayload,
                 leadEventSource: 'Trajettu',
                 crmEventName: 'Compra realizada',
-                includeValueAndCurrency: {
-                  value: safeValue,
-                  currency: String(resolvedCurrency || 'BRL'),
-                },
               });
               return sendCapiWithRetry(siteKey, crmPayload);
             })
@@ -1844,7 +1858,7 @@ router.post('/purchase', async (req, res) => {
         saleLineLabel: line.saleLineLabel,
         purchaseTimestamp,
         paymentMethodRaw: extractPaymentMethodRaw(payload),
-        contentId: (d.product as any)?.id || (d.product as any)?.offer_code,
+        contentId: line.contentId || (d.product as any)?.id || (d.product as any)?.offer_code,
         offerCode: line.offerCode,
         offerName: line.offerName,
       });
@@ -2003,7 +2017,7 @@ router.post('/hotmart', async (req, res) => {
       saleLineLabel: line.saleLineLabel,
       purchaseTimestamp,
       paymentMethodRaw: extractPaymentMethodRaw(payload),
-      contentId: (d.product as any)?.id || (d.product as any)?.offer_code,
+      contentId: line.contentId || (d.product as any)?.id || (d.product as any)?.offer_code,
       offerCode: line.offerCode,
       offerName: line.offerName,
     });

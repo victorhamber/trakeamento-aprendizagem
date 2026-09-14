@@ -1327,19 +1327,10 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
           const qual = await getCrmQualifyForRule(siteKey, ruleId);
           if (qual?.enabled) {
             ruleCrmSent = true;
-            const includeValueAndCurrency =
-              typeof metaCustomData.value === 'number' &&
-              typeof metaCustomData.currency === 'string'
-                ? {
-                    value: Number(metaCustomData.value),
-                    currency: String(metaCustomData.currency),
-                  }
-                : { value: 0, currency: 'BRL' };
             const crmPayload = buildCrmQualificationCapiPayload({
               originalCapiEvent: capiPayload,
               leadEventSource: resolveCrmLeadEventSource(qual),
               crmEventName: resolveCrmPipelineEventName(qual),
-              includeValueAndCurrency,
             });
             sendCapiWithRetry(siteKey, crmPayload).catch(() => {});
           }
@@ -1357,14 +1348,6 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
               leadEventSource: 'Trajettu',
               crmEventName: CRM_AUTO_FUNNEL_LEAD_STAGE,
               crmEventIdSuffix: '_crm_auto_lead',
-              includeValueAndCurrency:
-                typeof metaCustomData.value === 'number' &&
-                typeof metaCustomData.currency === 'string'
-                  ? {
-                      value: Number(metaCustomData.value),
-                      currency: String(metaCustomData.currency),
-                    }
-                  : { value: 0, currency: 'BRL' },
             });
             sendCapiWithRetry(siteKey, crmAuto).catch(() => {});
           }
@@ -1677,19 +1660,10 @@ router.post('/batch', cors(), ingestLimiter, async (req, res) => {
             const qual = await getCrmQualifyForRule(siteKey, ruleId);
             if (qual?.enabled) {
               ruleCrmSentBatch = true;
-              const includeValueAndCurrency =
-                typeof metaCustomData.value === 'number' &&
-                typeof metaCustomData.currency === 'string'
-                  ? {
-                      value: Number(metaCustomData.value),
-                      currency: String(metaCustomData.currency),
-                    }
-                  : { value: 0, currency: 'BRL' };
               const crmPayload = buildCrmQualificationCapiPayload({
                 originalCapiEvent: batchCapiPayload,
                 leadEventSource: resolveCrmLeadEventSource(qual),
                 crmEventName: resolveCrmPipelineEventName(qual),
-                includeValueAndCurrency,
               });
               sendCapiWithRetry(siteKey, crmPayload).catch(() => {});
             }
@@ -1706,14 +1680,6 @@ router.post('/batch', cors(), ingestLimiter, async (req, res) => {
                 leadEventSource: 'Trajettu',
                 crmEventName: CRM_AUTO_FUNNEL_LEAD_STAGE,
                 crmEventIdSuffix: '_crm_auto_lead',
-                includeValueAndCurrency:
-                  typeof metaCustomData.value === 'number' &&
-                  typeof metaCustomData.currency === 'string'
-                    ? {
-                        value: Number(metaCustomData.value),
-                        currency: String(metaCustomData.currency),
-                      }
-                    : { value: 0, currency: 'BRL' },
               });
               sendCapiWithRetry(siteKey, crmAuto).catch(() => {});
             }

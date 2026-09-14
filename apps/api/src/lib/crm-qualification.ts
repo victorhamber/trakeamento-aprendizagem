@@ -197,7 +197,9 @@ type UserDataLike = NonNullable<CapiEvent['user_data']> & { lead_id?: unknown };
  * @param originalCapiEvent o payload website que está prestes a ser enviado
  * @param leadEventSource custom_data.lead_event_source (nome da ferramenta CRM — doc Meta)
  * @param crmEventName event_name do evento CRM (estágio do funil); padrão Lead
- * @param opts.includeValueAndCurrency força value/currency (usado para qualificação por compra)
+ * @param opts.includeValueAndCurrency só entra se value > 0. Funil CRM (Lead inicial /
+ * Qualificado / Compra realizada) **não** deve mandar dinheiro: a Meta trata value 0 e
+ * o mesmo ticket em todos os eventos como erro de ROAS (“preços iguais”).
  */
 export function buildCrmQualificationCapiPayload(args: {
   originalCapiEvent: CapiEvent;
@@ -243,16 +245,11 @@ export function buildCrmQualificationCapiPayload(args: {
     event_source: 'crm',
     lead_event_source: safeLeadSrc,
   };
-  if (includeValueAndCurrency) {
-    if (Number.isFinite(includeValueAndCurrency.value)) {
-      customData.value = includeValueAndCurrency.value;
-    }
-    if (includeValueAndCurrency.currency) {
-      customData.currency = includeValueAndCurrency.currency;
-    }
-  } else {
-    customData.value = 0;
-    customData.currency = 'BRL';
+  const crmValue = includeValueAndCurrency?.value;
+  const crmCurrency = (includeValueAndCurrency?.currency || '').trim();
+  if (typeof crmValue === 'number' && Number.isFinite(crmValue) && crmValue > 0 && crmCurrency) {
+    customData.value = crmValue;
+    customData.currency = crmCurrency.slice(0, 3).toUpperCase();
   }
 
   const rawSuffix = (crmEventIdSuffix ?? '_crm').trim();
