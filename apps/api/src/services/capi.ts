@@ -5,6 +5,7 @@ import { decryptString } from '../lib/crypto';
 import { summarizeMetaMarketingError } from '../lib/meta-api-error';
 import { preserveFreshMetaFbc, preserveMetaClickIds } from '../lib/meta-attribution';
 import { META_GRAPH_API_VERSION } from '../lib/meta-graph-version';
+import { sanitizeMetaCommerceCustomData } from '../lib/meta-currency';
 import { createLogger } from '../lib/logger';
 
 const log = createLogger('CAPI');
@@ -212,7 +213,12 @@ export class CapiService {
     const cleanedUserData = CapiService.normalizeUserDataForGraphApi(
       CapiService.cleanObject(userDataIn) as Record<string, unknown>
     );
-    const cleanedCustomData = event.custom_data ? CapiService.cleanObject(event.custom_data) : undefined;
+    const cleanedCustomData = event.custom_data
+      ? sanitizeMetaCommerceCustomData(
+          event.event_name,
+          CapiService.cleanObject(event.custom_data) as Record<string, unknown>
+        )
+      : undefined;
 
     const actionSource = event.action_source || 'website';
     let eventSourceUrl = (event.event_source_url || '').trim();

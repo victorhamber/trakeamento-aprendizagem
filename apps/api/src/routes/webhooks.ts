@@ -868,12 +868,7 @@ function buildHotmartCheckoutLines(
         value: v,
         currency: cur || 'BRL',
         contentName: name,
-        contentId: firstHotmartContentId(
-          lineOfferMeta.offerCode,
-          pid,
-          rootOfferMeta.offerCode,
-          rootPid
-        ),
+        contentId: firstHotmartContentId(pid, rootPid),
         saleLineLabel,
         offerCode: lineOfferMeta.offerCode || rootOfferMeta.offerCode,
         offerName: lineOfferMeta.offerName || rootOfferMeta.offerName,
@@ -909,7 +904,7 @@ function buildHotmartCheckoutLines(
       value: rootMoney.value,
       currency: rootMoney.currency,
       contentName,
-      contentId: firstHotmartContentId(rootOfferMeta.offerCode, rootPid),
+      contentId: firstHotmartContentId(rootPid),
       saleLineLabel,
       offerCode: rootOfferMeta.offerCode,
       offerName: rootOfferMeta.offerName,

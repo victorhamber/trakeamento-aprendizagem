@@ -81,9 +81,16 @@ export function ensureMetaRoasMoneyFields(
 }
 
 /**
- * Campos de catálogo/ROAS no Purchase CAPI.
- * Não envia `value: 0` — a Meta marca como preço inválido e “todos iguais”.
+ * Campos de comércio no Purchase CAPI.
+ * Não envia `value: 0`, nem `contents` (catálogo Meta). Offer Hotmart (`f7x5lf5w`)
+ * no content_ids faz o Graph tratar o evento como DPA e descartar o Purchase
+ * enquanto o evento CRM (sem contents) entra normal.
  */
+export function isMetaCatalogContentId(raw: unknown): boolean {
+  if (raw == null) return false;
+  return /^\d+$/.test(String(raw).trim());
+}
+
 export function buildMetaPurchaseCommerceFields(input: {
   value: unknown;
   currency?: unknown;
@@ -96,27 +103,47 @@ export function buildMetaPurchaseCommerceFields(input: {
   const currency =
     positive !== undefined ? normalizeMetaCurrencyCode(input.currency) : undefined;
   const contentId =
-    input.contentId != null && String(input.contentId).trim() !== ''
-      ? String(input.contentId).trim()
-      : undefined;
+    isMetaCatalogContentId(input.contentId) ? String(input.contentId).trim() : undefined;
   const orderId =
     input.orderId != null && String(input.orderId).trim() !== ''
       ? String(input.orderId).trim()
       : undefined;
   const numItems = input.numItems && input.numItems > 0 ? input.numItems : 1;
-  const catalogId = contentId || orderId;
   const out: Record<string, unknown> = {
-    content_type: 'product',
     num_items: numItems,
   };
   if (positive !== undefined && currency) {
     out.value = positive;
     out.currency = currency;
   }
-  if (catalogId) out.content_ids = [catalogId];
+  if (contentId) {
+    out.content_ids = [contentId];
+    out.content_type = 'product';
+  }
   if (orderId) out.order_id = orderId;
-  if (catalogId && positive !== undefined) {
-    out.contents = [{ id: catalogId, quantity: numItems, item_price: positive }];
+  return out;
+}
+
+/** Remove payload de catálogo inválido antes do POST no Graph (inclui retry da outbox). */
+export function sanitizeMetaCommerceCustomData(
+  eventName: string,
+  customData: Record<string, unknown>
+): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...customData };
+  delete out.contents;
+  if (eventName !== 'Purchase' && eventName !== 'InitiateCheckout' && eventName !== 'AddToCart') {
+    return out;
+  }
+  const ids = Array.isArray(out.content_ids) ? out.content_ids : [];
+  const numeric = ids.map((id) => String(id).trim()).filter((id) => isMetaCatalogContentId(id));
+  if (numeric.length > 0) {
+    out.content_ids = numeric;
+    if (!out.content_type) out.content_type = 'product';
+  } else {
+    delete out.content_ids;
+    if (out.content_type === 'product' || out.content_type === 'product_group') {
+      delete out.content_type;
+    }
   }
   return out;
 }

@@ -4,6 +4,7 @@ import {
   ensureMetaRoasMoneyFields,
   normalizeMetaCurrencyCode,
   parseMetaEventValue,
+  sanitizeMetaCommerceCustomData,
 } from './meta-currency';
 
 describe('normalizeMetaCurrencyCode', () => {
@@ -83,48 +84,64 @@ describe('ensureMetaRoasMoneyFields', () => {
 });
 
 describe('buildMetaPurchaseCommerceFields', () => {
-  it('não envia value 0 e inclui contents + order_id', () => {
+  it('não envia value 0, contents nem offer code como content_ids', () => {
     expect(buildMetaPurchaseCommerceFields({ value: 0, currency: 'BRL', orderId: 'HP123' })).toEqual({
-      content_type: 'product',
       num_items: 1,
-      content_ids: ['HP123'],
       order_id: 'HP123',
     });
     expect(
       buildMetaPurchaseCommerceFields({
-        value: 497,
+        value: 33.15,
         currency: 'brl',
-        contentId: 'prod_1',
-        orderId: 'HP123',
+        contentId: '5986726',
+        orderId: 'HP4243995799',
       })
     ).toEqual({
-      content_type: 'product',
       num_items: 1,
-      value: 497,
+      value: 33.15,
       currency: 'BRL',
-      content_ids: ['prod_1'],
-      order_id: 'HP123',
-      contents: [{ id: 'prod_1', quantity: 1, item_price: 497 }],
+      content_ids: ['5986726'],
+      content_type: 'product',
+      order_id: 'HP4243995799',
     });
     expect(
       buildMetaPurchaseCommerceFields({
-        value: 5.97,
+        value: 33.15,
         currency: 'BRL',
-        contentId: 'offer_bump',
-        orderId: 'HP-bump',
-      }).content_ids
-    ).toEqual(['offer_bump']);
-    expect(
-      buildMetaPurchaseCommerceFields({
-        value: 24.14,
-        currency: 'BRL',
-        contentId: 'offer_entry',
-        orderId: 'HP-entry',
+        contentId: 'f7x5lf5w',
+        orderId: 'HP4243995799',
       })
-    ).toMatchObject({
-      value: 24.14,
-      content_ids: ['offer_entry'],
-      contents: [{ id: 'offer_entry', quantity: 1, item_price: 24.14 }],
+    ).toEqual({
+      num_items: 1,
+      value: 33.15,
+      currency: 'BRL',
+      order_id: 'HP4243995799',
     });
+  });
+});
+
+describe('sanitizeMetaCommerceCustomData', () => {
+  it('remove contents e content_ids de oferta Hotmart no Purchase', () => {
+    const out = sanitizeMetaCommerceCustomData('Purchase', {
+      value: 33.15,
+      currency: 'BRL',
+      content_ids: ['f7x5lf5w'],
+      content_type: 'product',
+      contents: [{ id: 'f7x5lf5w', quantity: 1, item_price: 33.15 }],
+      order_id: 'HP4243995799',
+    });
+    expect(out.contents).toBeUndefined();
+    expect(out.content_ids).toBeUndefined();
+    expect(out.content_type).toBeUndefined();
+    expect(out.value).toBe(33.15);
+    expect(out.order_id).toBe('HP4243995799');
+  });
+
+  it('mantém product id numérico', () => {
+    const out = sanitizeMetaCommerceCustomData('Purchase', {
+      content_ids: ['5986726'],
+      content_type: 'product',
+    });
+    expect(out.content_ids).toEqual(['5986726']);
   });
 });
