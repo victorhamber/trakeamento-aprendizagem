@@ -688,19 +688,40 @@ function resolveHotmartPurchaseTimestamp(
   return undefined;
 }
 
-/** Valor/moeda “raiz” do checkout Hotmart (comissão produtor/afiliado quando existir). */
-function resolveHotmartMoneyFromCommissionsOrPurchase(
+/** Valor cobrado do comprador (purchase.price) — moeda real da cobrança (EUR/BRL/…). */
+function resolveHotmartCustomerPaidMoney(
   purchase: Record<string, unknown>,
-  d: Record<string, unknown>,
-  commissions: unknown[]
+  d: Record<string, unknown>
 ): { value: number; currency: string } {
   const pr = recordOf(purchase);
   const fp = recordOf(pr.full_price as unknown);
   const pp = recordOf(pr.price as unknown);
-  // Hotmart:
-  // - `purchase.price.value` é o valor bruto da oferta (pode ser o mesmo em bump e principal).
-  // - `commissions` PRODUCER é o líquido desta transação (24,14 vs 5,97 vs 470).
-  // Painel, CAPI e ROAS usam o líquido da linha — senão a Meta vê um preço só.
+  const rawValue: unknown =
+    pp.value ?? fp.value ?? pr.amount ?? pr.total ?? (d as { amount?: unknown }).amount ?? 0;
+  const currency =
+    coerceWebhookStr(pp.currency_value) ||
+    coerceWebhookStr(fp.currency_value) ||
+    coerceWebhookStr((d as { currency?: unknown }).currency) ||
+    'BRL';
+  return { value: parseFloat(String(rawValue)) || 0, currency };
+}
+
+/**
+ * Dinheiro Hotmart:
+ * - `value`/`currency` = líquido PRODUCER (painel Trajettu / purchases.amount)
+ * - `capiValue`/`capiCurrency` = valor pago pelo cliente (Purchase CAPI / ROAS Meta)
+ *   Ex.: cobrou 22 EUR → CAPI 22 EUR; comissão 21.2 USD fica só no painel.
+ */
+function resolveHotmartMoneyFromCommissionsOrPurchase(
+  purchase: Record<string, unknown>,
+  d: Record<string, unknown>,
+  commissions: unknown[]
+): { value: number; currency: string; capiValue: number; capiCurrency: string } {
+  const pr = recordOf(purchase);
+  const fp = recordOf(pr.full_price as unknown);
+  const pp = recordOf(pr.price as unknown);
+  const paid = resolveHotmartCustomerPaidMoney(purchase, d);
+
   let rawValue: unknown =
     pp.value ?? fp.value ?? pr.amount ?? pr.total ?? (d as { amount?: unknown }).amount ?? 0;
   let currency =
@@ -709,7 +730,6 @@ function resolveHotmartMoneyFromCommissionsOrPurchase(
     coerceWebhookStr((d as { currency?: unknown }).currency) ||
     'BRL';
 
-  // Usa comissão do PRODUTOR como valor desta venda (soma caso venha quebrada em múltiplas linhas).
   if (Array.isArray(commissions) && commissions.length > 0) {
     let sum = 0;
     let any = false;
@@ -728,7 +748,13 @@ function resolveHotmartMoneyFromCommissionsOrPurchase(
     }
   }
 
-  return { value: parseFloat(String(rawValue)) || 0, currency };
+  const net = parseFloat(String(rawValue)) || 0;
+  return {
+    value: net,
+    currency,
+    capiValue: paid.value > 0 ? paid.value : net,
+    capiCurrency: paid.value > 0 ? paid.currency : currency,
+  };
 }
 
 /** Código/nome da oferta Hotmart (ex.: purchase.offer.code) para conversões personalizadas na Meta. */
@@ -767,8 +793,12 @@ function extractOfferFromWebhookPayload(payload: unknown): { offerCode?: string;
 
 type HotmartCheckoutLine = {
   orderId: string;
+  /** Líquido produtor (painel / DB). */
   value: number;
   currency: string;
+  /** Valor pago pelo cliente para o Purchase CAPI. */
+  capiValue: number;
+  capiCurrency: string;
   contentName: string;
   /** Produto/oferta desta linha — nunca o id raiz em bump/upsell. */
   contentId?: string;
@@ -829,10 +859,12 @@ function buildHotmartCheckoutLines(
       const prod = recordOf(it.product as unknown);
       const priceB = recordOf((it.price || it.full_price) as unknown);
       let v = parseFloat(String(priceB.value ?? it.value ?? 0)) || 0;
+      let capiV = v;
       let cur =
         coerceWebhookStr(priceB.currency_value) ||
         coerceWebhookStr(it.currency_value as string) ||
         rootMoney.currency;
+      let capiCur = cur;
       const pid = prod.id ?? it.product_id;
       let oid =
         coerceWebhookStr(it.transaction) ||
@@ -842,10 +874,14 @@ function buildHotmartCheckoutLines(
       }
       if (v <= 0 && itemsRaw.length === 1) {
         v = rootMoney.value;
+        capiV = rootMoney.capiValue;
         cur = rootMoney.currency;
+        capiCur = rootMoney.capiCurrency;
       } else if (v <= 0 && rootMoney.value > 0) {
         v = rootMoney.value / itemsRaw.length;
+        capiV = rootMoney.capiValue / itemsRaw.length;
         cur = rootMoney.currency;
+        capiCur = rootMoney.capiCurrency;
       }
       const name =
         coerceWebhookStr(prod.name) ||
@@ -867,6 +903,8 @@ function buildHotmartCheckoutLines(
         orderId: oid.slice(0, 100),
         value: v,
         currency: cur || 'BRL',
+        capiValue: capiV > 0 ? capiV : v,
+        capiCurrency: (capiCur || cur || 'BRL') as string,
         contentName: name,
         contentId: firstHotmartContentId(pid, rootPid),
         saleLineLabel,
@@ -903,6 +941,8 @@ function buildHotmartCheckoutLines(
       orderId,
       value: rootMoney.value,
       currency: rootMoney.currency,
+      capiValue: rootMoney.capiValue,
+      capiCurrency: rootMoney.capiCurrency,
       contentName,
       contentId: firstHotmartContentId(rootPid),
       saleLineLabel,
@@ -952,6 +992,9 @@ async function processPurchaseWebhook({
   paymentMethodRaw,
   /** Ex.: "Order bump" — prefixa Meta + notificações */
   saleLineLabel,
+  /** Valor pago (bruto) + moeda da cobrança para o Purchase CAPI. Se omitido, usa value/currency. */
+  capiValue,
+  capiCurrency,
   /** ID do produto na plataforma (Hotmart product_id, Kiwify product_id, etc.) — enriquece content_ids no CAPI. */
   contentId,
   /** Código da oferta (Hotmart purchase.offer.code) — usado em conversões personalizadas Meta. */
@@ -961,6 +1004,9 @@ async function processPurchaseWebhook({
 }: any) {
   const { finalStatus, sendToCapi } = normalizeStatus(status);
   const resolvedCurrency = normalizeCurrencyCode(currency) || extractCurrencyFromPayload(payload as Record<string, unknown>) || 'BRL';
+  const resolvedCapiCurrency = normalizeCurrencyCode(capiCurrency) || resolvedCurrency;
+  const resolvedCapiValue =
+    capiValue != null && Number.isFinite(Number(capiValue)) ? Number(capiValue) : value;
   
   let platformDate = purchaseTimestamp ? new Date(purchaseTimestamp) : null;
   const nowMs = Date.now();
@@ -1307,8 +1353,8 @@ async function processPurchaseWebhook({
     },
     custom_data: {
       ...buildMetaPurchaseCommerceFields({
-        value,
-        currency: resolvedCurrency,
+        value: resolvedCapiValue,
+        currency: resolvedCapiCurrency,
         contentId,
         orderId,
       }),
@@ -1846,6 +1892,8 @@ router.post('/purchase', async (req, res) => {
         clientUa: hmTrack.clientUa || undefined,
         value: line.value,
         currency: line.currency,
+        capiValue: line.capiValue,
+        capiCurrency: line.capiCurrency,
         status,
         orderId: line.orderId,
         platform: 'hotmart',
@@ -2005,6 +2053,8 @@ router.post('/hotmart', async (req, res) => {
       clientUa: hmTrack.clientUa || undefined,
       value: line.value,
       currency: line.currency,
+      capiValue: line.capiValue,
+      capiCurrency: line.capiCurrency,
       status,
       orderId: line.orderId,
       platform: 'hotmart',

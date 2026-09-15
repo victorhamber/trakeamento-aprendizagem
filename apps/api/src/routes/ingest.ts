@@ -41,9 +41,8 @@ function rateLimitKey(req: Request): string {
   const siteKeyRaw = (req.query['key'] as string | undefined) || (req.headers['x-site-key'] as string | undefined);
   const siteKey = typeof siteKeyRaw === 'string' ? siteKeyRaw.trim() : '';
 
-  // Prefer Cloudflare real client IP. With CF + EasyPanel, req.ip can collapse to a proxy IP depending on hop count.
-  const cfIp = (req.headers['cf-connecting-ip'] as string | undefined)?.trim();
-  const ipRaw = cfIp || getClientIp(req) || req.ip || 'unknown';
+  // Prefer Cloudflare real client IP (IPv6 first via getClientIp). With CF + EasyPanel, req.ip can collapse to a proxy IP.
+  const ipRaw = getClientIp(req) || req.ip || 'unknown';
   // Normalize IPv6 and prevent bypass using express-rate-limit helper.
   const ip = ipKeyGenerator({ ip: ipRaw } as any);
 
