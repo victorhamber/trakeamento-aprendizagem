@@ -3,6 +3,8 @@ import { api } from '../lib/api';
 import { Layout } from '../components/Layout';
 import { useAuth } from '../state/auth';
 
+type AccountSite = { id: number; name: string; domain: string | null };
+
 type AccountRow = {
   id: number;
   name: string | null;
@@ -14,6 +16,8 @@ type AccountRow = {
   plan_name: string | null;
   base_max_sites: number | null;
   sites_count: number;
+  sites?: AccountSite[] | null;
+  purchases_count?: number;
   total_events: number;
   last_activity: string | null;
 };
@@ -84,6 +88,21 @@ const SortArrow = ({ active, dir }: { active: boolean; dir: SortDir }) => (
 
 const formatNumber = (n: number) => n.toLocaleString('pt-BR');
 
+const accountSites = (acc: AccountRow): AccountSite[] => {
+  const raw = acc.sites as unknown;
+  const list =
+    typeof raw === 'string'
+      ? (() => {
+          try {
+            return JSON.parse(raw) as AccountSite[];
+          } catch {
+            return [];
+          }
+        })()
+      : raw;
+  return Array.isArray(list) ? list.filter((s) => s && s.name) : [];
+};
+
 const timeAgo = (dateStr: string | null): string => {
   if (!dateStr) return 'Sem atividade';
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -127,6 +146,8 @@ export const AccountsPage = () => {
   const [newPlanId, setNewPlanId] = useState<string>('0');
   const [createdTempPassword, setCreatedTempPassword] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [detailAcc, setDetailAcc] = useState<AccountRow | null>(null);
+  const [downloadingId, setDownloadingId] = useState<number | null>(null);
 
   // Toast
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -169,7 +190,10 @@ export const AccountsPage = () => {
       result = result.filter(a =>
         (a.email || '').toLowerCase().includes(q) ||
         (a.name || '').toLowerCase().includes(q) ||
-        String(a.id).includes(q)
+        String(a.id).includes(q) ||
+        accountSites(a).some((s) =>
+          (s.name || '').toLowerCase().includes(q) || (s.domain || '').toLowerCase().includes(q)
+        )
       );
     }
 
@@ -240,6 +264,43 @@ export const AccountsPage = () => {
       await load();
     } catch {
       showToast('Erro ao atualizar plano', 'error');
+    }
+  };
+
+  const downloadPurchases = async (acc: AccountRow) => {
+    setDownloadingId(acc.id);
+    try {
+      const res = await api.get(`/admin/accounts/${acc.id}/purchases.csv`, { responseType: 'blob' });
+      const blob = res.data as Blob;
+      if (blob.type && blob.type.includes('application/json')) {
+        const text = await blob.text();
+        let msg = 'Erro ao exportar compras';
+        try {
+          const parsed = JSON.parse(text) as { error?: string };
+          if (parsed?.error) msg = parsed.error;
+        } catch {
+          /* ignore */
+        }
+        showToast(msg, 'error');
+        return;
+      }
+      const cd = String(res.headers['content-disposition'] || '');
+      const m = cd.match(/filename="([^"]+)"/);
+      const filename = m?.[1] || `compras-conta-${acc.id}.csv`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      const n = Number(acc.purchases_count || 0);
+      showToast(n > 0 ? `Planilha baixada (${formatNumber(n)} compra${n === 1 ? '' : 's'})` : 'Planilha baixada (sem compras)');
+    } catch {
+      showToast('Erro ao baixar compras', 'error');
+    } finally {
+      setDownloadingId(null);
     }
   };
 
@@ -350,7 +411,7 @@ export const AccountsPage = () => {
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Pesquisar por email, nome ou ID..."
+            placeholder="Pesquisar por email, nome, site ou ID..."
             className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-white/10 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 transition-all"
           />
           {search && (
@@ -436,9 +497,18 @@ export const AccountsPage = () => {
                 return (
                   <tr key={acc.id} className="hover:bg-zinc-50/50 dark:hover:bg-white/[0.02] transition-colors">
                     <td className="px-5 py-4">
-                      <div className="font-semibold text-zinc-900 dark:text-white">{acc.name || acc.email || `Conta #${acc.id}`}</div>
-                      {acc.name && <div className="text-xs text-zinc-500 truncate max-w-[200px]">{acc.email}</div>}
-                      <div className="text-[10px] text-zinc-400 mt-0.5">Desde {new Date(acc.created_at).toLocaleDateString('pt-BR')}</div>
+                      <button
+                        type="button"
+                        onClick={() => setDetailAcc(acc)}
+                        className="text-left group"
+                        title="Ver sites e baixar compras"
+                      >
+                        <div className="font-semibold text-zinc-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                          {acc.name || acc.email || `Conta #${acc.id}`}
+                        </div>
+                        {acc.name && <div className="text-xs text-zinc-500 truncate max-w-[200px]">{acc.email}</div>}
+                        <div className="text-[10px] text-zinc-400 mt-0.5">Desde {new Date(acc.created_at).toLocaleDateString('pt-BR')}</div>
+                      </button>
                     </td>
                     <td className="px-5 py-4">
                       <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium ${
@@ -460,6 +530,27 @@ export const AccountsPage = () => {
                           </span>
                         )}
                       </div>
+                      {accountSites(acc).length > 0 ? (
+                        <div className="mt-1 space-y-0.5 max-w-[220px]">
+                          {accountSites(acc).slice(0, 3).map((s) => (
+                            <div key={s.id} className="text-[11px] text-zinc-600 dark:text-zinc-400 truncate" title={s.domain || s.name}>
+                              {s.name}
+                              {s.domain ? <span className="text-zinc-400"> · {s.domain}</span> : null}
+                            </div>
+                          ))}
+                          {accountSites(acc).length > 3 && (
+                            <button
+                              type="button"
+                              onClick={() => setDetailAcc(acc)}
+                              className="text-[10px] font-medium text-indigo-600 dark:text-indigo-400"
+                            >
+                              +{accountSites(acc).length - 3} site(s)
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="mt-0.5 text-[11px] text-zinc-400">Nenhum site</div>
+                      )}
                     </td>
                     <td className="px-5 py-4 tabular-nums">
                       <span className="text-zinc-700 dark:text-zinc-300">{formatNumber(Number(acc.total_events))}</span>
@@ -483,6 +574,14 @@ export const AccountsPage = () => {
                     </td>
                     <td className="px-5 py-4 text-right">
                       <div className="flex flex-col items-end gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => void downloadPurchases(acc)}
+                          disabled={downloadingId === acc.id}
+                          className="text-[11px] font-bold uppercase tracking-wider text-emerald-700 hover:text-emerald-600 dark:text-emerald-400 dark:hover:text-emerald-300 disabled:opacity-50"
+                        >
+                          {downloadingId === acc.id ? 'Baixando...' : 'Baixar compras'}
+                        </button>
                         <button
                           onClick={() => openBonusModal(acc)}
                           className="text-[11px] font-bold uppercase tracking-wider text-amber-600 hover:text-amber-500 dark:text-amber-400 dark:hover:text-amber-300"
@@ -693,6 +792,71 @@ export const AccountsPage = () => {
               >
                 {creating ? 'Criando...' : 'Criar usuário'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {detailAcc && (
+        <div className="fixed inset-0 z-50 flex justify-end bg-black/40 backdrop-blur-sm" onClick={() => setDetailAcc(null)}>
+          <div
+            className="h-full w-full max-w-md bg-white dark:bg-zinc-900 border-l border-zinc-200 dark:border-white/10 shadow-2xl overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-6">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-zinc-400 font-semibold">Cliente</div>
+                  <h3 className="text-lg font-bold mt-0.5">{detailAcc.name || detailAcc.email || `Conta #${detailAcc.id}`}</h3>
+                  {detailAcc.name && <div className="text-sm text-zinc-500">{detailAcc.email}</div>}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDetailAcc(null)}
+                  className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
+                  title="Fechar"
+                >
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" d="M6 18 18 6M6 6l12 12" /></svg>
+                </button>
+              </div>
+
+              <div className="mt-4 flex flex-wrap gap-2 text-xs">
+                <span className="px-2.5 py-1 rounded-lg bg-zinc-100 dark:bg-white/5 text-zinc-600 dark:text-zinc-300">
+                  {detailAcc.plan_name || 'Sem plano'}
+                </span>
+                <span className="px-2.5 py-1 rounded-lg bg-zinc-100 dark:bg-white/5 text-zinc-600 dark:text-zinc-300">
+                  {formatNumber(Number(detailAcc.purchases_count || 0))} compra(s)
+                </span>
+              </div>
+
+              <div className="mt-6">
+                <div className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">Sites</div>
+                {accountSites(detailAcc).length === 0 ? (
+                  <p className="text-sm text-zinc-500">Nenhum site nesta conta.</p>
+                ) : (
+                  <ul className="space-y-2">
+                    {accountSites(detailAcc).map((s) => (
+                      <li key={s.id} className="rounded-xl border border-zinc-200 dark:border-white/10 px-3 py-2.5">
+                        <div className="text-sm font-medium text-zinc-900 dark:text-white">{s.name}</div>
+                        {s.domain && <div className="text-xs text-zinc-500 mt-0.5">{s.domain}</div>}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => void downloadPurchases(detailAcc)}
+                disabled={downloadingId === detailAcc.id}
+                className="mt-8 w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white font-semibold text-sm py-2.5 rounded-xl transition-colors"
+              >
+                {downloadingId === detailAcc.id ? 'Gerando planilha...' : 'Baixar histórico de compras (CSV)'}
+              </button>
+              <p className="mt-2 text-[11px] text-zinc-500 leading-relaxed">
+                Nome, e-mail, telefone, valor, UTMs, página de origem (quando houver) e dados do webhook.
+                Serve para lookalike na Meta e para estudar o que está convertendo. Abre no Excel.
+              </p>
             </div>
           </div>
         </div>

@@ -6,6 +6,7 @@ import {
   DEFAULT_RESET_SUBJECT, DEFAULT_RESET_HTML,
 } from '../services/email';
 import bcrypt from 'bcryptjs';
+import { csvFilenameForAccount, purchasesToCsv } from '../lib/admin-purchase-export';
 
 const router = Router();
 
@@ -99,6 +100,11 @@ router.get('/accounts', async (req, res) => {
         u.email,
         p.name AS plan_name, p.max_sites AS base_max_sites,
         (SELECT COUNT(*) FROM sites s WHERE s.account_id = a.id) AS sites_count,
+        (SELECT COALESCE(json_agg(json_build_object('id', s.id, 'name', s.name, 'domain', s.domain) ORDER BY s.name), '[]'::json)
+           FROM sites s WHERE s.account_id = a.id) AS sites,
+        (SELECT COUNT(*)::int FROM purchases p
+           INNER JOIN sites s4 ON s4.site_key = p.site_key
+           WHERE s4.account_id = a.id) AS purchases_count,
         (SELECT COALESCE(SUM(sub.cnt), 0) FROM (
           SELECT COUNT(*) AS cnt FROM web_events we
           INNER JOIN sites s2 ON s2.site_key = we.site_key
@@ -123,6 +129,89 @@ router.get('/accounts', async (req, res) => {
   } catch (error) {
     console.error('List Accounts Error:', error);
     res.status(500).json({ error: 'Failed to list accounts' });
+  }
+});
+
+// GET /admin/accounts/:id/purchases.csv — planilha de compras (lookalike + webhook + landing)
+router.get('/accounts/:id/purchases.csv', async (req, res) => {
+  const accountId = Number(req.params.id);
+  if (!accountId || Number.isNaN(accountId)) {
+    return res.status(400).json({ error: 'Account id inválido' });
+  }
+
+  try {
+    const acc = await pool.query(
+      `SELECT a.id, a.name, u.email
+       FROM accounts a
+       LEFT JOIN LATERAL (
+         SELECT email FROM users WHERE account_id = a.id ORDER BY id ASC LIMIT 1
+       ) u ON true
+       WHERE a.id = $1`,
+      [accountId]
+    );
+    if (!acc.rowCount) return res.status(404).json({ error: 'Account not found' });
+
+    const { rows } = await pool.query(
+      `SELECT
+         s.name AS site_name,
+         s.domain AS site_domain,
+         p.order_id, p.platform, p.amount, p.currency, p.status,
+         p.customer_email, p.customer_phone, p.customer_name,
+         p.utm_source, p.utm_medium, p.utm_campaign,
+         p.fbp, p.fbc, p.external_id,
+         p.platform_date, p.created_at,
+         p.custom_data, p.user_data, p.raw_payload
+       FROM purchases p
+       INNER JOIN sites s ON s.site_key = p.site_key
+       WHERE s.account_id = $1
+       ORDER BY COALESCE(p.platform_date, p.created_at) DESC NULLS LAST
+       LIMIT 20000`,
+      [accountId]
+    );
+
+    const csv = purchasesToCsv(rows);
+    const filename = csvFilenameForAccount(acc.rows[0]?.name, acc.rows[0]?.email);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Cache-Control', 'no-store');
+    return res.status(200).send(csv);
+  } catch (error) {
+    console.error('Export purchases CSV error:', error);
+    return res.status(500).json({ error: 'Failed to export purchases' });
+  }
+});
+
+// GET /admin/accounts/:id — detalhe (sites + volume de compras)
+router.get('/accounts/:id', async (req, res) => {
+  const accountId = Number(req.params.id);
+  if (!accountId || Number.isNaN(accountId)) {
+    return res.status(400).json({ error: 'Account id inválido' });
+  }
+  try {
+    const { rows } = await pool.query(
+      `SELECT
+         a.id, a.name, a.is_active, a.expires_at, a.bonus_site_limit, a.created_at,
+         u.email,
+         p.name AS plan_name, p.max_sites AS base_max_sites,
+         (SELECT COUNT(*) FROM sites s WHERE s.account_id = a.id) AS sites_count,
+         (SELECT COALESCE(json_agg(json_build_object('id', s.id, 'name', s.name, 'domain', s.domain) ORDER BY s.name), '[]'::json)
+            FROM sites s WHERE s.account_id = a.id) AS sites,
+         (SELECT COUNT(*)::int FROM purchases pu
+            INNER JOIN sites s4 ON s4.site_key = pu.site_key
+            WHERE s4.account_id = a.id) AS purchases_count
+       FROM accounts a
+       LEFT JOIN LATERAL (
+         SELECT email FROM users WHERE account_id = a.id ORDER BY id ASC LIMIT 1
+       ) u ON true
+       LEFT JOIN plans p ON a.active_plan_id = p.id
+       WHERE a.id = $1`,
+      [accountId]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Account not found' });
+    return res.json(rows[0]);
+  } catch (error) {
+    console.error('Get Account Error:', error);
+    return res.status(500).json({ error: 'Failed to get account' });
   }
 });
 
