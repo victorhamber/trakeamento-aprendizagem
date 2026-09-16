@@ -418,23 +418,29 @@ export function RedirectLinksTab(props: {
         <table className="w-full table-fixed text-left text-sm text-zinc-600 dark:text-zinc-400">
           <thead className="bg-zinc-50 dark:bg-zinc-900/60 text-xs uppercase font-medium text-zinc-600 dark:text-zinc-500">
             <tr>
-              <th className="px-4 py-3 w-[220px]">Slug</th>
+              <th className="px-4 py-3 w-[180px]">Nome</th>
+              <th className="px-4 py-3 w-[160px]">Slug</th>
               <th className="px-4 py-3">Destino</th>
-              <th className="px-4 py-3 w-[160px]">Evento</th>
-              <th className="px-4 py-3 w-[110px]">Status</th>
+              <th className="px-4 py-3 w-[140px]">Evento</th>
+              <th className="px-4 py-3 w-[100px]">Status</th>
               <th className="px-4 py-3 text-right w-[160px]">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-800/60">
             {links.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-xs text-zinc-500">
+                <td colSpan={6} className="px-4 py-8 text-center text-xs text-zinc-500">
                   Nenhum link criado ainda.
                 </td>
               </tr>
             ) : (
               links.map((row) => (
                 <tr key={row.id} className="hover:bg-zinc-50 dark:bg-zinc-900/20">
+                  <td className="px-4 py-3 text-zinc-800 dark:text-zinc-200">
+                    <div className="truncate font-medium" title={row.name || ''}>
+                      {row.name?.trim() ? row.name : '—'}
+                    </div>
+                  </td>
                   <td className="px-4 py-3 font-mono text-zinc-700 dark:text-zinc-300">
                     <div className="truncate" title={`https://${row.host}/${row.slug}`}>
                       {row.slug}

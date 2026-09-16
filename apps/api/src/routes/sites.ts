@@ -173,6 +173,19 @@ function sanitizeButtonMatchParameters(raw: Record<string, unknown>): Record<str
 const CRM_LABEL_MAX = 120;
 const CRM_TOOL_MAX = 120;
 const CRM_EVENT_NAME_MAX = 100;
+const DISPLAY_NAME_MAX = 120;
+
+function sanitizeDisplayNameParameter(raw: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...raw };
+  const n = typeof out._display_name === 'string' ? out._display_name.trim() : '';
+  if (n) {
+    out._display_name = n.length > DISPLAY_NAME_MAX ? n.slice(0, DISPLAY_NAME_MAX) : n;
+  } else {
+    delete out._display_name;
+  }
+  return out;
+}
+
 function sanitizeCrmQualifyParameters(raw: Record<string, unknown>): Record<string, unknown> {
   const out = { ...raw };
   const qualifyRaw = out._crm_qualify;
@@ -231,8 +244,10 @@ function normalizeEventRuleParameters(
 ): { ok: true; parameters: Record<string, unknown> } | { ok: false; error: string } {
   const base =
     parameters && typeof parameters === 'object' && !Array.isArray(parameters)
-      ? sanitizeCrmQualifyParameters(
-          sanitizeButtonMatchParameters({ ...(parameters as Record<string, unknown>) })
+      ? sanitizeDisplayNameParameter(
+          sanitizeCrmQualifyParameters(
+            sanitizeButtonMatchParameters({ ...(parameters as Record<string, unknown>) })
+          )
         )
       : {};
 

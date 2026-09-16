@@ -367,6 +367,7 @@ export const SitePage = () => {
   /** `home` = só pathname raiz (/) — evita usar "URL contém /" que casa com todas as páginas. */
   const [urlRuleUrlMatchKind, setUrlRuleUrlMatchKind] = useState<'contains' | 'home'>('contains');
   const [urlRuleEventType, setUrlRuleEventType] = useState('Purchase');
+  const [urlRuleDisplayName, setUrlRuleDisplayName] = useState('');
   const [urlRuleCustomName, setUrlRuleCustomName] = useState('');
   const [urlRuleEventValue, setUrlRuleEventValue] = useState('');
   const [urlRuleEventCurrency, setUrlRuleEventCurrency] = useState('BRL');
@@ -384,6 +385,7 @@ export const SitePage = () => {
   const [buttonRuleClassContains, setButtonRuleClassContains] = useState('');
   const [buttonRuleCss, setButtonRuleCss] = useState('');
   const [buttonRuleEventType, setButtonRuleEventType] = useState('Purchase');
+  const [buttonRuleDisplayName, setButtonRuleDisplayName] = useState('');
   const [buttonRuleCustomName, setButtonRuleCustomName] = useState('');
   const [buttonRuleEventValue, setButtonRuleEventValue] = useState('');
   const [buttonRuleEventCurrency, setButtonRuleEventCurrency] = useState('BRL');
@@ -424,6 +426,34 @@ export const SitePage = () => {
   };
 
   const currencyOptions = ['BRL', 'USD', 'MXN', 'EUR', 'GBP', 'COP', 'ARS', 'CLP', 'PEN'] as const;
+
+  const ruleDisplayName = (rule: {
+    event_name?: string;
+    event_type?: string;
+    parameters?: Record<string, unknown> | null;
+  }) => {
+    const p = rule.parameters && typeof rule.parameters === 'object' ? rule.parameters : {};
+    const labeled = typeof p._display_name === 'string' ? p._display_name.trim() : '';
+    if (labeled) return labeled;
+    if (rule.event_type === 'custom' && typeof rule.event_name === 'string' && rule.event_name.trim()) {
+      return rule.event_name.trim();
+    }
+    return '';
+  };
+
+  const applyCrmQualifyToPayload = (
+    parameters: Record<string, unknown>,
+    enabled: boolean,
+    crmEventName: string,
+    crmTool: string,
+    crmLabel: string
+  ) => {
+    if (!enabled) return;
+    parameters._crm_qualify = true;
+    if (crmEventName.trim()) parameters._crm_event_name = crmEventName.trim();
+    if (crmTool.trim()) parameters._crm_tool = crmTool.trim();
+    if (crmLabel.trim()) parameters._crm_label = crmLabel.trim();
+  };
 
   // New Form Builder State
   const [savedForms, setSavedForms] = useState<any[]>([]);
@@ -1052,12 +1082,17 @@ export const SitePage = () => {
         payload.parameters.currency = String(urlRuleEventCurrency).trim().toUpperCase();
       }
 
-      if (urlRuleCrmQualify) {
-        payload.parameters._crm_qualify = true;
-        if (urlRuleCrmLabel.trim()) {
-          payload.parameters._crm_label = urlRuleCrmLabel.trim();
-        }
+      if (urlRuleDisplayName.trim()) {
+        payload.parameters._display_name = urlRuleDisplayName.trim();
       }
+
+      applyCrmQualifyToPayload(
+        payload.parameters,
+        urlRuleCrmQualify,
+        urlRuleCrmEventName,
+        urlRuleCrmTool,
+        urlRuleCrmLabel
+      );
 
       if (selectedRuleId) {
         await api.put(`/sites/${id}/event-rules/${selectedRuleId}`, payload);
@@ -1069,6 +1104,7 @@ export const SitePage = () => {
 
       setUrlRuleValue('');
       setUrlRuleUrlMatchKind('contains');
+      setUrlRuleDisplayName('');
       setUrlRuleCustomName('');
       setUrlRuleEventValue('');
       setUrlRuleEventCurrency('BRL');
@@ -1150,12 +1186,17 @@ export const SitePage = () => {
         payload.parameters.currency = String(buttonRuleEventCurrency).trim().toUpperCase();
       }
 
-      if (buttonRuleCrmQualify) {
-        payload.parameters._crm_qualify = true;
-        if (buttonRuleCrmLabel.trim()) {
-          payload.parameters._crm_label = buttonRuleCrmLabel.trim();
-        }
+      if (buttonRuleDisplayName.trim()) {
+        payload.parameters._display_name = buttonRuleDisplayName.trim();
       }
+
+      applyCrmQualifyToPayload(
+        payload.parameters,
+        buttonRuleCrmQualify,
+        buttonRuleCrmEventName,
+        buttonRuleCrmTool,
+        buttonRuleCrmLabel
+      );
 
       if (selectedRuleId) {
         await api.put(`/sites/${id}/event-rules/${selectedRuleId}`, payload);
@@ -1166,11 +1207,14 @@ export const SitePage = () => {
       }
 
       // Mantém URL + critérios para permitir testar imediatamente após salvar.
+      setButtonRuleDisplayName('');
       setButtonRuleCustomName('');
       setButtonRuleEventValue('');
       setButtonRuleEventCurrency('BRL');
       setButtonRuleCrmQualify(false);
       setButtonRuleCrmLabel('');
+      setButtonRuleCrmTool('');
+      setButtonRuleCrmEventName('');
       setSelectedRuleId(null);
       await loadEventRules();
     } catch (err: unknown) {
@@ -1185,6 +1229,8 @@ export const SitePage = () => {
 
   const handleEditRule = (rule: any) => {
     setSelectedRuleId(rule.id);
+    const displayName =
+      typeof rule.parameters?._display_name === 'string' ? rule.parameters._display_name : '';
     const crmEnabled = rule.parameters?._crm_qualify === true;
     const crmLabel = typeof rule.parameters?._crm_label === 'string' ? rule.parameters._crm_label : '';
     const crmTool = typeof rule.parameters?._crm_tool === 'string' ? rule.parameters._crm_tool : '';
@@ -1194,6 +1240,7 @@ export const SitePage = () => {
       setUrlRuleUrlMatchKind('home');
       setUrlRuleValue('');
       const isCustom = rule.event_type === 'custom';
+      setUrlRuleDisplayName(displayName);
       setUrlRuleEventType(isCustom ? 'Custom' : rule.event_name);
       setUrlRuleCustomName(isCustom ? rule.event_name : '');
       setUrlRuleEventValue(rule.parameters?.value?.toString() || '');
@@ -1207,6 +1254,7 @@ export const SitePage = () => {
       setUrlRuleUrlMatchKind('contains');
       setUrlRuleValue(rule.match_value || '');
       const isCustom = rule.event_type === 'custom';
+      setUrlRuleDisplayName(displayName);
       setUrlRuleEventType(isCustom ? 'Custom' : rule.event_name);
       setUrlRuleCustomName(isCustom ? rule.event_name : '');
       setUrlRuleEventValue(rule.parameters?.value?.toString() || '');
@@ -1223,6 +1271,7 @@ export const SitePage = () => {
       setButtonRuleClassContains(rule.parameters?.match_class_contains || '');
       setButtonRuleCss(rule.parameters?.match_css || '');
       const isCustom = rule.event_type === 'custom';
+      setButtonRuleDisplayName(displayName);
       setButtonRuleEventType(isCustom ? 'Custom' : rule.event_name);
       setButtonRuleCustomName(isCustom ? rule.event_name : '');
       setButtonRuleEventValue(rule.parameters?.value?.toString() || '');
@@ -1240,6 +1289,7 @@ export const SitePage = () => {
     setSelectedRuleId(null);
     setUrlRuleValue('');
     setUrlRuleUrlMatchKind('contains');
+    setUrlRuleDisplayName('');
     setUrlRuleCustomName('');
     setUrlRuleEventValue('');
     setUrlRuleEventCurrency('BRL');
@@ -1249,6 +1299,7 @@ export const SitePage = () => {
     setButtonRuleHrefContains('');
     setButtonRuleClassContains('');
     setButtonRuleCss('');
+    setButtonRuleDisplayName('');
     setButtonRuleCustomName('');
     setButtonRuleEventValue('');
     setButtonRuleEventCurrency('BRL');
@@ -3496,6 +3547,19 @@ ${scriptContent}
 
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end bg-zinc-50 dark:bg-zinc-900/30 p-5 rounded-xl border border-zinc-200 dark:border-zinc-800">
                     <div className="md:col-span-3">
+                      <label htmlFor="dash-site-url-rule-display-name" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
+                        Nome (identificação)
+                      </label>
+                      <input
+                        id="dash-site-url-rule-display-name"
+                        value={urlRuleDisplayName}
+                        onChange={(e) => setUrlRuleDisplayName(e.target.value)}
+                        placeholder="Ex: Obrigado compra"
+                        maxLength={120}
+                        className={inputCls}
+                      />
+                    </div>
+                    <div className="md:col-span-3">
                       <label htmlFor="dash-site-url-rule-match-kind" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
                         Tipo de regra:
                       </label>
@@ -3728,7 +3792,8 @@ ${scriptContent}
                       <table className="w-full table-fixed text-left text-sm text-zinc-600 dark:text-zinc-400">
                         <thead className="bg-zinc-50 dark:bg-zinc-900/60 text-xs uppercase font-medium text-zinc-600 dark:text-zinc-500 dark:text-zinc-400">
                           <tr>
-                            <th className="px-4 py-3 w-[160px]">Regra</th>
+                            <th className="px-4 py-3 w-[180px]">Nome</th>
+                            <th className="px-4 py-3 w-[140px]">Regra</th>
                             <th className="px-4 py-3">Valor</th>
                             <th className="px-4 py-3">Evento Disparado</th>
                             <th className="px-4 py-3 text-right w-[140px]">Ações</th>
@@ -3745,6 +3810,11 @@ ${scriptContent}
                             )
                             .map((rule) => (
                             <tr key={rule.id} className="hover:bg-zinc-50 dark:bg-zinc-900/20">
+                              <td className="px-4 py-3 text-zinc-800 dark:text-zinc-200">
+                                <div className="truncate font-medium" title={ruleDisplayName(rule) || ''}>
+                                  {ruleDisplayName(rule) || '—'}
+                                </div>
+                              </td>
                               <td className="px-4 py-3">
                                 {rule.rule_type === 'path_is_root'
                                   ? 'Página inicial'
@@ -3879,6 +3949,19 @@ ${scriptContent}
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end bg-zinc-50 dark:bg-zinc-900/30 p-5 rounded-xl border border-zinc-200 dark:border-zinc-800">
+                    <div className="md:col-span-3">
+                      <label htmlFor="dash-site-btn-rule-display-name" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
+                        Nome (identificação)
+                      </label>
+                      <input
+                        id="dash-site-btn-rule-display-name"
+                        value={buttonRuleDisplayName}
+                        onChange={(e) => setButtonRuleDisplayName(e.target.value)}
+                        placeholder="Ex: CTA checkout anual"
+                        maxLength={120}
+                        className={inputCls}
+                      />
+                    </div>
                     <div className="md:col-span-3">
                       <label htmlFor="dash-site-btn-rule-url" className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-2">
                         Se a URL contém:
@@ -4147,7 +4230,8 @@ ${scriptContent}
                       <table className="w-full table-fixed text-left text-sm text-zinc-600 dark:text-zinc-400">
                         <thead className="bg-zinc-50 dark:bg-zinc-900/60 text-xs uppercase font-medium text-zinc-600 dark:text-zinc-500 dark:text-zinc-400">
                           <tr>
-                            <th className="px-4 py-3 w-[220px]">Página (URL)</th>
+                            <th className="px-4 py-3 w-[180px]">Nome</th>
+                            <th className="px-4 py-3 w-[180px]">Página (URL)</th>
                             <th className="px-4 py-3">Critérios</th>
                             <th className="px-4 py-3">Evento Disparado</th>
                             <th className="px-4 py-3 text-right w-[140px]">Ações</th>
@@ -4156,6 +4240,11 @@ ${scriptContent}
                         <tbody className="divide-y divide-zinc-800/60">
                           {eventRules.filter(r => r.rule_type === 'button_click').map((rule) => (
                             <tr key={rule.id} className="hover:bg-zinc-50 dark:bg-zinc-900/20">
+                              <td className="px-4 py-3 text-zinc-800 dark:text-zinc-200">
+                                <div className="truncate font-medium" title={ruleDisplayName(rule) || ''}>
+                                  {ruleDisplayName(rule) || '—'}
+                                </div>
+                              </td>
                               <td className="px-4 py-3 font-mono text-zinc-700 dark:text-zinc-300">
                                 <div className="truncate" title={String(rule.match_value || '')}>
                                   {String(rule.match_value || '')}

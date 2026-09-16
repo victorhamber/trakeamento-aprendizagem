@@ -1459,6 +1459,11 @@ router.get('/tracker.js', async (req, res) => {
       delete cleanCustom.match_href_contains;
       delete cleanCustom.match_class_contains;
       delete cleanCustom.match_css;
+      delete cleanCustom._display_name;
+      delete cleanCustom._crm_qualify;
+      delete cleanCustom._crm_label;
+      delete cleanCustom._crm_tool;
+      delete cleanCustom._crm_event_name;
 
       // Events Manager alerta ROAS sem value + currency ISO. Pixel e CAPI precisam do mesmo par.
       // Lead = padrão Meta; Download/Group = personalizados do site (trackCustom). Purchase não entra.
@@ -1564,6 +1569,11 @@ router.get('/tracker.js', async (req, res) => {
           payload.custom_data
         );
         delete metaParams._taRuleId;
+        delete metaParams._display_name;
+        delete metaParams._crm_qualify;
+        delete metaParams._crm_label;
+        delete metaParams._crm_tool;
+        delete metaParams._crm_event_name;
 
         // Ensure value/currency are top-level for standard events like Purchase
         if (payload.custom_data && payload.custom_data.value !== undefined) {
