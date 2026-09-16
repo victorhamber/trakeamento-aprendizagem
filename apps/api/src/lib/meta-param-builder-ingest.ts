@@ -4,6 +4,7 @@
  * @see https://github.com/facebook/capi-param-builder
  */
 import type { Request } from 'express';
+import { fbclidFromEventSourceUrl, preferUnmodifiedFbc, preserveMetaClickIds } from './meta-attribution';
 
 // Pacote CommonJS oficial Meta (sem tipos first-party completos)
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -104,6 +105,15 @@ export function applyMetaParamBuilderToIngest(
   return out;
 }
 
+function fbpCore(val: string): string | undefined {
+  const parts = val.trim().split('.');
+  if (parts.length < 4 || parts[0] !== 'fb') return undefined;
+  if (parts.length >= 5 && parts[parts.length - 1].length === 8) {
+    return parts.slice(0, -1).join('.');
+  }
+  return parts.join('.');
+}
+
 /** Mescla fbc/fbp oficiais sobre o user_data do evento (preserva demais campos). */
 export function mergeUserDataWithMetaParamBuilder(
   req: Request,
@@ -112,7 +122,25 @@ export function mergeUserDataWithMetaParamBuilder(
 ): UserDataLike {
   const base = { ...(userData || {}) } as UserDataLike;
   const pb = applyMetaParamBuilderToIngest(req, eventSourceUrl, base);
-  if (pb.fbc) base.fbc = pb.fbc;
-  if (pb.fbp) base.fbp = pb.fbp;
+  const existingFbc = typeof base.fbc === 'string' ? base.fbc : undefined;
+  const chosenFbc = preferUnmodifiedFbc(
+    existingFbc,
+    pb.fbc,
+    fbclidFromEventSourceUrl(eventSourceUrl)
+  );
+  if (chosenFbc) base.fbc = chosenFbc;
+
+  if (pb.fbp) {
+    const existingFbp = preserveMetaClickIds(base.fbp);
+    if (existingFbp) {
+      const existingCore = fbpCore(existingFbp);
+      const builtCore = fbpCore(pb.fbp);
+      if (existingCore && builtCore && existingCore === builtCore) {
+        base.fbp = pb.fbp;
+      }
+    } else {
+      base.fbp = pb.fbp;
+    }
+  }
   return base;
 }

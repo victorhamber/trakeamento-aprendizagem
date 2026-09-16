@@ -447,25 +447,49 @@ router.get('/tracker.js', async (req, res) => {
   }
 
   // ─── FBC / FBP ───────────────────────────────────────────────────────────
+  /** Appendix do Param Builder (8 chars). lastIndexOf('.') NÃO é o fbclid. */
+  function isMetaFbcAppendix(seg) {
+    return typeof seg === 'string' && seg.length === 8 && /^[A-Za-z0-9_-]+$/.test(seg);
+  }
+
+  function extractFbclidFromFbc(fbc) {
+    if (!fbc) return '';
+    var parts = String(fbc).split('.');
+    if (parts.length < 4 || parts[0] !== 'fb') return '';
+    var clickParts = parts.slice(3);
+    if (clickParts.length >= 2 && isMetaFbcAppendix(clickParts[clickParts.length - 1])) {
+      clickParts = clickParts.slice(0, -1);
+    }
+    return clickParts.join('.');
+  }
+
+  function isValidMetaFbcCookie(fbc) {
+    if (!fbc) return false;
+    var parts = String(fbc).split('.');
+    if (parts.length < 4 || parts[0] !== 'fb') return false;
+    if (!/^[0-9]+$/.test(parts[1]) || !/^[0-9]+$/.test(parts[2])) return false;
+    return extractFbclidFromFbc(fbc).length > 0;
+  }
+
   function getFbc() {
     try {
-      var url     = new URL(location.href);
-      var fbclid  = url.searchParams.get('fbclid');
-      var fbc     = getCookie('_fbc');
-      
+      var url = new URL(location.href);
+      // Valor bruto da query — sem toLowerCase e sem truncar (docs Meta ClickID).
+      var fbclidRaw = url.searchParams.get('fbclid');
+      var fbclid = fbclidRaw == null ? '' : String(fbclidRaw);
+      var fbc = getCookie('_fbc');
+
+      if (fbc && isValidMetaFbcCookie(fbc)) {
+        if (!fbclid) return fbc;
+        if (extractFbclidFromFbc(fbc) === fbclid) return fbc;
+      }
+
       if (fbclid) {
-        // fbclid deve ir idêntico à Meta (sem toLowerCase). Comparamos só o sufixo após o último "." do fbc.
-        // Se o cookie tiver o mesmo clique com caixa errada, regeneramos com o valor da URL atual.
-        if (fbc) {
-          var lastDot = fbc.lastIndexOf('.');
-          var suffix = lastDot >= 0 ? fbc.slice(lastDot + 1) : '';
-          if (suffix === fbclid) return fbc;
-        }
         var generated = 'fb.1.' + Date.now() + '.' + fbclid;
         setCookie('_fbc', generated, COOKIE_TTL_90D);
         return generated;
       }
-      
+
       if (fbc) return fbc;
     } catch(_e) {}
     return undefined;

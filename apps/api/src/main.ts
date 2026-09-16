@@ -260,7 +260,8 @@ function pickForwardParams(opts: {
     if (!val) return;
 
     if (allowBase.has(lower)) {
-      const maxLen = isHotmart ? 160 : 500;
+      const isClickId = lower === 'fbclid' || lower === 'gclid' || lower === 'gbraid' || lower === 'wbraid' || lower === 'msclkid' || lower === 'ttclid' || lower === 'twclid';
+      const maxLen = isClickId ? 2048 : isHotmart ? 160 : 500;
       out.set(lower, val.length > maxLen ? val.slice(0, maxLen) : val);
       return;
     }
