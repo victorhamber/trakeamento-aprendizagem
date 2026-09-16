@@ -412,6 +412,28 @@ function firstNonEmptyStr(...vals: unknown[]): string {
   return '';
 }
 
+function hashPiiOrFallback(raw: unknown, fallbackHash?: string): string[] | undefined {
+  const s = coerceWebhookStr(raw);
+  if (s) return [CapiService.hash(s)];
+  if (fallbackHash && /^[0-9a-f]{64}$/i.test(fallbackHash)) return [fallbackHash.toLowerCase()];
+  return undefined;
+}
+
+/** Meta `db`: YYYYMMDD. */
+function dobToYyyymmdd(raw: unknown): string | undefined {
+  const s = coerceWebhookStr(raw);
+  if (!s) return undefined;
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[1]}${iso[2]}${iso[3]}`;
+  const digits = s.replace(/\D/g, '');
+  if (/^\d{8}$/.test(digits)) {
+    const y = Number(digits.slice(0, 4));
+    if (y >= 1900 && y <= 2100) return digits;
+    return `${digits.slice(4, 8)}${digits.slice(2, 4)}${digits.slice(0, 2)}`;
+  }
+  return undefined;
+}
+
 function extractHotmartBrowserAndUtm(
   payload: Record<string, unknown>,
   d: Record<string, unknown>,
@@ -1093,36 +1115,46 @@ async function processPurchaseWebhook({
     return null;
   };
 
-
-  // 2. Enrichment: Missing attribution data or geolocation
-  let enriched = null;
-  if (!finalFbp || !finalFbc || !clientIp || !clientUa || (!city && !state)) {
-    enriched = await EnrichmentService.findVisitorData(siteKey, email, phone, finalExternalId, { ip: clientIp, country });
-    if (enriched) {
-      console.log(`[Webhook] Enrichment success: found fbp=${!!enriched.fbp}, fbc=${!!enriched.fbc}, ip=${!!enriched.clientIp}, city=${!!enriched.city}`);
-    }
-  }
-
-  const mergedFbp = finalFbp || enriched?.fbp;
-  const mergedFbc = finalFbc || enriched?.fbc;
-  const mergedFbcSafe = preserveFreshMetaFbc(mergedFbc);
-  const mergedFbpSafe = preserveMetaClickIds(mergedFbp);
-  const mergedIp = clientIp || enriched?.clientIp;
-  const mergedUa = clientUa || enriched?.clientUa;
-  // Hashes de PII (sempre úteis no UPSERT de site_visitors, mesmo quando a chave do perfil é eid_).
   const phoneDigitsForHash = phone ? String(phone).replace(/[^0-9]/g, '') : '';
   const piiExternalId = (email ? CapiService.hash(String(email).toLowerCase().trim()) : '') || (phoneDigitsForHash ? CapiService.hash(phoneDigitsForHash) : '');
   const dbEmailHash = email ? CapiService.hash(String(email).toLowerCase().trim()) : null;
   const dbPhoneHashBase = phoneDigitsForHash ? CapiService.hash(phoneDigitsForHash) : null;
 
-  // CAPI + purchases + site_visitors: preferir eid_ do checkout/trk/enriquecimento.
-  // Se o payload não trouxe eid_ mas temos fbp/fbc/email já ligados a uma sessão eid_ no site, reaproveitamos esse perfil (evita dois "usuários").
+  // Jornada da land SEMPRE, mesmo quando o webhook já trouxe IP do checkout.
+  // Sem isso o Purchase sai sem fbc/fbp/UA e a Meta marca qualidade baixa.
+  let journey: Awaited<ReturnType<typeof EnrichmentService.findPurchaseJourney>> = null;
+  try {
+    journey = await EnrichmentService.findPurchaseJourney(siteKey, {
+      email,
+      phone,
+      externalId: canonicalEid(finalExternalId) || undefined,
+      fbp: finalFbp,
+      fbc: finalFbc,
+      clientIp,
+      country,
+    });
+  } catch (err) {
+    console.error('[Webhook] findPurchaseJourney error:', err);
+    journey = null;
+  }
+  if (journey) {
+    console.log(
+      `[Webhook] Journey: fbp=${!!journey.fbp} fbc=${!!journey.fbc} ip=${!!journey.clientIp} ua=${!!journey.clientUa} eid=${!!journey.externalId} land=${!!journey.landingUrl}`
+    );
+  }
+
+  let mergedFbp = preserveMetaClickIds(journey?.fbp) || preserveMetaClickIds(finalFbp);
+  let mergedFbc = preserveFreshMetaFbc(journey?.fbc) || preserveFreshMetaFbc(finalFbc);
+  let mergedIp = journey?.clientIp || clientIp;
+  let mergedUa = journey?.clientUa || clientUa;
+
+  // CAPI + purchases + site_visitors: preferir eid_ do checkout/trk/jornada.
   let mergedExternalId: string | undefined =
     canonicalEid(finalExternalId) ||
-    canonicalEid(enriched?.externalId) ||
+    canonicalEid(journey?.externalId) ||
     (piiExternalId ? piiExternalId : undefined);
 
-  if (!canonicalEid(mergedExternalId) && (mergedFbpSafe || mergedFbcSafe || dbEmailHash)) {
+  if (!canonicalEid(mergedExternalId) && (mergedFbp || mergedFbc || dbEmailHash)) {
     try {
       const eidRow = await pool.query(
         `SELECT external_id
@@ -1136,7 +1168,7 @@ async function processPurchaseWebhook({
            )
          ORDER BY last_seen_at DESC NULLS LAST
          LIMIT 1`,
-        [siteKey, mergedFbpSafe ?? null, mergedFbcSafe ?? null, dbEmailHash],
+        [siteKey, mergedFbp ?? null, mergedFbc ?? null, dbEmailHash],
       );
       const hit = eidRow.rows[0]?.external_id;
       const fromVisitor = canonicalEid(hit);
@@ -1146,28 +1178,46 @@ async function processPurchaseWebhook({
     }
   }
 
-  // Location recovery: Priority Webhook > Enriched (history) > GeoIP (current IP)
-  let finalCity = city || enriched?.city;
-  let finalState = state || enriched?.state;
+  if (
+    canonicalEid(mergedExternalId) &&
+    canonicalEid(mergedExternalId) !== canonicalEid(journey?.externalId) &&
+    (!mergedFbc || !mergedIp || !mergedUa)
+  ) {
+    try {
+      const again = await EnrichmentService.findPurchaseJourney(siteKey, {
+        email,
+        phone,
+        externalId: canonicalEid(mergedExternalId) || undefined,
+        fbp: mergedFbp,
+        fbc: mergedFbc,
+        clientIp: mergedIp,
+        country: country || journey?.country,
+      });
+      if (again) {
+        journey = { ...(journey || {}), ...again };
+        mergedFbp = preserveMetaClickIds(again.fbp) || mergedFbp;
+        mergedFbc = preserveFreshMetaFbc(again.fbc) || mergedFbc;
+        mergedIp = again.clientIp || mergedIp;
+        mergedUa = again.clientUa || mergedUa;
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const mergedFbcSafe = mergedFbc;
+  const mergedFbpSafe = mergedFbp;
+
+  // Location: webhook > jornada (texto) > GeoIP do IP da land
+  let finalCity = city || journey?.city;
+  let finalState = state || journey?.state;
+  let finalCountry = country || journey?.country;
   if ((!finalCity || !finalState) && mergedIp) {
     const geo = geoip.lookup(mergedIp);
     if (geo) {
       if (!finalCity) finalCity = geo.city;
       if (!finalState) finalState = geo.region;
     }
-  }
-
-  // Histórico do visitante: UTMs da jornada mesmo quando o checkout chega limpo (sem origem).
-  let histAttr: Awaited<ReturnType<typeof EnrichmentService.findAttributionHistory>> = null;
-  try {
-    histAttr = await EnrichmentService.findAttributionHistory(siteKey, {
-      externalId: mergedExternalId,
-      fbp: mergedFbpSafe,
-      fbc: mergedFbcSafe,
-      emailHash: dbEmailHash,
-    });
-  } catch {
-    histAttr = null;
   }
 
   // UTMs priority (Strip trk_ token from UTM source if present)
@@ -1182,22 +1232,20 @@ async function processPurchaseWebhook({
     baseUtmSource = baseUtmSource.split('-trk_')[0];
   }
 
-  const utmSource = baseUtmSource || enriched?.utmSource || histAttr?.utmSource || undefined;
-  const utmMedium = payload.utm_medium || payload.trackingParameters?.utm_medium || payload.tracking_parameters?.utm_medium || enriched?.utmMedium || histAttr?.utmMedium || undefined;
-  const utmCampaign = payload.utm_campaign || payload.trackingParameters?.utm_campaign || payload.tracking_parameters?.utm_campaign || enriched?.utmCampaign || histAttr?.utmCampaign || undefined;
+  const utmSource = baseUtmSource || journey?.utmSource || undefined;
+  const utmMedium = payload.utm_medium || payload.trackingParameters?.utm_medium || payload.tracking_parameters?.utm_medium || journey?.utmMedium || undefined;
+  const utmCampaign = payload.utm_campaign || payload.trackingParameters?.utm_campaign || payload.tracking_parameters?.utm_campaign || journey?.utmCampaign || undefined;
   const utmContent =
     payload.utm_content ||
     payload.trackingParameters?.utm_content ||
     payload.tracking_parameters?.utm_content ||
-    enriched?.utmContent ||
-    histAttr?.utmContent ||
+    journey?.utmContent ||
     undefined;
   const utmTerm =
     payload.utm_term ||
     payload.trackingParameters?.utm_term ||
     payload.tracking_parameters?.utm_term ||
-    enriched?.utmTerm ||
-    histAttr?.utmTerm ||
+    journey?.utmTerm ||
     undefined;
 
   // 2. CAPI Payload
@@ -1248,7 +1296,7 @@ async function processPurchaseWebhook({
     CapiService.isValidHttpEventSourceUrl(rawReferrerUrl)
       ? rawReferrerUrl
       : undefined;
-  const histLanding = (histAttr?.landingUrl || '').trim();
+  const histLanding = (journey?.landingUrl || '').trim();
   if (
     !capiReferrerUrl &&
     histLanding &&
@@ -1329,7 +1377,7 @@ async function processPurchaseWebhook({
       ph: phone ? [(() => {
         let p = phone.replace(/[^0-9]/g, '');
         if (p.length >= 10 && p.length <= 11) {
-          let iso = (country || '').toUpperCase().trim();
+          let iso = (finalCountry || '').toUpperCase().trim();
           if (!iso && mergedIp) {
             const geo = geoip.lookup(mergedIp);
             if (geo?.country) iso = geo.country;
@@ -1341,12 +1389,18 @@ async function processPurchaseWebhook({
         }
         return CapiService.hash(p);
       })()] : undefined,
-      fn: firstName ? [CapiService.hash(firstName.toLowerCase())] : undefined,
-      ln: lastName ? [CapiService.hash(lastName.toLowerCase())] : undefined,
-      ct: finalCity ? [CapiService.hash(finalCity.toLowerCase())] : undefined,
-      st: finalState ? [CapiService.hash(finalState.toLowerCase())] : undefined,
-      zp: zip ? [CapiService.hash(zip.replace(/\s+/g, '').toLowerCase())] : undefined,
-      country: country ? [CapiService.hash(country.toLowerCase())] : undefined,
+      fn: hashPiiOrFallback(firstName, journey?.fnHash),
+      ln: hashPiiOrFallback(lastName, journey?.lnHash),
+      ct: hashPiiOrFallback(finalCity, journey?.ctHash),
+      st: hashPiiOrFallback(finalState, journey?.stHash),
+      zp: zip
+        ? [CapiService.hash(String(zip).replace(/\s+/g, '').toLowerCase())]
+        : (journey?.zpHash ? [journey.zpHash] : undefined),
+      db: dobToYyyymmdd(dob)
+        ? [CapiService.hash(dobToYyyymmdd(dob)!)]
+        : (journey?.dbHash ? [journey.dbHash] : undefined),
+      ge: journey?.geHash ? [journey.geHash] : undefined,
+      country: hashPiiOrFallback(finalCountry, undefined),
       fbc: mergedFbcSafe,
       fbp: mergedFbpSafe,
       external_id: mergedExternalId ? String(mergedExternalId) : undefined,
@@ -1366,8 +1420,8 @@ async function processPurchaseWebhook({
       utm_campaign: utmCampaign || undefined,
       utm_content: utmContent || undefined,
       utm_term: utmTerm || undefined,
-      ...((checkoutClickIdFromUrls || histAttr?.clickId)
-        ? { click_id: checkoutClickIdFromUrls || histAttr?.clickId }
+      ...((checkoutClickIdFromUrls || journey?.clickId)
+        ? { click_id: checkoutClickIdFromUrls || journey?.clickId }
         : {}),
     },
   };
@@ -1389,6 +1443,8 @@ async function processPurchaseWebhook({
       has_event_source_url: Boolean(capiPayload.event_source_url && String(capiPayload.event_source_url).trim()),
       has_referrer_url: Boolean(capiPayload.referrer_url && String(capiPayload.referrer_url).trim()),
       has_value: cd.value !== undefined && cd.value !== null,
+      value: cd.value,
+      currency: cd.currency,
       has_currency: cd.currency !== undefined && cd.currency !== null && String(cd.currency).trim() !== '',
       hotmart_recurrence_number: webhookRecurrenceNumber,
       hotmart_installments_number: hotmartMetaDedupe?.installmentsNumber ?? null,

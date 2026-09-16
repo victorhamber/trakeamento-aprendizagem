@@ -37,6 +37,7 @@ export interface CapiEvent {
     zp?: string[]; // hash SHA-256
     db?: string[]; // hash SHA-256 (YYYYMMDD)
     country?: string[]; // hash SHA-256 (ISO 2-letter lowercase)
+    ge?: string[]; // hash SHA-256
     fbp?: string;
     fbc?: string;
     external_id?: string; // hash SHA-256

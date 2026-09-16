@@ -3,6 +3,7 @@ import { pool } from '../db/pool';
 import { CapiService } from './capi';
 import { DDI_LIST } from '../lib/ddi';
 import { parseStoredTrafficSource, resolveSaleOriginFromHistory } from '../lib/visitorTrafficSource';
+import { preserveFreshMetaFbc, preserveMetaClickIds } from '../lib/meta-attribution';
 
 interface EnrichedData {
   fbp?: string;
@@ -12,6 +13,7 @@ interface EnrichedData {
   clientUa?: string;
   city?: string;
   state?: string;
+  country?: string;
   utmSource?: string;
   utmMedium?: string;
   utmCampaign?: string;
@@ -19,6 +21,13 @@ interface EnrichedData {
   utmTerm?: string;
   clickId?: string;
   landingUrl?: string;
+  fnHash?: string;
+  lnHash?: string;
+  ctHash?: string;
+  stHash?: string;
+  zpHash?: string;
+  dbHash?: string;
+  geHash?: string;
 }
 
 export class EnrichmentService {
@@ -60,7 +69,8 @@ export class EnrichmentService {
     // 1. Tentar buscar em site_visitors (Perfil consolidado)
     // Prioridade: IDs diretos > IP (Se habilitado)
     const visitorQuery = `
-      SELECT fbp, fbc, external_id, last_traffic_source, first_traffic_source, last_ip, last_user_agent
+      SELECT fbp, fbc, external_id, last_traffic_source, first_traffic_source, last_ip, last_user_agent,
+             city, state, country, first_name_hash, last_name_hash
       FROM site_visitors
       WHERE site_key = $1
         AND (
@@ -84,7 +94,8 @@ export class EnrichmentService {
 
     // Cross-site fallback: busca nos outros sites da mesma conta que compartilham o MESMO pixel
     const crossSiteQuery = `
-      SELECT sv.fbp, sv.fbc, sv.external_id, sv.last_traffic_source, sv.first_traffic_source, sv.last_ip, sv.last_user_agent
+      SELECT sv.fbp, sv.fbc, sv.external_id, sv.last_traffic_source, sv.first_traffic_source, sv.last_ip, sv.last_user_agent,
+             sv.city, sv.state, sv.country, sv.first_name_hash, sv.last_name_hash
       FROM site_visitors sv
       JOIN sites s ON s.site_key = sv.site_key
       JOIN integrations_meta m ON m.site_id = s.id
@@ -153,6 +164,11 @@ export class EnrichmentService {
           externalId: this.canonicalEid(row.external_id) || undefined,
           clientIp: row.last_ip,
           clientUa: row.last_user_agent,
+          city: row.city || undefined,
+          state: row.state || undefined,
+          country: row.country || undefined,
+          fnHash: row.first_name_hash || undefined,
+          lnHash: row.last_name_hash || undefined,
           ...utmsFirst,
           ...Object.fromEntries(Object.entries(utmsLast).filter(([, v]) => v)),
         };
@@ -173,8 +189,8 @@ export class EnrichmentService {
           ...visitorData,
           clientIp: visitorData.clientIp || metadata?.ip || options?.ip,
           clientUa: visitorData.clientUa || metadata?.ua,
-          city: visitorData.city || metadata?.city,
-          state: visitorData.state || metadata?.state,
+          city: visitorData.city || plaintextGeo(metadata?.city),
+          state: visitorData.state || plaintextGeo(metadata?.state),
           utmSource: visitorData.utmSource || metadata?.utm_source,
           utmMedium: visitorData.utmMedium || metadata?.utm_medium,
           utmCampaign: visitorData.utmCampaign || metadata?.utm_campaign,
@@ -356,6 +372,218 @@ export class EnrichmentService {
     return null;
   }
 
+  /**
+   * Jornada completa para o Purchase CAPI: visitante + PageView/Lead + compras anteriores.
+   * Sempre deve rodar ANTES de montar o payload — o checkout Hotmart quase nunca traz fbc/IP/UA da land.
+   */
+  static async findPurchaseJourney(
+    siteKey: string,
+    opts: {
+      email?: string;
+      phone?: string;
+      externalId?: string;
+      fbp?: string;
+      fbc?: string;
+      clientIp?: string;
+      country?: string;
+    }
+  ): Promise<EnrichedData | null> {
+    const visitor = await this.findVisitorData(siteKey, opts.email, opts.phone, opts.externalId, {
+      ip: opts.clientIp,
+      country: opts.country,
+    });
+
+    const emailHash = opts.email ? CapiService.hash(opts.email) : null;
+    let phoneHash: string | null = null;
+    if (opts.phone) {
+      let p = String(opts.phone).replace(/[^0-9]/g, '');
+      if (p.length >= 10 && p.length <= 11) {
+        const iso = (opts.country || '').toUpperCase().trim() || 'BR';
+        const ddi = DDI_LIST.find((d) => d.country === iso)?.code;
+        if (ddi && !p.startsWith(ddi)) p = ddi + p;
+        else if (iso === 'BR' && !p.startsWith('55')) p = '55' + p;
+      }
+      phoneHash = CapiService.hash(p);
+    }
+
+    const eid =
+      this.canonicalEid(opts.externalId) ||
+      this.canonicalEid(visitor?.externalId) ||
+      '';
+    const fbp = (visitor?.fbp || opts.fbp || '').trim();
+    const fbc = (visitor?.fbc || opts.fbc || '').trim();
+
+    let fromPurchases: { fbp?: string; fbc?: string; externalId?: string } = {};
+    try {
+      const prev = await pool.query<{ fbp: string | null; fbc: string | null; external_id: string | null }>(
+        `SELECT fbp, fbc, external_id
+         FROM purchases
+         WHERE site_key = $1
+           AND (
+             ($2::text IS NOT NULL AND buyer_email_hash IS NOT NULL AND buyer_email_hash = $2)
+             OR ($3::text <> '' AND external_id IS NOT NULL AND external_id = $3)
+           )
+           AND (
+             NULLIF(BTRIM(COALESCE(fbc, '')), '') IS NOT NULL
+             OR NULLIF(BTRIM(COALESCE(fbp, '')), '') IS NOT NULL
+             OR position('eid_' in COALESCE(external_id, '')) = 1
+           )
+         ORDER BY COALESCE(platform_date, created_at) DESC NULLS LAST
+         LIMIT 5`,
+        [siteKey, emailHash, eid]
+      );
+      for (const row of prev.rows) {
+        if (!fromPurchases.fbc && row.fbc) fromPurchases.fbc = String(row.fbc).trim();
+        if (!fromPurchases.fbp && row.fbp) fromPurchases.fbp = String(row.fbp).trim();
+        if (!fromPurchases.externalId) {
+          const pe = this.canonicalEid(row.external_id);
+          if (pe) fromPurchases.externalId = pe;
+        }
+      }
+    } catch {
+      /* purchases.external_id pode faltar em schema antigo */
+    }
+
+    const resolvedEid = eid || fromPurchases.externalId || '';
+    const resolvedFbp = fbp || fromPurchases.fbp || '';
+    const resolvedFbc = fbc || fromPurchases.fbc || '';
+
+    const out: EnrichedData = { ...(visitor || {}) };
+    if (fromPurchases.fbc && !out.fbc) out.fbc = fromPurchases.fbc;
+    if (fromPurchases.fbp && !out.fbp) out.fbp = fromPurchases.fbp;
+    if (fromPurchases.externalId && !out.externalId) out.externalId = fromPurchases.externalId;
+
+    if (resolvedEid || resolvedFbp || resolvedFbc || emailHash || phoneHash) {
+      try {
+        const ev = await pool.query<{
+          event_name: string | null;
+          event_source_url: string | null;
+          user_data: unknown;
+          custom_data: unknown;
+        }>(
+          `SELECT event_name, event_source_url, user_data, custom_data
+           FROM web_events
+           WHERE site_key = $1
+             AND event_time >= NOW() - INTERVAL '90 days'
+             AND (
+               ($2::text <> '' AND (
+                 user_data->>'external_id' = $2
+                 OR (jsonb_typeof(user_data->'external_id') = 'array' AND user_data->'external_id'->>0 = $2)
+               ))
+               OR ($3::text <> '' AND user_data->>'fbp' = $3)
+               OR ($4::text <> '' AND user_data->>'fbc' = $4)
+               OR ($5::text IS NOT NULL AND (
+                 user_data->>'em' = $5
+                 OR (jsonb_typeof(user_data->'em') = 'array' AND user_data->'em'->>0 = $5)
+               ))
+               OR ($6::text IS NOT NULL AND (
+                 user_data->>'ph' = $6
+                 OR (jsonb_typeof(user_data->'ph') = 'array' AND user_data->'ph'->>0 = $6)
+               ))
+             )
+           ORDER BY event_time DESC
+           LIMIT 80`,
+          [siteKey, resolvedEid, resolvedFbp, resolvedFbc, emailHash, phoneHash]
+        );
+
+        const history: Array<Record<string, string> | null> = [];
+        for (const e of ev.rows) {
+          const ud = e.user_data && typeof e.user_data === 'object' ? (e.user_data as Record<string, unknown>) : {};
+          const evFbc = preserveFreshMetaFbc(jsonUserScalar(ud, 'fbc'));
+          const evFbp = preserveMetaClickIds(jsonUserScalar(ud, 'fbp'));
+          const evIp = jsonUserScalar(ud, 'client_ip_address');
+          const evUa = jsonUserScalar(ud, 'client_user_agent');
+          const evEid = this.canonicalEid(jsonUserScalar(ud, 'external_id'));
+          if (evFbc && !out.fbc) out.fbc = evFbc;
+          if (evFbp && !out.fbp) out.fbp = evFbp;
+          if (evIp && !out.clientIp) out.clientIp = evIp;
+          if (evUa && !out.clientUa) out.clientUa = evUa;
+          if (evEid && !out.externalId) out.externalId = evEid;
+          if (!out.fnHash) out.fnHash = hashedScalar(ud, 'fn');
+          if (!out.lnHash) out.lnHash = hashedScalar(ud, 'ln');
+          if (!out.ctHash) out.ctHash = hashedScalar(ud, 'ct');
+          if (!out.stHash) out.stHash = hashedScalar(ud, 'st');
+          if (!out.zpHash) out.zpHash = hashedScalar(ud, 'zp');
+          if (!out.dbHash) out.dbHash = hashedScalar(ud, 'db');
+          if (!out.geHash) out.geHash = hashedScalar(ud, 'ge');
+
+          const url = typeof e.event_source_url === 'string' ? e.event_source_url.trim() : '';
+          const fromUrl = url ? parseStoredTrafficSource(url.includes('?') ? url.slice(url.indexOf('?')) : '') : null;
+          const fromCd =
+            e.custom_data && typeof e.custom_data === 'object'
+              ? parseStoredTrafficSource(
+                  Object.entries(e.custom_data as Record<string, unknown>)
+                    .filter(([, v]) => typeof v === 'string' && String(v).trim())
+                    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
+                    .join('&')
+                )
+              : null;
+          const merged: Record<string, string> = {
+            utm_source: (fromUrl?.utm_source || fromCd?.utm_source || '').trim(),
+            utm_medium: (fromUrl?.utm_medium || fromCd?.utm_medium || '').trim(),
+            utm_campaign: (fromUrl?.utm_campaign || fromCd?.utm_campaign || '').trim(),
+            utm_content: (fromUrl?.utm_content || fromCd?.utm_content || '').trim(),
+            utm_term: (fromUrl?.utm_term || fromCd?.utm_term || '').trim(),
+            click_id: (fromUrl?.click_id || fromCd?.click_id || '').trim(),
+          };
+          history.push(merged);
+          const isLand = /pageview|viewcontent|lead|initiatecheckout/i.test(String(e.event_name || ''));
+          if (
+            !out.landingUrl &&
+            url.startsWith('http') &&
+            isLand &&
+            (merged.utm_source || merged.utm_campaign || merged.click_id || /fbclid=/i.test(url))
+          ) {
+            out.landingUrl = url;
+          }
+        }
+
+        const resolved = resolveSaleOriginFromHistory(null, history);
+        if (resolved) {
+          if (!out.utmSource) out.utmSource = resolved.utm_source || undefined;
+          if (!out.utmMedium) out.utmMedium = resolved.utm_medium || undefined;
+          if (!out.utmCampaign) out.utmCampaign = resolved.utm_campaign || undefined;
+          if (!out.utmContent) out.utmContent = resolved.utm_content || undefined;
+          if (!out.utmTerm) out.utmTerm = resolved.utm_term || undefined;
+          if (!out.clickId) out.clickId = resolved.click_id || undefined;
+        }
+      } catch (err) {
+        console.error(`[Enrichment] findPurchaseJourney events failed (site=${siteKey}):`, err);
+      }
+    }
+
+    const hist = await this.findAttributionHistory(siteKey, {
+      externalId: out.externalId || resolvedEid,
+      fbp: out.fbp || resolvedFbp,
+      fbc: out.fbc || resolvedFbc,
+      emailHash,
+    });
+    if (hist) {
+      if (!out.utmSource) out.utmSource = hist.utmSource;
+      if (!out.utmMedium) out.utmMedium = hist.utmMedium;
+      if (!out.utmCampaign) out.utmCampaign = hist.utmCampaign;
+      if (!out.utmContent) out.utmContent = hist.utmContent;
+      if (!out.utmTerm) out.utmTerm = hist.utmTerm;
+      if (!out.clickId) out.clickId = hist.clickId;
+      if (!out.landingUrl) out.landingUrl = hist.landingUrl;
+    }
+
+    out.fbc = preserveFreshMetaFbc(out.fbc);
+    out.fbp = preserveMetaClickIds(out.fbp);
+
+    const hasAnything =
+      out.fbc ||
+      out.fbp ||
+      out.clientIp ||
+      out.clientUa ||
+      out.externalId ||
+      out.landingUrl ||
+      out.utmSource ||
+      out.city ||
+      out.fnHash;
+    return hasAnything ? out : null;
+  }
+
   private static parseUtmString(source?: string) {
     if (!source) return {};
     try {
@@ -388,4 +616,28 @@ export class EnrichmentService {
       return {};
     }
   }
+}
+
+function jsonUserScalar(ud: Record<string, unknown>, key: string): string {
+  const v = ud[key];
+  if (typeof v === 'string' && v.trim()) return v.trim();
+  if (Array.isArray(v) && typeof v[0] === 'string' && v[0].trim()) return v[0].trim();
+  return '';
+}
+
+function isSha256Hex(val: string): boolean {
+  return /^[0-9a-f]{64}$/i.test(val);
+}
+
+function hashedScalar(ud: Record<string, unknown>, key: string): string | undefined {
+  const s = jsonUserScalar(ud, key);
+  return s && isSha256Hex(s) ? s.toLowerCase() : undefined;
+}
+
+/** web_events.user_data.ct/st já vão hasheados — não usar como cidade/estado em texto. */
+function plaintextGeo(val: unknown): string | undefined {
+  if (typeof val !== 'string') return undefined;
+  const t = val.trim();
+  if (!t || isSha256Hex(t)) return undefined;
+  return t;
 }

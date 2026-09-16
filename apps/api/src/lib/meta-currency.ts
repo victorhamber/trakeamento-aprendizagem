@@ -99,7 +99,8 @@ export function buildMetaPurchaseCommerceFields(input: {
   numItems?: number;
 }): Record<string, unknown> {
   const parsed = parseMetaEventValue(input.value);
-  const positive = parsed !== undefined && parsed > 0 ? parsed : undefined;
+  const positive =
+    parsed !== undefined && parsed > 0 ? Math.round(parsed * 100) / 100 : undefined;
   const currency =
     positive !== undefined ? normalizeMetaCurrencyCode(input.currency) : undefined;
   const contentId =
@@ -115,6 +116,14 @@ export function buildMetaPurchaseCommerceFields(input: {
   if (positive !== undefined && currency) {
     out.value = positive;
     out.currency = currency;
+    // item_price no contents ajuda o diagnóstico de ROAS; id só se for numérico (não oferta Hotmart).
+    out.contents = [
+      {
+        quantity: numItems,
+        item_price: positive,
+        ...(contentId ? { id: contentId } : {}),
+      },
+    ];
   }
   if (contentId) {
     out.content_ids = [contentId];
@@ -130,8 +139,8 @@ export function sanitizeMetaCommerceCustomData(
   customData: Record<string, unknown>
 ): Record<string, unknown> {
   const out: Record<string, unknown> = { ...customData };
-  delete out.contents;
   if (eventName !== 'Purchase' && eventName !== 'InitiateCheckout' && eventName !== 'AddToCart') {
+    delete out.contents;
     return out;
   }
   const ids = Array.isArray(out.content_ids) ? out.content_ids : [];
@@ -145,5 +154,24 @@ export function sanitizeMetaCommerceCustomData(
       delete out.content_type;
     }
   }
+
+  const rawContents = Array.isArray(out.contents) ? out.contents : [];
+  const cleanedContents: Array<Record<string, unknown>> = [];
+  for (const item of rawContents) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+    const rec = item as Record<string, unknown>;
+    const price = parseMetaEventValue(rec.item_price ?? rec.price);
+    if (price === undefined || price <= 0) continue;
+    const rawId = rec.id != null ? String(rec.id).trim() : '';
+    if (rawId && !isMetaCatalogContentId(rawId)) continue;
+    const qty = parseMetaEventValue(rec.quantity);
+    cleanedContents.push({
+      quantity: qty && qty > 0 ? qty : 1,
+      item_price: Math.round(price * 100) / 100,
+      ...(rawId ? { id: rawId } : {}),
+    });
+  }
+  if (cleanedContents.length > 0) out.contents = cleanedContents;
+  else delete out.contents;
   return out;
 }

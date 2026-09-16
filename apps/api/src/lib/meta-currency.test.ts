@@ -100,6 +100,7 @@ describe('buildMetaPurchaseCommerceFields', () => {
       num_items: 1,
       value: 33.15,
       currency: 'BRL',
+      contents: [{ quantity: 1, item_price: 33.15, id: '5986726' }],
       content_ids: ['5986726'],
       content_type: 'product',
       order_id: 'HP4243995799',
@@ -115,13 +116,14 @@ describe('buildMetaPurchaseCommerceFields', () => {
       num_items: 1,
       value: 33.15,
       currency: 'BRL',
+      contents: [{ quantity: 1, item_price: 33.15 }],
       order_id: 'HP4243995799',
     });
   });
 });
 
 describe('sanitizeMetaCommerceCustomData', () => {
-  it('remove contents e content_ids de oferta Hotmart no Purchase', () => {
+  it('remove content_ids de oferta Hotmart e contents com id inválido no Purchase', () => {
     const out = sanitizeMetaCommerceCustomData('Purchase', {
       value: 33.15,
       currency: 'BRL',
@@ -135,6 +137,18 @@ describe('sanitizeMetaCommerceCustomData', () => {
     expect(out.content_type).toBeUndefined();
     expect(out.value).toBe(33.15);
     expect(out.order_id).toBe('HP4243995799');
+  });
+
+  it('mantém contents com item_price e id numérico', () => {
+    const out = sanitizeMetaCommerceCustomData('Purchase', {
+      value: 22,
+      currency: 'EUR',
+      contents: [{ id: '5986726', quantity: 1, item_price: 22 }],
+      content_ids: ['5986726'],
+      content_type: 'product',
+    });
+    expect(out.contents).toEqual([{ quantity: 1, item_price: 22, id: '5986726' }]);
+    expect(out.content_ids).toEqual(['5986726']);
   });
 
   it('mantém product id numérico', () => {
