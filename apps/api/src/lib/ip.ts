@@ -22,11 +22,6 @@ function cleanIpToken(raw: string): string {
   return v.trim();
 }
 
-function firstForwardedFor(xff: string): string {
-  const first = xff.split(',')[0];
-  return first ? cleanIpToken(first) : '';
-}
-
 /** Lista IPs limpos de um header (suporta XFF com vários hops). */
 function expandIpCandidates(raw: string | undefined): string[] {
   if (!raw) return [];
@@ -47,36 +42,71 @@ export function isIpv4Address(ip: string): boolean {
   return /^\d{1,3}(\.\d{1,3}){3}$/.test((ip || '').trim());
 }
 
-/**
- * IP do cliente para CAPI / rate-limit.
- * Meta pede IPv6 quando o Pixel (navegador) já vê IPv6 — preferimos qualquer
- * candidato IPv6 (cf-connecting-ipv6, XFF, etc.) antes de IPv4.
- */
-export function getClientIp(req: Request): string {
-  const headerCandidates: Array<string | undefined> = [
-    req.headers['cf-connecting-ipv6'] as string | undefined,
-    req.headers['cf-connecting-ip'] as string | undefined,
-    req.headers['true-client-ip'] as string | undefined,
-    req.headers['x-real-ip'] as string | undefined,
-    req.headers['x-forwarded-for'] as string | undefined,
-    req.ip,
-  ];
+function ipv4Octets(ip: string): number[] | null {
+  if (!isIpv4Address(ip)) return null;
+  const parts = ip.split('.').map((p) => Number(p));
+  if (parts.length !== 4 || parts.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return null;
+  return parts;
+}
 
-  const flat: string[] = [];
-  for (const c of headerCandidates) {
-    if (!c) continue;
-    if (c.includes(',')) flat.push(...expandIpCandidates(c));
-    else {
-      const v = cleanIpToken(c);
-      if (v) flat.push(v);
-    }
+/**
+ * IP que podemos mandar à Meta como client_ip_address.
+ * Descarta loopback / RFC1918 / link-local / IPv6 ULA — típicos de EasyPanel, Docker e hop de proxy.
+ */
+export function isPublicClientIp(ip: string): boolean {
+  const v = (ip || '').trim();
+  if (!v) return false;
+
+  const oct = ipv4Octets(v);
+  if (oct) {
+    const [a, b] = oct;
+    if (a === 0 || a === 10 || a === 127) return false;
+    if (a === 169 && b === 254) return false;
+    if (a === 172 && b >= 16 && b <= 31) return false;
+    if (a === 192 && b === 168) return false;
+    if (a >= 224) return false;
+    return true;
   }
 
-  const ipv6 = flat.find(isIpv6Address);
-  if (ipv6) return ipv6;
+  if (!isIpv6Address(v)) return false;
+  const low = v.toLowerCase();
+  if (low === '::' || low === '::1') return false;
+  if (low.startsWith('fe80:')) return false;
+  if (low.startsWith('fc') || low.startsWith('fd')) return false;
+  return true;
+}
 
-  const ipv4 = flat.find(isIpv4Address);
-  if (ipv4) return ipv4;
+function firstPublicIp(raw: string | undefined): string {
+  for (const c of expandIpCandidates(raw)) {
+    if (isPublicClientIp(c)) return c;
+  }
+  return '';
+}
 
-  return flat[0] || '';
+/**
+ * IP do cliente para CAPI / rate-limit.
+ * Meta pede IPv6 quando o Pixel já vê IPv6 — usamos cf-connecting-ipv6 (IP do visitante).
+ * Não vasculhamos hops seguintes do X-Forwarded-For à procura de IPv6: isso pega IP do
+ * Cloudflare/EasyPanel e a Meta acusa “IP associado a vários usuários” no PageView.
+ */
+export function getClientIp(req: Request): string {
+  const cfV6 = cleanIpToken(String(req.headers['cf-connecting-ipv6'] || ''));
+  if (isPublicClientIp(cfV6) && isIpv6Address(cfV6)) return cfV6;
+
+  const cf = cleanIpToken(String(req.headers['cf-connecting-ip'] || ''));
+  if (isPublicClientIp(cf)) return cf;
+
+  const trueClient = firstPublicIp(req.headers['true-client-ip'] as string | undefined);
+  if (trueClient) return trueClient;
+
+  const xff = firstPublicIp(req.headers['x-forwarded-for'] as string | undefined);
+  if (xff) return xff;
+
+  const real = firstPublicIp(req.headers['x-real-ip'] as string | undefined);
+  if (real) return real;
+
+  const reqIp = cleanIpToken(String(req.ip || ''));
+  if (isPublicClientIp(reqIp)) return reqIp;
+
+  return '';
 }
