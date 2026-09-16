@@ -22,6 +22,7 @@ export type PurchaseExportRow = {
   custom_data?: unknown;
   user_data?: unknown;
   raw_payload?: unknown;
+  landing_page?: string | null;
 };
 
 const SECRET_KEY =
@@ -169,6 +170,7 @@ export function flattenPurchaseForCsv(row: PurchaseExportRow): Record<(typeof PU
   );
 
   const landing = pick(
+    row.landing_page,
     custom?.event_source_url,
     custom?.event_url,
     custom?.page_location,

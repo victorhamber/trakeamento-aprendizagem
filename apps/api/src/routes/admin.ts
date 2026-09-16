@@ -100,10 +100,8 @@ router.get('/accounts', async (req, res) => {
         u.email,
         p.name AS plan_name, p.max_sites AS base_max_sites,
         (SELECT COUNT(*) FROM sites s WHERE s.account_id = a.id) AS sites_count,
-        (SELECT COALESCE(json_agg(json_build_object('id', s.id, 'name', s.name, 'domain', s.domain) ORDER BY s.name), '[]'::json)
-           FROM sites s WHERE s.account_id = a.id) AS sites,
-        (SELECT COUNT(*)::int FROM purchases p
-           INNER JOIN sites s4 ON s4.site_key = p.site_key
+        (SELECT COUNT(*)::int FROM purchases pu
+           INNER JOIN sites s4 ON s4.site_key = pu.site_key
            WHERE s4.account_id = a.id) AS purchases_count,
         (SELECT COALESCE(SUM(sub.cnt), 0) FROM (
           SELECT COUNT(*) AS cnt FROM web_events we
@@ -125,15 +123,30 @@ router.get('/accounts', async (req, res) => {
       ORDER BY a.created_at DESC
     `;
     const { rows } = await pool.query(query);
-    res.json(rows);
+    const sitesRes = await pool.query<{ id: number; account_id: number; name: string; domain: string | null }>(
+      `SELECT id, account_id, name, domain FROM sites ORDER BY name ASC`
+    );
+    const sitesByAccount = new Map<number, Array<{ id: number; name: string; domain: string | null }>>();
+    for (const s of sitesRes.rows) {
+      const aid = Number(s.account_id);
+      const list = sitesByAccount.get(aid) || [];
+      list.push({ id: Number(s.id), name: String(s.name || ''), domain: s.domain ? String(s.domain) : null });
+      sitesByAccount.set(aid, list);
+    }
+    res.json(
+      rows.map((r) => ({
+        ...r,
+        sites: sitesByAccount.get(Number(r.id)) || [],
+      }))
+    );
   } catch (error) {
     console.error('List Accounts Error:', error);
     res.status(500).json({ error: 'Failed to list accounts' });
   }
 });
 
-// GET /admin/accounts/:id/purchases.csv — planilha de compras (lookalike + webhook + landing)
-router.get('/accounts/:id/purchases.csv', async (req, res) => {
+// GET /admin/accounts/:id/purchases-export — planilha de compras (lookalike + webhook + landing)
+router.get('/accounts/:id/purchases-export', async (req, res) => {
   const accountId = Number(req.params.id);
   if (!accountId || Number.isNaN(accountId)) {
     return res.status(400).json({ error: 'Account id inválido' });
@@ -160,7 +173,16 @@ router.get('/accounts/:id/purchases.csv', async (req, res) => {
          p.utm_source, p.utm_medium, p.utm_campaign,
          p.fbp, p.fbc, p.external_id,
          p.platform_date, p.created_at,
-         p.custom_data, p.user_data, p.raw_payload
+         p.custom_data, p.user_data,
+         CASE
+           WHEN p.raw_payload IS NULL THEN NULL
+           ELSE (p.raw_payload::jsonb - '_capi_debug')
+         END AS raw_payload,
+         COALESCE(
+           NULLIF(p.custom_data->>'event_source_url', ''),
+           NULLIF(p.raw_payload->'_capi_debug'->>'event_source_url', ''),
+           NULLIF(p.raw_payload->'_capi_debug'->>'referrer_url', '')
+         ) AS landing_page
        FROM purchases p
        INNER JOIN sites s ON s.site_key = p.site_key
        WHERE s.account_id = $1
@@ -194,8 +216,6 @@ router.get('/accounts/:id', async (req, res) => {
          u.email,
          p.name AS plan_name, p.max_sites AS base_max_sites,
          (SELECT COUNT(*) FROM sites s WHERE s.account_id = a.id) AS sites_count,
-         (SELECT COALESCE(json_agg(json_build_object('id', s.id, 'name', s.name, 'domain', s.domain) ORDER BY s.name), '[]'::json)
-            FROM sites s WHERE s.account_id = a.id) AS sites,
          (SELECT COUNT(*)::int FROM purchases pu
             INNER JOIN sites s4 ON s4.site_key = pu.site_key
             WHERE s4.account_id = a.id) AS purchases_count
@@ -208,7 +228,18 @@ router.get('/accounts/:id', async (req, res) => {
       [accountId]
     );
     if (!rows.length) return res.status(404).json({ error: 'Account not found' });
-    return res.json(rows[0]);
+    const sitesRes = await pool.query<{ id: number; name: string; domain: string | null }>(
+      `SELECT id, name, domain FROM sites WHERE account_id = $1 ORDER BY name ASC`,
+      [accountId]
+    );
+    return res.json({
+      ...rows[0],
+      sites: sitesRes.rows.map((s) => ({
+        id: Number(s.id),
+        name: String(s.name || ''),
+        domain: s.domain ? String(s.domain) : null,
+      })),
+    });
   } catch (error) {
     console.error('Get Account Error:', error);
     return res.status(500).json({ error: 'Failed to get account' });

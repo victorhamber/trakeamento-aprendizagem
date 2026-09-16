@@ -100,7 +100,14 @@ const accountSites = (acc: AccountRow): AccountSite[] => {
           }
         })()
       : raw;
-  return Array.isArray(list) ? list.filter((s) => s && s.name) : [];
+  if (!Array.isArray(list)) return [];
+  return list
+    .map((s) => ({
+      id: Number((s as AccountSite)?.id),
+      name: String((s as AccountSite)?.name || '').trim(),
+      domain: (s as AccountSite)?.domain ? String((s as AccountSite).domain) : null,
+    }))
+    .filter((s) => s.name || s.domain);
 };
 
 const timeAgo = (dateStr: string | null): string => {
@@ -270,13 +277,16 @@ export const AccountsPage = () => {
   const downloadPurchases = async (acc: AccountRow) => {
     setDownloadingId(acc.id);
     try {
-      const res = await api.get(`/admin/accounts/${acc.id}/purchases.csv`, { responseType: 'blob' });
+      const res = await api.get(`/admin/accounts/${acc.id}/purchases-export`, {
+        responseType: 'blob',
+        timeout: 120000,
+      });
       const blob = res.data as Blob;
-      if (blob.type && blob.type.includes('application/json')) {
-        const text = await blob.text();
+      const peek = (await blob.slice(0, 40).text()).trim();
+      if ((blob.type || '').includes('json') || peek.startsWith('{')) {
         let msg = 'Erro ao exportar compras';
         try {
-          const parsed = JSON.parse(text) as { error?: string };
+          const parsed = JSON.parse(await blob.text()) as { error?: string };
           if (parsed?.error) msg = parsed.error;
         } catch {
           /* ignore */
@@ -297,8 +307,27 @@ export const AccountsPage = () => {
       URL.revokeObjectURL(url);
       const n = Number(acc.purchases_count || 0);
       showToast(n > 0 ? `Planilha baixada (${formatNumber(n)} compra${n === 1 ? '' : 's'})` : 'Planilha baixada (sem compras)');
-    } catch {
-      showToast('Erro ao baixar compras', 'error');
+    } catch (err: unknown) {
+      let msg = 'Erro ao baixar compras';
+      const ax = err as { response?: { status?: number; data?: unknown } };
+      const data = ax.response?.data;
+      if (typeof Blob !== 'undefined' && data instanceof Blob) {
+        try {
+          const text = await data.text();
+          const parsed = JSON.parse(text) as { error?: string };
+          if (parsed?.error) msg = parsed.error;
+        } catch {
+          if (ax.response?.status === 404) msg = 'Endpoint de exportação não encontrado. Confira se a API foi atualizada.';
+          else if (ax.response?.status) msg = `Erro ${ax.response.status} ao baixar compras`;
+        }
+      } else if (ax.response?.status === 404) {
+        msg = 'Endpoint de exportação não encontrado. Confira se a API foi atualizada.';
+      } else if (ax.response && typeof ax.response.data === 'object' && ax.response.data && 'error' in ax.response.data) {
+        msg = String((ax.response.data as { error?: string }).error || msg);
+      } else if (ax.response?.status) {
+        msg = `Erro ${ax.response.status} ao baixar compras`;
+      }
+      showToast(msg, 'error');
     } finally {
       setDownloadingId(null);
     }
@@ -534,8 +563,8 @@ export const AccountsPage = () => {
                         <div className="mt-1 space-y-0.5 max-w-[220px]">
                           {accountSites(acc).slice(0, 3).map((s) => (
                             <div key={s.id} className="text-[11px] text-zinc-600 dark:text-zinc-400 truncate" title={s.domain || s.name}>
-                              {s.name}
-                              {s.domain ? <span className="text-zinc-400"> · {s.domain}</span> : null}
+                              {s.name || s.domain}
+                              {s.name && s.domain ? <span className="text-zinc-400"> · {s.domain}</span> : null}
                             </div>
                           ))}
                           {accountSites(acc).length > 3 && (
