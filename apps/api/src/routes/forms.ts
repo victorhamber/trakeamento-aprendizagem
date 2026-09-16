@@ -7,6 +7,8 @@ import { geoFromGeoipLite, resolveServerGeoHint } from '../lib/request-geo';
 import { mergeUserDataWithMetaParamBuilder } from '../lib/meta-param-builder-ingest';
 import { ensureMetaRoasMoneyFields } from '../lib/meta-currency';
 import { resolveSiteLeadMoney } from '../lib/site-lead-money';
+import { EnrichmentService } from '../services/enrichment';
+import { preserveFreshMetaFbc, preserveMetaClickIds } from '../lib/meta-attribution';
 
 const router = Router();
 
@@ -291,6 +293,43 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
       ) as typeof userData;
       if (userDataMerged.fbc) userData.fbc = userDataMerged.fbc;
       if (userDataMerged.fbp) userData.fbp = userDataMerged.fbp;
+
+      try {
+        const journey = await EnrichmentService.findPurchaseJourney(siteKey, {
+          email,
+          phone,
+          externalId:
+            typeof userData.external_id === 'string' && String(userData.external_id).startsWith('eid_')
+              ? String(userData.external_id)
+              : canonicalEid || undefined,
+          fbp: typeof userData.fbp === 'string' ? userData.fbp : undefined,
+          fbc: typeof userData.fbc === 'string' ? userData.fbc : undefined,
+          clientIp: typeof userData.client_ip_address === 'string' ? userData.client_ip_address : formIp,
+          country: countryForm,
+        });
+        if (journey) {
+          if (!userData.fbc && journey.fbc) userData.fbc = preserveFreshMetaFbc(journey.fbc);
+          if (!userData.fbp && journey.fbp) userData.fbp = preserveMetaClickIds(journey.fbp);
+          if (!userData.client_ip_address && journey.clientIp) userData.client_ip_address = journey.clientIp;
+          if (!userData.client_user_agent && journey.clientUa) userData.client_user_agent = journey.clientUa;
+          if (journey.externalId && !(typeof userData.external_id === 'string' && String(userData.external_id).startsWith('eid_'))) {
+            userData.external_id = journey.externalId;
+          }
+          if (!userData.fn && journey.fnHash) userData.fn = journey.fnHash;
+          if (!userData.ln && journey.lnHash) userData.ln = journey.lnHash;
+          if (!userData.ct && journey.ctHash) userData.ct = journey.ctHash;
+          else if (!userData.ct && journey.city) userData.ct = CapiService.hash(String(journey.city));
+          if (!userData.st && journey.stHash) userData.st = journey.stHash;
+          else if (!userData.st && journey.state) userData.st = CapiService.hash(String(journey.state));
+          if (!userData.zp && journey.zpHash) userData.zp = journey.zpHash;
+          if (!userData.db && journey.dbHash) userData.db = journey.dbHash;
+          if (journey.landingUrl && CapiService.isValidHttpEventSourceUrl(journey.landingUrl)) {
+            (userData as { _journeyLanding?: string })._journeyLanding = journey.landingUrl;
+          }
+        }
+      } catch (err) {
+        console.warn('[Forms] journey enrich failed:', err);
+      }
 
       // POST cross-site costuma NÃO enviar cookie _fbp. Se já temos fbc (clique Meta) e ainda faltou fbp, gera um browser id mínimo para CAPI.
       if (!userData.fbp || !String(userData.fbp).trim()) {
@@ -745,10 +784,20 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
               event_name: eventName,
               event_time: Math.floor(Date.now() / 1000),
               event_id: eventIdSafe,
-              event_source_url: eventSourceUrl,
+              event_source_url: (() => {
+                const land = (userData as { _journeyLanding?: string })._journeyLanding;
+                if (land && CapiService.isValidHttpEventSourceUrl(land)) {
+                  if (!eventSourceUrl || /form-submit\.trakeamento/i.test(eventSourceUrl)) return land;
+                }
+                return eventSourceUrl;
+              })(),
               ...(referrerUrlFallback ? { referrer_url: referrerUrlFallback } : {}),
               action_source: 'website',
-              user_data: userData,
+              user_data: (() => {
+                const ud = { ...userData };
+                delete ud._journeyLanding;
+                return ud;
+              })(),
               custom_data: formCustomData,
             })
             .catch((err) => console.error(`CAPI failed for form ${publicId}:`, err));

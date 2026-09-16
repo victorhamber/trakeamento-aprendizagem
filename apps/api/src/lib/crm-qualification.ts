@@ -232,6 +232,7 @@ export function buildCrmQualificationCapiPayload(args: {
     external_id: userDataIn.external_id,
     // Repassa atribuição Meta (clique + browser). Sem isso, o 2º evento CRM (system_generated)
     // diluía o % de fbc/fbp no diagnóstico do Gerenciador de eventos.
+    ge: userDataIn.ge,
     fbp: userDataIn.fbp,
     fbc: userDataIn.fbc,
   };

@@ -15,6 +15,7 @@ import { ensureMetaRoasMoneyFields, normalizeMetaCurrencyCode } from '../lib/met
 import { resolveSiteLeadMoney } from '../lib/site-lead-money';
 import { buildVisitorTrafficSourceString } from '../lib/visitorTrafficSource';
 import { checkEventQuota } from '../lib/quota';
+import { EnrichmentService } from '../services/enrichment';
 import {
   buildCrmQualificationCapiPayload,
   resolveCrmLeadEventSource,
@@ -904,12 +905,6 @@ async function buildCapiUserData(
     (geoHint.country ? hashPii(normalizers.country(geoHint.country)) : undefined);
   let fbp = preserveMetaClickIds(userData.fbp || pickCustom('fbp'));
   let fbc = preserveFreshMetaFbc(userData.fbc || pickCustom('fbc'));
-  // Se temos fbc (clique Meta) mas faltou fbp (browser id), gera um fallback mínimo para CAPI.
-  // Isso não depende do Pixel e melhora match/dedup em cenários onde o cookie _fbp não veio.
-  if (!fbp && fbc) {
-    const rnd = String(Math.floor(Math.random() * 1_000_000_000_000)).padStart(10, '0');
-    fbp = `fb.1.${Date.now()}.${rnd}`;
-  }
   const externalIdRaw = userData.external_id || pickCustom('external_id');
   const zp = pick('zp');
   const db = pick('db');
@@ -954,11 +949,66 @@ async function buildCapiUserData(
     }
   }
 
-  const derivedExternalId = extTrim || em1 || ph1;
+  let clientIpOut = clientIp;
+  let clientUaOut = clientUserAgent;
+  let extOut = extTrim;
+  let zpOut = zp;
+  let dbOut = db;
+  const missingBrowser =
+    !fbc ||
+    !fbp ||
+    !clientIpOut ||
+    !clientUaOut ||
+    clientUaOut === FALLBACK_CAPI_UA ||
+    !em1 ||
+    !fnOut;
+  if (missingBrowser) {
+    try {
+      const journey = await EnrichmentService.findPurchaseJourney(siteKey, {
+        emailHash: em1,
+        phoneHash: ph1,
+        externalId: extOut.startsWith('eid_') ? extOut : undefined,
+        fbp,
+        fbc,
+        clientIp: clientIpOut,
+        country: countryForPh,
+      });
+      if (journey) {
+        if (!fbc && journey.fbc) fbc = preserveFreshMetaFbc(journey.fbc);
+        if (!fbp && journey.fbp) fbp = preserveMetaClickIds(journey.fbp);
+        if (!clientIpOut && journey.clientIp) clientIpOut = journey.clientIp;
+        if ((!clientUaOut || clientUaOut === FALLBACK_CAPI_UA) && journey.clientUa) {
+          clientUaOut = journey.clientUa;
+        }
+        if (!extOut.startsWith('eid_') && journey.externalId) extOut = journey.externalId;
+        if (!fnOut && journey.fnHash) fnOut = journey.fnHash;
+        if (!lnOut && journey.lnHash) lnOut = journey.lnHash;
+        if (!ctOut && journey.city) ctOut = hashPii(normalizers.ct(String(journey.city)));
+        else if (!ctOut && journey.ctHash) ctOut = journey.ctHash;
+        if (!stOut && journey.state) stOut = hashPii(normalizers.st(String(journey.state)));
+        else if (!stOut && journey.stHash) stOut = journey.stHash;
+        if (!countryOut && journey.country) countryOut = hashPii(normalizers.country(String(journey.country)));
+        if (!zpOut && journey.zpHash) zpOut = journey.zpHash;
+        if (!dbOut && journey.dbHash) dbOut = journey.dbHash;
+        if (!em1 && journey.externalId) {
+          /* email continua do payload; jornada não devolve em cru */
+        }
+      }
+    } catch (err) {
+      console.warn('[Ingest] journey enrich failed:', err);
+    }
+  }
+
+  if (!fbp && fbc) {
+    const rnd = String(Math.floor(Math.random() * 1_000_000_000_000)).padStart(10, '0');
+    fbp = `fb.1.${Date.now()}.${rnd}`;
+  }
+
+  const derivedExternalId = (extOut.startsWith('eid_') ? extOut : extTrim) || em1 || ph1;
 
   return {
-    client_ip_address: clientIp,
-    client_user_agent: clientUserAgent,
+    client_ip_address: clientIpOut,
+    client_user_agent: clientUaOut,
     em: wrap(em1),
     ph: wrap(ph1),
     fn: wrap(fnOut),
@@ -966,12 +1016,10 @@ async function buildCapiUserData(
     ct: wrap(ctOut),
     st: wrap(stOut),
     country: wrap(countryOut),
-    zp: wrap(zp),
-    db: wrap(db),
+    zp: wrap(zpOut),
+    db: wrap(dbOut),
     fbp,
     fbc,
-    // Se o frontend não mandar external_id, derivamos a partir de em/ph (já hasheados).
-    // Isso aumenta a correspondência no CAPI sem exigir login.
     external_id: derivedExternalId || undefined,
   };
 }

@@ -38,14 +38,19 @@ export class EnrichmentService {
     return s.startsWith('eid_') ? s : null;
   }
 
-  static async findVisitorData(siteKey: string, email?: string, phone?: string, externalId?: string, options?: { ip?: string, country?: string }): Promise<EnrichedData | null> {
-    if (!email && !phone && !externalId && !options?.ip) return null;
+  static async findVisitorData(siteKey: string, email?: string, phone?: string, externalId?: string, options?: { ip?: string, country?: string; emailHash?: string; phoneHash?: string }): Promise<EnrichedData | null> {
+    if (!email && !phone && !externalId && !options?.ip && !options?.emailHash && !options?.phoneHash) return null;
 
-    const emailHash = email ? CapiService.hash(email) : null;
+    const emailHash =
+      resolveSha256(options?.emailHash) ||
+      (email ? (isSha256Hex(email) ? email.toLowerCase() : CapiService.hash(email)) : null);
     
     // Normalização inteligente de telefone antes de gerar o hash para a busca
-    let phoneHash: string | null = null;
-    if (phone) {
+    let phoneHash = resolveSha256(options?.phoneHash);
+    if (!phoneHash && phone) {
+      if (isSha256Hex(phone)) {
+        phoneHash = phone.toLowerCase();
+      } else {
       let p = phone.replace(/[^0-9]/g, '');
       if (p.length >= 10 && p.length <= 11) {
         let iso = (options?.country || '').toUpperCase().trim();
@@ -62,6 +67,7 @@ export class EnrichmentService {
         }
       }
       phoneHash = CapiService.hash(p);
+      }
     }
 
     if (!emailHash && !phoneHash && !externalId && !options?.ip) return null;
@@ -373,14 +379,16 @@ export class EnrichmentService {
   }
 
   /**
-   * Jornada completa para o Purchase CAPI: visitante + PageView/Lead + compras anteriores.
-   * Sempre deve rodar ANTES de montar o payload — o checkout Hotmart quase nunca traz fbc/IP/UA da land.
+   * Jornada do visitante para CAPI (Purchase, custom, form, redirect).
+   * Completa fbc/fbp/IP/UA/PII a partir de site_visitors + web_events + compras.
    */
   static async findPurchaseJourney(
     siteKey: string,
     opts: {
       email?: string;
+      emailHash?: string;
       phone?: string;
+      phoneHash?: string;
       externalId?: string;
       fbp?: string;
       fbc?: string;
@@ -391,19 +399,27 @@ export class EnrichmentService {
     const visitor = await this.findVisitorData(siteKey, opts.email, opts.phone, opts.externalId, {
       ip: opts.clientIp,
       country: opts.country,
+      emailHash: opts.emailHash,
+      phoneHash: opts.phoneHash,
     });
 
-    const emailHash = opts.email ? CapiService.hash(opts.email) : null;
-    let phoneHash: string | null = null;
-    if (opts.phone) {
-      let p = String(opts.phone).replace(/[^0-9]/g, '');
-      if (p.length >= 10 && p.length <= 11) {
-        const iso = (opts.country || '').toUpperCase().trim() || 'BR';
-        const ddi = DDI_LIST.find((d) => d.country === iso)?.code;
-        if (ddi && !p.startsWith(ddi)) p = ddi + p;
-        else if (iso === 'BR' && !p.startsWith('55')) p = '55' + p;
+    const emailHash =
+      resolveSha256(opts.emailHash) ||
+      (opts.email ? (isSha256Hex(opts.email) ? opts.email.toLowerCase() : CapiService.hash(opts.email)) : null);
+    let phoneHash = resolveSha256(opts.phoneHash);
+    if (!phoneHash && opts.phone) {
+      if (isSha256Hex(opts.phone)) {
+        phoneHash = opts.phone.toLowerCase();
+      } else {
+        let p = String(opts.phone).replace(/[^0-9]/g, '');
+        if (p.length >= 10 && p.length <= 11) {
+          const iso = (opts.country || '').toUpperCase().trim() || 'BR';
+          const ddi = DDI_LIST.find((d) => d.country === iso)?.code;
+          if (ddi && !p.startsWith(ddi)) p = ddi + p;
+          else if (iso === 'BR' && !p.startsWith('55')) p = '55' + p;
+        }
+        phoneHash = CapiService.hash(p);
       }
-      phoneHash = CapiService.hash(p);
     }
 
     const eid =
@@ -627,6 +643,12 @@ function jsonUserScalar(ud: Record<string, unknown>, key: string): string {
 
 function isSha256Hex(val: string): boolean {
   return /^[0-9a-f]{64}$/i.test(val);
+}
+
+function resolveSha256(val: string | null | undefined): string | null {
+  if (!val || typeof val !== 'string') return null;
+  const t = val.trim();
+  return isSha256Hex(t) ? t.toLowerCase() : null;
 }
 
 function hashedScalar(ud: Record<string, unknown>, key: string): string | undefined {

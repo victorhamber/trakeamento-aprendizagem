@@ -32,6 +32,8 @@ import { mergeUserDataWithMetaParamBuilder } from './lib/meta-param-builder-inge
 import { ensureMetaRoasMoneyFields } from './lib/meta-currency';
 import { resolveSiteLeadMoney } from './lib/site-lead-money';
 import { getClientIp } from './lib/ip';
+import { EnrichmentService } from './services/enrichment';
+import { preserveFreshMetaFbc, preserveMetaClickIds } from './lib/meta-attribution';
 
 import { ensureSchema } from './db/schema';
 import { capiService } from './services/capi';
@@ -350,10 +352,43 @@ app.get('/:slug', async (req, res) => {
   if (fbpFromQs) user_data.fbp = fbpFromQs;
   if (fbcFromQs) user_data.fbc = fbcFromQs;
 
-  const fbp =
+  let fbp =
     (typeof user_data.fbp === 'string' ? String(user_data.fbp).trim() : '') || fbpFromQs;
-  const fbc =
+  let fbc =
     (typeof user_data.fbc === 'string' ? String(user_data.fbc).trim() : '') || fbcFromQs;
+
+  let journeyLanding = '';
+  try {
+    const journey = await EnrichmentService.findPurchaseJourney(String(link.site_key), {
+      externalId: externalId.startsWith('eid_') ? externalId : undefined,
+      fbp: fbp || undefined,
+      fbc: fbc || undefined,
+      clientIp: typeof user_data.client_ip_address === 'string' ? String(user_data.client_ip_address) : undefined,
+    });
+    if (journey) {
+      if (!fbc && journey.fbc) {
+        user_data.fbc = preserveFreshMetaFbc(journey.fbc);
+        fbc = String(user_data.fbc || '');
+      }
+      if (!fbp && journey.fbp) {
+        user_data.fbp = preserveMetaClickIds(journey.fbp);
+        fbp = String(user_data.fbp || '');
+      }
+      if (!user_data.client_ip_address && journey.clientIp) user_data.client_ip_address = journey.clientIp;
+      if (!user_data.client_user_agent && journey.clientUa) user_data.client_user_agent = journey.clientUa;
+      if (journey.externalId && !String(user_data.external_id || '').startsWith('eid_')) {
+        user_data.external_id = journey.externalId;
+      }
+      if (!user_data.fn && journey.fnHash) user_data.fn = journey.fnHash;
+      if (!user_data.ln && journey.lnHash) user_data.ln = journey.lnHash;
+      if (!user_data.ct && journey.ctHash) user_data.ct = journey.ctHash;
+      if (!user_data.st && journey.stHash) user_data.st = journey.stHash;
+      if (!user_data.zp && journey.zpHash) user_data.zp = journey.zpHash;
+      if (journey.landingUrl) journeyLanding = journey.landingUrl;
+    }
+  } catch (err) {
+    console.warn('[Redirect] journey enrich failed:', err);
+  }
 
   // IMPORTANTE: não “inventar” parâmetros no destino (ex.: external_id/fbp/fbc/trk),
   // porque alguns checkouts (Hotmart) podem quebrar com query extra.
@@ -396,11 +431,16 @@ app.get('/:slug', async (req, res) => {
     )
   );
 
+  const redirectEventSourceUrl =
+    journeyLanding && !/[?&]fbclid=/i.test(requestUrl) && /^https?:\/\//i.test(journeyLanding)
+      ? journeyLanding
+      : requestUrl;
+
   const capiPayload = {
     event_name: redirectEventName,
     event_time: nowSec,
     event_id: eventId,
-    event_source_url: requestUrl,
+    event_source_url: redirectEventSourceUrl,
     action_source: 'website' as const,
     user_data: user_data as any,
     custom_data,
