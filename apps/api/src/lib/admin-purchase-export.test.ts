@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   csvCell,
+  csvFilenameForAccount,
   flattenPurchaseForCsv,
+  parseExportSiteIds,
   purchasesToCsv,
   splitPersonName,
 } from './admin-purchase-export';
@@ -63,5 +65,25 @@ describe('csvCell', () => {
   it('escapa aspas e quebras', () => {
     expect(csvCell('a;b')).toBe('"a;b"');
     expect(csvCell('diz "oi"')).toBe('"diz ""oi"""');
+  });
+});
+
+describe('parseExportSiteIds', () => {
+  it('trata ausência como todos os sites', () => {
+    expect(parseExportSiteIds(undefined)).toBeNull();
+    expect(parseExportSiteIds('')).toBeNull();
+  });
+
+  it('aceita lista e ignora inválidos', () => {
+    expect(parseExportSiteIds('12, 8,12,abc')).toEqual([12, 8]);
+    expect(parseExportSiteIds(['3', '5'])).toEqual([3, 5]);
+    expect(parseExportSiteIds('x')).toEqual([]);
+  });
+});
+
+describe('csvFilenameForAccount', () => {
+  it('inclui o site quando filtrado', () => {
+    const name = csvFilenameForAccount('Wellington', 'a@b.com', 'Zap Ban');
+    expect(name).toMatch(/^compras-wellington-zap-ban-\d{4}-\d{2}-\d{2}\.csv$/);
   });
 });

@@ -3,7 +3,7 @@ import { api } from '../lib/api';
 import { Layout } from '../components/Layout';
 import { useAuth } from '../state/auth';
 
-type AccountSite = { id: number; name: string; domain: string | null };
+type AccountSite = { id: number; name: string; domain: string | null; purchases_count?: number };
 
 type AccountRow = {
   id: number;
@@ -106,8 +106,9 @@ const accountSites = (acc: AccountRow): AccountSite[] => {
       id: Number((s as AccountSite)?.id),
       name: String((s as AccountSite)?.name || '').trim(),
       domain: (s as AccountSite)?.domain ? String((s as AccountSite).domain) : null,
+      purchases_count: Number((s as AccountSite)?.purchases_count || 0),
     }))
-    .filter((s) => s.name || s.domain);
+    .filter((s) => Number.isFinite(s.id) && s.id > 0);
 };
 
 const timeAgo = (dateStr: string | null): string => {
@@ -154,6 +155,7 @@ export const AccountsPage = () => {
   const [createdTempPassword, setCreatedTempPassword] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [detailAcc, setDetailAcc] = useState<AccountRow | null>(null);
+  const [exportSiteIds, setExportSiteIds] = useState<number[]>([]);
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
 
   // Toast
@@ -186,6 +188,14 @@ export const AccountsPage = () => {
   };
 
   useEffect(() => { load(); }, []);
+
+  useEffect(() => {
+    if (!detailAcc) {
+      setExportSiteIds([]);
+      return;
+    }
+    setExportSiteIds(accountSites(detailAcc).map((s) => s.id));
+  }, [detailAcc]);
 
   // ── Filtering & Sorting ──────────────────────────────────────────────────
 
@@ -274,12 +284,20 @@ export const AccountsPage = () => {
     }
   };
 
-  const downloadPurchases = async (acc: AccountRow) => {
+  const downloadPurchases = async (acc: AccountRow, siteIds?: number[]) => {
+    const allSites = accountSites(acc);
+    const selected = (siteIds || []).filter((id) => Number.isInteger(id) && id > 0);
+    if (allSites.length > 0 && siteIds && selected.length === 0) {
+      showToast('Selecione pelo menos um site', 'error');
+      return;
+    }
+    const exportAll = !siteIds || selected.length === 0 || selected.length === allSites.length;
     setDownloadingId(acc.id);
     try {
       const res = await api.get(`/admin/accounts/${acc.id}/purchases-export`, {
         responseType: 'blob',
         timeout: 120000,
+        params: exportAll ? undefined : { site_ids: selected.join(',') },
       });
       const blob = res.data as Blob;
       const peek = (await blob.slice(0, 40).text()).trim();
@@ -305,8 +323,17 @@ export const AccountsPage = () => {
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-      const n = Number(acc.purchases_count || 0);
-      showToast(n > 0 ? `Planilha baixada (${formatNumber(n)} compra${n === 1 ? '' : 's'})` : 'Planilha baixada (sem compras)');
+      const selectedSites = exportAll ? allSites : allSites.filter((s) => selected.includes(s.id));
+      const n = selectedSites.reduce((sum, s) => sum + Number(s.purchases_count || 0), 0);
+      const fallbackN = exportAll ? Number(acc.purchases_count || 0) : n;
+      const countLabel = fallbackN > 0 ? `${formatNumber(fallbackN)} compra${fallbackN === 1 ? '' : 's'}` : 'sem compras';
+      const siteLabel =
+        selectedSites.length === 1
+          ? selectedSites[0].name || selectedSites[0].domain || '1 site'
+          : exportAll || selectedSites.length === allSites.length
+            ? 'todos os sites'
+            : `${selectedSites.length} sites`;
+      showToast(`Planilha baixada (${countLabel} · ${siteLabel})`);
     } catch (err: unknown) {
       let msg = 'Erro ao baixar compras';
       const ax = err as { response?: { status?: number; data?: unknown } };
@@ -560,11 +587,20 @@ export const AccountsPage = () => {
                         )}
                       </div>
                       {accountSites(acc).length > 0 ? (
-                        <div className="mt-1 space-y-0.5 max-w-[220px]">
+                        <div className="mt-1 space-y-0.5 max-w-[260px]">
                           {accountSites(acc).slice(0, 3).map((s) => (
-                            <div key={s.id} className="text-[11px] text-zinc-600 dark:text-zinc-400 truncate" title={s.domain || s.name}>
-                              {s.name || s.domain}
-                              {s.name && s.domain ? <span className="text-zinc-400"> · {s.domain}</span> : null}
+                            <div
+                              key={s.id}
+                              className="flex items-baseline justify-between gap-2 text-[11px] text-zinc-600 dark:text-zinc-400"
+                              title={s.domain || s.name}
+                            >
+                              <span className="truncate min-w-0">
+                                {s.name || s.domain}
+                                {s.name && s.domain ? <span className="text-zinc-400"> · {s.domain}</span> : null}
+                              </span>
+                              <span className="shrink-0 tabular-nums text-zinc-500 dark:text-zinc-400">
+                                {formatNumber(Number(s.purchases_count || 0))}
+                              </span>
                             </div>
                           ))}
                           {accountSites(acc).length > 3 && (
@@ -605,11 +641,14 @@ export const AccountsPage = () => {
                       <div className="flex flex-col items-end gap-1.5">
                         <button
                           type="button"
-                          onClick={() => void downloadPurchases(acc)}
+                          onClick={() => {
+                            if (accountSites(acc).length > 1) setDetailAcc(acc);
+                            else void downloadPurchases(acc);
+                          }}
                           disabled={downloadingId === acc.id}
                           className="text-[11px] font-bold uppercase tracking-wider text-emerald-700 hover:text-emerald-600 dark:text-emerald-400 dark:hover:text-emerald-300 disabled:opacity-50"
                         >
-                          {downloadingId === acc.id ? 'Baixando...' : 'Baixar compras'}
+                          {downloadingId === acc.id ? 'Baixando...' : accountSites(acc).length > 1 ? 'Baixar compras…' : 'Baixar compras'}
                         </button>
                         <button
                           onClick={() => openBonusModal(acc)}
@@ -854,37 +893,101 @@ export const AccountsPage = () => {
                   {detailAcc.plan_name || 'Sem plano'}
                 </span>
                 <span className="px-2.5 py-1 rounded-lg bg-zinc-100 dark:bg-white/5 text-zinc-600 dark:text-zinc-300">
-                  {formatNumber(Number(detailAcc.purchases_count || 0))} compra(s)
+                  {formatNumber(Number(detailAcc.purchases_count || 0))} compras no total
                 </span>
               </div>
 
               <div className="mt-6">
-                <div className="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">Sites</div>
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <div className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Sites para exportar</div>
+                  {accountSites(detailAcc).length > 1 && (
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        className="text-[11px] font-medium text-indigo-600 dark:text-indigo-400"
+                        onClick={() => setExportSiteIds(accountSites(detailAcc).map((s) => s.id))}
+                      >
+                        Todos
+                      </button>
+                      <button
+                        type="button"
+                        className="text-[11px] font-medium text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+                        onClick={() => setExportSiteIds([])}
+                      >
+                        Nenhum
+                      </button>
+                    </div>
+                  )}
+                </div>
                 {accountSites(detailAcc).length === 0 ? (
                   <p className="text-sm text-zinc-500">Nenhum site nesta conta.</p>
                 ) : (
                   <ul className="space-y-2">
-                    {accountSites(detailAcc).map((s) => (
-                      <li key={s.id} className="rounded-xl border border-zinc-200 dark:border-white/10 px-3 py-2.5">
-                        <div className="text-sm font-medium text-zinc-900 dark:text-white">{s.name}</div>
-                        {s.domain && <div className="text-xs text-zinc-500 mt-0.5">{s.domain}</div>}
-                      </li>
-                    ))}
+                    {accountSites(detailAcc).map((s) => {
+                      const checked = exportSiteIds.includes(s.id);
+                      return (
+                        <li key={s.id}>
+                          <label
+                            className={`flex items-start gap-3 rounded-xl border px-3 py-2.5 cursor-pointer transition-colors ${
+                              checked
+                                ? 'border-emerald-500/40 bg-emerald-500/5'
+                                : 'border-zinc-200 dark:border-white/10 hover:border-zinc-300 dark:hover:border-white/20'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              className="mt-1 h-4 w-4 rounded border-zinc-300 text-emerald-600 focus:ring-emerald-500"
+                              checked={checked}
+                              onChange={() =>
+                                setExportSiteIds((prev) =>
+                                  prev.includes(s.id) ? prev.filter((id) => id !== s.id) : [...prev, s.id]
+                                )
+                              }
+                            />
+                            <div className="min-w-0 flex-1 flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="text-sm font-medium text-zinc-900 dark:text-white">{s.name || s.domain || `Site #${s.id}`}</div>
+                                {s.domain && s.name ? <div className="text-xs text-zinc-500 mt-0.5">{s.domain}</div> : null}
+                              </div>
+                              <span className="shrink-0 px-2 py-1 rounded-lg bg-zinc-100 dark:bg-white/5 text-[11px] font-medium tabular-nums text-zinc-600 dark:text-zinc-300">
+                                {formatNumber(Number(s.purchases_count || 0))} compra{Number(s.purchases_count || 0) === 1 ? '' : 's'}
+                              </span>
+                            </div>
+                          </label>
+                        </li>
+                      );
+                    })}
                   </ul>
                 )}
               </div>
 
-              <button
-                type="button"
-                onClick={() => void downloadPurchases(detailAcc)}
-                disabled={downloadingId === detailAcc.id}
-                className="mt-8 w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white font-semibold text-sm py-2.5 rounded-xl transition-colors"
-              >
-                {downloadingId === detailAcc.id ? 'Gerando planilha...' : 'Baixar histórico de compras (CSV)'}
-              </button>
+              {(() => {
+                const sites = accountSites(detailAcc);
+                const selectedSites = sites.filter((s) => exportSiteIds.includes(s.id));
+                const noneSelected = sites.length > 0 && selectedSites.length === 0;
+                const allSelected = sites.length > 0 && selectedSites.length === sites.length;
+                const btnLabel = downloadingId === detailAcc.id
+                  ? 'Gerando planilha...'
+                  : noneSelected
+                    ? 'Selecione um site'
+                    : selectedSites.length === 1
+                      ? `Baixar CSV — ${selectedSites[0].name || selectedSites[0].domain}`
+                      : allSelected
+                        ? 'Baixar histórico de todos os sites (CSV)'
+                        : `Baixar histórico (${selectedSites.length} sites)`;
+                return (
+                  <button
+                    type="button"
+                    onClick={() => void downloadPurchases(detailAcc, exportSiteIds)}
+                    disabled={downloadingId === detailAcc.id || noneSelected}
+                    className="mt-8 w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white font-semibold text-sm py-2.5 rounded-xl transition-colors"
+                  >
+                    {btnLabel}
+                  </button>
+                );
+              })()}
               <p className="mt-2 text-[11px] text-zinc-500 leading-relaxed">
-                Nome, e-mail, telefone, valor, UTMs, página de origem (quando houver) e dados do webhook.
-                Serve para lookalike na Meta e para estudar o que está convertendo. Abre no Excel.
+                Marque um, vários ou todos os sites. A planilha traz nome, e-mail, telefone, valor, UTMs, página de origem e dados do webhook.
               </p>
             </div>
           </div>

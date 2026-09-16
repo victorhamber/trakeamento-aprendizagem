@@ -6,7 +6,7 @@ import {
   DEFAULT_RESET_SUBJECT, DEFAULT_RESET_HTML,
 } from '../services/email';
 import bcrypt from 'bcryptjs';
-import { csvFilenameForAccount, purchasesToCsv } from '../lib/admin-purchase-export';
+import { csvFilenameForAccount, parseExportSiteIds, purchasesToCsv } from '../lib/admin-purchase-export';
 
 const router = Router();
 
@@ -123,14 +123,31 @@ router.get('/accounts', async (req, res) => {
       ORDER BY a.created_at DESC
     `;
     const { rows } = await pool.query(query);
-    const sitesRes = await pool.query<{ id: number; account_id: number; name: string; domain: string | null }>(
-      `SELECT id, account_id, name, domain FROM sites ORDER BY name ASC`
+    const sitesRes = await pool.query<{
+      id: number;
+      account_id: number;
+      name: string;
+      domain: string | null;
+      purchases_count: number;
+    }>(
+      `SELECT s.id, s.account_id, s.name, s.domain,
+              COALESCE(pc.cnt, 0)::int AS purchases_count
+       FROM sites s
+       LEFT JOIN (
+         SELECT site_key, COUNT(*)::int AS cnt FROM purchases GROUP BY site_key
+       ) pc ON pc.site_key = s.site_key
+       ORDER BY s.name ASC`
     );
-    const sitesByAccount = new Map<number, Array<{ id: number; name: string; domain: string | null }>>();
+    const sitesByAccount = new Map<number, Array<{ id: number; name: string; domain: string | null; purchases_count: number }>>();
     for (const s of sitesRes.rows) {
       const aid = Number(s.account_id);
       const list = sitesByAccount.get(aid) || [];
-      list.push({ id: Number(s.id), name: String(s.name || ''), domain: s.domain ? String(s.domain) : null });
+      list.push({
+        id: Number(s.id),
+        name: String(s.name || ''),
+        domain: s.domain ? String(s.domain) : null,
+        purchases_count: Number(s.purchases_count || 0),
+      });
       sitesByAccount.set(aid, list);
     }
     res.json(
@@ -164,6 +181,31 @@ router.get('/accounts/:id/purchases-export', async (req, res) => {
     );
     if (!acc.rowCount) return res.status(404).json({ error: 'Account not found' });
 
+    const requestedSiteIds = parseExportSiteIds(req.query.site_ids);
+    let siteLabel: string | null = null;
+    const queryParams: unknown[] = [accountId];
+    let siteFilterSql = '';
+
+    if (requestedSiteIds) {
+      if (requestedSiteIds.length === 0) {
+        return res.status(400).json({ error: 'Selecione pelo menos um site' });
+      }
+      const owned = await pool.query<{ id: number; name: string; domain: string | null }>(
+        `SELECT id, name, domain FROM sites WHERE account_id = $1 AND id = ANY($2::int[]) ORDER BY name ASC`,
+        [accountId, requestedSiteIds]
+      );
+      if (owned.rows.length !== requestedSiteIds.length) {
+        return res.status(400).json({ error: 'Site não pertence a esta conta' });
+      }
+      queryParams.push(requestedSiteIds);
+      siteFilterSql = ' AND s.id = ANY($2::int[])';
+      if (owned.rows.length === 1) {
+        siteLabel = owned.rows[0].name || owned.rows[0].domain || `site-${owned.rows[0].id}`;
+      } else {
+        siteLabel = `${owned.rows.length}-sites`;
+      }
+    }
+
     const { rows } = await pool.query(
       `SELECT
          s.name AS site_name,
@@ -185,14 +227,14 @@ router.get('/accounts/:id/purchases-export', async (req, res) => {
          ) AS landing_page
        FROM purchases p
        INNER JOIN sites s ON s.site_key = p.site_key
-       WHERE s.account_id = $1
+       WHERE s.account_id = $1${siteFilterSql}
        ORDER BY COALESCE(p.platform_date, p.created_at) DESC NULLS LAST
        LIMIT 20000`,
-      [accountId]
+      queryParams
     );
 
     const csv = purchasesToCsv(rows);
-    const filename = csvFilenameForAccount(acc.rows[0]?.name, acc.rows[0]?.email);
+    const filename = csvFilenameForAccount(acc.rows[0]?.name, acc.rows[0]?.email, siteLabel);
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.setHeader('Cache-Control', 'no-store');
@@ -228,8 +270,19 @@ router.get('/accounts/:id', async (req, res) => {
       [accountId]
     );
     if (!rows.length) return res.status(404).json({ error: 'Account not found' });
-    const sitesRes = await pool.query<{ id: number; name: string; domain: string | null }>(
-      `SELECT id, name, domain FROM sites WHERE account_id = $1 ORDER BY name ASC`,
+    const sitesRes = await pool.query<{
+      id: number;
+      name: string;
+      domain: string | null;
+      purchases_count: number;
+    }>(
+      `SELECT s.id, s.name, s.domain, COALESCE(pc.cnt, 0)::int AS purchases_count
+       FROM sites s
+       LEFT JOIN (
+         SELECT site_key, COUNT(*)::int AS cnt FROM purchases GROUP BY site_key
+       ) pc ON pc.site_key = s.site_key
+       WHERE s.account_id = $1
+       ORDER BY s.name ASC`,
       [accountId]
     );
     return res.json({
@@ -238,6 +291,7 @@ router.get('/accounts/:id', async (req, res) => {
         id: Number(s.id),
         name: String(s.name || ''),
         domain: s.domain ? String(s.domain) : null,
+        purchases_count: Number(s.purchases_count || 0),
       })),
     });
   } catch (error) {

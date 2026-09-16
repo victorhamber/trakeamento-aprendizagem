@@ -247,14 +247,35 @@ export function purchasesToCsv(rows: PurchaseExportRow[]): string {
   return `\uFEFF${lines.join('\r\n')}\r\n`;
 }
 
-export function csvFilenameForAccount(name: string | null | undefined, email: string | null | undefined): string {
-  const base = (name || email || 'conta')
+function slugFilenamePart(value: string, max = 40): string {
+  return value
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '')
-    .slice(0, 40);
+    .slice(0, max);
+}
+
+/** `null` = todos os sites; `[]` = parâmetro inválido/vazio. */
+export function parseExportSiteIds(raw: unknown): number[] | null {
+  if (raw == null) return null;
+  const text = Array.isArray(raw) ? raw.map((v) => String(v)).join(',') : String(raw);
+  if (!text.trim()) return null;
+  const ids = text
+    .split(/[,\s]+/)
+    .map((p) => Number(p.trim()))
+    .filter((n) => Number.isInteger(n) && n > 0);
+  return [...new Set(ids)];
+}
+
+export function csvFilenameForAccount(
+  name: string | null | undefined,
+  email: string | null | undefined,
+  siteLabel?: string | null,
+): string {
+  const base = slugFilenamePart(name || email || 'conta', 40);
+  const site = siteLabel ? `-${slugFilenamePart(siteLabel, 32)}` : '';
   const day = new Date().toISOString().slice(0, 10);
-  return `compras-${base || 'conta'}-${day}.csv`;
+  return `compras-${base || 'conta'}${site}-${day}.csv`;
 }
