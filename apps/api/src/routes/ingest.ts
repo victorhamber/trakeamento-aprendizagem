@@ -11,6 +11,13 @@ import { getClientIp } from '../lib/ip';
 import { resolveServerGeoHint, geoFromGeoipLite } from '../lib/request-geo';
 import { preserveFreshMetaFbc, preserveMetaClickIds } from '../lib/meta-attribution';
 import { mergeUserDataWithMetaParamBuilder } from '../lib/meta-param-builder-ingest';
+import {
+  normalizeMetaCity,
+  normalizeMetaCountry,
+  normalizeMetaPersonName,
+  normalizeMetaState,
+  splitMetaPersonName,
+} from '../lib/meta-user-data-normalize';
 import { ensureMetaRoasMoneyFields, normalizeMetaCurrencyCode } from '../lib/meta-currency';
 import { resolveSiteLeadMoney } from '../lib/site-lead-money';
 import { buildVisitorTrafficSourceString } from '../lib/visitorTrafficSource';
@@ -187,12 +194,12 @@ const normalizers: Record<string, (v: string) => string> = {
     }
     return digits;
   },
-  fn: (v) => v.trim().toLowerCase(),
-  ln: (v) => v.trim().toLowerCase(),
-  ct: (v) => v.trim().toLowerCase(),
-  st: (v) => v.trim().toLowerCase(),
+  fn: (v) => normalizeMetaPersonName(v),
+  ln: (v) => normalizeMetaPersonName(v),
+  ct: (v) => normalizeMetaCity(v),
+  st: (v) => normalizeMetaState(v),
   zp: (v) => v.trim().toLowerCase().replace(/\s+/g, ''),
-  country: (v) => v.trim().toLowerCase(),
+  country: (v) => normalizeMetaCountry(v),
   db: (v) => v.replace(/[^0-9]/g, ''),   // YYYYMMDD
 };
 
@@ -226,6 +233,13 @@ function normalizeAndHash(field: string, value: string | string[] | undefined, o
     norm = digits;
   }
 
+  // País inválido (ex.: "brazil" sem mapear) não deve ir para a Meta
+  if (field === 'country' && norm && !/^[a-z]{2}$/.test(norm)) {
+    return undefined;
+  }
+  // Estado: Meta espera 2 letras; se sobrar nome longo sem mapa, ainda envia (melhor que nada),
+  // mas UF de 2 chars é o alvo.
+
   if (!norm) return undefined;
   return hashPii(norm);
 }
@@ -256,12 +270,20 @@ type SiteVisitorPiiRow = {
 
 async function lookupSiteVisitorForCapiMerge(
   siteKey: string,
-  keys: { externalId: string; fbp: string; fbc: string }
+  keys: {
+    externalId: string;
+    fbp: string;
+    fbc: string;
+    emailHash?: string;
+    phoneHash?: string;
+  }
 ): Promise<SiteVisitorPiiRow | null> {
   const ext = keys.externalId.trim();
   const fbpK = keys.fbp.trim();
   const fbcK = keys.fbc.trim();
-  if (!ext && !fbpK && !fbcK) return null;
+  const emH = (keys.emailHash || '').trim();
+  const phH = (keys.phoneHash || '').trim();
+  if (!ext && !fbpK && !fbcK && !emH && !phH) return null;
   try {
     const { rows } = await pool.query<SiteVisitorPiiRow>(
       `SELECT email_hash, phone_hash, first_name_hash, last_name_hash, city, state, country, fbc
@@ -271,10 +293,14 @@ async function lookupSiteVisitorForCapiMerge(
            ($2::text <> '' AND external_id = $2)
            OR ($3::text <> '' AND fbp IS NOT NULL AND fbp = $3)
            OR ($4::text <> '' AND fbc IS NOT NULL AND fbc = $4)
+           OR ($5::text <> '' AND email_hash IS NOT NULL AND email_hash = $5)
+           OR ($6::text <> '' AND phone_hash IS NOT NULL AND phone_hash = $6)
          )
-       ORDER BY last_seen_at DESC NULLS LAST
+       ORDER BY
+         CASE WHEN position('eid_' in external_id::text) = 1 THEN 0 ELSE 1 END ASC,
+         last_seen_at DESC NULLS LAST
        LIMIT 1`,
-      [siteKey, ext, fbpK, fbcK]
+      [siteKey, ext, fbpK, fbcK, emH, phH]
     );
     const row = rows[0];
     if (!row) return null;
@@ -831,6 +857,12 @@ function resolveClientUserAgentForCapi(
   return FALLBACK_CAPI_UA;
 }
 
+/**
+ * Monta user_data CAPI enriquecido para QUALQUER evento (padrão ou personalizado).
+ * PageView, Lead, InitiateCheckout, Purchase, Download, VideoMilestone, regras custom, etc.
+ * — todos herdam PII/geo/fbp/fbc do visitante + jornada quando a identidade bater
+ * (eid_, fbp, fbc, e-mail ou telefone).
+ */
 async function buildCapiUserData(
   req: Request,
   userData: NonNullable<IngestEvent['user_data']>,
@@ -872,25 +904,46 @@ async function buildCapiUserData(
   const pick = (field: string) =>
     normalizeAndHash(field, pickRaw(field), { ip: clientIp, country: countryForPh });
 
-  let fn1 = normalizeAndHash('fn', pickRawWithAliases('fn', ['firstname', 'first_name', 'primeironome', 'namefirst', 'name_first']), {
+  let fn1 = normalizeAndHash('fn', pickRawWithAliases('fn', ['firstname', 'first_name', 'fname', 'primeironome', 'namefirst', 'name_first', 'givenname']), {
     ip: clientIp,
     country: countryForPh,
   });
-  let ln1 = normalizeAndHash('ln', pickRawWithAliases('ln', ['lastname', 'last_name', 'ultimonome', 'ultimo_nome', 'sobrenome', 'surname']), {
+  let ln1 = normalizeAndHash('ln', pickRawWithAliases('ln', ['lastname', 'last_name', 'lname', 'ultimonome', 'ultimo_nome', 'sobrenome', 'surname', 'familyname']), {
     ip: clientIp,
     country: countryForPh,
   });
-  if (!fn1 && !ln1) {
-    const nameRaw = pickRawWithAliases('name', ['nome', 'fullname', 'full_name', 'nomecompleto', 'fullName']);
-    const nameStr = Array.isArray(nameRaw) ? nameRaw[0] : nameRaw;
-    if (typeof nameStr === 'string' && nameStr.trim()) {
-      const parts = nameStr.trim().split(/\s+/);
-      if (parts.length >= 2) {
-        fn1 = normalizeAndHash('fn', parts[0], { ip: clientIp, country: countryForPh });
-        ln1 = normalizeAndHash('ln', parts.slice(1).join(' '), { ip: clientIp, country: countryForPh });
-      } else if (parts.length === 1) {
-        fn1 = normalizeAndHash('fn', parts[0], { ip: clientIp, country: countryForPh });
-      }
+
+  // Nome completo do formulário (custom_data ou user_data) — preenche fn/ln que faltarem
+  const nameRaw = pickRawWithAliases('name', [
+    'nome',
+    'fullname',
+    'full_name',
+    'nomecompleto',
+    'fullName',
+    'seunome',
+    'nomedocliente',
+    'buyername',
+    'customername',
+  ]);
+  const nameStr = Array.isArray(nameRaw) ? nameRaw[0] : nameRaw;
+  if (typeof nameStr === 'string' && nameStr.trim() && (!fn1 || !ln1)) {
+    // Se já veio hasheado (64 hex), não dá para separar — só usa como fn se ambos vazios
+    if (/^[0-9a-f]{64}$/i.test(nameStr.trim())) {
+      if (!fn1 && !ln1) fn1 = nameStr.trim().toLowerCase();
+    } else {
+      const parts = splitMetaPersonName(nameStr);
+      if (!fn1 && parts.fn) fn1 = normalizeAndHash('fn', parts.fn, { ip: clientIp, country: countryForPh });
+      if (!ln1 && parts.ln) ln1 = normalizeAndHash('ln', parts.ln, { ip: clientIp, country: countryForPh });
+    }
+  }
+  // ln multi-palavra sem fn (mapeamento errado do campo Nome → last_name)
+  if (!fn1 && ln1 && !/^[0-9a-f]{64}$/i.test(String(Array.isArray(pickRaw('ln')) ? (pickRaw('ln') as string[])[0] : pickRaw('ln') || ''))) {
+    const lnRaw = pickRawWithAliases('ln', ['lastname', 'last_name', 'lname', 'sobrenome', 'surname']);
+    const lnStr = Array.isArray(lnRaw) ? lnRaw[0] : lnRaw;
+    if (typeof lnStr === 'string' && /\s/.test(lnStr.trim())) {
+      const parts = splitMetaPersonName(lnStr);
+      if (parts.fn) fn1 = normalizeAndHash('fn', parts.fn, { ip: clientIp, country: countryForPh });
+      if (parts.ln) ln1 = normalizeAndHash('ln', parts.ln, { ip: clientIp, country: countryForPh });
     }
   }
 
@@ -902,7 +955,10 @@ async function buildCapiUserData(
     (geoHint.region ? hashPii(normalizers.st(geoHint.region)) : undefined);
   const countryCapi =
     normalizeAndHash('country', pickRawWithAliases('country', ['pais', 'nacionalidade', 'paisdeorigem']), { ip: clientIp, country: countryForPh }) ??
-    (geoHint.country ? hashPii(normalizers.country(geoHint.country)) : undefined);
+    (() => {
+      const nc = geoHint.country ? normalizers.country(geoHint.country) : '';
+      return nc ? hashPii(nc) : undefined;
+    })();
   let fbp = preserveMetaClickIds(userData.fbp || pickCustom('fbp'));
   let fbc = preserveFreshMetaFbc(userData.fbc || pickCustom('fbc'));
   const externalIdRaw = userData.external_id || pickCustom('external_id');
@@ -928,13 +984,15 @@ async function buildCapiUserData(
   const fbcTrim = (fbc || '').trim();
   const wantVisitorMerge =
     (!em1 || !ph1 || !fnOut || !lnOut || !ctOut || !stOut || !countryOut || !fbcTrim) &&
-    (extTrim.length > 0 || fbpTrim.length > 0 || fbcTrim.length > 0);
+    (extTrim.length > 0 || fbpTrim.length > 0 || fbcTrim.length > 0 || !!em1 || !!ph1);
 
   if (wantVisitorMerge) {
     const row = await lookupSiteVisitorForCapiMerge(siteKey, {
       externalId: extTrim,
       fbp: fbpTrim,
       fbc: fbcTrim,
+      emailHash: em1,
+      phoneHash: ph1,
     });
     if (row) {
       const lh = (s: string | null | undefined) => (s && String(s).trim() ? String(s).trim().toLowerCase() : '');
@@ -954,15 +1012,23 @@ async function buildCapiUserData(
   let extOut = extTrim;
   let zpOut = zp;
   let dbOut = db;
-  const missingBrowser =
+  // Herda PageView/visitante mesmo quando Lead já tem em/ph/IP —
+  // senão ct/st/country/fn do primeiro acesso nunca entram no CAPI.
+  const wantJourneyMerge =
     !fbc ||
     !fbp ||
     !clientIpOut ||
     !clientUaOut ||
     clientUaOut === FALLBACK_CAPI_UA ||
     !em1 ||
-    !fnOut;
-  if (missingBrowser) {
+    !fnOut ||
+    !lnOut ||
+    !ctOut ||
+    !stOut ||
+    !countryOut ||
+    !zpOut ||
+    !dbOut;
+  if (wantJourneyMerge) {
     try {
       const journey = await EnrichmentService.findPurchaseJourney(siteKey, {
         emailHash: em1,
@@ -971,7 +1037,7 @@ async function buildCapiUserData(
         fbp,
         fbc,
         clientIp: clientIpOut,
-        country: countryForPh,
+        country: countryForPh || (geoHint.country ? String(geoHint.country) : undefined),
       });
       if (journey) {
         if (!fbc && journey.fbc) fbc = preserveFreshMetaFbc(journey.fbc);
@@ -987,12 +1053,14 @@ async function buildCapiUserData(
         else if (!ctOut && journey.ctHash) ctOut = journey.ctHash;
         if (!stOut && journey.state) stOut = hashPii(normalizers.st(String(journey.state)));
         else if (!stOut && journey.stHash) stOut = journey.stHash;
-        if (!countryOut && journey.country) countryOut = hashPii(normalizers.country(String(journey.country)));
+        if (!countryOut && journey.country) {
+          const nc = normalizers.country(String(journey.country));
+          if (nc) countryOut = hashPii(nc);
+        } else if (!countryOut && journey.countryHash) {
+          countryOut = journey.countryHash;
+        }
         if (!zpOut && journey.zpHash) zpOut = journey.zpHash;
         if (!dbOut && journey.dbHash) dbOut = journey.dbHash;
-        if (!em1 && journey.externalId) {
-          /* email continua do payload; jornada não devolve em cru */
-        }
       }
     } catch (err) {
       console.warn('[Ingest] journey enrich failed:', err);
@@ -1159,6 +1227,7 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
     ) as IngestEvent['user_data'];
 
     // Build enriched user data BEFORE persisting to DB
+    // Enrichment applies to every event_name (standard + custom); no allowlist.
     // This ensures the server-side IP is saved in web_events for later recovery by Enrichment
     const rawUserData = event.user_data ?? {};
     const capiUser = await buildCapiUserData(req, rawUserData, siteKey, event.custom_data ?? {});

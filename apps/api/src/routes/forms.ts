@@ -9,18 +9,23 @@ import { ensureMetaRoasMoneyFields } from '../lib/meta-currency';
 import { resolveSiteLeadMoney } from '../lib/site-lead-money';
 import { EnrichmentService } from '../services/enrichment';
 import { preserveFreshMetaFbc, preserveMetaClickIds } from '../lib/meta-attribution';
+import {
+  normalizeMetaCity,
+  normalizeMetaCountry,
+  normalizeMetaPersonName,
+  normalizeMetaState,
+  splitMetaPersonName,
+} from '../lib/meta-user-data-normalize';
 
 const router = Router();
 
-// Helper to extract first and last name from full name
-function splitName(fullName: string): { fn?: string; ln?: string } {
-  const parts = fullName.trim().split(/\s+/);
-  if (parts.length === 0) return {};
-  if (parts.length === 1) return { fn: parts[0] };
-  return {
-    fn: parts[0],
-    ln: parts.slice(1).join(' ')
-  };
+/** Lê o primeiro valor não-vazio entre chaves já normalizadas (só [a-z0-9]). */
+function pickData(data: Record<string, string>, keys: string[]): string {
+  for (const k of keys) {
+    const v = (data[k] || '').trim();
+    if (v) return v;
+  }
+  return '';
 }
 
 /** `referrer_url` no CAPI (POST público do form): body.referrer vindo do embed ou Referer do browser. */
@@ -185,37 +190,61 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
       const geoHintCapi = await resolveServerGeoHint(req, formIp);
 
       // Extract User Data
-      const email = data['email'] || data['mail'] || data['e_mail'];
-      const phone = data['phone'] || data['tel'] || data['telefone'] || data['celular'] || data['whatsapp'];
+      const email = pickData(data, ['email', 'mail', 'e_mail', 'emailaddress']);
+      const phone = pickData(data, ['phone', 'tel', 'telefone', 'celular', 'whatsapp', 'fone', 'mobile']);
 
-      let fn = data['fn'] || data['firstname'] || data['primeironome'];
-      let ln = data['ln'] || data['lastname'] || data['ultimonome'] || data['sobrenome'] || data['surname'];
+      // Campos explícitos de primeiro/último nome (inclui fname/lname de Mailchimp etc.)
+      let fn = pickData(data, ['fn', 'firstname', 'fname', 'primeironome', 'first', 'givenname']);
+      let ln = pickData(data, ['ln', 'lastname', 'lname', 'ultimonome', 'sobrenome', 'surname', 'familyname']);
 
-      const hasNomeESobrenomeEmCamposSeparados =
-        Boolean((data['nome'] || '').trim()) &&
-        Boolean((data['sobrenome'] || data['ultimonome'] || '').trim()) &&
-        !data['nomecompleto'] &&
-        !data['fullname'] &&
-        !data['name'];
+      const fullNameField = pickData(data, [
+        'name',
+        'nome',
+        'fullname',
+        'nomecompleto',
+        'seunome',
+        'nomedocliente',
+        'clientename',
+        'buyername',
+        'customername',
+        'completename',
+        'yourname',
+        'fullname',
+      ]);
 
-      if (hasNomeESobrenomeEmCamposSeparados) {
-        fn = (data['nome'] || fn || '').trim();
-        ln = (data['sobrenome'] || data['ultimonome'] || ln || '').trim();
-      } else if (!fn && !ln) {
-        const nameOne =
-          data['name'] || data['nome'] || data['fullname'] || data['nomecompleto'] || data['full_name'];
-        if (nameOne) {
-          const parts = splitName(String(nameOne));
-          if (parts.fn) fn = parts.fn;
-          if (parts.ln) ln = parts.ln;
+      // Nome + sobrenome em campos separados
+      const nomeOnly = pickData(data, ['nome']);
+      const sobrenomeOnly = pickData(data, ['sobrenome', 'ultimonome']);
+      if (nomeOnly && sobrenomeOnly && !pickData(data, ['nomecompleto', 'fullname', 'name'])) {
+        fn = normalizeMetaPersonName(nomeOnly) || fn;
+        ln = normalizeMetaPersonName(sobrenomeOnly) || ln;
+      }
+
+      // Campo único "Nome" / "name" com nome completo → preenche o que faltar
+      if (fullNameField && (!fn || !ln)) {
+        const parts = splitMetaPersonName(fullNameField);
+        if (!fn && parts.fn) fn = parts.fn;
+        if (!ln && parts.ln) ln = parts.ln;
+        // Se o formulário mandou só sobrenome (ln) com nome completo dentro, re-separa
+        if (!fn && ln && /\s/.test(ln)) {
+          const fromLn = splitMetaPersonName(ln);
+          if (fromLn.fn) fn = fromLn.fn;
+          if (fromLn.ln) ln = fromLn.ln;
         }
       }
 
+      // Último recurso: ln multi-palavra sem fn (bug comum de mapeamento)
+      if (!fn && ln && /\s/.test(ln)) {
+        const fromLn = splitMetaPersonName(ln);
+        if (fromLn.fn) fn = fromLn.fn;
+        if (fromLn.ln) ln = fromLn.ln;
+      }
+
+      fn = fn ? normalizeMetaPersonName(fn) : '';
+      ln = ln ? normalizeMetaPersonName(ln) : '';
+
       const name =
-        data['name'] ||
-        data['nome'] ||
-        data['fullname'] ||
-        data['nomecompleto'] ||
+        fullNameField ||
         [fn, ln].filter(Boolean).join(' ').trim() ||
         undefined;
 
@@ -235,9 +264,18 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
       const useCt = (ctForm || geoHintCapi.city || '').toString().trim() || null;
       const useSt = (stForm || geoHintCapi.region || '').toString().trim() || null;
       const useCountry = (countryForm || geoHintCapi.country || '').toString().trim() || null;
-      if (useCt) userData.ct = CapiService.hash(useCt);
-      if (useSt) userData.st = CapiService.hash(useSt);
-      if (useCountry) userData.country = CapiService.hash(useCountry);
+      if (useCt) {
+        const nct = normalizeMetaCity(useCt);
+        if (nct) userData.ct = CapiService.hash(nct);
+      }
+      if (useSt) {
+        const nst = normalizeMetaState(useSt);
+        if (nst) userData.st = CapiService.hash(nst);
+      }
+      if (useCountry) {
+        const nco = normalizeMetaCountry(useCountry);
+        if (nco) userData.country = CapiService.hash(nco);
+      }
       // Maximizar correspondência: external_id estável (hash) quando houver email/phone.
       // (CapiService.externalIdForCapiPayload não re-hasheia se já for 64-hex.)
       userData.external_id =
@@ -318,9 +356,21 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
           if (!userData.fn && journey.fnHash) userData.fn = journey.fnHash;
           if (!userData.ln && journey.lnHash) userData.ln = journey.lnHash;
           if (!userData.ct && journey.ctHash) userData.ct = journey.ctHash;
-          else if (!userData.ct && journey.city) userData.ct = CapiService.hash(String(journey.city));
+          else if (!userData.ct && journey.city) {
+            const nct = normalizeMetaCity(String(journey.city));
+            if (nct) userData.ct = CapiService.hash(nct);
+          }
           if (!userData.st && journey.stHash) userData.st = journey.stHash;
-          else if (!userData.st && journey.state) userData.st = CapiService.hash(String(journey.state));
+          else if (!userData.st && journey.state) {
+            const nst = normalizeMetaState(String(journey.state));
+            if (nst) userData.st = CapiService.hash(nst);
+          }
+          if (!(userData as { country?: string }).country && journey.countryHash) {
+            (userData as { country?: string }).country = journey.countryHash;
+          } else if (!(userData as { country?: string }).country && journey.country) {
+            const nco = normalizeMetaCountry(String(journey.country));
+            if (nco) (userData as { country?: string }).country = CapiService.hash(nco);
+          }
           if (!userData.zp && journey.zpHash) userData.zp = journey.zpHash;
           if (!userData.db && journey.dbHash) userData.db = journey.dbHash;
           if (journey.landingUrl && CapiService.isValidHttpEventSourceUrl(journey.landingUrl)) {

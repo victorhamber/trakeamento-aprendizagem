@@ -328,17 +328,41 @@ router.get('/tracker.js', async (req, res) => {
     return digits;
   }
   function normName(v)      { return (v || '').toString().trim().toLowerCase(); }
-  function normCityState(v) { return (v || '').toString().trim().toLowerCase(); }
+  /** Meta AM: cidade sem espaços/acentos (ex.: saopaulo). */
+  function normCityState(v) {
+    return (v || '').toString().trim().toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]/g, '');
+  }
+  /** Meta AM: UF de 2 letras quando possível. */
+  function normState(v) {
+    var s = (v || '').toString().trim().toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/\s+/g, ' ');
+    if (!s) return '';
+    if (/^[a-z]{2}$/.test(s)) return s;
+    var br = {
+      'acre':'ac','alagoas':'al','amapa':'ap','amazonas':'am','bahia':'ba','ceara':'ce',
+      'distrito federal':'df','espirito santo':'es','goias':'go','maranhao':'ma',
+      'mato grosso':'mt','mato grosso do sul':'ms','minas gerais':'mg','para':'pa',
+      'paraiba':'pb','parana':'pr','pernambuco':'pe','piaui':'pi','rio de janeiro':'rj',
+      'rio grande do norte':'rn','rio grande do sul':'rs','rondonia':'ro','roraima':'rr',
+      'santa catarina':'sc','sao paulo':'sp','sergipe':'se','tocantins':'to'
+    };
+    if (br[s]) return br[s];
+    return s.replace(/[^a-z]/g, '').slice(0, 2);
+  }
   function normZip(v)       { return (v || '').toString().trim().toLowerCase().replace(/\s+/g, ''); }
   function normDob(v)       { return (v || '').toString().replace(/[^0-9]/g, ''); } // YYYYMMDD
   /** ISO 3166-1 alpha-2 em minúsculas (ex.: br) — padrão Meta para country hasheado. */
   function normCountry(v) {
     var s = (v || '').toString().trim().toLowerCase().replace(/\s+/g, '');
     if (!s) return '';
+    try { s = s.normalize('NFD').replace(/[\u0300-\u036f]/g, ''); } catch(_e) {}
     if (/^[a-z]{2}$/.test(s)) return s;
     if (s === 'brasil' || s === 'brazil') return 'br';
     if (s === 'portugal') return 'pt';
-    if (s === 'usa' || s === 'us') return 'us';
+    if (s === 'usa' || s === 'us' || s === 'unitedstates' || s === 'estadosunidos') return 'us';
     var m = s.match(/^[a-z]{2}-([a-z]{2})$/);
     if (m) return m[1];
     var letters = s.replace(/[^a-z]/g, '');
@@ -949,17 +973,29 @@ router.get('/tracker.js', async (req, res) => {
         if (type === 'tel' || /phone|telefone|cel|whats|fone/.test(meta)) {
           setHashedCookie('_ta_ph', val, normPhone); continue;
         }
-        if (/first|nome|firstname/.test(meta)) {
+        if (/first|firstname|primeironome|primeiro_nome/.test(meta) && meta.indexOf('sobrenome') < 0) {
           setHashedCookie('_ta_fn', val, normName); continue;
         }
-        if (/last|sobrenome|lastname/.test(meta)) {
+        if (/last|sobrenome|lastname|ultimonome|ultimo_nome/.test(meta)) {
           setHashedCookie('_ta_ln', val, normName); continue;
+        }
+        // Campo "nome" / "name" com nome completo → separa fn + ln
+        if ((/(^|[^a-z])nome([^a-z]|$)/.test(meta) || /(^|[^a-z])name([^a-z]|$)/.test(meta) || /nomecompleto|fullnamecompleto|full.?name/.test(meta))
+            && meta.indexOf('sobrenome') < 0 && meta.indexOf('usuario') < 0 && meta.indexOf('username') < 0) {
+          var partsNome = String(val || '').trim().replace(/\s+/g, ' ').split(' ');
+          if (partsNome.length >= 2) {
+            setHashedCookie('_ta_fn', partsNome[0], normName);
+            setHashedCookie('_ta_ln', partsNome.slice(1).join(' '), normName);
+          } else if (partsNome[0]) {
+            setHashedCookie('_ta_fn', partsNome[0], normName);
+          }
+          continue;
         }
         if (/city|cidade/.test(meta)) {
           setHashedCookie('_ta_ct', val, normCityState); continue;
         }
         if (/state|estado|\\buf\\b/.test(meta)) {
-          setHashedCookie('_ta_st', val, normCityState); continue;
+          setHashedCookie('_ta_st', val, normState); continue;
         }
         if (/country|pais|país|country-name|country_code|countrycode/.test(meta)) {
           setHashedCookie('_ta_country', val, normCountry); continue;
@@ -1043,9 +1079,18 @@ router.get('/tracker.js', async (req, res) => {
       if (email) setHashedCookie('_ta_em', email, normEmail);
       var phone = pick(['phone','telefone','cel','whats','fone']);
       if (phone) setHashedCookie('_ta_ph', phone, normPhone);
-      var fn = pick(['fn','first_name','firstname','nome']);
-      if (fn) setHashedCookie('_ta_fn', fn, normName);
+      var fn = pick(['fn','first_name','firstname','primeironome']);
       var ln = pick(['ln','last_name','lastname','sobrenome']);
+      var nomeFull = pick(['nome','name','full_name','nomecompleto']);
+      if (!fn && !ln && nomeFull) {
+        var np = nomeFull.trim().replace(/\s+/g, ' ').split(' ');
+        if (np.length >= 2) { fn = np[0]; ln = np.slice(1).join(' '); }
+        else { fn = np[0] || ''; }
+      } else if (fn && !ln && /\s/.test(fn)) {
+        var np2 = fn.trim().replace(/\s+/g, ' ').split(' ');
+        fn = np2[0]; ln = np2.slice(1).join(' ');
+      }
+      if (fn) setHashedCookie('_ta_fn', fn, normName);
       if (ln) setHashedCookie('_ta_ln', ln, normName);
       var country = pick(['country','country_code','countryCode','pais','país']);
       if (country) setHashedCookie('_ta_country', country, normCountry);
@@ -1054,7 +1099,7 @@ router.get('/tracker.js', async (req, res) => {
       if (!fn && auto.fn) setHashedCookie('_ta_fn', auto.fn, normName);
       if (!ln && auto.ln) setHashedCookie('_ta_ln', auto.ln, normName);
       if (auto.ct) setHashedCookie('_ta_ct', auto.ct, normCityState);
-      if (auto.st) setHashedCookie('_ta_st', auto.st, normCityState);
+      if (auto.st) setHashedCookie('_ta_st', auto.st, normState);
       if (auto.country) setHashedCookie('_ta_country', auto.country, normCountry);
       if (auto.zp) setHashedCookie('_ta_zp', auto.zp, normZip);
       if (auto.db) setHashedCookie('_ta_db', auto.db, normDob);
@@ -1144,7 +1189,7 @@ router.get('/tracker.js', async (req, res) => {
             });
           }
           maybeSetGeoCookie('_ta_ct', j.city, normCityState);
-          maybeSetGeoCookie('_ta_st', j.region, normCityState);
+          maybeSetGeoCookie('_ta_st', j.region, normState);
           maybeSetGeoCookie('_ta_country', j.country, normCountry);
           if (pending === 0) {
             finish();
@@ -1160,6 +1205,8 @@ router.get('/tracker.js', async (req, res) => {
   function trackMeta(eventName, params, eventId, isCustom) {
     try {
       if (!window.fbq) return;
+      // Reaplica AM (geo/PII dos cookies) antes de cada evento — herda PageView/form no Lead etc.
+      try { refreshMetaFbqAdvancedMatching(); } catch(_am) {}
       var opts = eventId ? { eventID: eventId } : {};
       if (isCustom) window.fbq('trackCustom', eventName, params || {}, opts);
       else          window.fbq('track', eventName, params || {}, opts);
@@ -1230,8 +1277,22 @@ router.get('/tracker.js', async (req, res) => {
         }
         if (!out.em)  { var e0 = pickId(['email', 'e-mail', 'mail']);   if (e0) out.em  = e0; }
         if (!out.ph)  { var p0 = pickId(['phone', 'telefone', 'cel', 'celular', 'whats', 'whatsapp', 'whatsap', 'fone', 'zap', 'tel']); if (p0) out.ph = p0; }
-        if (!out.fn)  { var f0 = pickId(['fn', 'first_name', 'firstname', 'nome', 'name']);   if (f0) out.fn  = f0; }
-        if (!out.ln)  { var l0 = pickId(['ln', 'last_name', 'lastname', 'sobrenome', 'surname', 'ultimo_nome', 'ultimonome']);   if (l0) out.ln  = l0; }
+        if (!out.fn)  { var f0 = pickId(['fn', 'first_name', 'firstname', 'fname', 'primeironome', 'primeiro_nome']);   if (f0) out.fn  = f0; }
+        if (!out.ln)  { var l0 = pickId(['ln', 'last_name', 'lastname', 'lname', 'sobrenome', 'surname', 'ultimo_nome', 'ultimonome']);   if (l0) out.ln  = l0; }
+        // Campo único nome/name → separa fn + ln
+        if (!out.fn || !out.ln) {
+          var fullN = pickId(['nome', 'name', 'full_name', 'nomecompleto', 'fullname', 'seunome']);
+          if (fullN) {
+            var nparts = String(fullN).trim().replace(/\s+/g, ' ').split(' ');
+            if (!out.fn && nparts[0]) out.fn = nparts[0];
+            if (!out.ln && nparts.length > 1) out.ln = nparts.slice(1).join(' ');
+          }
+        }
+        if (!out.fn && out.ln && /\s/.test(String(out.ln))) {
+          var lparts = String(out.ln).trim().replace(/\s+/g, ' ').split(' ');
+          out.fn = lparts[0];
+          out.ln = lparts.slice(1).join(' ');
+        }
         if (!out.ct)  { var c0 = pickId(['ct', 'city', 'cidade', 'municipio']);  if (c0) out.ct  = c0; }
         if (!out.st)  { var s0 = pickId(['st', 'estado', 'state', 'uf', 'regiao', 'region']);  if (s0) out.st  = s0; }
         if (!out.country)  { var co0 = pickId(['country', 'pais', 'país', 'countryCode', 'country_code']);  if (co0) out.country  = co0; }
@@ -1447,6 +1508,8 @@ router.get('/tracker.js', async (req, res) => {
   }
 
   // ─── Generic track ────────────────────────────────────────────────────────
+  // Qualquer event_name (Lead, InitiateCheckout, Download, regra personalizada, etc.)
+  // envia user_data dos cookies; a API completa o histórico do mesmo visitante.
   function track(eventName, customData) {
     try {
       var cfg = window.TRACKING_CONFIG;
@@ -1507,6 +1570,8 @@ router.get('/tracker.js', async (req, res) => {
 
       _lastRuleFire[evKey] = nowMs;
 
+      // Build + enrich path: user_data dos cookies; API herda o restante do mesmo visitante
+      // para este event_name (padrão OU personalizado — sem whitelist).
       var eventTime = Math.floor(Date.now() / 1000);
       var eventId   = (cleanCustom && cleanCustom.event_id) ? cleanCustom.event_id : genEventId();
       var attrs     = getAttributionParams();
@@ -1540,6 +1605,7 @@ router.get('/tracker.js', async (req, res) => {
         payload.custom_data._taRuleId = ruleDedupId;
       }
 
+      // Beacon em conversões e em qualquer evento com rule id (personalizado de botão/URL)
       var isInstant =
         eventName === 'InitiateCheckout' ||
         eventName === 'AddToCart' ||
@@ -1550,7 +1616,8 @@ router.get('/tracker.js', async (req, res) => {
         eventName === 'Group' ||
         eventName === 'Grupo' ||
         eventName === 'ViewContent' ||
-        eventName === 'VideoMilestone';
+        eventName === 'VideoMilestone' ||
+        (ruleDedupId != null && ruleDedupId !== '');
       if (_fingerprintHash) payload.telemetry.device_fingerprint = _fingerprintHash;
       send(cfg.apiUrl, cfg.siteKey, payload, isInstant);
       if (!_fingerprintHash) getFingerprintHash(function() {});

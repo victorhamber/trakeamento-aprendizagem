@@ -16,6 +16,12 @@ import { buildVisitorTrafficSourceString, parseStoredTrafficSource } from '../li
 import { createLogger } from '../lib/logger';
 import { buildMetaPurchaseCommerceFields } from '../lib/meta-currency';
 import {
+  normalizeMetaCity,
+  normalizeMetaCountry,
+  normalizeMetaPersonName,
+  normalizeMetaState,
+} from '../lib/meta-user-data-normalize';
+import {
   buildCrmQualificationCapiPayload,
   shouldQualifyPurchasesForSite,
 } from '../lib/crm-qualification';
@@ -412,9 +418,16 @@ function firstNonEmptyStr(...vals: unknown[]): string {
   return '';
 }
 
-function hashPiiOrFallback(raw: unknown, fallbackHash?: string): string[] | undefined {
-  const s = coerceWebhookStr(raw);
-  if (s) return [CapiService.hash(s)];
+function hashPiiOrFallback(
+  raw: unknown,
+  fallbackHash?: string,
+  normalizer?: (s: string) => string
+): string[] | undefined {
+  const s0 = coerceWebhookStr(raw);
+  if (s0) {
+    const s = normalizer ? normalizer(s0) : s0;
+    if (s) return [CapiService.hash(s)];
+  }
   if (fallbackHash && /^[0-9a-f]{64}$/i.test(fallbackHash)) return [fallbackHash.toLowerCase()];
   return undefined;
 }
@@ -1212,11 +1225,12 @@ async function processPurchaseWebhook({
   let finalCity = city || journey?.city;
   let finalState = state || journey?.state;
   let finalCountry = country || journey?.country;
-  if ((!finalCity || !finalState) && mergedIp) {
+  if ((!finalCity || !finalState || !finalCountry) && mergedIp) {
     const geo = geoip.lookup(mergedIp);
     if (geo) {
       if (!finalCity) finalCity = geo.city;
       if (!finalState) finalState = geo.region;
+      if (!finalCountry) finalCountry = geo.country;
     }
   }
 
@@ -1389,10 +1403,10 @@ async function processPurchaseWebhook({
         }
         return CapiService.hash(p);
       })()] : undefined,
-      fn: hashPiiOrFallback(firstName, journey?.fnHash),
-      ln: hashPiiOrFallback(lastName, journey?.lnHash),
-      ct: hashPiiOrFallback(finalCity, journey?.ctHash),
-      st: hashPiiOrFallback(finalState, journey?.stHash),
+      fn: hashPiiOrFallback(firstName, journey?.fnHash, normalizeMetaPersonName),
+      ln: hashPiiOrFallback(lastName, journey?.lnHash, normalizeMetaPersonName),
+      ct: hashPiiOrFallback(finalCity, journey?.ctHash, normalizeMetaCity),
+      st: hashPiiOrFallback(finalState, journey?.stHash, normalizeMetaState),
       zp: zip
         ? [CapiService.hash(String(zip).replace(/\s+/g, '').toLowerCase())]
         : (journey?.zpHash ? [journey.zpHash] : undefined),
@@ -1400,7 +1414,7 @@ async function processPurchaseWebhook({
         ? [CapiService.hash(dobToYyyymmdd(dob)!)]
         : (journey?.dbHash ? [journey.dbHash] : undefined),
       ge: journey?.geHash ? [journey.geHash] : undefined,
-      country: hashPiiOrFallback(finalCountry, undefined),
+      country: hashPiiOrFallback(finalCountry, journey?.countryHash, normalizeMetaCountry),
       fbc: mergedFbcSafe,
       fbp: mergedFbpSafe,
       external_id: mergedExternalId ? String(mergedExternalId) : undefined,

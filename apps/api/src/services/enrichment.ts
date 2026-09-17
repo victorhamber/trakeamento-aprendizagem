@@ -25,6 +25,7 @@ interface EnrichedData {
   lnHash?: string;
   ctHash?: string;
   stHash?: string;
+  countryHash?: string;
   zpHash?: string;
   dbHash?: string;
   geHash?: string;
@@ -38,70 +39,98 @@ export class EnrichmentService {
     return s.startsWith('eid_') ? s : null;
   }
 
-  static async findVisitorData(siteKey: string, email?: string, phone?: string, externalId?: string, options?: { ip?: string, country?: string; emailHash?: string; phoneHash?: string }): Promise<EnrichedData | null> {
-    if (!email && !phone && !externalId && !options?.ip && !options?.emailHash && !options?.phoneHash) return null;
+  static async findVisitorData(
+    siteKey: string,
+    email?: string,
+    phone?: string,
+    externalId?: string,
+    options?: {
+      ip?: string;
+      country?: string;
+      emailHash?: string;
+      phoneHash?: string;
+      fbp?: string;
+      fbc?: string;
+    }
+  ): Promise<EnrichedData | null> {
+    const fbpK = (options?.fbp || '').trim();
+    const fbcK = (options?.fbc || '').trim();
+    if (
+      !email &&
+      !phone &&
+      !externalId &&
+      !options?.ip &&
+      !options?.emailHash &&
+      !options?.phoneHash &&
+      !fbpK &&
+      !fbcK
+    ) {
+      return null;
+    }
 
     const emailHash =
       resolveSha256(options?.emailHash) ||
       (email ? (isSha256Hex(email) ? email.toLowerCase() : CapiService.hash(email)) : null);
-    
+
     // Normalização inteligente de telefone antes de gerar o hash para a busca
     let phoneHash = resolveSha256(options?.phoneHash);
     if (!phoneHash && phone) {
       if (isSha256Hex(phone)) {
         phoneHash = phone.toLowerCase();
       } else {
-      let p = phone.replace(/[^0-9]/g, '');
-      if (p.length >= 10 && p.length <= 11) {
-        let iso = (options?.country || '').toUpperCase().trim();
-        if (!iso && options?.ip) {
-          const geo = geoip.lookup(options.ip);
-          if (geo?.country) iso = geo.country;
+        let p = phone.replace(/[^0-9]/g, '');
+        if (p.length >= 10 && p.length <= 11) {
+          let iso = (options?.country || '').toUpperCase().trim();
+          if (!iso && options?.ip) {
+            const geo = geoip.lookup(options.ip);
+            if (geo?.country) iso = geo.country;
+          }
+          const targetCountry = iso || 'BR';
+          const ddi = DDI_LIST.find((d) => d.country === targetCountry)?.code;
+          if (ddi && !p.startsWith(ddi)) {
+            p = ddi + p;
+          } else if (targetCountry === 'BR' && !p.startsWith('55')) {
+            p = '55' + p;
+          }
         }
-        const targetCountry = iso || 'BR';
-        const ddi = DDI_LIST.find(d => d.country === targetCountry)?.code;
-        if (ddi && !p.startsWith(ddi)) {
-          p = ddi + p;
-        } else if (targetCountry === 'BR' && !p.startsWith('55')) {
-          p = '55' + p;
-        }
-      }
-      phoneHash = CapiService.hash(p);
+        phoneHash = CapiService.hash(p);
       }
     }
 
-    if (!emailHash && !phoneHash && !externalId && !options?.ip) return null;
+    if (!emailHash && !phoneHash && !externalId && !options?.ip && !fbpK && !fbcK) return null;
 
-    // 1. Tentar buscar em site_visitors (Perfil consolidado)
-    // Prioridade: IDs diretos > IP (Se habilitado)
+    // Perfil consolidado: e-mail/telefone/eid/fbp/fbc/IP
     const visitorQuery = `
       SELECT fbp, fbc, external_id, last_traffic_source, first_traffic_source, last_ip, last_user_agent,
-             city, state, country, first_name_hash, last_name_hash
+             city, state, country, first_name_hash, last_name_hash, email_hash, phone_hash
       FROM site_visitors
       WHERE site_key = $1
         AND (
           ($2::text IS NOT NULL AND email_hash = $2::text) OR
           ($3::text IS NOT NULL AND phone_hash = $3::text) OR
           ($4::text IS NOT NULL AND external_id = $4::text) OR
-          ($5::text IS NOT NULL AND last_ip = $5::text)
+          ($5::text IS NOT NULL AND last_ip = $5::text) OR
+          ($6::text IS NOT NULL AND BTRIM($6::text) <> '' AND fbp IS NOT NULL AND fbp = $6) OR
+          ($7::text IS NOT NULL AND BTRIM($7::text) <> '' AND fbc IS NOT NULL AND fbc = $7)
         )
-      ORDER BY 
+      ORDER BY
         CASE WHEN external_id LIKE 'eid\\_%' THEN 0 ELSE 1 END ASC,
-        CASE 
+        CASE
           WHEN email_hash = $2::text THEN 1
           WHEN phone_hash = $3::text THEN 2
           WHEN external_id = $4::text THEN 3
-          WHEN last_ip = $5::text THEN 4
-          ELSE 5
+          WHEN fbp IS NOT NULL AND fbp = $6 THEN 4
+          WHEN fbc IS NOT NULL AND fbc = $7 THEN 5
+          WHEN last_ip = $5::text THEN 6
+          ELSE 7
         END ASC,
         last_seen_at DESC
       LIMIT 1
     `;
 
-    // Cross-site fallback: busca nos outros sites da mesma conta que compartilham o MESMO pixel
     const crossSiteQuery = `
       SELECT sv.fbp, sv.fbc, sv.external_id, sv.last_traffic_source, sv.first_traffic_source, sv.last_ip, sv.last_user_agent,
-             sv.city, sv.state, sv.country, sv.first_name_hash, sv.last_name_hash
+             sv.city, sv.state, sv.country, sv.first_name_hash, sv.last_name_hash, sv.email_hash, sv.phone_hash
       FROM site_visitors sv
       JOIN sites s ON s.site_key = sv.site_key
       JOIN integrations_meta m ON m.site_id = s.id
@@ -117,16 +146,20 @@ export class EnrichmentService {
           ($2::text IS NOT NULL AND sv.email_hash = $2::text) OR
           ($3::text IS NOT NULL AND sv.phone_hash = $3::text) OR
           ($4::text IS NOT NULL AND sv.external_id = $4::text) OR
-          ($5::text IS NOT NULL AND sv.last_ip = $5::text)
+          ($5::text IS NOT NULL AND sv.last_ip = $5::text) OR
+          ($6::text IS NOT NULL AND BTRIM($6::text) <> '' AND sv.fbp IS NOT NULL AND sv.fbp = $6) OR
+          ($7::text IS NOT NULL AND BTRIM($7::text) <> '' AND sv.fbc IS NOT NULL AND sv.fbc = $7)
         )
-      ORDER BY 
+      ORDER BY
         CASE WHEN sv.external_id LIKE 'eid\\_%' THEN 0 ELSE 1 END ASC,
-        CASE 
+        CASE
           WHEN sv.email_hash = $2::text THEN 1
           WHEN sv.phone_hash = $3::text THEN 2
           WHEN sv.external_id = $4::text THEN 3
-          WHEN sv.last_ip = $5::text THEN 4
-          ELSE 5
+          WHEN sv.fbp IS NOT NULL AND sv.fbp = $6 THEN 4
+          WHEN sv.fbc IS NOT NULL AND sv.fbc = $7 THEN 5
+          WHEN sv.last_ip = $5::text THEN 6
+          ELSE 7
         END ASC,
         sv.last_seen_at DESC
       LIMIT 1
@@ -134,16 +167,17 @@ export class EnrichmentService {
 
     try {
       const queryParams = [
-        siteKey, 
-        emailHash, 
-        phoneHash, 
+        siteKey,
+        emailHash,
+        phoneHash,
         externalId || null,
-        options?.ip || null
+        options?.ip || null,
+        fbpK || null,
+        fbcK || null,
       ];
 
       let visitorRes = await pool.query(visitorQuery, queryParams);
-      
-      // Cross-site fallback: se não achou no site atual, busca nos irmãos da mesma conta
+
       if (!visitorRes.rowCount || visitorRes.rowCount === 0) {
         console.log(`[Enrichment] No visitor found in site ${siteKey}, trying cross-site fallback...`);
         try {
@@ -151,25 +185,27 @@ export class EnrichmentService {
           if (visitorRes.rowCount && visitorRes.rowCount > 0) {
             console.log(`[Enrichment] Cross-site match found! Recovered visitor data from sibling site.`);
           } else {
-            console.log(`[Enrichment] Cross-site fallback: no match found for email=${!!emailHash} phone=${!!phoneHash} extId=${!!externalId} ip=${!!options?.ip}`);
+            console.log(
+              `[Enrichment] Cross-site fallback: no match found for email=${!!emailHash} phone=${!!phoneHash} extId=${!!externalId} fbp=${!!fbpK} ip=${!!options?.ip}`
+            );
           }
         } catch (csErr) {
           console.error(`[Enrichment] Cross-site query FAILED for site ${siteKey}:`, csErr);
         }
       }
 
-      let visitorData: any = {};
-      
+      let visitorData: EnrichedData = {};
+
       if (visitorRes.rowCount && visitorRes.rowCount > 0) {
         const row = visitorRes.rows[0];
         const utmsLast = this.parseUtmString(row.last_traffic_source);
         const utmsFirst = this.parseUtmString(row.first_traffic_source);
         visitorData = {
-          fbp: row.fbp,
-          fbc: row.fbc,
+          fbp: row.fbp || undefined,
+          fbc: row.fbc || undefined,
           externalId: this.canonicalEid(row.external_id) || undefined,
-          clientIp: row.last_ip,
-          clientUa: row.last_user_agent,
+          clientIp: row.last_ip || undefined,
+          clientUa: row.last_user_agent || undefined,
           city: row.city || undefined,
           state: row.state || undefined,
           country: row.country || undefined,
@@ -180,13 +216,11 @@ export class EnrichmentService {
         };
       }
 
-      // Buscar metadados (IP/UA) mais recentes em web_events caso falte no visitorData
-      // ou se o match foi por IP e queremos dados de UA/Geolocalização mais completos
       const metadata = await this.findLatestMetadata(
-        siteKey, 
-        visitorData.fbp, 
-        visitorData.externalId || externalId, 
-        emailHash, 
+        siteKey,
+        visitorData.fbp || fbpK || undefined,
+        visitorData.externalId || externalId,
+        emailHash,
         phoneHash
       );
 
@@ -201,11 +235,10 @@ export class EnrichmentService {
           utmMedium: visitorData.utmMedium || metadata?.utm_medium,
           utmCampaign: visitorData.utmCampaign || metadata?.utm_campaign,
           utmContent: visitorData.utmContent || metadata?.utm_content,
-          utmTerm: visitorData.utmTerm || metadata?.utm_term
+          utmTerm: visitorData.utmTerm || metadata?.utm_term,
         };
       }
 
-      // 2. Se não achou de jeito nenhum, retornar null para que o webhook use o que tem no payload
       return null;
     } catch (err) {
       console.error(`[Enrichment] Error searching for visitor data (site=${siteKey}):`, err);
@@ -379,8 +412,8 @@ export class EnrichmentService {
   }
 
   /**
-   * Jornada do visitante para CAPI (Purchase, custom, form, redirect).
-   * Completa fbc/fbp/IP/UA/PII a partir de site_visitors + web_events + compras.
+   * Jornada do visitante para QUALQUER evento CAPI (padrão, personalizado, form, redirect, Purchase).
+   * Completa fbc/fbp/IP/UA/PII/geo a partir de site_visitors + web_events + compras.
    */
   static async findPurchaseJourney(
     siteKey: string,
@@ -401,6 +434,8 @@ export class EnrichmentService {
       country: opts.country,
       emailHash: opts.emailHash,
       phoneHash: opts.phoneHash,
+      fbp: opts.fbp,
+      fbc: opts.fbc,
     });
 
     const emailHash =
@@ -519,6 +554,7 @@ export class EnrichmentService {
           if (!out.lnHash) out.lnHash = hashedScalar(ud, 'ln');
           if (!out.ctHash) out.ctHash = hashedScalar(ud, 'ct');
           if (!out.stHash) out.stHash = hashedScalar(ud, 'st');
+          if (!out.countryHash) out.countryHash = hashedScalar(ud, 'country');
           if (!out.zpHash) out.zpHash = hashedScalar(ud, 'zp');
           if (!out.dbHash) out.dbHash = hashedScalar(ud, 'db');
           if (!out.geHash) out.geHash = hashedScalar(ud, 'ge');
@@ -596,7 +632,10 @@ export class EnrichmentService {
       out.landingUrl ||
       out.utmSource ||
       out.city ||
-      out.fnHash;
+      out.country ||
+      out.fnHash ||
+      out.ctHash ||
+      out.countryHash;
     return hasAnything ? out : null;
   }
 
