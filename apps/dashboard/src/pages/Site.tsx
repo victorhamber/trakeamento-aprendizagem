@@ -1336,6 +1336,8 @@ export const SitePage = () => {
       button_text_color: formButtonTextColor,
       event_type: formEventType,
       custom_event_name: formCustomEventName,
+      event_value: formEventValue,
+      event_currency: formEventCurrency,
       post_submit_action: postSubmitAction,
       post_submit_message: postSubmitMessage,
       post_submit_redirect_url: postSubmitRedirectUrl,
@@ -1423,6 +1425,14 @@ export const SitePage = () => {
       : (isDark ? 'background:#fff; color:#000;' : 'background:#000; color:#fff;');
 
     const formId = `trk-form-${Date.now()}`;
+    const parsedFormValue = parseFloat(String(event_value ?? '').replace(',', '.'));
+    const formCurrency = /^[A-Za-z]{3}$/.test(String(event_currency || '').trim())
+      ? String(event_currency).trim().toUpperCase()
+      : 'BRL';
+    const formMoneyLines =
+      Number.isFinite(parsedFormValue) && parsedFormValue > 0
+        ? `    evtData.value = ${parsedFormValue};\n    evtData.currency = '${formCurrency}';\n`
+        : '';
     let scriptContent = '';
 
     if (publicId) {
@@ -1508,9 +1518,7 @@ async function handleTrkSubmit(e) {
   // 2. Dispara o evento no tracker imediatamente (garante /ingest + CAPI server-side antes de redirect)
   if (window.tracker) {
     var evtData = { event_id: eventId };
-    evtData.value = ${Number.isFinite(parseFloat(event_value)) ? parseFloat(event_value) : 0};
-    evtData.currency = '${/^[A-Za-z]{3}$/.test(String(event_currency || '').trim()) ? String(event_currency).trim().toUpperCase() : 'BRL'}';
-    window.tracker.track('${evtName}', evtData);
+${formMoneyLines}    window.tracker.track('${evtName}', evtData);
   }
 
   // 3. Server-side submission (webhooks, auditoria, ações pós-cadastro)
@@ -1588,9 +1596,7 @@ function handleTrkSubmit(e) {
   // assume-se sucesso ao clicar no submit se houvesse lógica manual acoplada.
   if (window.tracker) {
     var evtData = {};
-    evtData.value = ${Number.isFinite(parseFloat(event_value)) ? parseFloat(event_value) : 0};
-    evtData.currency = '${/^[A-Za-z]{3}$/.test(String(event_currency || '').trim()) ? String(event_currency).trim().toUpperCase() : 'BRL'}';
-    window.tracker.track('${evtName}', evtData);
+${formMoneyLines}    window.tracker.track('${evtName}', evtData);
   }
   
   form.reset();

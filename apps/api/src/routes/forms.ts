@@ -6,7 +6,6 @@ import { getClientIp } from '../lib/ip';
 import { geoFromGeoipLite, resolveServerGeoHint } from '../lib/request-geo';
 import { mergeUserDataWithMetaParamBuilder } from '../lib/meta-param-builder-ingest';
 import { ensureMetaRoasMoneyFields } from '../lib/meta-currency';
-import { resolveSiteLeadMoney } from '../lib/site-lead-money';
 import { EnrichmentService } from '../services/enrichment';
 import { preserveFreshMetaFbc, preserveMetaClickIds } from '../lib/meta-attribution';
 import {
@@ -810,24 +809,18 @@ router.post('/public/forms/:publicId/submit', async (req, res) => {
           );
 
           const formCfg = (form.config && typeof form.config === 'object' ? form.config : {}) as Record<string, unknown>;
-          const siteMoney = await resolveSiteLeadMoney(siteKey);
-          const formCustomData = ensureMetaRoasMoneyFields(
-            eventName,
-            {
+          const manualValue = formCfg.event_value;
+          const hasManualValue = manualValue !== undefined && manualValue !== null && String(manualValue).trim() !== '';
+          const formCustomData = ensureMetaRoasMoneyFields(eventName, {
             form_name: form.name,
             form_id: publicId,
             meta_event_name: eventName,
             ...safeCustomData,
-            ...(formCfg.event_value !== undefined && formCfg.event_value !== ''
-              ? { value: formCfg.event_value }
-              : {}),
-            ...(formCfg.event_currency !== undefined && formCfg.event_currency !== ''
+            ...(hasManualValue ? { value: manualValue } : {}),
+            ...(hasManualValue && formCfg.event_currency !== undefined && formCfg.event_currency !== ''
               ? { currency: formCfg.event_currency }
               : {}),
-            },
-            siteMoney?.currency || 'BRL',
-            siteMoney?.value
-          );
+          });
 
           capiService
             .sendEventDetailed(siteKey, {

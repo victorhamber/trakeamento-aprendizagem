@@ -15,7 +15,6 @@ import {
   utmRecordFromPurchaseRow,
 } from '../lib/visitorTrafficSource';
 import { ensureMetaRoasMoneyFields } from '../lib/meta-currency';
-import { resolveSiteLeadMoney } from '../lib/site-lead-money';
 import { invalidateCrmCaches } from '../lib/crm-qualification';
 import { LlmService } from '../services/llm';
 
@@ -731,20 +730,11 @@ router.post('/:siteId/checkout-simulator/lead', requireAuth, async (req, res) =>
     external_id: externalId ? CapiService.hash(externalId) : undefined,
   };
 
-  const siteMoney = await resolveSiteLeadMoney(siteKey);
-  const customData: Record<string, unknown> = {
-    content_type: 'product',
-    ...ensureMetaRoasMoneyFields(
-      'Lead',
-      {
-        value: value !== null && Number.isFinite(value) && value > 0 ? value : undefined,
-        currency,
-      },
-      siteMoney?.currency || 'BRL',
-      siteMoney?.value
-    ),
-    currency: /^[A-Za-z]{3}$/.test(currency) ? currency.toUpperCase() : 'BRL',
-  };
+  const customData = ensureMetaRoasMoneyFields('Lead', {
+    ...(value !== null && Number.isFinite(value) && value > 0
+      ? { value, currency }
+      : {}),
+  });
 
   await pool.query(
     `INSERT INTO web_events(

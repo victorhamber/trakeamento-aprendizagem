@@ -19,7 +19,6 @@ import {
   splitMetaPersonName,
 } from '../lib/meta-user-data-normalize';
 import { ensureMetaRoasMoneyFields, normalizeMetaCurrencyCode } from '../lib/meta-currency';
-import { resolveSiteLeadMoney } from '../lib/site-lead-money';
 import { buildVisitorTrafficSourceString } from '../lib/visitorTrafficSource';
 import { checkEventQuota } from '../lib/quota';
 import { EnrichmentService } from '../services/enrichment';
@@ -629,8 +628,7 @@ function pickReferrerUrlForCapi(
 function buildMetaCustomDataForCapi(
   eventName: string,
   cd: Record<string, unknown>,
-  tl: Record<string, unknown>,
-  siteMoney?: { value: number; currency: string } | null
+  tl: Record<string, unknown>
 ): { metaCustomData: Record<string, unknown>; refUrl: string | undefined } {
   const refUrl = pickReferrerUrlForCapi(cd, tl);
   const metaCustomData: Record<string, unknown> = {};
@@ -676,12 +674,7 @@ function buildMetaCustomDataForCapi(
     }
   }
 
-  const money = ensureMetaRoasMoneyFields(
-    eventName,
-    metaCustomData,
-    siteMoney?.currency || 'BRL',
-    siteMoney?.value
-  );
+  const money = ensureMetaRoasMoneyFields(eventName, metaCustomData);
   if (typeof money.value === 'number' && Number.isFinite(Number(money.value))) {
     metaCustomData.value = money.value;
     metaCustomData.currency = normalizeMetaCurrencyCode(money.currency);
@@ -1385,8 +1378,7 @@ router.post('/events', cors(), ingestLimiter, async (req, res) => { // Applied c
       // @see https://developers.facebook.com/docs/marketing-api/conversions-api/parameters
       const cd = event.custom_data ?? {};
       const tl = event.telemetry ?? {} as Record<string, unknown>;
-      const siteMoney = await resolveSiteLeadMoney(siteKey);
-      const { metaCustomData, refUrl } = buildMetaCustomDataForCapi(eventName, cd, tl, siteMoney);
+      const { metaCustomData, refUrl } = buildMetaCustomDataForCapi(eventName, cd, tl);
 
       const actionSrc = actionSourceForCapi(event.action_source);
 
@@ -1662,7 +1654,6 @@ router.post('/batch', cors(), ingestLimiter, async (req, res) => {
       ).catch(() => {});
 
       // Visitor UPSERTs + CAPI + GA4 — all fire-and-forget per event
-      const batchSiteMoney = await resolveSiteLeadMoney(siteKey);
       for (const p of inserted) {
         const capiUser = await buildCapiUserData(req, p.event.user_data || {}, siteKey, p.event.custom_data ?? {});
         const extId = deriveVisitorExternalIdForStorage({
@@ -1743,7 +1734,7 @@ router.post('/batch', cors(), ingestLimiter, async (req, res) => {
         // CAPI payload (espelha POST /events: custom_data + referrer_url + action_source)
         const cd = p.event.custom_data ?? {};
         const tl = p.event.telemetry ?? {} as Record<string, unknown>;
-        const { metaCustomData, refUrl } = buildMetaCustomDataForCapi(p.eventName, cd, tl, batchSiteMoney);
+        const { metaCustomData, refUrl } = buildMetaCustomDataForCapi(p.eventName, cd, tl);
 
         const actionSrc = actionSourceForCapi(p.event.action_source);
 

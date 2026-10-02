@@ -10,31 +10,6 @@ export function normalizeMetaCurrencyCode(raw: unknown, fallback = 'BRL'): strin
   return fallback;
 }
 
-/**
- * Eventos em que o Events Manager exige value + currency ISO para ROAS.
- * Lead é evento padrão Meta (`fbq('track')`). Download e Group são
- * personalizados do site (`fbq('trackCustom')`) — a Meta ainda alerta ROAS
- * neles. Purchase fica de fora para não inventar valor 0 numa conversão real.
- */
-export const META_ROAS_MONEY_EVENTS = new Set([
-  'ViewContent',
-  'AddToCart',
-  'AddToWishlist',
-  'InitiateCheckout',
-  'AddPaymentInfo',
-  'Lead',
-  'CompleteRegistration',
-  'Subscribe',
-  'StartTrial',
-  'Download',
-  'Group',
-  'Grupo',
-  'Donate',
-  'Schedule',
-  'Contact',
-  'SubmitApplication',
-]);
-
 /** Aceita número ou string ("97", "97,00"); rejeita negativo/NaN. */
 export function parseMetaEventValue(raw: unknown): number | undefined {
   if (raw === undefined || raw === null || raw === '') return undefined;
@@ -48,35 +23,30 @@ export function parseMetaEventValue(raw: unknown): number | undefined {
   return n;
 }
 
+const MONEY_ALIAS_KEYS = ['value', 'amount', 'price', 'total', 'revenue', 'currency', 'currency_code', 'moeda'] as const;
+
 /**
- * Garante `value` numérico + `currency` ISO 4217 nos eventos que o Meta
- * usa para ROAS. `value=0` é tratado como ausente (Events Manager marca inválido
- * e dispara “preços iguais”). Sem valor no evento, usa `fallbackValue` se > 0.
+ * Mantém `value` só quando o evento já traz um número > 0 (compra real ou
+ * valor digitado na regra). Não inventa ticket, não manda 0 e não manda
+ * currency sozinha — campo ausente, não zero.
  */
 export function ensureMetaRoasMoneyFields(
-  eventName: string,
+  _eventName: string,
   customData: Record<string, unknown>,
-  fallbackCurrency = 'BRL',
-  fallbackValue?: number
+  fallbackCurrency = 'BRL'
 ): Record<string, unknown> {
   const out: Record<string, unknown> = { ...customData };
   const rawValue = out.value ?? out.amount ?? out.price ?? out.total ?? out.revenue;
   const parsed = parseMetaEventValue(rawValue);
-  const rawCurrency = out.currency ?? out.currency_code ?? out.moeda;
-  const fallbackParsed = parseMetaEventValue(fallbackValue);
   const positive = parsed !== undefined && parsed > 0 ? parsed : undefined;
-  const positiveFallback = fallbackParsed !== undefined && fallbackParsed > 0 ? fallbackParsed : undefined;
 
-  if (META_ROAS_MONEY_EVENTS.has(eventName)) {
-    out.value = positive ?? positiveFallback ?? 1;
-    out.currency = normalizeMetaCurrencyCode(rawCurrency, fallbackCurrency);
-    return out;
-  }
+  for (const key of MONEY_ALIAS_KEYS) delete out[key];
 
-  if (parsed !== undefined) {
-    out.value = parsed;
-    out.currency = normalizeMetaCurrencyCode(rawCurrency, fallbackCurrency);
-  }
+  if (positive === undefined) return out;
+
+  const rawCurrency = customData.currency ?? customData.currency_code ?? customData.moeda;
+  out.value = positive;
+  out.currency = normalizeMetaCurrencyCode(rawCurrency, fallbackCurrency);
   return out;
 }
 

@@ -4,7 +4,6 @@ import { Router } from 'express';
 import { pool } from '../db/pool';
 import { getClientIp } from '../lib/ip';
 import { resolveServerGeoHint } from '../lib/request-geo';
-import { resolveSiteLeadMoney } from '../lib/site-lead-money';
 
 const router = Router();
 
@@ -159,7 +158,6 @@ router.get('/tracker.js', async (req, res) => {
           hotmartSckMaxChars = Number.isFinite(n) && n > 0 ? n : null;
         }
 
-        const siteLeadMoney = await resolveSiteLeadMoney(siteKey);
         const configObj: Record<string, unknown> = {
           apiUrl,
           siteKey,
@@ -168,8 +166,6 @@ router.get('/tracker.js', async (req, res) => {
           eventRules,
           /** Limite aproximado do campo sck da Hotmart; acima disso usa trk_ só com eid e manda fbp/fbc na query. Aumente com HOTMART_SCK_MAX_CHARS na API se a Hotmart permitir mais. */
           hotmartSckMaxChars,
-          defaultLeadValue: siteLeadMoney?.value ?? 1,
-          defaultLeadCurrency: siteLeadMoney?.currency || 'BRL',
         };
         const headSnip = typeof injRow.inject_head_html === 'string' ? injRow.inject_head_html.trim() : '';
         const bodySnip = typeof injRow.inject_body_html === 'string' ? injRow.inject_body_html.trim() : '';
@@ -1528,30 +1524,26 @@ router.get('/tracker.js', async (req, res) => {
       delete cleanCustom._crm_tool;
       delete cleanCustom._crm_event_name;
 
-      // Events Manager alerta ROAS sem value + currency ISO. Pixel e CAPI precisam do mesmo par.
-      // Lead = padrão Meta; Download/Group = personalizados do site (trackCustom). Purchase não entra.
-      var roasMoneyEvents = {
-        ViewContent:1, AddToCart:1, AddToWishlist:1, InitiateCheckout:1, AddPaymentInfo:1,
-        Lead:1, CompleteRegistration:1, Subscribe:1, StartTrial:1, Download:1, Group:1, Grupo:1,
-        Donate:1, Schedule:1, Contact:1, SubmitApplication:1
-      };
-      if (roasMoneyEvents[eventName]) {
-        var rawV = cleanCustom.value != null ? cleanCustom.value : (cleanCustom.amount != null ? cleanCustom.amount : (cleanCustom.price != null ? cleanCustom.price : cleanCustom.total));
+      // Só Purchase leva valor automático (preço pago, no webhook).
+      // Nos demais, value só sai se a regra tiver um número > 0 digitado.
+      // Sem valor: omite o campo (não manda 0).
+      if (eventName !== 'Purchase') {
+        var rawV = cleanCustom.value != null ? cleanCustom.value : (cleanCustom.amount != null ? cleanCustom.amount : (cleanCustom.price != null ? cleanCustom.price : (cleanCustom.total != null ? cleanCustom.total : cleanCustom.revenue)));
         var parsedV = rawV !== undefined && rawV !== null && String(rawV).trim() !== '' ? parseFloat(String(rawV).replace(',', '.')) : NaN;
-        if (!isFinite(parsedV) || parsedV <= 0) {
-          var defV = cfg.defaultLeadValue;
-          cleanCustom.value = (typeof defV === 'number' && isFinite(defV) && defV > 0) ? defV : 1;
-        } else {
+        if (isFinite(parsedV) && parsedV > 0) {
           cleanCustom.value = parsedV;
-        }
-        var rawC = cleanCustom.currency != null ? cleanCustom.currency : (cleanCustom.currency_code != null ? cleanCustom.currency_code : cleanCustom.moeda);
-        var curS = (rawC === undefined || rawC === null) ? '' : String(rawC).trim().toUpperCase();
-        if (!curS || curS === '0' || !/^[A-Z]{3}$/.test(curS)) {
-          cleanCustom.currency = (cfg.defaultLeadCurrency && /^[A-Za-z]{3}$/.test(String(cfg.defaultLeadCurrency)))
-            ? String(cfg.defaultLeadCurrency).toUpperCase()
-            : 'BRL';
+          var rawC = cleanCustom.currency != null ? cleanCustom.currency : (cleanCustom.currency_code != null ? cleanCustom.currency_code : cleanCustom.moeda);
+          var curS = (rawC === undefined || rawC === null) ? '' : String(rawC).trim().toUpperCase();
+          cleanCustom.currency = (curS && /^[A-Z]{3}$/.test(curS)) ? curS : 'BRL';
         } else {
-          cleanCustom.currency = curS;
+          delete cleanCustom.value;
+          delete cleanCustom.amount;
+          delete cleanCustom.price;
+          delete cleanCustom.total;
+          delete cleanCustom.revenue;
+          delete cleanCustom.currency;
+          delete cleanCustom.currency_code;
+          delete cleanCustom.moeda;
         }
       }
 
@@ -2819,9 +2811,7 @@ router.get('/tracker.js', async (req, res) => {
       _autoViewContentSent = true;
       track('ViewContent', {
         content_name: document.title,
-        content_category: 'auto_engagement',
-        value: 0,
-        currency: 'BRL'
+        content_category: 'auto_engagement'
       });
     }
   }

@@ -45,23 +45,16 @@ describe('parseMetaEventValue', () => {
 });
 
 describe('ensureMetaRoasMoneyFields', () => {
-  it('não envia 0 em Lead/Download/Group — usa fallback ou 1 + BRL', () => {
-    expect(ensureMetaRoasMoneyFields('Lead', {})).toEqual({ value: 1, currency: 'BRL' });
-    expect(ensureMetaRoasMoneyFields('Lead', { value: 0 }, 'BRL', 185)).toEqual({
-      value: 185,
-      currency: 'BRL',
+  it('não inventa valor em Lead/Download/evento personalizado', () => {
+    expect(ensureMetaRoasMoneyFields('Lead', { content_name: 'form' })).toEqual({
+      content_name: 'form',
     });
-    expect(ensureMetaRoasMoneyFields('Download', { currency: 'R$' })).toEqual({
-      value: 1,
-      currency: 'BRL',
-    });
-    expect(ensureMetaRoasMoneyFields('Group', { moeda: 'MX$' })).toMatchObject({
-      value: 1,
-      currency: 'BRL',
-    });
+    expect(ensureMetaRoasMoneyFields('Lead', { value: 0, currency: 'BRL' })).toEqual({});
+    expect(ensureMetaRoasMoneyFields('Download', { currency: 'R$' })).toEqual({});
+    expect(ensureMetaRoasMoneyFields('Corretora', { moeda: 'MX$' })).toEqual({});
   });
 
-  it('preserva valor real e normaliza moeda', () => {
+  it('preserva valor digitado na regra e normaliza moeda', () => {
     expect(ensureMetaRoasMoneyFields('Lead', { value: '47', currency: 'mxn' })).toEqual({
       value: 47,
       currency: 'MXN',
