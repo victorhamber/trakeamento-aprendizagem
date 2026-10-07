@@ -1030,7 +1030,7 @@ async function processPurchaseWebhook({
   /** Valor pago (bruto) + moeda da cobrança para o Purchase CAPI. Se omitido, usa value/currency. */
   capiValue,
   capiCurrency,
-  /** ID do produto na plataforma (Hotmart product_id, Kiwify product_id, etc.) — enriquece content_ids no CAPI. */
+  /** ID do produto na plataforma. Não vai para a Meta (evita catálogo com preço único). */
   contentId,
   /** Código da oferta (Hotmart purchase.offer.code) — usado em conversões personalizadas Meta. */
   offerCode,

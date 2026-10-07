@@ -693,13 +693,6 @@ function buildMetaCustomDataForCapi(
     }
   }
 
-  if (!metaCustomData['content_type'] && metaCustomData['value'] !== undefined) {
-    const n = Number(metaCustomData['value']);
-    if (!Number.isNaN(n) && n > 0) {
-      metaCustomData['content_type'] = 'product';
-    }
-  }
-
   const attributionFields: [string, unknown][] = [
     ['utm_source', cd['utm_source'] || tl['utm_source']],
     ['utm_medium', cd['utm_medium'] || tl['utm_medium']],

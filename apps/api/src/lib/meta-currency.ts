@@ -52,9 +52,10 @@ export function ensureMetaRoasMoneyFields(
 
 /**
  * Campos de comércio no Purchase CAPI.
- * Não envia `value: 0`, nem `contents` (catálogo Meta). Offer Hotmart (`f7x5lf5w`)
- * no content_ids faz o Graph tratar o evento como DPA e descartar o Purchase
- * enquanto o evento CRM (sem contents) entra normal.
+ * Não envia `value: 0`. Também não envia `contents`, `content_ids` nem
+ * `content_type: product`: o id do produto Hotmart é o mesmo em todas as
+ * ofertas (24, 597, 1997) e a Meta trata isso como um único preço de catálogo.
+ * O preço de cada venda vai só em `value` + `currency`.
  */
 export function isMetaCatalogContentId(raw: unknown): boolean {
   if (raw == null) return false;
@@ -64,6 +65,7 @@ export function isMetaCatalogContentId(raw: unknown): boolean {
 export function buildMetaPurchaseCommerceFields(input: {
   value: unknown;
   currency?: unknown;
+  /** Mantido na assinatura; não entra no payload da Meta. */
   contentId?: unknown;
   orderId?: unknown;
   numItems?: number;
@@ -73,8 +75,6 @@ export function buildMetaPurchaseCommerceFields(input: {
     parsed !== undefined && parsed > 0 ? Math.round(parsed * 100) / 100 : undefined;
   const currency =
     positive !== undefined ? normalizeMetaCurrencyCode(input.currency) : undefined;
-  const contentId =
-    isMetaCatalogContentId(input.contentId) ? String(input.contentId).trim() : undefined;
   const orderId =
     input.orderId != null && String(input.orderId).trim() !== ''
       ? String(input.orderId).trim()
@@ -86,21 +86,17 @@ export function buildMetaPurchaseCommerceFields(input: {
   if (positive !== undefined && currency) {
     out.value = positive;
     out.currency = currency;
-    // item_price no contents ajuda o diagnóstico de ROAS; id só se for numérico (não oferta Hotmart).
-    out.contents = [
-      {
-        quantity: numItems,
-        item_price: positive,
-        ...(contentId ? { id: contentId } : {}),
-      },
-    ];
-  }
-  if (contentId) {
-    out.content_ids = [contentId];
-    out.content_type = 'product';
   }
   if (orderId) out.order_id = orderId;
   return out;
+}
+
+function stripPurchaseCatalogFields(out: Record<string, unknown>): void {
+  delete out.contents;
+  delete out.content_ids;
+  if (out.content_type === 'product' || out.content_type === 'product_group') {
+    delete out.content_type;
+  }
 }
 
 /** Remove payload de catálogo inválido antes do POST no Graph (inclui retry da outbox). */
@@ -109,7 +105,11 @@ export function sanitizeMetaCommerceCustomData(
   customData: Record<string, unknown>
 ): Record<string, unknown> {
   const out: Record<string, unknown> = { ...customData };
-  if (eventName !== 'Purchase' && eventName !== 'InitiateCheckout' && eventName !== 'AddToCart') {
+  if (eventName === 'Purchase') {
+    stripPurchaseCatalogFields(out);
+    return out;
+  }
+  if (eventName !== 'InitiateCheckout' && eventName !== 'AddToCart') {
     delete out.contents;
     return out;
   }

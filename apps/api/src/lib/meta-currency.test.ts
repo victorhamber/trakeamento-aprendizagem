@@ -77,78 +77,64 @@ describe('ensureMetaRoasMoneyFields', () => {
 });
 
 describe('buildMetaPurchaseCommerceFields', () => {
-  it('não envia value 0, contents nem offer code como content_ids', () => {
+  it('envia só value, currency e order_id — sem catálogo', () => {
     expect(buildMetaPurchaseCommerceFields({ value: 0, currency: 'BRL', orderId: 'HP123' })).toEqual({
       num_items: 1,
       order_id: 'HP123',
     });
     expect(
       buildMetaPurchaseCommerceFields({
-        value: 33.15,
+        value: 597,
         currency: 'brl',
         contentId: '5986726',
         orderId: 'HP4243995799',
       })
     ).toEqual({
       num_items: 1,
-      value: 33.15,
+      value: 597,
       currency: 'BRL',
-      contents: [{ quantity: 1, item_price: 33.15, id: '5986726' }],
-      content_ids: ['5986726'],
-      content_type: 'product',
       order_id: 'HP4243995799',
     });
     expect(
       buildMetaPurchaseCommerceFields({
-        value: 33.15,
+        value: 24,
         currency: 'BRL',
         contentId: 'f7x5lf5w',
-        orderId: 'HP4243995799',
-      })
-    ).toEqual({
-      num_items: 1,
-      value: 33.15,
-      currency: 'BRL',
-      contents: [{ quantity: 1, item_price: 33.15 }],
-      order_id: 'HP4243995799',
-    });
+        orderId: 'HP1',
+      }).contents
+    ).toBeUndefined();
   });
 });
 
 describe('sanitizeMetaCommerceCustomData', () => {
-  it('remove content_ids de oferta Hotmart e contents com id inválido no Purchase', () => {
+  it('tira catálogo do Purchase e mantém o preço da venda', () => {
     const out = sanitizeMetaCommerceCustomData('Purchase', {
-      value: 33.15,
+      value: 1997,
       currency: 'BRL',
-      content_ids: ['f7x5lf5w'],
+      content_ids: ['5986726'],
       content_type: 'product',
-      contents: [{ id: 'f7x5lf5w', quantity: 1, item_price: 33.15 }],
+      contents: [{ id: '5986726', quantity: 1, item_price: 1997 }],
+      content_name: 'EA TREND',
       order_id: 'HP4243995799',
     });
     expect(out.contents).toBeUndefined();
     expect(out.content_ids).toBeUndefined();
     expect(out.content_type).toBeUndefined();
-    expect(out.value).toBe(33.15);
+    expect(out.value).toBe(1997);
+    expect(out.currency).toBe('BRL');
+    expect(out.content_name).toBe('EA TREND');
     expect(out.order_id).toBe('HP4243995799');
   });
 
-  it('mantém contents com item_price e id numérico', () => {
-    const out = sanitizeMetaCommerceCustomData('Purchase', {
-      value: 22,
-      currency: 'EUR',
-      contents: [{ id: '5986726', quantity: 1, item_price: 22 }],
-      content_ids: ['5986726'],
-      content_type: 'product',
-    });
-    expect(out.contents).toEqual([{ quantity: 1, item_price: 22, id: '5986726' }]);
-    expect(out.content_ids).toEqual(['5986726']);
-  });
-
-  it('mantém product id numérico', () => {
+  it('também tira id numérico de produto no Purchase', () => {
     const out = sanitizeMetaCommerceCustomData('Purchase', {
       content_ids: ['5986726'],
       content_type: 'product',
+      value: 24,
+      currency: 'BRL',
     });
-    expect(out.content_ids).toEqual(['5986726']);
+    expect(out.content_ids).toBeUndefined();
+    expect(out.content_type).toBeUndefined();
+    expect(out.value).toBe(24);
   });
 });
