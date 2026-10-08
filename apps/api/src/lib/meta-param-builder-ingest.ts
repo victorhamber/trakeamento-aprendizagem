@@ -8,19 +8,22 @@ import { fbclidFromEventSourceUrl, preferUnmodifiedFbc, preserveMetaClickIds } f
 
 // Pacote CommonJS oficial Meta (sem tipos first-party completos)
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { ParamBuilder } = require('capi-param-builder-nodejs') as {
+const { ParamBuilder, PlainDataObject } = require('capi-param-builder-nodejs') as {
   ParamBuilder: new (domains?: string[] | object) => MetaParamBuilderInstance;
+  PlainDataObject: new (
+    host: string,
+    queryParams: Record<string, string>,
+    cookies: Record<string, string>,
+    referer: string | null,
+    xForwardedFor: string | null,
+    remoteAddress: string | null,
+    scheme?: string | null,
+    requestUri?: string | null
+  ) => object;
 };
 
 type MetaParamBuilderInstance = {
-  processRequest(
-    host: string,
-    queries: Record<string, string>,
-    cookies: Record<string, string>,
-    referer?: string | null,
-    xForwardedFor?: string | null,
-    remoteAddress?: string | null
-  ): unknown;
+  processRequestFromContext(context: object): unknown;
   getFbc(): string | null;
   getFbp(): string | null;
 };
@@ -44,7 +47,9 @@ function parseCookieHeader(header: string | undefined): Record<string, string> {
   return out;
 }
 
-function queryRecordFromHttpUrl(urlStr: string): { host: string; query: Record<string, string> } | null {
+function queryRecordFromHttpUrl(
+  urlStr: string
+): { host: string; query: Record<string, string>; scheme: string; requestUri: string } | null {
   try {
     if (!urlStr || (!urlStr.startsWith('http://') && !urlStr.startsWith('https://'))) return null;
     const u = new URL(urlStr);
@@ -52,7 +57,12 @@ function queryRecordFromHttpUrl(urlStr: string): { host: string; query: Record<s
     u.searchParams.forEach((value, key) => {
       query[key] = value;
     });
-    return { host: u.host, query };
+    return {
+      host: u.host,
+      query,
+      scheme: u.protocol.replace(':', ''),
+      requestUri: `${u.pathname}${u.search}`,
+    };
   } catch {
     return null;
   }
@@ -65,6 +75,9 @@ type UserDataLike = Record<string, unknown>;
  * - query da página (ex.: fbclid em event_source_url)
  * - cookies da requisição ao ingest (se houver)
  * - valores já enviados no body (tratados como _fbc / _fbp para o builder)
+ *
+ * O contexto é o da página do site, não o do POST em /ingest: passar `req` direto
+ * faria o builder ler o host e a query da nossa API.
  */
 export function applyMetaParamBuilderToIngest(
   req: Request,
@@ -93,7 +106,17 @@ export function applyMetaParamBuilderToIngest(
     const builder = new ParamBuilder();
     const xff = req.get('x-forwarded-for') ?? null;
     const remote = (req.socket?.remoteAddress as string | undefined) ?? null;
-    builder.processRequest(host, query, cookies, req.get('referer') || null, xff, remote);
+    const context = new PlainDataObject(
+      host,
+      query,
+      cookies,
+      req.get('referer') || null,
+      xff,
+      remote,
+      parsed?.scheme ?? null,
+      parsed?.requestUri ?? null
+    );
+    builder.processRequestFromContext(context);
 
     const fbc = builder.getFbc();
     const fbp = builder.getFbp();

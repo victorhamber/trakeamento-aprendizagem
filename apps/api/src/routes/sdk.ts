@@ -208,6 +208,19 @@ router.get('/tracker.js', async (req, res) => {
   try {
     if (window.__TA_META_PB_LOADED) return;
     window.__TA_META_PB_LOADED = true;
+    var done = false;
+    var waiters = [];
+    function finish() {
+      if (done) return;
+      done = true;
+      for (var i = 0; i < waiters.length; i++) { try { waiters[i](); } catch(_w) {} }
+      waiters = [];
+    }
+    // initTracker espera aqui (com timeout) quando o _fbc só pode vir do navegador do Instagram/Facebook.
+    window.__TA_META_PB_WHEN_READY = function(cb) {
+      if (done) { cb(); return; }
+      waiters.push(cb);
+    };
     var s = document.createElement('script');
     s.async = true;
     s.src = ${JSON.stringify(`${sdkBase}/sdk/meta-param-builder.js`)};
@@ -215,10 +228,15 @@ router.get('/tracker.js', async (req, res) => {
       try {
         // O bundle expõe 'clientParamBuilder' (documentado pela Meta).
         if (window.clientParamBuilder && typeof window.clientParamBuilder.processAndCollectAllParams === 'function') {
-          window.clientParamBuilder.processAndCollectAllParams();
+          var p = window.clientParamBuilder.processAndCollectAllParams();
+          if (p && typeof p.then === 'function') p.then(finish, finish);
+          else finish();
+          return;
         }
       } catch(_e) {}
+      finish();
     };
+    s.onerror = finish;
     (document.head || document.documentElement).appendChild(s);
   } catch(_e) {}
 })();\n\n`;
@@ -2746,10 +2764,36 @@ router.get('/tracker.js', async (req, res) => {
       initTestMode(test);
       return;
     }
-    pageView();
-    checkUrlRules();
-    decorateCheckoutLinks();
-    observeVSL();
+    var started = false;
+    function startTracking() {
+      if (started) return;
+      started = true;
+      pageView();
+      checkUrlRules();
+      decorateCheckoutLinks();
+      observeVSL();
+    }
+    if (shouldWaitForMetaClickRecovery() && typeof window.__TA_META_PB_WHEN_READY === 'function') {
+      window.__TA_META_PB_WHEN_READY(startTracking);
+      setTimeout(startTracking, 1500);
+      return;
+    }
+    startTracking();
+  }
+
+  /**
+   * No navegador do Instagram/Facebook o fbclid às vezes some da URL; o configurador da Meta
+   * recupera o clique de forma assíncrona. Sem esperar, o PageView sai sem fbc.
+   */
+  function shouldWaitForMetaClickRecovery() {
+    try {
+      if (getCookie('_fbc')) return false;
+      if (new URL(location.href).searchParams.get('fbclid')) return false;
+      var ua = navigator.userAgent || '';
+      return /FBAN|FBAV|FB_IAB|FBIOS|Instagram/i.test(ua);
+    } catch (_e) {
+      return false;
+    }
   }
 
   function bootstrap() {
