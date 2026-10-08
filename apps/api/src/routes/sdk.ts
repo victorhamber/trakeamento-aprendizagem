@@ -352,7 +352,7 @@ router.get('/tracker.js', async (req, res) => {
   function normState(v) {
     var s = (v || '').toString().trim().toLowerCase()
       .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-      .replace(/\s+/g, ' ');
+      .replace(/\\s+/g, ' ');
     if (!s) return '';
     if (/^[a-z]{2}$/.test(s)) return s;
     var br = {
@@ -366,11 +366,27 @@ router.get('/tracker.js', async (req, res) => {
     if (br[s]) return br[s];
     return s.replace(/[^a-z]/g, '').slice(0, 2);
   }
-  function normZip(v)       { return (v || '').toString().trim().toLowerCase().replace(/\s+/g, ''); }
+  function normZip(v)       { return (v || '').toString().trim().toLowerCase().replace(/\\s+/g, ''); }
   function normDob(v)       { return (v || '').toString().replace(/[^0-9]/g, ''); } // YYYYMMDD
+  /** "1.297" → 1297, "1.297,50" → 1297.5, "97,50" → 97.5, "9.99" → 9.99 (igual a parseMetaEventValue na API). */
+  function parseMoney(v) {
+    if (typeof v === 'number') return v;
+    var s = String(v == null ? '' : v).trim().replace(/[^\\d.,-]/g, '');
+    if (!s) return NaN;
+    var lc = s.lastIndexOf(','), ld = s.lastIndexOf('.');
+    if (lc >= 0 && ld >= 0) {
+      var dec = lc > ld ? ',' : '.';
+      s = s.split(dec === ',' ? '.' : ',').join('').replace(dec, '.');
+    } else if (lc >= 0) {
+      s = s.indexOf(',') !== lc ? s.split(',').join('') : s.replace(',', '.');
+    } else if (ld >= 0 && /^-?[1-9]\\d{0,2}(\\.\\d{3})+$/.test(s)) {
+      s = s.split('.').join('');
+    }
+    return Number(s);
+  }
   /** ISO 3166-1 alpha-2 em minúsculas (ex.: br) — padrão Meta para country hasheado. */
   function normCountry(v) {
-    var s = (v || '').toString().trim().toLowerCase().replace(/\s+/g, '');
+    var s = (v || '').toString().trim().toLowerCase().replace(/\\s+/g, '');
     if (!s) return '';
     try { s = s.normalize('NFD').replace(/[\u0300-\u036f]/g, ''); } catch(_e) {}
     if (/^[a-z]{2}$/.test(s)) return s;
@@ -996,7 +1012,7 @@ router.get('/tracker.js', async (req, res) => {
         // Campo "nome" / "name" com nome completo → separa fn + ln
         if ((/(^|[^a-z])nome([^a-z]|$)/.test(meta) || /(^|[^a-z])name([^a-z]|$)/.test(meta) || /nomecompleto|fullnamecompleto|full.?name/.test(meta))
             && meta.indexOf('sobrenome') < 0 && meta.indexOf('usuario') < 0 && meta.indexOf('username') < 0) {
-          var partsNome = String(val || '').trim().replace(/\s+/g, ' ').split(' ');
+          var partsNome = String(val || '').trim().replace(/\\s+/g, ' ').split(' ');
           if (partsNome.length >= 2) {
             setHashedCookie('_ta_fn', partsNome[0], normName);
             setHashedCookie('_ta_ln', partsNome.slice(1).join(' '), normName);
@@ -1097,11 +1113,11 @@ router.get('/tracker.js', async (req, res) => {
       var ln = pick(['ln','last_name','lastname','sobrenome']);
       var nomeFull = pick(['nome','name','full_name','nomecompleto']);
       if (!fn && !ln && nomeFull) {
-        var np = nomeFull.trim().replace(/\s+/g, ' ').split(' ');
+        var np = nomeFull.trim().replace(/\\s+/g, ' ').split(' ');
         if (np.length >= 2) { fn = np[0]; ln = np.slice(1).join(' '); }
         else { fn = np[0] || ''; }
-      } else if (fn && !ln && /\s/.test(fn)) {
-        var np2 = fn.trim().replace(/\s+/g, ' ').split(' ');
+      } else if (fn && !ln && /\\s/.test(fn)) {
+        var np2 = fn.trim().replace(/\\s+/g, ' ').split(' ');
         fn = np2[0]; ln = np2.slice(1).join(' ');
       }
       if (fn) setHashedCookie('_ta_fn', fn, normName);
@@ -1297,13 +1313,13 @@ router.get('/tracker.js', async (req, res) => {
         if (!out.fn || !out.ln) {
           var fullN = pickId(['nome', 'name', 'full_name', 'nomecompleto', 'fullname', 'seunome']);
           if (fullN) {
-            var nparts = String(fullN).trim().replace(/\s+/g, ' ').split(' ');
+            var nparts = String(fullN).trim().replace(/\\s+/g, ' ').split(' ');
             if (!out.fn && nparts[0]) out.fn = nparts[0];
             if (!out.ln && nparts.length > 1) out.ln = nparts.slice(1).join(' ');
           }
         }
-        if (!out.fn && out.ln && /\s/.test(String(out.ln))) {
-          var lparts = String(out.ln).trim().replace(/\s+/g, ' ').split(' ');
+        if (!out.fn && out.ln && /\\s/.test(String(out.ln))) {
+          var lparts = String(out.ln).trim().replace(/\\s+/g, ' ').split(' ');
           out.fn = lparts[0];
           out.ln = lparts.slice(1).join(' ');
         }
@@ -1547,7 +1563,7 @@ router.get('/tracker.js', async (req, res) => {
       // Sem valor: omite o campo (não manda 0).
       if (eventName !== 'Purchase') {
         var rawV = cleanCustom.value != null ? cleanCustom.value : (cleanCustom.amount != null ? cleanCustom.amount : (cleanCustom.price != null ? cleanCustom.price : (cleanCustom.total != null ? cleanCustom.total : cleanCustom.revenue)));
-        var parsedV = rawV !== undefined && rawV !== null && String(rawV).trim() !== '' ? parseFloat(String(rawV).replace(',', '.')) : NaN;
+        var parsedV = rawV !== undefined && rawV !== null && String(rawV).trim() !== '' ? parseMoney(rawV) : NaN;
         if (isFinite(parsedV) && parsedV > 0) {
           cleanCustom.value = parsedV;
           var rawC = cleanCustom.currency != null ? cleanCustom.currency : (cleanCustom.currency_code != null ? cleanCustom.currency_code : cleanCustom.moeda);
@@ -1817,8 +1833,8 @@ router.get('/tracker.js', async (req, res) => {
       }
       // Remove pontuação que costuma variar (mantém letras/números/espaços)
       t = t.replace(/[¡¿]/g, ' ');
-      t = t.replace(/[^\p{L}\p{N}\s]/gu, ' ');
-      t = t.replace(/\s+/g, ' ').trim();
+      t = t.replace(/[^\\p{L}\\p{N}\\s]/gu, ' ');
+      t = t.replace(/\\s+/g, ' ').trim();
       return t;
     } catch (_e) {
       return '';
@@ -1830,8 +1846,8 @@ router.get('/tracker.js', async (req, res) => {
     var t = normRuleText(s);
     if (!t) return '';
     try {
-      t = t.replace(/\b\d+\s*%/g, '%');
-      t = t.replace(/\s+/g, ' ').trim();
+      t = t.replace(/\\b\\d+\\s*%/g, '%');
+      t = t.replace(/\\s+/g, ' ').trim();
     } catch (_e2) {}
     return t;
   }
@@ -1850,7 +1866,7 @@ router.get('/tracker.js', async (req, res) => {
       if (role === 'button') return el;
       if (el.getAttribute && el.getAttribute('onclick')) return el;
       var clsWalk = ((el.className && el.className.toString) ? el.className.toString() : String(el.className || '')).toLowerCase();
-      if (/\b(btn|button|cta)\b/.test(clsWalk)) return el;
+      if (/\\b(btn|button|cta)\\b/.test(clsWalk)) return el;
       if (tag === 'BODY' || tag === 'HTML') break;
       el = el.parentElement;
     }
@@ -2261,7 +2277,7 @@ router.get('/tracker.js', async (req, res) => {
       var tag = String(el.tagName).toLowerCase();
       var cls = ((el.className && el.className.toString) ? el.className.toString() : String(el.className || '')).trim();
       if (cls) {
-        var parts = cls.split(/\s+/).filter(Boolean).slice(0, 3);
+        var parts = cls.split(/\\s+/).filter(Boolean).slice(0, 3);
         if (parts.length) return tag + '.' + parts.map(cssEscapeSimple).join('.');
       }
 
@@ -2396,7 +2412,7 @@ router.get('/tracker.js', async (req, res) => {
           }
           var cls = ((root.className && root.className.toString) ? root.className.toString() : String(root.className || '')).trim();
           var firstClass = '';
-          if (cls) firstClass = cls.split(/\s+/).filter(Boolean)[0] || '';
+          if (cls) firstClass = cls.split(/\\s+/).filter(Boolean)[0] || '';
 
           var payload = {
             page_path: pagePathForButtonRule(),
@@ -2568,7 +2584,7 @@ router.get('/tracker.js', async (req, res) => {
           var noCriteria = !textActive && !hrefNeed && !classNeed && !cssSel;
           var firstClass = '';
           if (clsNorm) {
-            var cparts = clsNorm.split(/\s+/).filter(Boolean);
+            var cparts = clsNorm.split(/\\s+/).filter(Boolean);
             firstClass = cparts.length ? cparts[0] : '';
           }
           var sugCss = buildCssSelector(root);

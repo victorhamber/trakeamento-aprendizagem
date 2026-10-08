@@ -14,7 +14,7 @@ import {
   utmRecordFromFbcCookie,
   utmRecordFromPurchaseRow,
 } from '../lib/visitorTrafficSource';
-import { ensureMetaRoasMoneyFields } from '../lib/meta-currency';
+import { ensureMetaRoasMoneyFields, parseMetaEventValue } from '../lib/meta-currency';
 import { invalidateCrmCaches } from '../lib/crm-qualification';
 import { LlmService } from '../services/llm';
 
@@ -251,16 +251,15 @@ function normalizeEventRuleParameters(
       : {};
 
   if (eventName !== 'Purchase') {
+    if (typeof base.value === 'string') {
+      const parsed = parseMetaEventValue(base.value);
+      if (parsed === undefined) delete base.value;
+      else base.value = parsed;
+    }
     return { ok: true, parameters: base };
   }
 
-  const rawVal = base.value;
-  const num =
-    typeof rawVal === 'number'
-      ? rawVal
-      : typeof rawVal === 'string'
-        ? parseFloat(rawVal.trim())
-        : NaN;
+  const num = parseMetaEventValue(base.value) ?? NaN;
   if (!Number.isFinite(num) || num < 0) {
     return {
       ok: false,

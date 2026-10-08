@@ -37,6 +37,22 @@ describe('parseMetaEventValue', () => {
     expect(parseMetaEventValue(0)).toBe(0);
   });
 
+  it('entende milhar e decimal no formato brasileiro', () => {
+    expect(parseMetaEventValue('1.297')).toBe(1297);
+    expect(parseMetaEventValue('1.297,00')).toBe(1297);
+    expect(parseMetaEventValue('1.297,50')).toBe(1297.5);
+    expect(parseMetaEventValue('R$ 1.997')).toBe(1997);
+    expect(parseMetaEventValue('12.500.000')).toBe(12500000);
+    expect(parseMetaEventValue('597')).toBe(597);
+  });
+
+  it('mantém decimal com ponto quando não é milhar', () => {
+    expect(parseMetaEventValue('9.99')).toBe(9.99);
+    expect(parseMetaEventValue('1997.00')).toBe(1997);
+    expect(parseMetaEventValue('1,297.50')).toBe(1297.5);
+    expect(parseMetaEventValue('0.997')).toBe(0.997);
+  });
+
   it('rejeita vazio e negativo', () => {
     expect(parseMetaEventValue(undefined)).toBeUndefined();
     expect(parseMetaEventValue('')).toBeUndefined();

@@ -10,15 +10,37 @@ export function normalizeMetaCurrencyCode(raw: unknown, fallback = 'BRL'): strin
   return fallback;
 }
 
-/** Aceita número ou string ("97", "97,00"); rejeita negativo/NaN. */
+/**
+ * Converte valor digitado (pt-BR ou en) em número: "1.297" → 1297,
+ * "1.297,50" → 1297.5, "97,50" → 97.5, "9.99" → 9.99, "R$ 597" → 597.
+ * Ponto seguido de grupos de exatamente 3 dígitos é separador de milhar.
+ */
+export function normalizeMoneyString(raw: string): string {
+  let s = String(raw).trim().replace(/[^\d.,-]/g, '');
+  if (!s) return '';
+  const lastComma = s.lastIndexOf(',');
+  const lastDot = s.lastIndexOf('.');
+  if (lastComma >= 0 && lastDot >= 0) {
+    const decimalSep = lastComma > lastDot ? ',' : '.';
+    const thousandSep = decimalSep === ',' ? '.' : ',';
+    s = s.split(thousandSep).join('').replace(decimalSep, '.');
+  } else if (lastComma >= 0) {
+    s = s.indexOf(',') !== lastComma ? s.split(',').join('') : s.replace(',', '.');
+  } else if (lastDot >= 0 && /^-?[1-9]\d{0,2}(\.\d{3})+$/.test(s)) {
+    s = s.split('.').join('');
+  }
+  return s;
+}
+
+/** Aceita número ou string ("97", "97,00", "1.297"); rejeita negativo/NaN. */
 export function parseMetaEventValue(raw: unknown): number | undefined {
   if (raw === undefined || raw === null || raw === '') return undefined;
   if (typeof raw === 'number') {
     return Number.isFinite(raw) && raw >= 0 ? raw : undefined;
   }
-  const s = String(raw).trim().replace(/\s/g, '').replace(',', '.');
+  const s = normalizeMoneyString(String(raw));
   if (!s) return undefined;
-  const n = parseFloat(s);
+  const n = Number(s);
   if (!Number.isFinite(n) || n < 0) return undefined;
   return n;
 }

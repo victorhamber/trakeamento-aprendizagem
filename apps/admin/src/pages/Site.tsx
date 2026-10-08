@@ -7,6 +7,7 @@ import { labelForAnalysisProfile, type ReportWizardGenerateContext } from '../li
 import { formatDateTimeBrt } from '../lib/utils';
 import { stripTrajettuAuxFromMatchPath } from '../lib/trajettuAuxPath';
 import { DDI_LIST } from '../lib/ddi';
+import { parseMoneyInput } from '../lib/money';
 import { Layout } from '../components/Layout';
 import WebhooksTab from '../components/site/WebhooksTab';
 import { ReportWizard } from '../components/site/ReportWizard';
@@ -934,7 +935,7 @@ export const SitePage = () => {
       eventSupportsValueAndCurrency(evtName) &&
       (String(urlRuleEventValue || '').trim() !== '' || String(urlRuleEventCurrency || '').trim() !== '');
     if (evtName === 'Purchase' || wantsValueCurrency) {
-      const v = parseFloat(String(urlRuleEventValue).trim());
+      const v = parseMoneyInput(urlRuleEventValue);
       const cur = String(urlRuleEventCurrency).trim();
       if (!String(urlRuleEventValue).trim() || !Number.isFinite(v) || v < 0) {
         showFlash(
@@ -961,7 +962,7 @@ export const SitePage = () => {
       };
 
       if (evtName === 'Purchase' || wantsValueCurrency) {
-        payload.parameters.value = parseFloat(String(urlRuleEventValue).trim());
+        payload.parameters.value = parseMoneyInput(urlRuleEventValue);
         payload.parameters.currency = String(urlRuleEventCurrency).trim().toUpperCase();
       }
 
@@ -1017,7 +1018,7 @@ export const SitePage = () => {
       eventSupportsValueAndCurrency(evtName) &&
       (String(buttonRuleEventValue || '').trim() !== '' || String(buttonRuleEventCurrency || '').trim() !== '');
     if (evtName === 'Purchase' || wantsValueCurrency) {
-      const v = parseFloat(String(buttonRuleEventValue).trim());
+      const v = parseMoneyInput(buttonRuleEventValue);
       const cur = String(buttonRuleEventCurrency).trim();
       if (!String(buttonRuleEventValue).trim() || !Number.isFinite(v) || v < 0) {
         showFlash(
@@ -1048,7 +1049,7 @@ export const SitePage = () => {
       if (hasCss) payload.parameters.match_css = buttonRuleCss.trim();
 
       if (evtName === 'Purchase' || wantsValueCurrency) {
-        payload.parameters.value = parseFloat(String(buttonRuleEventValue).trim());
+        payload.parameters.value = parseMoneyInput(buttonRuleEventValue);
         payload.parameters.currency = String(buttonRuleEventCurrency).trim().toUpperCase();
       }
 
@@ -1242,7 +1243,7 @@ export const SitePage = () => {
       : (isDark ? 'background:#fff; color:#000;' : 'background:#000; color:#fff;');
 
     const formId = `trk-form-${Date.now()}`;
-    const parsedFormValue = parseFloat(String(event_value ?? '').replace(',', '.'));
+    const parsedFormValue = parseMoneyInput(event_value);
     const formCurrency = /^[A-Za-z]{3}$/.test(String(event_currency || '').trim())
       ? String(event_currency).trim().toUpperCase()
       : 'BRL';
