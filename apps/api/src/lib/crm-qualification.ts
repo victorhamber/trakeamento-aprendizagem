@@ -197,9 +197,9 @@ type UserDataLike = NonNullable<CapiEvent['user_data']> & { lead_id?: unknown };
  * @param originalCapiEvent o payload website que está prestes a ser enviado
  * @param leadEventSource custom_data.lead_event_source (nome da ferramenta CRM — doc Meta)
  * @param crmEventName event_name do evento CRM (estágio do funil); padrão Lead
- * @param opts.includeValueAndCurrency só entra se value > 0. Funil CRM (Lead inicial /
- * Qualificado / Compra realizada) **não** deve mandar dinheiro: a Meta trata value 0 e
- * o mesmo ticket em todos os eventos como erro de ROAS (“preços iguais”).
+ * @param opts.includeValueAndCurrency só entra se value > 0. Lead e estágios sem
+ * preço ficam sem value. "Compra realizada" recebe o mesmo preço pago da Purchase
+ * (não a comissão): outro event_name, então a Meta não soma no ROAS de Compra.
  */
 export function buildCrmQualificationCapiPayload(args: {
   originalCapiEvent: CapiEvent;

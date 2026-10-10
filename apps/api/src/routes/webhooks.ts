@@ -1809,16 +1809,26 @@ async function processPurchaseWebhook({
         // Só dispara para Purchase (não para InitiateCheckout pendente) e respeita o toggle
         // global `integrations_meta.crm_qualify_purchases` (default TRUE — ligado para
         // todos os clientes existentes, mas desligável pela aba Meta do painel).
-        // event_id derivado (`<purchase>_crm`) → não duplica com o evento original no Meta.
+        // Outro event_name + event_id `<purchase>_crm`: a Meta não deduplica com a Purchase
+        // e o ROAS de campanha de Compra não soma este valor. O mesmo user_data (e-mail,
+        // telefone, external_id, fbp, fbc) liga a mesma pessoa aos dois eventos.
         if (!isPending && payloadToSend.event_name === 'Purchase') {
           shouldQualifyPurchasesForSite(siteKey)
             .then((enabled) => {
               if (!enabled) return;
+              const paid = Number(resolvedCapiValue);
               const crmPayload = buildCrmQualificationCapiPayload({
                 originalCapiEvent: capiPayload,
                 leadEventSource: 'Trajettu',
                 crmEventName: 'Compra realizada',
+                ...(Number.isFinite(paid) && paid > 0
+                  ? { includeValueAndCurrency: { value: paid, currency: resolvedCapiCurrency || 'BRL' } }
+                  : {}),
               });
+              const purchaseOrderId = orderId != null ? String(orderId).trim() : '';
+              if (purchaseOrderId && crmPayload.custom_data) {
+                crmPayload.custom_data.order_id = purchaseOrderId;
+              }
               return sendCapiWithRetry(siteKey, crmPayload);
             })
             .catch((err) =>
